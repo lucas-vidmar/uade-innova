@@ -21,17 +21,12 @@ El sistema centraliza la experiencia académica mediante el procesamiento de int
 
 ## **2\. Usuarios y Roles**
 
-|
-
 | **Rol** | **Descripción y Responsabilidades** |
-
+|---|---|
 | **Alumno** | Usuario principal. Consume contenidos, gestiona sus tareas y utiliza la IA para estudio personalizado. |
-
-| **Docente** | Responsable de la materia. Valida la calidad de los contenidos generados por la IA y monitorea el progreso del curso. |
-
+| **Docente** | Responsable de la materia. Sube los materiales de clase, valida los contenidos generados por la IA y monitorea el progreso del curso. |
 | **Director** | Visión macro. Monitorea métricas de múltiples materias para asegurar la calidad académica y adopción tecnológica. |
-
-| **Administrador** | Perfil técnico. Gestiona integraciones, suscripciones a Webhooks de Graph API y monitorea costos (FinOps). |
+| **Administrador** | Perfil técnico. Gestiona la infraestructura Azure, permisos de Entra ID y monitorea costos (FinOps). |
 
 ## **3\. Flujos y Casos de Uso por Rol**
 
@@ -133,16 +128,12 @@ El sistema centraliza la experiencia académica mediante el procesamiento de int
 ## **5\. Integraciones con Sistemas Existentes**
 
 | **Sistema Existente** | **Propósito de la Conexión** | **Tipo de Integración** | **Información Intercambiada** |
-
-| **Microsoft Entra ID (Azure AD)** | Autenticación y Autorización (SSO). | **Automática** | Identidad, correo, grupos/materias. |
-
-| **Portal / Panel del Docente (Plataforma Propia)** | Carga manual de materiales de clase. | **Manual (Upload)** | Transcripciones, presentaciones (PPTX/PDF), apuntes y bibliografía. |
-
-| **Azure Blob Storage** | Almacenamiento de archivos cargados por docentes. | **Automática (Interna)** | Archivos binarios y de texto de cada clase. |
-
-| **Microsoft Graph (Calendar)** | Alimentación del cronograma. | **Automática** | Horarios, tópicos programados y fechas de clase. |
-
-| **Sistema de Gestión Académica (SGA / Mock)** | Rendimiento escolar. | **Pasiva (API / CSV)** | Notas, asistencia y fechas de entregas. |
+|---|---|---|---|
+| **Microsoft Entra ID (Azure AD)** | Autenticación y Autorización (SSO). | Automática | Identidad, correo, grupos/materias. |
+| **Portal / Panel del Docente (Plataforma Propia)** | Carga manual de materiales de clase. | Manual (Upload) | Transcripciones, presentaciones (PPTX/PDF), apuntes y bibliografía. |
+| **Azure Blob Storage** | Almacenamiento de archivos cargados por docentes. | Automática (Interna) | Archivos binarios y de texto de cada clase. |
+| **Microsoft Graph (Calendar)** | Alimentación del cronograma. | Automática | Horarios, tópicos programados y fechas de clase. |
+| **Sistema de Gestión Académica (SGA / Mock)** | Rendimiento escolar. | Pasiva (API / CSV) | Notas, asistencia y fechas de entregas. |
 
 ## **6\. Datos y Contenidos**
 
@@ -151,6 +142,7 @@ El sistema centraliza la experiencia académica mediante el procesamiento de int
 Los docentes cargan directamente los materiales desde el panel de la plataforma. Se soportan los siguientes tipos:
 
 | **Tipo de Material** | **Formatos Aceptados** | **Procesamiento** | **Output** |
+|---|---|---|---|
 | **Transcripción** | TXT, DOCX, VTT | Limpieza de texto, extracción de hitos (preguntas, definiciones, tareas) vía GPT-4o mini. | Resúmenes estructurados, línea de tiempo y contexto para el chat RAG. |
 | **Presentación** | PPTX, PDF | Extracción de texto por diapositiva, análisis de estructura temática. | Índice de temas, contexto para el chat RAG. |
 | **Apuntes del Docente** | DOCX, PDF, TXT | Chunking y generación de embeddings. | Vectores indexados por clase en Pinecone. |
@@ -189,28 +181,22 @@ Para garantizar la correcta ejecución del proyecto en la infraestructura provis
 Se solicita la creación de un **Resource Group (RG)** dedicado para el entorno de desarrollo, otorgando al desarrollador el rol de **Contributor** sobre dicho grupo. Dentro de este RG, se deben habilitar (o permitir crear) los siguientes recursos:
 
 | **Servicio** | **Propósito y Justificación Crítica** | **Rol Requerido (RBAC)** |
-
-| **Azure OpenAI Service** | **Motor Core de IA:** Requerido para desplegar los modelos gpt-4o-mini (Generación) y text-embedding-3-small (Vectorización). **Nota:** Es vital que la suscripción tenga **Quota** disponible para estos modelos. | **Cognitive Services OpenAI Contributor** (Para desplegar modelos y gestionar claves API). |
-
-| **Azure App Service** (Linux Plan) | **Hosting Dashboard:** Alojamiento de la aplicación web (Frontend/Backend) y APIs REST. **Justificación:** Necesario para desplegar contenedores o código (Node.js/Python) y configurar variables de entorno. | **App Service Contributor** (Despliegue de código y configuración). |
-
-| **Azure Functions** (Consumption Plan) | **Procesamiento Serverless:** Pipeline de ingesta de materiales cargados por docentes (chunking, embeddings, extracción de hitos) y lógica de negocio asíncrona. **Justificación:** Minimiza costos al ejecutarse solo por demanda. | **Website Contributor** (Para desplegar y configurar las funciones). |
-
-| **Azure Storage Account** | **Persistencia y Estado:** Almacenamiento de logs de funciones, archivos temporales y estado de la aplicación. **Justificación:** Requisito técnico mandatorio para Azure Functions. | **Storage Account Contributor** & **Storage Blob Data Contributor** (Para gestión de contenedores y lectura/escritura de datos). |
-
-| **Azure Application Insights** | **Observabilidad y FinOps:** Monitoreo de trazas, errores y, crucialmente, **control de costos de tokens**. **Justificación:** Requisito del proyecto para auditoría de consumo. | **Monitoring Contributor** (Para crear dashboards y queries de logs). |
-
-| **Managed Identities** | **Seguridad Zero-Trust:** Permite que App Service y Functions se autentiquen contra OpenAI y Graph sin hardcodear credenciales. | **User Access Administrator** (o permiso delegado) (Para asignar roles a la identidad administrada del recurso). |
+|---|---|---|
+| **Azure OpenAI Service** | **Motor Core de IA:** Requerido para desplegar los modelos `gpt-4o-mini` (Generación) y `text-embedding-3-small` (Vectorización). Nota: Es vital que la suscripción tenga **Quota** disponible para estos modelos. | Cognitive Services OpenAI Contributor |
+| **Azure App Service** (Linux Plan) | **Hosting Dashboard:** Alojamiento de la aplicación web (Frontend/Backend) y APIs REST. Necesario para desplegar código (Node.js/Python) y configurar variables de entorno. | App Service Contributor |
+| **Azure Functions** (Consumption Plan) | **Procesamiento Serverless:** Pipeline de ingesta de materiales cargados por docentes (chunking, embeddings, extracción de hitos) y lógica de negocio asíncrona. Minimiza costos al ejecutarse solo por demanda. | Website Contributor |
+| **Azure Storage Account** | **Persistencia:** Almacenamiento de archivos de clase subidos por docentes, logs de funciones y estado del pipeline. Requisito técnico mandatorio para Azure Functions. | Storage Account Contributor + Storage Blob Data Contributor |
+| **Azure Application Insights** | **Observabilidad y FinOps:** Monitoreo de trazas, errores y control de costos de tokens. Requisito del proyecto para auditoría de consumo. | Monitoring Contributor |
+| **Managed Identities** | **Seguridad Zero-Trust:** Permite que App Service y Functions se autentiquen contra OpenAI y Storage sin hardcodear credenciales. | User Access Administrator (o permiso delegado) |
 
 ### **7.2. Servicios de Identidad y Microsoft 365 (Microsoft Entra ID)**
 
 El sistema requiere una integración profunda con el inquilino (tenant) de UADE para el SSO y la lectura de datos académicos.
 
 | **Recurso** | **Permiso / Acción Requerida** | **Justificación** |
-
-| **App Registration** | **Permiso para crear y editar App Registrations.** | Necesario para configurar el SSO (OIDC) y obtener el Client ID y Tenant ID. |
-
-| **Microsoft Graph API Scopes** | **Admin Consent** para los siguientes scopes de aplicación (Application Permissions): 1\. User.Read (Perfil básico del usuario autenticado). 2\. Calendars.Read (Lectura del cronograma de clases). 3\. GroupMember.Read.All (Verificación de pertenencia a materias/comisiones). | El sistema utiliza Graph API únicamente para autenticación SSO, lectura del calendario académico y resolución de roles. La ingesta de contenidos se realiza mediante carga directa desde el panel docente, sin requerir acceso a Stream ni a SharePoint. |
+|---|---|---|
+| **App Registration** | Permiso para crear y editar App Registrations. | Necesario para configurar el SSO (OIDC) y obtener el Client ID y Tenant ID. |
+| **Microsoft Graph API Scopes** | Admin Consent para los siguientes scopes: `User.Read` (perfil básico), `Calendars.Read` (cronograma de clases), `GroupMember.Read.All` (pertenencia a materias/comisiones). | Graph API se usa únicamente para SSO, lectura de calendario y resolución de roles. La ingesta de contenidos se realiza por carga directa desde el panel docente, sin acceso a Stream ni SharePoint. |
 
 ### **7.3. Dependencias Externas (Conectividad)**
 
