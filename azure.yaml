@@ -1,0 +1,23 @@
+# azure.yaml — azd project manifest
+# https://learn.microsoft.com/azure/developer/azure-developer-cli/azd-schema
+name: dashboard-educativo
+metadata:
+  template: dashboard-educativo@0.0.1
+
+# Infrastructure location
+infra:
+  provider: bicep
+  path: infra
+  module: main
+
+# Application services
+services:
+  frontend:
+    project: ./frontend
+    language: js
+    host: appservice
+
+  backend:
+    project: ./backend
+    language: js
+    host: function

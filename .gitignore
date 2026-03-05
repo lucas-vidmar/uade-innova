@@ -1,0 +1,37 @@
+# ─── Secrets & local config ───────────────────────────────────
+.env.local
+.env.*.local
+*.env
+
+# ─── azd ──────────────────────────────────────────────────────
+.azure/
+.azd/
+
+# ─── Node.js ──────────────────────────────────────────────────
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# ─── Azure Functions local ────────────────────────────────────
+backend/local.settings.json
+backend/.funcignore
+
+# ─── macOS ────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+
+# ─── Editor ───────────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# ─── Logs ─────────────────────────────────────────────────────
+*.log
+logs/
+
+# ─── Build artifacts ──────────────────────────────────────────
+*.zip
+frontend/dist/

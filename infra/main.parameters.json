@@ -1,0 +1,42 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "environmentName": {
+            "value": "${AZURE_ENV_NAME}"
+        },
+        "location": {
+            "value": "${AZURE_LOCATION}"
+        },
+        "openAiLocation": {
+            "value": "${AZURE_OPENAI_LOCATION}"
+        },
+        "openAiSkuName": {
+            "value": "S0"
+        },
+        "gptModelName": {
+            "value": "gpt-4o-mini"
+        },
+        "gptModelVersion": {
+            "value": "2024-07-18"
+        },
+        "gptDeploymentCapacity": {
+            "value": 10
+        },
+        "embeddingModelName": {
+            "value": "text-embedding-3-small"
+        },
+        "embeddingModelVersion": {
+            "value": "1"
+        },
+        "embeddingDeploymentCapacity": {
+            "value": 10
+        },
+        "appServiceSkuName": {
+            "value": "F1"
+        },
+        "principalId": {
+            "value": "${AZURE_PRINCIPAL_ID}"
+        }
+    }
+}
