@@ -10,16 +10,19 @@ Este documento sirve como marco de referencia para la implementación del sistem
 
 ## **2\. Stack Tecnológico (Azure Cloud & AI)**
 
-Para maximizar el FinOps y minimizar el CapEx, se utiliza una arquitectura **Serverless/PaaS**:
+Para maximizar el FinOps y minimizar el CapEx, se utiliza una arquitectura **100% Serverless** (sin VMs reservadas):
 
-* **Generative AI:** Azure OpenAI Service.  
-  * **Modelos:** gpt-4o-mini (Chat/Razonamiento) y text-embedding-3-small (Vectorización).  
-* **Vector Database:** Pinecone (Tier: Serverless/Standard).  
-  * **Dimensión:** 1536 (específico para el modelo de embeddings v3).  
-  * **Métrica:** Cosine Similarity.  
-* **Compute (Backend):** Azure Functions (Consumption Plan) \+ Node.js/Python.  
-* **Frontend Hosting:** Azure App Service (Plan B1/S1).  
-* **Identity:** Microsoft Entra ID (OIDC / SSO UADE).  
+* **Generative AI:** Azure OpenAI Service.
+  * **Modelos:** gpt-4o-mini (Chat/Razonamiento) y text-embedding-3-small (Vectorización).
+  * **Nota:** UADE ya provisionó el recurso `RS-OPENAI-LLM` en el RG `RG_UADE_INNOVA_DEV`.
+* **Vector Database:** Pinecone (Tier: Serverless/Standard).
+  * **Dimensión:** 1536 (específico para el modelo de embeddings v3).
+  * **Métrica:** Cosine Similarity.
+* **Compute (Backend):** Azure Functions **Consumption Plan Y1** \+ Node.js 20.
+  * Sin VM reservada. Escala a 0. Pago por ejecución (primeros 1M/mes gratis).
+* **Frontend Hosting:** Azure **Static Web Apps** (Free tier).
+  * CDN global, SSL automático, 100 GB bandwidth/mes. Sin VM quota.
+* **Identity:** Microsoft Entra ID (OIDC / SSO UADE).
 * **Observability:** Azure Application Insights (Monitoreo de latencia y costos por token).
 
 ## **3\. Arquitectura del Sistema (4 Capas)**
@@ -50,11 +53,12 @@ Para maximizar el FinOps y minimizar el CapEx, se utiliza una arquitectura **Ser
 
 ## **6\. Comandos de Referencia**
 
-* Crear Resource Group: `az group create --name rg-dashboard-estudio-pilot --location eastus`
 * Inicializar proyecto azd: `azd init`
-* Desplegar infraestructura: `azd provision`
+* Desplegar infraestructura: `azd provision` (desde la raíz del proyecto)
 * Destruir entorno: `azd down`
 * Ver logs de Functions: `func start` (local) / `az functionapp logs tail`
+* Listar recursos del RG: `az resource list --resource-group RG_UADE_INNOVA_DEV --output table`
+* Obtener deployment token de Static Web App: `az staticwebapp secrets list --name <nombre> --resource-group RG_UADE_INNOVA_DEV`
 
 ---
 
@@ -77,23 +81,26 @@ infra/
 ├── main.parameters.json    # Parámetros de entorno (dev/prod)
 └── modules/
     ├── openai.bicep         # Azure OpenAI + deployments de modelos
-    ├── functions.bicep      # Azure Functions (Consumption Plan)
+    ├── functions.bicep      # Azure Functions (Consumption Plan Y1 — serverless real)
+    ├── staticwebapp.bicep   # Azure Static Web Apps (Free tier — sin VM quota)
     ├── storage.bicep        # Azure Blob Storage (archivos de clase)
-    ├── appservice.bicep     # Azure App Service (frontend/backend)
-    └── identity.bicep       # Managed Identities + role assignments
+    ├── keyvault.bicep       # Azure Key Vault (Pinecone API Key)
+    ├── appinsights.bicep    # Application Insights + Log Analytics
+    └── identity.bicep       # Managed Identities + role assignments (pendiente permisos UADE)
 ```
 
 ### **7.3. Recursos a definir en Bicep**
 
 | **Recurso** | **Nombre sugerido** | **Notas clave** |
 |---|---|---|
-| Resource Group | `rg-dashboard-estudio-pilot` | Todos los recursos dentro de este RG |
-| Azure OpenAI | `aoai-dashboard-pilot` | Región: `eastus`. Deployments: `gpt-4o-mini` y `text-embedding-3-small` |
-| Azure Functions | `func-dashboard-ingest` | Runtime: Node.js 20 / Python 3.11. Plan: Consumption |
-| Azure Storage | `stdashboardpilot` | Contenedores: `class-materials` (archivos) y `processed` (chunks JSON) |
-| Azure App Service | `app-dashboard-pilot` | Plan B1. Variables de entorno inyectadas desde `azd` |
-| App Insights | `appi-dashboard-pilot` | Vinculado a Functions y App Service para trazas y costos |
-| Managed Identity | `id-dashboard-pilot` | Asignada a Functions y App Service para auth contra OpenAI y Storage |
+| Resource Group | `RG_UADE_INNOVA_DEV` | Asignado por UADE. Todos los recursos dentro de este RG. |
+| Azure OpenAI | `RS-OPENAI-LLM` (existente) | Ya provisionado por UADE en eastus2. |
+| Azure Functions | `func-dashboard-ingest-{token}` | Runtime: Node.js 20. Plan: **Consumption Y1** (sin VM quota). |
+| Azure Storage | `stdashboard{token}` (max 24 chars) | Contenedores: `class-materials` y `processed`. |
+| Azure Static Web Apps | `stapp-dashboard-{token}` | **Free tier.** CDN global, SSL, 100 GB/mes. Sin VM quota. |
+| App Insights | `appi-dashboard-{token}` | Vinculado a Functions para trazas y costos. |
+| Key Vault | `kv-edu-{token}` | Almacena Pinecone API Key como secret. |
+| Managed Identity | Asignada a Functions | Auth Zero-Trust contra OpenAI y Storage. (RBAC pendiente UADE.) |
 
 ---
 
@@ -249,11 +256,11 @@ interface PineconeMetadata {
 
 ## **11\. Variables de Entorno Requeridas**
 
-Estas variables son generadas por `azd provision` y deben estar presentes en `.env.local` (local) y en la configuración de App Service / Functions (producción). El agente nunca debe hardcodear estos valores.
+Estas variables son generadas por `azd provision` y deben estar presentes en `.env.local` (local) y en la configuración de Static Web App / Functions (producción). El agente nunca debe hardcodear estos valores.
 
 ```bash
 # Azure OpenAI
-AZURE_OPENAI_ENDPOINT=https://aoai-dashboard-pilot.openai.azure.com/
+AZURE_OPENAI_ENDPOINT=https://<rs-openai-llm>.openai.azure.com/
 AZURE_OPENAI_CHAT_DEPLOYMENT=gpt-4o-mini
 AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-3-small
 
@@ -263,15 +270,16 @@ PINECONE_INDEX_NAME=dashboard-edu-pilot
 PINECONE_ENVIRONMENT=...
 
 # Azure Storage
-AZURE_STORAGE_ACCOUNT_NAME=stdashboardpilot
+AZURE_STORAGE_ACCOUNT_NAME=stdashboard{token}
 AZURE_STORAGE_CONTAINER_MATERIALS=class-materials
 
 # Identity (se inyecta automáticamente via Managed Identity en Azure)
 AZURE_CLIENT_ID=...
 AZURE_TENANT_ID=...
 
-# App
-VITE_API_BASE_URL=https://func-dashboard-ingest.azurewebsites.net/api
+# App (generado por azd desde la URL de Static Web Apps)
+VITE_API_BASE_URL=https://func-dashboard-ingest-{token}.azurewebsites.net/api
+AZURE_STATIC_WEB_APP_URI=https://<nombre>.azurestaticapps.net
 ```
 
 ---

@@ -9,15 +9,17 @@ infra:
   provider: bicep
   path: infra
   module: main
+  resourceGroup: RG_UADE_INNOVA_DEV
 
 # Application services
 services:
   frontend:
     project: ./frontend
     language: js
-    host: appservice
+    host: staticwebapp         # Azure Static Web Apps — sin VM quota, CDN global
 
-  backend:
-    project: ./backend
-    language: js
-    host: function
+  # backend: (pendiente — crear ./backend antes de habilitar)
+  # backend:
+  #   project: ./backend
+  #   language: js
+  #   host: function

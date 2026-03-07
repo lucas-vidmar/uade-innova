@@ -33,7 +33,7 @@
             "value": 10
         },
         "appServiceSkuName": {
-            "value": "F1"
+            "value": "B1"
         },
         "principalId": {
             "value": "${AZURE_PRINCIPAL_ID}"

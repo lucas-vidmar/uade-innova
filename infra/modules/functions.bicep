@@ -1,7 +1,10 @@
 /*
-  functions.bicep — Azure Functions App (Consumption Plan)
+  functions.bicep — Azure Functions App (True Consumption Plan / Serverless)
   Runtime: Node.js 20 on Linux
   Auth: System-Assigned Managed Identity (Zero-Trust)
+
+  IMPORTANTE: Usa el plan Y1 (Consumption) real — no requiere VM quota.
+  Escala a 0 cuando no hay tráfico. Primeros 1M ejecuciones/mes son gratis.
 */
 
 @description('Azure region for resources.')
@@ -34,25 +37,20 @@ param keyVaultUri string
 @description('Tags to apply to resources.')
 param tags object = {}
 
-@description('Optional: resource ID of an existing App Service Plan to reuse (avoids creating a new plan). If empty, creates a new B1 plan.')
-param sharedServerFarmId string = ''
-
-// ─── App Service Plan (only created if no shared plan is provided) ──
-resource consumptionPlan 'Microsoft.Web/serverfarms@2023-01-01' = if (empty(sharedServerFarmId)) {
+// ─── Consumption Plan (Y1 — sin VM quota, serverless real) ───────
+resource consumptionPlan 'Microsoft.Web/serverfarms@2023-01-01' = {
   name: '${functionAppName}-plan'
   location: location
   tags: tags
   sku: {
-    name: 'B1'
-    tier: 'Basic'
+    name: 'Y1' // Consumption Plan — pago por ejecución, sin VM quota
+    tier: 'Dynamic'
   }
-  kind: 'linux'
+  kind: 'functionapp'
   properties: {
-    reserved: true
+    reserved: true // Linux
   }
 }
-
-var effectiveServerFarmId = empty(sharedServerFarmId) ? consumptionPlan.id : sharedServerFarmId
 
 // ─── Function App ────────────────────────────────────────────────
 resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
@@ -61,10 +59,10 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
   tags: union(tags, { 'azd-service-name': 'backend' })
   kind: 'functionapp,linux'
   identity: {
-    type: 'SystemAssigned' // Managed Identity — no hardcoded credentials
+    type: 'SystemAssigned'
   }
   properties: {
-    serverFarmId: effectiveServerFarmId
+    serverFarmId: consumptionPlan.id
     reserved: true
     httpsOnly: true
     siteConfig: {
@@ -99,7 +97,7 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
           value: appInsightsConnectionString
         }
-        // Azure OpenAI — endpoint only (auth via Managed Identity)
+        // Azure OpenAI
         {
           name: 'AZURE_OPENAI_ENDPOINT'
           value: openAiEndpoint
@@ -121,7 +119,7 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           name: 'AZURE_STORAGE_CONTAINER_MATERIALS'
           value: 'class-materials'
         }
-        // Key Vault reference for Pinecone API Key
+        // Key Vault reference para Pinecone API Key
         {
           name: 'PINECONE_API_KEY'
           value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/pinecone-api-key/)'
@@ -130,7 +128,6 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           name: 'PINECONE_INDEX_NAME'
           value: 'dashboard-edu-pilot'
         }
-        // Node environment
         {
           name: 'NODE_ENV'
           value: 'production'
@@ -144,7 +141,7 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
 @description('The name of the Function App.')
 output functionAppName string = functionApp.name
 
-@description('The principal ID of the Function App\'s Managed Identity.')
+@description('The principal ID of the Function App Managed Identity.')
 output functionAppPrincipalId string = functionApp.identity.principalId
 
 @description('The default hostname of the Function App.')

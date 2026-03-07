@@ -17,7 +17,7 @@ El sistema centraliza la experiencia académica mediante el procesamiento de int
 * **Analítica Multimodal de Clases:** Generación automática de resúmenes, mapas conceptuales, audios (TTS) y líneas de tiempo con hitos de clase.  
 * **Centro de Gestión del Alumno:** Dashboard de tareas priorizadas por peso académico y cronograma web interactivo.  
 * **Panel de Control Docente y Directivo:** Carga y gestión de materiales de clase (transcripciones, presentaciones, apuntes y bibliografía), más visualización de métricas de comprensión y alertas tempranas de rendimiento.  
-* **Infraestructura Serverless:** Ejecución optimizada en Azure utilizando Functions y modelos GPT-4o mini.
+* **Infraestructura 100% Serverless:** Frontend en Azure Static Web Apps (CDN global, sin VM) y backend en Azure Functions Consumption Plan (pago por ejecución, escala a 0). Sin reserva de cómputo fija.
 
 ## **2\. Usuarios y Roles**
 
@@ -182,12 +182,12 @@ Se solicita la creación de un **Resource Group (RG)** dedicado para el entorno 
 
 | **Servicio** | **Propósito y Justificación Crítica** | **Rol Requerido (RBAC)** |
 |---|---|---|
-| **Azure OpenAI Service** | **Motor Core de IA:** Requerido para desplegar los modelos `gpt-4o-mini` (Generación) y `text-embedding-3-small` (Vectorización). Nota: Es vital que la suscripción tenga **Quota** disponible para estos modelos. | Cognitive Services OpenAI Contributor |
-| **Azure App Service** (Linux Plan) | **Hosting Dashboard:** Alojamiento de la aplicación web (Frontend/Backend) y APIs REST. Necesario para desplegar código (Node.js/Python) y configurar variables de entorno. | App Service Contributor |
-| **Azure Functions** (Consumption Plan) | **Procesamiento Serverless:** Pipeline de ingesta de materiales cargados por docentes (chunking, embeddings, extracción de hitos) y lógica de negocio asíncrona. Minimiza costos al ejecutarse solo por demanda. | Website Contributor |
-| **Azure Storage Account** | **Persistencia:** Almacenamiento de archivos de clase subidos por docentes, logs de funciones y estado del pipeline. Requisito técnico mandatorio para Azure Functions. | Storage Account Contributor + Storage Blob Data Contributor |
-| **Azure Application Insights** | **Observabilidad y FinOps:** Monitoreo de trazas, errores y control de costos de tokens. Requisito del proyecto para auditoría de consumo. | Monitoring Contributor |
-| **Managed Identities** | **Seguridad Zero-Trust:** Permite que App Service y Functions se autentiquen contra OpenAI y Storage sin hardcodear credenciales. | User Access Administrator (o permiso delegado) |
+| **Azure OpenAI Service** | **Motor Core de IA:** Modelos `gpt-4o-mini` (Generación) y `text-embedding-3-small` (Vectorización). UADE ya provisionó el recurso `RS-OPENAI-LLM` en el RG. | Cognitive Services OpenAI Contributor |
+| **Azure Static Web Apps** (Free tier) | **Hosting Frontend:** Alojamiento serverless del dashboard React/Vite. CDN global, SSL automático, 100 GB bandwidth/mes. **No requiere VM quota.** | Website Contributor |
+| **Azure Functions** (Consumption Plan Y1) | **Procesamiento Serverless:** Pipeline de ingesta de materiales (chunking, embeddings, hitos) y RAG. Pago por ejecución, escala a 0. **No requiere VM quota.** | Website Contributor |
+| **Azure Storage Account** | **Persistencia:** Archivos de clase subidos por docentes y runtime de Functions. | Storage Account Contributor + Storage Blob Data Contributor |
+| **Azure Application Insights** | **Observabilidad y FinOps:** Monitoreo de trazas, latencia y costos de tokens. | Monitoring Contributor |
+| **Managed Identities** | **Seguridad Zero-Trust:** Functions se autentica contra OpenAI y Storage sin credenciales hardcodeadas. *(Pendiente: requiere permiso `roleAssignments/write` que UADE debe otorgar.)* | User Access Administrator (pendiente UADE) |
 
 ### **7.2. Servicios de Identidad y Microsoft 365 (Microsoft Entra ID)**
 

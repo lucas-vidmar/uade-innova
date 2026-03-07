@@ -13,9 +13,6 @@ param name string
 @description('Azure AD Tenant ID.')
 param tenantId string = subscription().tenantId
 
-@description('Principal ID of the deploying user (for initial secret management access).')
-param principalId string
-
 @description('Tags to apply to the resource.')
 param tags object = {}
 
@@ -61,18 +58,21 @@ resource pineconeSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
 }
 
 // ─── Grant deploying user Key Vault Administrator role ─────────
-// So they can manage secrets after provision without Portal access
-var keyVaultAdministratorRoleId = '00482a5a-887f-4fb3-b363-3b7fe8e74483'
-resource deployerAdminRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(principalId)) {
-  name: guid(keyVault.id, principalId, keyVaultAdministratorRoleId)
-  scope: keyVault
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', keyVaultAdministratorRoleId)
-    principalId: principalId
-    principalType: 'User'
-    description: 'Allows the deploying developer to manage Key Vault secrets'
-  }
-}
+// NOTA: Requiere permiso 'Microsoft.Authorization/roleAssignments/write'.
+// UADE debe otorgar manualmente el rol Key Vault Administrator al usuario
+// o conceder el permiso necesario en el RG.
+//
+// var keyVaultAdministratorRoleId = '00482a5a-887f-4fb3-b363-3b7fe8e74483'
+// resource deployerAdminRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(principalId)) {
+//   name: guid(keyVault.id, principalId, keyVaultAdministratorRoleId)
+//   scope: keyVault
+//   properties: {
+//     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', keyVaultAdministratorRoleId)
+//     principalId: principalId
+//     principalType: 'User'
+//     description: 'Allows the deploying developer to manage Key Vault secrets'
+//   }
+// }
 
 // ─── Outputs ───────────────────────────────────────────────────
 @description('The name of the Key Vault.')
