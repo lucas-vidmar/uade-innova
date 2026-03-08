@@ -19,15 +19,16 @@ export async function renderTeacherUpload(container) {
   container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando clases...</div>`;
 
   const user = auth.getUser();
-  const classes = await api.getClasses(user.subjectId);
+  const activeSubjectId = auth.getActiveSubjectId();
+  const classes = await api.getClasses(activeSubjectId);
 
-  // Read ?class= from hash
-  const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
-  let selectedClassId = hashParams.get('class') || classes[0]?.id || '';
+  // By default, select the first valid class or nothing
+  let selectedClassIds = classes.length > 0 ? [classes[0].id] : [];
   let activeTab = 'transcript';
 
   const render = () => {
-    const selectedClass = classes.find(c => c.id === selectedClassId);
+    // Info preview for the FIRST selected class just as visual feedback
+    const primaryClass = selectedClassIds.length > 0 ? classes.find(c => c.id === selectedClassIds[0]) : null;
 
     container.innerHTML = `
       <!-- Class selector -->
@@ -40,19 +41,22 @@ export async function renderTeacherUpload(container) {
         </div>
 
         <div class="form-group" style="margin-top:var(--space-5)">
-          <label class="form-label" for="class-selector">Clase objetivo</label>
-          <select class="form-select" id="class-selector" style="max-width:520px">
-            ${classes.map(c => `<option value="${c.id}" ${c.id === selectedClassId ? 'selected' : ''}>${c.title} — ${new Date(c.date + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}</option>`).join('')}
-          </select>
+          <label class="form-label">Clases destino (podés seleccionar múltiples)</label>
+          <div class="class-multiselect" style="display:flex; flex-direction:column; gap:var(--space-2); max-height:200px; overflow-y:auto; background:var(--color-bg-secondary); border:1px solid var(--color-border); border-radius:8px; padding:var(--space-3)">
+            ${classes.length === 0 ? `<div style="color:var(--color-text-muted)">No hay clases creadas. Ve al Gestor de Clases primero.</div>` : ''}
+            ${classes.map(c => `
+              <label style="display:flex; align-items:center; gap:var(--space-2); cursor:pointer;">
+                <input type="checkbox" class="class-checkbox" value="${c.id}" ${selectedClassIds.includes(c.id) ? 'checked' : ''} />
+                <span>${c.title} <span style="color:var(--color-text-muted); font-size:12px;">— ${new Date(c.date + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}</span></span>
+              </label>
+            `).join('')}
+          </div>
         </div>
 
-        ${selectedClass ? `
+        ${primaryClass ? `
           <div class="class-info-strip">
-            <div class="class-info-topics">
-              ${selectedClass.topics.map(t => `<span class="chip selected">${t}</span>`).join('')}
-            </div>
-            <span class="badge ${selectedClass.summaryReady ? 'badge-success' : selectedClass.materials.length > 0 ? 'badge-warning' : 'badge-neutral'}">
-              ${selectedClass.summaryReady ? '✅ Material completo' : selectedClass.materials.length > 0 ? '⚙️ Procesando' : '📭 Sin material'}
+            <span class="badge ${primaryClass.summaryReady ? 'badge-success' : primaryClass.materials.length > 0 ? 'badge-warning' : 'badge-neutral'}">
+              ${primaryClass.summaryReady ? '✅ Material de la primer clase completo' : primaryClass.materials.length > 0 ? '⚙️ Procesando material' : '📭 Sin material en esta clase'}
             </span>
           </div>
         ` : ''}
@@ -71,7 +75,7 @@ export async function renderTeacherUpload(container) {
         <div id="upload-zone-wrapper"></div>
 
         <!-- AI Validation section (only for classes with summaries) -->
-        ${selectedClass?.summaryReady ? `
+        ${primaryClass?.summaryReady ? `
           <div class="divider"></div>
           <div class="ai-validation-section">
             <h3 style="margin-bottom:var(--space-4)">🤖 Validación de Resumen IA</h3>
@@ -80,7 +84,7 @@ export async function renderTeacherUpload(container) {
                 La IA generó el siguiente resumen basado en los materiales cargados para esta clase. Podés aprobarlo, editarlo o rechazarlo para regenerarlo.
               </p>
               <div class="ai-summary-box">
-                <strong>Resumen de ${selectedClass.title}:</strong>
+                <strong>Resumen de ${primaryClass.title}:</strong>
                 <br/><br/>
                 Esta clase introdujo los fundamentos de las <strong>arquitecturas de software</strong>, cubriendo los principales estilos arquitectónicos (monolítico, en capas, microservicios, event-driven) y sus atributos de calidad (disponibilidad, escalabilidad, mantenibilidad, seguridad). Se discutieron los trade-offs entre acoplamiento y cohesión, y se presentó el modelo C4 como herramienta de documentación arquitectónica.
               </div>
@@ -96,12 +100,18 @@ export async function renderTeacherUpload(container) {
     `;
 
     // Mount upload zone for active tab
-    mountUploadZone(selectedClass);
+    mountUploadZone(primaryClass);
 
     // Events
-    document.getElementById('class-selector')?.addEventListener('change', e => {
-      selectedClassId = e.target.value;
-      render();
+    container.querySelectorAll('.class-checkbox').forEach(cb => {
+      cb.addEventListener('change', (e) => {
+        if (e.target.checked) {
+          selectedClassIds.push(e.target.value);
+        } else {
+          selectedClassIds = selectedClassIds.filter(id => id !== e.target.value);
+        }
+        render(); // Re-render to update the info strip
+      });
     });
 
     container.querySelectorAll('.tab-btn').forEach(btn => {
@@ -130,29 +140,37 @@ export async function renderTeacherUpload(container) {
       type: activeTab,
       existingFiles,
       onUpload: async (fileObj, rawFile, updateProgress) => {
+        if (selectedClassIds.length === 0) {
+          toast('error', 'Error', 'Debe seleccionar al menos una clase antes de subir el material.');
+          updateProgress(0);
+          throw new Error('No class selected');
+        }
+
         // Perform real API upload
         const formData = new FormData();
         formData.append('file', rawFile);
-        formData.append('classId', selectedClassId);
-        formData.append('subjectId', user.subjectId || 'arq-software-2026');
+        formData.append('subjectId', activeSubjectId);
         formData.append('materialType', activeTab);
+
+        // Append all selected class IDs
+        selectedClassIds.forEach(id => formData.append('classIds', id));
 
         try {
           const response = await api.ingestMaterial(formData);
           updateProgress(100);
 
-          // Update frontend state
-          if (selectedClass) {
-            const cls = classes.find(c => c.id === selectedClassId);
+          // Update frontend state for all selected classes
+          selectedClassIds.forEach(cid => {
+            const cls = classes.find(c => c.id === cid);
             if (cls) {
               cls.materials.push({
                 ...fileObj,
                 status: 'ready',
                 id: response.materialId || `m-new-${Date.now()}`,
-                classId: selectedClassId
+                classIds: selectedClassIds
               });
             }
-          }
+          });
         } catch (error) {
           throw error; // Let FileUpload catch and show error toast
         }

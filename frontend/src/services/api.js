@@ -143,6 +143,25 @@ export const api = {
         return res.json();
     },
 
+    async saveClasses(subjectId, classesArray) {
+        if (USE_MOCK) return;
+        const res = await fetch(`${BASE_URL}/classes?subjectId=${subjectId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(classesArray)
+        });
+        if (!res.ok) {
+            throw new Error(`Error ${res.status}: Falló el guardado en el servidor`);
+        }
+        return res.json();
+    },
+
+    async deleteMaterial(materialId) {
+        if (USE_MOCK) return;
+        const res = await fetch(`${BASE_URL}/materials/${materialId}`, { method: 'DELETE' });
+        return res.json();
+    },
+
     async getTasks(studentId) {
         if (USE_MOCK) { await delay(400); return MOCK_TASKS; }
         const res = await fetch(`${BASE_URL}/tasks?studentId=${studentId}`);
