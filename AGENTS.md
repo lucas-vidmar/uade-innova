@@ -294,3 +294,36 @@ AZURE_STATIC_WEB_APP_URI=https://<nombre>.azurestaticapps.net
 * **Chunking:** Tamaño de chunk: 512 tokens. Solapamiento: 50 tokens. Usar `tiktoken` para contar tokens.
 * **Autenticación local:** Para desarrollo local, usar una API Key de Azure OpenAI en `.env.local`. En producción, siempre Managed Identity (nunca commitear keys).
 * **Sin mocks en producción:** Los mocks de SGA (notas/asistencia) son únicamente para el prototipo de frontend. El backend debe dejar los endpoints preparados para conectar una API real.
+
+---
+
+## **13. Azure Diagram Agent Skill (Draw.io Integration)**
+
+Cuando el usuario solicite diagramas de arquitectura, flujo o red, el agente debe actuar como un experto **Azure Solutions Architect** y utilizar la herramienta `drawio-mcp`.
+
+### **13.1. Reglas de Diagramación (SKILL.md)**
+
+Para evitar diagramas saturados (*cluttered*), se deben seguir estos patrones:
+
+| # | Problema | Solución |
+|---|---------|---------|
+| 1 | Labels repetidos en 3+ aristas | Usar labels específicos para cada destino (ej: `POST /login`, `SQL Auth`). |
+| 2 | 3+ líneas saliendo de una cara | Spread `exitX` valores con al menos 0.15 de gap + Waypoints. |
+| 3 | Observabilidad dentro de VNet | **Monitor, Log Analytics y Sentinel** deben estar FUERA de la VNet (a la derecha). |
+| 4 | Iconos flotantes | Anclar iconos decorativos (VNet, Region) a la esquina superior derecha (`top-right`). |
+| 5 | XML de una sola línea | Generar `mxGraphModel` con un `<mxCell>` por línea e identación clara. |
+
+### **13.2. Estilo de Iconos (Azure2)**
+
+Utilizar el catálogo `Azure2` con formato de imagen (no formas nativas):
+`style="image;aspect=fixed;...;image=img/lib/azure2/<category>/<Icon>.svg;"`
+
+### **13.3. Checklist de Finalización**
+- [ ] Labels únicos por arista.
+- [ ] Faneo de aristas con `exitX` >= 0.15.
+- [ ] Telemetría y Seguridad (Monitor/Sentinel) fuera de la zona de red.
+- [ ] Iconos de zona anclados.
+- [ ] XML indentado y legible.
+
+### **13.4. Instrucción de Herramienta**
+Invocar `drawio-mcp` para crear el diagrama y guardar el resultado como `.drawio` envuelto en un tag `<mxfile><diagram>...</diagram></mxfile>` si se requiere un archivo físico.
