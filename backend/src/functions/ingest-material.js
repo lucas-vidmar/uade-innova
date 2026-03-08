@@ -22,24 +22,26 @@ app.http('ingest-material', {
         context.log('ingest-material triggered');
 
         // ── 1. Parsear multipart/form-data ─────────────────────────
-        let fileBuffer, fileContentType, fileName, classId, subjectId, materialType;
+        let fileBuffer, fileContentType, fileName, classIds, subjectId, materialType;
 
         try {
-            ({ fileBuffer, fileContentType, fileName, classId, subjectId, materialType } =
+            ({ fileBuffer, fileContentType, fileName, classIds, subjectId, materialType } =
                 await parseMultipart(request));
         } catch (err) {
             return { status: 400, body: JSON.stringify({ error: err.message }) };
         }
 
-        if (!classId || !subjectId || !materialType) {
+        if (!classIds || classIds.length === 0 || !subjectId || !materialType) {
             return {
                 status: 400,
-                body: JSON.stringify({ error: 'Faltan campos requeridos: classId, subjectId, materialType' }),
+                body: JSON.stringify({ error: 'Faltan campos requeridos: classIds, subjectId, materialType' }),
             };
         }
 
         const materialId = uuidv4();
-        const blobName = `${classId}/${materialId}-${fileName}`;
+        // Usamos la primer clase del array para agrupar el binario en Storage (solo organizativo)
+        const primaryClassId = classIds[0];
+        const blobName = `${primaryClassId}/${materialId}-${fileName}`;
 
         // ── 2. Subir archivo crudo al Blob Storage ─────────────────
         let blobUrl;
@@ -54,8 +56,22 @@ app.http('ingest-material', {
         // Responder inmediatamente con 202 (pipeline es asíncrono)
         const responsePayload = { materialId, status: 'processing' };
 
+        // Registrar instantáneamente en Storage para que get-classes no lo pierda si la query RAG tarda
+        const pendingState = {
+            materialId,
+            classIds,
+            subjectId,
+            type: materialType,
+            filename: fileName,
+            status: 'processing',
+            blobUrl,
+            chunkCount: 0,
+            processedAt: new Date().toISOString(),
+        };
+        await saveJson(CONTAINER_PROCESSED, `${materialId}.json`, pendingState);
+
         // ── 3. Pipeline asíncrono (no bloqueamos la respuesta HTTP) ─
-        runPipeline({ fileBuffer, fileContentType, fileName, classId, subjectId, materialType, materialId, blobUrl }, context)
+        runPipeline({ fileBuffer, fileContentType, fileName, classIds, subjectId, materialType, materialId, blobUrl }, context)
             .catch(err => context.error('Error en pipeline:', err));
 
         return {
@@ -67,7 +83,7 @@ app.http('ingest-material', {
 });
 
 // ─── Pipeline de procesamiento ───────────────────────────────────
-async function runPipeline({ fileBuffer, fileContentType, fileName, classId, subjectId, materialType, materialId, blobUrl }, context) {
+async function runPipeline({ fileBuffer, fileContentType, fileName, classIds, subjectId, materialType, materialId, blobUrl }, context) {
     // 3a. Extraer texto según tipo de archivo
     context.log(`Parseando archivo: ${fileName} (${fileContentType})`);
     const text = await parseFile(fileBuffer, fileContentType, fileName);
@@ -86,13 +102,13 @@ async function runPipeline({ fileBuffer, fileContentType, fileName, classId, sub
             values: embedding,
             metadata: {
                 subjectId,
-                classId,
+                classIds, // Ahora es un array
                 materialId,
                 materialType,
                 chunkIndex: i,
                 sourceFilename: fileName,
                 lectureDate: new Date().toISOString(),
-                text: chunks[i].slice(0, 500), // guardar extracto para mostrar en fuentes
+                text: chunks[i], // Pasar el texto COMPLETO para que el RAG LLM pueda leer todo el contexto
             },
         });
     }
@@ -104,7 +120,7 @@ async function runPipeline({ fileBuffer, fileContentType, fileName, classId, sub
     // 3e. Guardar estado del material en Storage
     const materialState = {
         materialId,
-        classId,
+        classIds,
         subjectId,
         type: materialType,
         filename: fileName,
@@ -121,31 +137,57 @@ async function runPipeline({ fileBuffer, fileContentType, fileName, classId, sub
 function parseMultipart(request) {
     return new Promise((resolve, reject) => {
         const contentType = request.headers.get('content-type') || '';
-        const bb = busboy({ headers: { 'content-type': contentType } });
+        // Límite de 15MB por archivo para evitar OOM (Memory DoS)
+        const MAX_FILE_SIZE = 15 * 1024 * 1024;
+
+        const bb = busboy({
+            headers: { 'content-type': contentType },
+            limits: {
+                fileSize: MAX_FILE_SIZE,
+                files: 1
+            }
+        });
 
         let fileBuffer = null;
         let fileContentType = '';
         let fileName = '';
         const fields = {};
+        let limitReached = false;
 
         bb.on('file', (fieldname, file, info) => {
             const { filename, mimeType } = info;
             fileName = filename;
             fileContentType = mimeType;
             const chunks = [];
+
             file.on('data', d => chunks.push(d));
-            file.on('end', () => { fileBuffer = Buffer.concat(chunks); });
+            file.on('limit', () => {
+                limitReached = true;
+                file.resume(); // Consumir el resto sin guardar
+            });
+            file.on('end', () => {
+                if (!limitReached) {
+                    fileBuffer = Buffer.concat(chunks);
+                }
+            });
         });
 
-        bb.on('field', (name, val) => { fields[name] = val; });
+        bb.on('field', (name, val) => {
+            if (name === 'classIds') {
+                fields[name] = fields[name] ? [...fields[name], val].flatMap(v => v.split(',')) : val.split(',');
+            } else {
+                fields[name] = val;
+            }
+        });
 
         bb.on('finish', () => {
+            if (limitReached) return reject(new Error(`El archivo excede el límite permitido de ${MAX_FILE_SIZE / (1024 * 1024)}MB`));
             if (!fileBuffer) return reject(new Error('No se recibió ningún archivo'));
             resolve({
                 fileBuffer,
                 fileContentType,
                 fileName,
-                classId: fields.classId,
+                classIds: fields.classIds || (fields.classId ? [fields.classId] : []),
                 subjectId: fields.subjectId,
                 materialType: fields.materialType,
             });
@@ -153,9 +195,10 @@ function parseMultipart(request) {
 
         bb.on('error', reject);
 
-        // En Azure Functions v4 (Node.js), request.body es a veces un Web ReadableStream o nulo si no se lee bien
-        // La forma más robusta es obtener un arrayBuffer real y pasarlo por un stream de Node
         request.arrayBuffer().then(buffer => {
+            if (buffer.byteLength > MAX_FILE_SIZE + (1024 * 100)) { // +100KB para campos extra
+                return reject(new Error('El tamaño de la petición excede el límite de seguridad.'));
+            }
             const pass = new PassThrough();
             pass.end(Buffer.from(buffer));
             pass.pipe(bb);

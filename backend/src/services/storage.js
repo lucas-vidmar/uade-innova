@@ -34,6 +34,10 @@ function getClient() {
 export async function uploadFile(containerName, blobName, buffer, contentType) {
     const client = getClient();
     const containerClient = client.getContainerClient(containerName);
+
+    // Aseguramos que el contenedor exista antes de guardar, especialmente `classes-config`
+    await containerClient.createIfNotExists();
+
     const blockBlobClient = containerClient.getBlockBlobClient(blobName);
 
     await blockBlobClient.uploadData(buffer, {
@@ -103,4 +107,14 @@ export async function listBlobs(containerName, prefix = '') {
         names.push(blob.name);
     }
     return names;
+}
+
+/**
+ * Elimina un blob del contenedor
+ */
+export async function deleteBlob(containerName, blobName) {
+    const client = getClient();
+    const containerClient = client.getContainerClient(containerName);
+    const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+    await blockBlobClient.deleteIfExists();
 }
