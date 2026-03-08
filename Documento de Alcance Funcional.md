@@ -203,3 +203,11 @@ El sistema requiere una integración profunda con el inquilino (tenant) de UADE 
 Dado que la arquitectura utiliza una base de datos vectorial gestionada externa (Pinecone), se requiere:
 
 * **Salida a Internet:** Permiso de salida (Outbound) desde la VNET/Subnet de Azure Functions y App Service hacia la API de **Pinecone** (puerto 443).
+
+## **8\. Estado del Desarrollo y Siguientes Pasos (Actualizado)**
+
+* **✔ Infraestructura Azure:** Desplegado mediante IaC (Bicep/azd). Endpoint de OpenAI `gpt-4o-mini` y `text-embedding-3-small` listos.
+* **✔ Base de Datos Vectorial:** Pinecone index creado y conectado (dimension: 1536, cosine).
+* **✔ Ingesta y RAG Backend:** Pipeline completo en Azure Functions probado y validado (extracción, chunking, embeddings, upsert, answer generation).
+* **✔ Frontend Integrado:** Dashboard React conectado al backend local (sin mocks).
+* **🚧 Despliegue en la Nube (Pendiente UADE):** A la espera de que UADE habilite la cuota de "Dynamic VMs" (Consumption Plan) para desplegar las Functions. Hasta entonces, el proyecto corre en **Modo Local (`func start` + `npm run dev`)**.

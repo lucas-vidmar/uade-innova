@@ -4,6 +4,7 @@
  */
 import { app } from '@azure/functions';
 import busboy from 'busboy';
+import { PassThrough } from 'stream';
 import { v4 as uuidv4 } from 'uuid';
 import { parseFile, chunkText } from '../services/parser.js';
 import { generateEmbedding } from '../services/openai.js';
@@ -152,12 +153,12 @@ function parseMultipart(request) {
 
         bb.on('error', reject);
 
-        // Pipe el body del request a busboy
-        request.body.pipeTo(
-            new WritableStream({
-                write(chunk) { bb.write(chunk); },
-                close() { bb.end(); },
-            })
-        );
+        // En Azure Functions v4 (Node.js), request.body es a veces un Web ReadableStream o nulo si no se lee bien
+        // La forma más robusta es obtener un arrayBuffer real y pasarlo por un stream de Node
+        request.arrayBuffer().then(buffer => {
+            const pass = new PassThrough();
+            pass.end(Buffer.from(buffer));
+            pass.pipe(bb);
+        }).catch(err => reject(new Error('No se pudo leer el cuerpo de la petición')));
     });
 }

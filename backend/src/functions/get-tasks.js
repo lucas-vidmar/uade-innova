@@ -92,12 +92,7 @@ app.http('get-tasks', {
         return {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                studentId,
-                tasks: sortedTasks,
-                // TODO: conectar a API del SGA real (sistema de gestión académica)
-                source: 'mock',
-            }),
+            body: JSON.stringify(sortedTasks),
         };
     },
 });

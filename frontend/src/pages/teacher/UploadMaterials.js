@@ -8,28 +8,28 @@ import { renderHeader } from '../../components/Header.js';
 import { toast } from '../../components/Toast.js';
 
 const MATERIAL_TABS = [
-    { type: 'transcript', icon: '📝', label: 'Transcripción' },
-    { type: 'presentation', icon: '📊', label: 'Presentación' },
-    { type: 'notes', icon: '📓', label: 'Apuntes' },
-    { type: 'bibliography', icon: '📚', label: 'Bibliografía' },
+  { type: 'transcript', icon: '📝', label: 'Transcripción' },
+  { type: 'presentation', icon: '📊', label: 'Presentación' },
+  { type: 'notes', icon: '📓', label: 'Apuntes' },
+  { type: 'bibliography', icon: '📚', label: 'Bibliografía' },
 ];
 
 export async function renderTeacherUpload(container) {
-    renderHeader('Cargar Materiales');
-    container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando clases...</div>`;
+  renderHeader('Cargar Materiales');
+  container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando clases...</div>`;
 
-    const user = auth.getUser();
-    const classes = await api.getClasses(user.subjectId);
+  const user = auth.getUser();
+  const classes = await api.getClasses(user.subjectId);
 
-    // Read ?class= from hash
-    const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
-    let selectedClassId = hashParams.get('class') || classes[0]?.id || '';
-    let activeTab = 'transcript';
+  // Read ?class= from hash
+  const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+  let selectedClassId = hashParams.get('class') || classes[0]?.id || '';
+  let activeTab = 'transcript';
 
-    const render = () => {
-        const selectedClass = classes.find(c => c.id === selectedClassId);
+  const render = () => {
+    const selectedClass = classes.find(c => c.id === selectedClassId);
 
-        container.innerHTML = `
+    container.innerHTML = `
       <!-- Class selector -->
       <div class="upload-header card" style="margin-bottom:var(--space-6)">
         <div class="upload-header-inner">
@@ -95,51 +95,72 @@ export async function renderTeacherUpload(container) {
       </div>
     `;
 
-        // Mount upload zone for active tab
-        mountUploadZone(selectedClass);
+    // Mount upload zone for active tab
+    mountUploadZone(selectedClass);
 
-        // Events
-        document.getElementById('class-selector')?.addEventListener('change', e => {
-            selectedClassId = e.target.value;
-            render();
-        });
+    // Events
+    document.getElementById('class-selector')?.addEventListener('change', e => {
+      selectedClassId = e.target.value;
+      render();
+    });
 
-        container.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                activeTab = btn.dataset.tab;
-                render();
-            });
-        });
+    container.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        activeTab = btn.dataset.tab;
+        render();
+      });
+    });
 
-        document.getElementById('approve-summary')?.addEventListener('click', () => {
-            toast('success', '¡Resumen aprobado!', 'El resumen está ahora visible para los alumnos.');
-        });
-        document.getElementById('edit-summary')?.addEventListener('click', () => {
-            toast('info', 'Edición', 'Editor de resumen — funcionalidad completa en la siguiente iteración.');
-        });
-        document.getElementById('reject-summary')?.addEventListener('click', () => {
-            toast('warning', 'Regenerando...', 'La IA generará un nuevo resumen en unos momentos.');
-        });
-    };
+    document.getElementById('approve-summary')?.addEventListener('click', () => {
+      toast('success', '¡Resumen aprobado!', 'El resumen está ahora visible para los alumnos.');
+    });
+    document.getElementById('edit-summary')?.addEventListener('click', () => {
+      toast('info', 'Edición', 'Editor de resumen — funcionalidad completa en la siguiente iteración.');
+    });
+    document.getElementById('reject-summary')?.addEventListener('click', () => {
+      toast('warning', 'Regenerando...', 'La IA generará un nuevo resumen en unos momentos.');
+    });
+  };
 
-    const mountUploadZone = (selectedClass) => {
-        const wrapper = document.getElementById('upload-zone-wrapper');
-        if (!wrapper) return;
-        const existingFiles = selectedClass?.materials.filter(m => m.type === activeTab) || [];
-        const uploader = createFileUpload({
-            type: activeTab,
-            existingFiles,
-            onUpload: (file) => {
-                // Update mock class
-                if (selectedClass) {
-                    const cls = classes.find(c => c.id === selectedClassId);
-                    if (cls) cls.materials.push({ ...file, status: 'ready', id: `m-new-${Date.now()}`, classId: selectedClassId });
-                }
-            },
-        });
-        wrapper.innerHTML = '';
-        wrapper.appendChild(uploader);
-    };
+  const mountUploadZone = (selectedClass) => {
+    const wrapper = document.getElementById('upload-zone-wrapper');
+    if (!wrapper) return;
+    const existingFiles = selectedClass?.materials.filter(m => m.type === activeTab) || [];
+    const uploader = createFileUpload({
+      type: activeTab,
+      existingFiles,
+      onUpload: async (fileObj, rawFile, updateProgress) => {
+        // Perform real API upload
+        const formData = new FormData();
+        formData.append('file', rawFile);
+        formData.append('classId', selectedClassId);
+        formData.append('subjectId', user.subjectId || 'arq-software-2026');
+        formData.append('materialType', activeTab);
 
-    render();
+        try {
+          const response = await api.ingestMaterial(formData);
+          updateProgress(100);
+
+          // Update frontend state
+          if (selectedClass) {
+            const cls = classes.find(c => c.id === selectedClassId);
+            if (cls) {
+              cls.materials.push({
+                ...fileObj,
+                status: 'ready',
+                id: response.materialId || `m-new-${Date.now()}`,
+                classId: selectedClassId
+              });
+            }
+          }
+        } catch (error) {
+          throw error; // Let FileUpload catch and show error toast
+        }
+      },
+    });
+    wrapper.innerHTML = '';
+    wrapper.appendChild(uploader);
+  };
+
+  render();
 }
