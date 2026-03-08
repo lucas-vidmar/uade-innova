@@ -2,7 +2,11 @@
    main.js — Client-side hash router + app shell
    ============================================================ */
 import { auth } from './services/auth.js';
+import { themeManager } from './services/theme.js';
 import { renderSidebar } from './components/Sidebar.js';
+
+// Init theme
+themeManager.init();
 
 /* ── Page registry ───────────────────────────────────────── */
 const ROUTES = {
@@ -11,6 +15,7 @@ const ROUTES = {
     '/student/tasks': () => import('./pages/student/Tasks.js').then(m => m.renderStudentTasks),
     '/student/calendar': () => import('./pages/student/Calendar.js').then(m => m.renderStudentCalendar),
     '/teacher/dashboard': () => import('./pages/teacher/Dashboard.js').then(m => m.renderTeacherDashboard),
+    '/teacher/classes': () => import('./pages/teacher/ClassManager.js').then(m => m.renderClassManager),
     '/teacher/upload': () => import('./pages/teacher/UploadMaterials.js').then(m => m.renderTeacherUpload),
     '/teacher/analytics': () => import('./pages/teacher/Analytics.js').then(m => m.renderTeacherAnalytics),
     '/director/dashboard': () => import('./pages/director/Dashboard.js').then(m => m.renderDirectorDashboard),

@@ -6,25 +6,36 @@ import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
 
 export async function renderStudentDashboard(container) {
-    renderHeader('Inicio');
-    container.innerHTML = `<div class="page-loading animate-pulse" style="padding:40px;text-align:center;color:var(--color-text-secondary)">Cargando dashboard...</div>`;
+  renderHeader('Inicio');
+  container.innerHTML = `<div class="page-loading animate-pulse" style="padding:40px;text-align:center;color:var(--color-text-secondary)">Cargando dashboard...</div>`;
 
-    const user = auth.getUser();
-    const [classes, tasks] = await Promise.all([
-        api.getClasses(user.subjectId),
-        api.getTasks(user.id),
-    ]);
+  const user = auth.getUser();
+  const activeSubjectId = auth.getActiveSubjectId();
+  if (!activeSubjectId) {
+    container.innerHTML = `<div class="empty-state">No hay materias vinculadas a tu cuenta.</div>`;
+    return;
+  }
 
-    const pendingTasks = tasks.filter(t => t.status === 'pending').slice(0, 3);
-    const completedTasks = tasks.filter(t => t.status === 'completed');
-    const avgGrade = completedTasks.reduce((a, t) => a + (t.grade || 0), 0) / (completedTasks.length || 1);
+  // Fetch mock classes and tasks
+  const [classes, tasks] = await Promise.all([
+    api.getClasses(activeSubjectId),
+    api.getTasks(user.id),
+  ]);
 
-    container.innerHTML = `
+  // Lógica para mockear las tareas a mano ya que nuestro backend todavía devuelve todas las materias del alumno
+  const subjectTasks = tasks.filter(t => t.subjectId === activeSubjectId);
+  const pendingTasks = subjectTasks.filter(t => t.status === 'pending').slice(0, 3);
+  const completedTasks = subjectTasks.filter(t => t.status === 'completed');
+  const avgGrade = completedTasks.reduce((a, t) => a + (t.grade || 0), 0) / (completedTasks.length || 1);
+
+  const activeSubjectName = user.subjects?.find(s => s.id === activeSubjectId)?.name || 'Materia Desconocida';
+
+  container.innerHTML = `
     <!-- Hero -->
     <div class="student-hero">
       <div>
         <h1 class="student-hero-title">¡Hola, <span class="gradient-text">${user.name.split(' ')[0]}</span>! 👋</h1>
-        <p class="student-hero-sub">Arquitecturas de Software · Cuatrimestre 2026-1</p>
+        <p class="student-hero-sub">${activeSubjectName}</p>
       </div>
       <div class="student-hero-stats">
         <div class="hero-stat">
@@ -70,10 +81,10 @@ export async function renderStudentDashboard(container) {
           <a href="#/student/tasks" class="btn btn-ghost btn-sm">Ver todas</a>
         </div>
         ${pendingTasks.length === 0 ? `<div class="empty-state" style="padding:32px"><span class="empty-state-icon">🎉</span><p>¡No tenés tareas pendientes!</p></div>` :
-            pendingTasks.map(t => {
-                const daysUntil = Math.ceil((new Date(t.dueDate) - new Date()) / 86400000);
-                const urgency = daysUntil <= 3 ? 'error' : daysUntil <= 7 ? 'warning' : 'success';
-                return `
+      pendingTasks.map(t => {
+        const daysUntil = Math.ceil((new Date(t.dueDate) - new Date()) / 86400000);
+        const urgency = daysUntil <= 3 ? 'error' : daysUntil <= 7 ? 'warning' : 'success';
+        return `
               <div class="task-item">
                 <div class="task-item-info">
                   <div class="task-item-title">${t.title}</div>
@@ -82,8 +93,8 @@ export async function renderStudentDashboard(container) {
                 <span class="badge badge-${urgency}">${daysUntil <= 0 ? '¡Hoy!' : `${daysUntil}d`}</span>
               </div>
             `;
-            }).join('')
-        }
+      }).join('')
+    }
       </div>
 
       <!-- Subject progress -->

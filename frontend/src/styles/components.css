@@ -24,12 +24,12 @@
 .btn-primary {
     background: var(--gradient-brand);
     color: #fff;
-    box-shadow: 0 2px 12px rgba(99, 102, 241, 0.4);
+    box-shadow: 0 2px 12px rgba(0, 64, 92, 0.4);
 }
 
 .btn-primary:hover {
     transform: translateY(-1px);
-    box-shadow: 0 4px 20px rgba(99, 102, 241, 0.6);
+    box-shadow: 0 4px 20px rgba(0, 64, 92, 0.6);
 }
 
 .btn-secondary {
@@ -98,7 +98,7 @@
 }
 
 .card:hover {
-    border-color: rgba(99, 102, 241, 0.3);
+    border-color: rgba(0, 64, 92, 0.3);
 }
 
 .card-header {
@@ -117,7 +117,7 @@
 
 .card-gradient {
     background: var(--gradient-card);
-    border-color: rgba(99, 102, 241, 0.2);
+    border-color: rgba(0, 64, 92, 0.2);
 }
 
 .kpi-card {
@@ -218,7 +218,7 @@
 }
 
 .badge-primary {
-    background: rgba(99, 102, 241, 0.15);
+    background: rgba(0, 64, 92, 0.15);
     color: var(--color-primary-light);
 }
 
@@ -528,9 +528,9 @@
 }
 
 .chip.selected {
-    background: rgba(99, 102, 241, 0.15);
+    background: rgba(0, 64, 92, 0.15);
     color: var(--color-primary-light);
-    border-color: rgba(99, 102, 241, 0.4);
+    border-color: rgba(0, 64, 92, 0.4);
 }
 
 .chip-close {

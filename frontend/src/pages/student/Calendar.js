@@ -9,23 +9,24 @@ const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 
 const DAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
 export async function renderStudentCalendar(container) {
-    renderHeader('Calendario');
-    container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando calendario...</div>`;
+  renderHeader('Calendario');
+  container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando calendario...</div>`;
 
-    const user = auth.getUser();
-    const classes = await api.getClasses(user.subjectId);
-    const classMap = {};
-    classes.forEach(c => { classMap[c.date] = c; });
+  const user = auth.getUser();
+  const activeSubjectId = auth.getActiveSubjectId();
+  const classes = await api.getClasses(activeSubjectId);
+  const classMap = {};
+  classes.forEach(c => { classMap[c.date] = c; });
 
-    let currentDate = new Date(2026, 2, 1); // March 2026
+  let currentDate = new Date(2026, 2, 1); // March 2026
 
-    const render = () => {
-        const year = currentDate.getFullYear();
-        const month = currentDate.getMonth();
-        const firstDay = new Date(year, month, 1).getDay();
-        const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const render = () => {
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-        container.innerHTML = `
+    container.innerHTML = `
       <div class="calendar-wrapper">
         <div class="calendar-header">
           <button class="btn btn-ghost btn-sm" id="cal-prev">← Anterior</button>
@@ -37,17 +38,17 @@ export async function renderStudentCalendar(container) {
           ${DAYS.map(d => `<div class="cal-day-header">${d}</div>`).join('')}
           ${Array(firstDay).fill(0).map(() => `<div class="cal-cell cal-empty"></div>`).join('')}
           ${Array.from({ length: daysInMonth }, (_, i) => {
-            const day = i + 1;
-            const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-            const cls = classMap[dateStr];
-            const isToday = dateStr === new Date().toISOString().split('T')[0];
-            return `
+      const day = i + 1;
+      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const cls = classMap[dateStr];
+      const isToday = dateStr === new Date().toISOString().split('T')[0];
+      return `
               <div class="cal-cell ${cls ? 'has-class' : ''} ${isToday ? 'today' : ''}" data-date="${dateStr}" data-has-class="${!!cls}">
                 <span class="cal-day-num">${day}</span>
                 ${cls ? `<span class="cal-class-dot" title="${cls.title}"></span>` : ''}
               </div>
             `;
-        }).join('')}
+    }).join('')}
         </div>
 
         <div class="calendar-legend">
@@ -57,25 +58,25 @@ export async function renderStudentCalendar(container) {
       </div>
     `;
 
-        document.getElementById('cal-prev')?.addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() - 1); render(); });
-        document.getElementById('cal-next')?.addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() + 1); render(); });
+    document.getElementById('cal-prev')?.addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() - 1); render(); });
+    document.getElementById('cal-next')?.addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() + 1); render(); });
 
-        container.querySelectorAll('.cal-cell[data-has-class="true"]').forEach(cell => {
-            cell.addEventListener('click', () => showClassDetail(classMap[cell.dataset.date]));
-        });
-    };
+    container.querySelectorAll('.cal-cell[data-has-class="true"]').forEach(cell => {
+      cell.addEventListener('click', () => showClassDetail(classMap[cell.dataset.date]));
+    });
+  };
 
-    const showClassDetail = (cls) => {
-        const existingOverlay = document.getElementById('class-detail-overlay');
-        if (existingOverlay) existingOverlay.remove();
+  const showClassDetail = (cls) => {
+    const existingOverlay = document.getElementById('class-detail-overlay');
+    if (existingOverlay) existingOverlay.remove();
 
-        const overlay = document.createElement('div');
-        overlay.className = 'slide-panel-overlay';
-        overlay.id = 'class-detail-overlay';
+    const overlay = document.createElement('div');
+    overlay.className = 'slide-panel-overlay';
+    overlay.id = 'class-detail-overlay';
 
-        const panel = document.createElement('div');
-        panel.className = 'slide-panel';
-        panel.innerHTML = `
+    const panel = document.createElement('div');
+    panel.className = 'slide-panel';
+    panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:var(--space-6)">
         <div>
           <span class="badge badge-primary" style="margin-bottom:var(--space-2)">📅 ${new Date(cls.date + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
@@ -109,12 +110,12 @@ export async function renderStudentCalendar(container) {
       </div>
     `;
 
-        overlay.appendChild(panel);
-        document.body.appendChild(overlay);
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
 
-        document.getElementById('close-panel')?.addEventListener('click', () => overlay.remove());
-        overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-    };
+    document.getElementById('close-panel')?.addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  };
 
-    render();
+  render();
 }

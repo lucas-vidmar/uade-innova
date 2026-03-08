@@ -6,14 +6,20 @@ import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
 
 export async function renderTeacherAnalytics(container) {
-    renderHeader('Analítica Pedagógica');
-    container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando analítica...</div>`;
+  renderHeader('Analítica Pedagógica');
+  container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando analítica...</div>`;
 
-    const user = auth.getUser();
-    const data = await api.getTeacherAnalytics(user.subjectId);
-    const maxCount = Math.max(...data.topQuestions.map(q => q.count));
+  const user = auth.getUser();
+  const activeSubjectId = auth.getActiveSubjectId();
+  if (!activeSubjectId) {
+    container.innerHTML = `<div class="empty-state">No hay materias vinculadas a tu cuenta.</div>`;
+    return;
+  }
 
-    container.innerHTML = `
+  const data = await api.getTeacherAnalytics(activeSubjectId);
+  const maxCount = Math.max(...data.topQuestions.map(q => q.count));
+
+  container.innerHTML = `
     <div class="grid-2" style="margin-bottom:var(--space-8)">
       <!-- Top Questions -->
       <div class="card">
@@ -23,10 +29,10 @@ export async function renderTeacherAnalytics(container) {
         </div>
         <div class="word-cloud">
           ${data.topQuestions.map(q => {
-        const size = 11 + Math.round((q.count / maxCount) * 14);
-        const opacity = 0.5 + (q.count / maxCount) * 0.5;
-        return `<span class="word-cloud-word" style="font-size:${size}px;opacity:${opacity}">${q.text}</span>`;
-    }).join('')}
+    const size = 11 + Math.round((q.count / maxCount) * 14);
+    const opacity = 0.5 + (q.count / maxCount) * 0.5;
+    return `<span class="word-cloud-word" style="font-size:${size}px;opacity:${opacity}">${q.text}</span>`;
+  }).join('')}
         </div>
       </div>
 
@@ -38,8 +44,8 @@ export async function renderTeacherAnalytics(container) {
         </div>
         <div style="display:flex;flex-direction:column;gap:var(--space-4)">
           ${data.frictionTopics.map((t, i) => {
-        const pct = Math.round((t.unresolved / t.queries) * 100);
-        return `
+    const pct = Math.round((t.unresolved / t.queries) * 100);
+    return `
               <div class="friction-item">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-2)">
                   <span style="font-size:var(--font-size-sm);font-weight:600">${i + 1}. ${t.topic}</span>
@@ -51,7 +57,7 @@ export async function renderTeacherAnalytics(container) {
                 <div style="font-size:var(--font-size-xs);color:var(--color-text-muted);margin-top:4px">${t.queries} consultas · ${t.unresolved} sin respuesta satisfactoria</div>
               </div>
             `;
-    }).join('')}
+  }).join('')}
         </div>
       </div>
     </div>

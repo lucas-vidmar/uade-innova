@@ -11,9 +11,10 @@ export async function renderStudentChat(container) {
     container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando clases...</div>`;
 
     const user = auth.getUser();
-    const classes = await api.getClasses(user.subjectId);
+    const activeSubjectId = auth.getActiveSubjectId();
+    const classes = await api.getClasses(activeSubjectId);
 
     container.innerHTML = '';
-    const widget = createChatWidget({ classes, subjectId: user.subjectId });
+    const widget = createChatWidget({ classes, subjectId: activeSubjectId });
     container.appendChild(widget);
 }

@@ -5,16 +5,16 @@ import { api } from '../services/api.js';
 import { auth } from '../services/auth.js';
 
 export function createChatWidget({ classes = [], subjectId = '' }) {
-    const user = auth.getUser();
-    let selectedClassIds = classes.slice(0, 2).map(c => c.id);
-    let messages = [];
-    let isLoading = false;
+  const user = auth.getUser();
+  let selectedClassIds = classes.slice(0, 2).map(c => c.id);
+  let messages = [];
+  let isLoading = false;
 
-    const container = document.createElement('div');
-    container.className = 'chat-container';
+  const container = document.createElement('div');
+  container.className = 'chat-container';
 
-    const render = () => {
-        container.innerHTML = `
+  const render = () => {
+    container.innerHTML = `
       <!-- Class selector -->
       <div class="chat-filter-bar">
         <div class="chat-filter-label">
@@ -62,11 +62,11 @@ export function createChatWidget({ classes = [], subjectId = '' }) {
         <div class="chat-footer-hint">Respuestas basadas exclusivamente en los materiales de clase indexados · <strong>Modo RAG</strong></div>
       </div>
     `;
-        bindChatEvents();
-        scrollToBottom();
-    };
+    bindChatEvents();
+    scrollToBottom();
+  };
 
-    const renderWelcome = () => `
+  const renderWelcome = () => `
     <div class="chat-welcome">
       <div class="chat-welcome-icon">🤖</div>
       <h3 class="chat-welcome-title">Hola, ${user.name.split(' ')[0]}!</h3>
@@ -79,16 +79,16 @@ export function createChatWidget({ classes = [], subjectId = '' }) {
     </div>
   `;
 
-    const renderMessage = (msg) => {
-        if (msg.role === 'user') {
-            return `
+  const renderMessage = (msg) => {
+    if (msg.role === 'user') {
+      return `
         <div class="chat-msg chat-msg-user animate-fade">
           <div class="chat-bubble chat-bubble-user">${escapeHtml(msg.content)}</div>
           <div class="avatar" style="width:30px;height:30px;font-size:11px;flex-shrink:0">${user.avatar}</div>
         </div>
       `;
-        }
-        return `
+    }
+    return `
       <div class="chat-msg chat-msg-assistant animate-fade">
         <div class="chat-avatar-bot">🤖</div>
         <div class="chat-msg-body">
@@ -107,9 +107,9 @@ export function createChatWidget({ classes = [], subjectId = '' }) {
         </div>
       </div>
     `;
-    };
+  };
 
-    const renderTyping = () => `
+  const renderTyping = () => `
     <div class="chat-msg chat-msg-assistant" id="typing-indicator">
       <div class="chat-avatar-bot">🤖</div>
       <div class="chat-bubble chat-bubble-assistant">
@@ -120,85 +120,96 @@ export function createChatWidget({ classes = [], subjectId = '' }) {
     </div>
   `;
 
-    const bindChatEvents = () => {
-        // Class chip toggle
-        container.querySelectorAll('.chip[data-class-id]').forEach(chip => {
-            chip.addEventListener('click', () => {
-                const id = chip.dataset.classId;
-                if (selectedClassIds.includes(id)) {
-                    selectedClassIds = selectedClassIds.filter(c => c !== id);
-                } else {
-                    selectedClassIds.push(id);
-                }
-                render();
-            });
-        });
-
-        // Suggestion chips
-        container.querySelectorAll('.suggestion-chip').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const input = container.querySelector('#chat-input');
-                if (input) { input.value = btn.dataset.suggestion; sendMessage(); }
-            });
-        });
-
-        // Send
-        const sendBtn = container.querySelector('#chat-send');
-        const input = container.querySelector('#chat-input');
-        sendBtn?.addEventListener('click', sendMessage);
-        input?.addEventListener('keydown', e => {
-            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-        });
-    };
-
-    const sendMessage = async () => {
-        const input = container.querySelector('#chat-input');
-        const question = input?.value?.trim();
-        if (!question || isLoading || selectedClassIds.length === 0) return;
-
-        messages.push({ role: 'user', content: question });
-        isLoading = true;
-        render();
-
-        // Show typing
-        const messagesEl = container.querySelector('#chat-messages');
-        if (messagesEl) messagesEl.insertAdjacentHTML('beforeend', renderTyping());
-        scrollToBottom();
-
-        try {
-            const result = await api.ragQuery({ question, classIds: selectedClassIds, subjectId });
-            messages.push({ role: 'assistant', content: result.answer, sources: result.sources });
-        } catch {
-            messages.push({ role: 'assistant', content: 'Ocurrió un error al procesar tu consulta. Por favor intentá nuevamente.', sources: [] });
+  const bindChatEvents = () => {
+    // Class chip toggle
+    container.querySelectorAll('.chip[data-class-id]').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const id = chip.dataset.classId;
+        if (selectedClassIds.includes(id)) {
+          selectedClassIds = selectedClassIds.filter(c => c !== id);
+        } else {
+          selectedClassIds.push(id);
         }
-
-        isLoading = false;
         render();
-    };
+      });
+    });
 
-    const scrollToBottom = () => {
-        requestAnimationFrame(() => {
-            const el = container.querySelector('#chat-messages');
-            if (el) el.scrollTop = el.scrollHeight;
-        });
-    };
+    // Suggestion chips
+    container.querySelectorAll('.suggestion-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const input = container.querySelector('#chat-input');
+        if (input) { input.value = btn.dataset.suggestion; sendMessage(); }
+      });
+    });
 
-    const escapeHtml = (str) => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    // Send
+    const sendBtn = container.querySelector('#chat-send');
+    const input = container.querySelector('#chat-input');
+    sendBtn?.addEventListener('click', sendMessage);
+    input?.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    });
+  };
 
-    const renderMarkdown = (text) => {
-        return text
-            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-            .replace(/\*(.+?)\*/g, '<em>$1</em>')
-            .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
-            .replace(/`(.+?)`/g, '<code>$1</code>')
-            .replace(/^#{1,3} (.+)$/gm, '<h4>$1</h4>')
-            .replace(/^- (.+)$/gm, '<li>$1</li>')
-            .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
-            .replace(/\n{2,}/g, '</p><p>')
-            .replace(/^(?!<[hup])(.+)$/gm, '<p>$1</p>')
-            .replace(/<p><\/p>/g, '');
-    };
+  const sendMessage = async () => {
+    const input = container.querySelector('#chat-input');
+    const question = input?.value?.trim();
+    if (!question || isLoading || selectedClassIds.length === 0) return;
 
+    messages.push({ role: 'user', content: question });
+    isLoading = true;
     render();
-    return container;
+
+    // Show typing
+    const messagesEl = container.querySelector('#chat-messages');
+    if (messagesEl) messagesEl.insertAdjacentHTML('beforeend', renderTyping());
+    scrollToBottom();
+
+    try {
+      const result = await api.ragQuery({ question, classIds: selectedClassIds, subjectId });
+
+      // Deduplicate sources by filename to prevent 5 identical chips
+      const uniqueSources = [];
+      const seen = new Set();
+      for (const s of (result.sources || [])) {
+        if (s.sourceFilename && !seen.has(s.sourceFilename)) {
+          seen.add(s.sourceFilename);
+          uniqueSources.push(s);
+        }
+      }
+
+      messages.push({ role: 'assistant', content: result.answer, sources: uniqueSources });
+    } catch {
+      messages.push({ role: 'assistant', content: 'Ocurrió un error al procesar tu consulta. Por favor intentá nuevamente.', sources: [] });
+    }
+
+    isLoading = false;
+    render();
+  };
+
+  const scrollToBottom = () => {
+    requestAnimationFrame(() => {
+      const el = container.querySelector('#chat-messages');
+      if (el) el.scrollTop = el.scrollHeight;
+    });
+  };
+
+  const escapeHtml = (str) => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  const renderMarkdown = (text) => {
+    return text
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+      .replace(/`(.+?)`/g, '<code>$1</code>')
+      .replace(/^#{1,3} (.+)$/gm, '<h4>$1</h4>')
+      .replace(/^- (.+)$/gm, '<li>$1</li>')
+      .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
+      .replace(/\n{2,}/g, '</p><p>')
+      .replace(/^(?!<[hup])(.+)$/gm, '<p>$1</p>')
+      .replace(/<p><\/p>/g, '');
+  };
+
+  render();
+  return container;
 }

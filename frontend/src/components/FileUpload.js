@@ -85,10 +85,25 @@ export function createFileUpload({ type = 'transcript', onUpload, existingFiles 
     fileInput?.addEventListener('change', () => handleFiles(fileInput.files));
 
     container.querySelectorAll('.file-remove').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const idx = parseInt(btn.dataset.index);
-        files.splice(idx, 1);
-        render();
+        const fileObj = files[idx];
+
+        if (fileObj._new) {
+          files.splice(idx, 1);
+          render();
+        } else {
+          if (confirm(`¿Eliminar definitivamente el material "${fileObj.filename}"?`)) {
+            try {
+              await api.deleteMaterial(fileObj.id);
+              files.splice(idx, 1);
+              render();
+              toast('success', 'Eliminado', 'El material fue borrado correctamente.');
+            } catch (e) {
+              toast('error', 'Error', 'No se pudo eliminar el archivo.');
+            }
+          }
+        }
       });
     });
   };
@@ -132,10 +147,10 @@ export function createFileUpload({ type = 'transcript', onUpload, existingFiles 
         });
 
         clearInterval(interval);
-        fileObj.status = 'ready';
+        fileObj.status = 'processing';
         fileObj._progress = 100;
         render();
-        toast('success', 'Archivo listo', `"${file.name}" fue procesado e indexado correctamente en Pinecone.`);
+        toast('info', 'Procesando archivo', `"${file.name}" se subió y está siendo analizado por la IA en segundo plano.`);
       } catch (error) {
         clearInterval(interval);
         fileObj.status = 'error';

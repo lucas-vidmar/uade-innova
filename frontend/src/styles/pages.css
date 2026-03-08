@@ -118,7 +118,7 @@
 }
 
 .sidebar-item.active {
-    background: rgba(99, 102, 241, 0.15);
+    background: rgba(0, 64, 92, 0.15);
     color: var(--color-primary-light);
     font-weight: 600;
 }
@@ -169,7 +169,7 @@
 }
 
 .role-btn.active {
-    background: rgba(99, 102, 241, 0.15);
+    background: rgba(0, 64, 92, 0.15);
     border-color: var(--color-primary);
 }
 
@@ -201,7 +201,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 0 var(--space-8);
-    background: rgba(13, 15, 26, 0.85);
+    background: var(--header-bg);
     backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--color-border);
     z-index: 400;
@@ -234,9 +234,9 @@
     font-weight: 600;
     padding: 4px var(--space-3);
     border-radius: var(--radius-full);
-    background: rgba(99, 102, 241, 0.12);
+    background: rgba(0, 64, 92, 0.12);
     color: var(--color-primary-light);
-    border: 1px solid rgba(99, 102, 241, 0.25);
+    border: 1px solid rgba(0, 64, 92, 0.25);
 }
 
 /* ── Student Dashboard ───────────────────────────────────── */
@@ -455,12 +455,12 @@
 }
 
 .cal-cell.has-class:hover {
-    background: rgba(99, 102, 241, 0.1);
+    background: rgba(0, 64, 92, 0.1);
     border-color: var(--color-primary);
 }
 
 .cal-cell.today {
-    background: rgba(99, 102, 241, 0.12);
+    background: rgba(0, 64, 92, 0.12);
     border-color: var(--color-primary);
 }
 
@@ -496,7 +496,7 @@
 }
 
 .today-legend {
-    background: rgba(99, 102, 241, 0.12);
+    background: rgba(0, 64, 92, 0.12);
     border: 1px solid var(--color-primary);
     border-radius: var(--radius-sm);
     padding: 2px 6px;
@@ -522,7 +522,7 @@
 }
 
 .class-list-item:hover {
-    border-color: rgba(99, 102, 241, 0.3);
+    border-color: rgba(0, 64, 92, 0.3);
 }
 
 .class-list-date {
@@ -604,7 +604,7 @@
 .file-drop-zone:hover,
 .file-drop-zone.drag-over {
     border-color: var(--color-primary);
-    background: rgba(99, 102, 241, 0.05);
+    background: rgba(0, 64, 92, 0.05);
 }
 
 .file-drop-zone.drag-over {
