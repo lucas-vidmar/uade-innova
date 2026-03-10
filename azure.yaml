@@ -18,8 +18,7 @@ services:
     language: js
     host: staticwebapp         # Azure Static Web Apps — sin VM quota, CDN global
 
-  # backend: (pendiente — crear ./backend antes de habilitar)
-  # backend:
-  #   project: ./backend
-  #   language: js
-  #   host: function
+  backend:
+    project: ./backend
+    language: js
+    host: function
