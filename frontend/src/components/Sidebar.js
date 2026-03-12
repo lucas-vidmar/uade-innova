@@ -35,9 +35,9 @@ export function renderSidebar() {
   sidebar.id = 'sidebar';
   sidebar.innerHTML = `
     <div class="sidebar-logo">
-      <div class="sidebar-logo-icon">🎓</div>
+      <div class="sidebar-logo-icon" aria-hidden="true">🎓</div>
       <span class="sidebar-logo-text">UADE Innova</span>
-      <button class="sidebar-toggle" id="sidebar-toggle-btn" title="Colapsar">
+      <button class="sidebar-toggle" id="sidebar-toggle-btn" title="Colapsar" aria-label="Contraer barra lateral" aria-expanded="true">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
       </button>
     </div>
@@ -45,7 +45,7 @@ export function renderSidebar() {
     <nav class="sidebar-nav">
       ${items.map(item => `
         <a href="${item.path}" class="sidebar-item ${currentHash === item.path ? 'active' : ''}" id="nav-${item.id}">
-          <span class="sidebar-item-icon">${item.icon}</span>
+          <span class="sidebar-item-icon" aria-hidden="true">${item.icon}</span>
           <span class="sidebar-item-label">${item.label}</span>
         </a>
       `).join('')}
@@ -54,9 +54,9 @@ export function renderSidebar() {
     <div class="sidebar-footer">
       <div class="sidebar-section-label">Cambiar rol</div>
       <div class="role-switcher">
-        <button class="role-btn ${user.role === 'student' ? 'active' : ''}" data-role="student">👨‍🎓</button>
-        <button class="role-btn ${user.role === 'teacher' ? 'active' : ''}" data-role="teacher">👨‍🏫</button>
-        <button class="role-btn ${user.role === 'director' ? 'active' : ''}" data-role="director">👔</button>
+        <button class="role-btn ${user.role === 'student' ? 'active' : ''}" data-role="student" aria-label="Cambiar a vista Alumno">👨‍🎓</button>
+        <button class="role-btn ${user.role === 'teacher' ? 'active' : ''}" data-role="teacher" aria-label="Cambiar a vista Docente">👨‍🏫</button>
+        <button class="role-btn ${user.role === 'director' ? 'active' : ''}" data-role="director" aria-label="Cambiar a vista Director">👔</button>
       </div>
       <div class="sidebar-user">
         <div class="avatar" style="width:32px;height:32px;font-size:12px">${user.avatar}</div>
@@ -99,11 +99,14 @@ export function renderSidebar() {
 
 function toggleMini(sidebar, mini) {
   const mainContent = document.querySelector('.main-content');
+  const toggleBtn = document.getElementById('sidebar-toggle-btn');
   if (mini) {
     sidebar.classList.add('mini');
     mainContent?.classList.add('sidebar-mini');
+    if (toggleBtn) toggleBtn.setAttribute('aria-expanded', 'false');
   } else {
     sidebar.classList.remove('mini');
     mainContent?.classList.remove('sidebar-mini');
+    if (toggleBtn) toggleBtn.setAttribute('aria-expanded', 'true');
   }
 }

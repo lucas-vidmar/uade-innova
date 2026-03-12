@@ -3,6 +3,7 @@
  * Gestiona archivos de clase y estado del pipeline.
  */
 import { BlobServiceClient } from '@azure/storage-blob';
+import { DefaultAzureCredential } from '@azure/identity';
 
 let _client = null;
 
@@ -16,7 +17,8 @@ function getClient() {
             // Fallback: construir desde account name + DefaultAzureCredential (producción)
             const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
             _client = new BlobServiceClient(
-                `https://${accountName}.blob.core.windows.net`
+                `https://${accountName}.blob.core.windows.net`,
+                new DefaultAzureCredential()
             );
         }
     }

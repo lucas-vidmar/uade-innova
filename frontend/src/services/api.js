@@ -4,7 +4,7 @@
    ============================================================ */
 
 const USE_MOCK = false;
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+const BASE_URL = 'https://func-dashboard-ingest-q47bia47kk3na.azurewebsites.net/api';
 
 /* ── Mock Data ───────────────────────────────────────────── */
 const MOCK_CLASSES = [

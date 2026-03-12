@@ -3,16 +3,33 @@
  * Usa API Key para desarrollo local; en producción usará Managed Identity.
  */
 import { AzureOpenAI } from 'openai';
+import { DefaultAzureCredential, getBearerTokenProvider } from '@azure/identity';
 
 let _client = null;
 
 function getClient() {
     if (!_client) {
-        _client = new AzureOpenAI({
-            endpoint: process.env.AZURE_OPENAI_ENDPOINT,
-            apiKey: process.env.AZURE_OPENAI_API_KEY,
-            apiVersion: '2024-08-01-preview',
-        });
+        const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
+        const apiKey = process.env.AZURE_OPENAI_API_KEY;
+
+        if (apiKey && !apiKey.startsWith('FILL_WITH')) {
+            _client = new AzureOpenAI({
+                endpoint,
+                apiKey,
+                apiVersion: '2024-08-01-preview',
+            });
+        } else {
+            // Producción: Usar Managed Identity
+            const credential = new DefaultAzureCredential();
+            const scope = 'https://cognitiveservices.azure.com/.default';
+            const azureADTokenProvider = getBearerTokenProvider(credential, scope);
+
+            _client = new AzureOpenAI({
+                endpoint,
+                azureADTokenProvider,
+                apiVersion: '2024-08-01-preview',
+            });
+        }
     }
     return _client;
 }

@@ -3,7 +3,7 @@
     "version": "1.0.0",
     "type": "module",
     "description": "Azure Functions backend — RAG pipeline para el Dashboard Educativo UADE",
-    "main": "src/functions/*.js",
+    "main": "index.js",
     "scripts": {
         "start": "func start",
         "build": "echo 'No build step needed for JS'",

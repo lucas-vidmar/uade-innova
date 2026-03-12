@@ -1,6 +1,7 @@
 /* ============================================================
    main.js — Client-side hash router + app shell
    ============================================================ */
+import './diagnostic.js';
 import { auth } from './services/auth.js';
 import { themeManager } from './services/theme.js';
 import { renderSidebar } from './components/Sidebar.js';
@@ -69,7 +70,7 @@ async function handleRoute() {
             await renderFn(pageContent);
         } catch (err) {
             console.error('[Router] Page render error:', err);
-            pageContent.innerHTML = `<div class="card" style="max-width:480px;margin:var(--space-10) auto;text-align:center"><div class="empty-state-icon">⚠️</div><h3>Error al cargar la página</h3><p style="color:var(--color-text-secondary)">${err.message}</p><button class="btn btn-secondary" onclick="window.location.reload()">Reintentar</button></div>`;
+            pageContent.innerHTML = `<div class="card" style="max-width:480px;margin:var(--space-10) auto;text-align:center"><div class="empty-state-icon" aria-hidden="true">⚠️</div><h2 class="h3">Error al cargar la página</h2><p style="color:var(--color-text-secondary)">${err.message}</p><button class="btn btn-secondary" onclick="window.location.reload()" aria-label="Reintentar cargar la página">Reintentar</button></div>`;
         }
     } else {
         // Default redirect based on role

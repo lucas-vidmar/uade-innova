@@ -34,6 +34,12 @@ param classMaterialsStorageAccount string
 @description('Key Vault URI.')
 param keyVaultUri string
 
+@description('Resource ID of the Azure OpenAI account.')
+param openAiId string
+
+@description('Resource ID of the Storage account.')
+param storageAccountId string
+
 @description('Tags to apply to resources.')
 param tags object = {}
 
@@ -78,7 +84,7 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         // Runtime essentials
         {
           name: 'AzureWebJobsStorage'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};EndpointSuffix=${environment().suffixes.storage}'
+          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${listKeys(storageAccountId, '2023-01-01').keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
         }
         {
           name: 'FUNCTIONS_EXTENSION_VERSION'
@@ -91,6 +97,14 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         {
           name: 'WEBSITE_NODE_DEFAULT_VERSION'
           value: '~20'
+        }
+        {
+          name: 'AzureWebJobsFeatureFlags'
+          value: 'EnableWorkerIndexing'
+        }
+        {
+          name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
+          value: 'true'
         }
         // Observability
         {
@@ -109,6 +123,14 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         {
           name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT'
           value: openAiEmbeddingDeployment
+        }
+        {
+          name: 'AZURE_OPENAI_API_KEY'
+          value: listKeys(openAiId, '2023-05-01').key1
+        }
+        {
+          name: 'AZURE_STORAGE_CONNECTION_STRING'
+          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${listKeys(storageAccountId, '2023-01-01').keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
         }
         // Storage
         {

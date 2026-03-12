@@ -140,6 +140,8 @@ module functions './modules/functions.bicep' = {
     openAiEmbeddingDeployment: openAi.outputs.embeddingDeploymentName
     classMaterialsStorageAccount: safeStorageName
     keyVaultUri: keyVault.outputs.keyVaultUri
+    openAiId: openAi.outputs.id
+    storageAccountId: storage.outputs.accountId
     tags: tags
   }
 }

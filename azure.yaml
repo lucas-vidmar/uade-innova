@@ -14,9 +14,18 @@ infra:
 # Application services
 services:
   frontend:
-    project: ./frontend
+    project: ./frontend/dist
     language: js
     host: staticwebapp         # Azure Static Web Apps — sin VM quota, CDN global
+    hooks:
+      prepackage:
+        # Generate .env for Vite build based on azd environment variables
+        shell: sh
+        run: |
+          echo "VITE_API_BASE_URL=$AZURE_FUNCTION_APP_URI/api" > .env
+          echo "VITE_AZURE_OPENAI_ENDPOINT=$AZURE_OPENAI_ENDPOINT" >> .env
+          echo "VITE_AZURE_OPENAI_CHAT_DEPLOYMENT=$AZURE_OPENAI_CHAT_DEPLOYMENT" >> .env
+          echo "VITE_AZURE_OPENAI_EMBEDDING_DEPLOYMENT=$AZURE_OPENAI_EMBEDDING_DEPLOYMENT" >> .env
 
   backend:
     project: ./backend

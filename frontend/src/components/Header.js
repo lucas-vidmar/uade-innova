@@ -21,7 +21,7 @@ export function renderHeader(title = 'Dashboard') {
       <button class="btn btn-icon btn-ghost" id="mobile-menu-btn" title="Menú" style="display:none">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
       </button>
-      <div class="header-title">${title}</div>
+      <h1 class="header-title" id="page-main-title">${title}</h1>
       ${!isDirector && user.subjects && user.subjects.length > 0 ? `
         <div style="margin-left:var(--space-4); border-left:1px solid var(--color-border); padding-left:var(--space-4);">
             <select id="header-subject-select" class="form-select form-select-sm" style="background:var(--color-bg-secondary); border-color:var(--color-border); max-width:250px;">
@@ -38,7 +38,7 @@ export function renderHeader(title = 'Dashboard') {
     }
       </button>
       <div class="header-badge">${{ student: '👨‍🎓 Alumno', teacher: '👨‍🏫 Docente', director: '👔 Director' }[user.role]}</div>
-      <button class="btn btn-icon btn-ghost" title="Notificaciones">
+      <button class="btn btn-icon btn-ghost" title="Notificaciones" aria-label="Notificaciones">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
       </button>
       <div class="avatar">${user.avatar}</div>

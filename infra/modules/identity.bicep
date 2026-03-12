@@ -7,9 +7,6 @@
 @description('Principal ID of the Azure Functions Managed Identity.')
 param functionAppPrincipalId string
 
-@description('Principal ID of the App Service Managed Identity.')
-param appServicePrincipalId string
-
 @description('Resource ID of the Azure OpenAI account.')
 param openAiAccountId string
 
@@ -42,21 +39,6 @@ resource funcOpenAiRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   }
 }
 
-// ─── App Service: Cognitive Services OpenAI User ───────────────
-resource appOpenAiRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(openAiAccountId, appServicePrincipalId, cognitiveServicesOpenAiUserRoleId)
-  scope: resourceGroup()
-  properties: {
-    roleDefinitionId: subscriptionResourceId(
-      'Microsoft.Authorization/roleDefinitions',
-      cognitiveServicesOpenAiUserRoleId
-    )
-    principalId: appServicePrincipalId
-    principalType: 'ServicePrincipal'
-    description: 'Allows App Service to call Azure OpenAI via Managed Identity'
-  }
-}
-
 // ─── Function App: Storage Blob Data Contributor ───────────────
 resource funcStorageRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(storageAccountId, functionAppPrincipalId, storageBlobDataContributorRoleId)
@@ -84,14 +66,3 @@ resource funcKeyVaultRole 'Microsoft.Authorization/roleAssignments@2022-04-01' =
   }
 }
 
-// ─── App Service: Key Vault Secrets User ───────────────────────
-resource appKeyVaultRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(keyVaultId, appServicePrincipalId, keyVaultSecretsUserRoleId)
-  scope: resourceGroup()
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', keyVaultSecretsUserRoleId)
-    principalId: appServicePrincipalId
-    principalType: 'ServicePrincipal'
-    description: 'Allows App Service to read Pinecone API Key from Key Vault'
-  }
-}
