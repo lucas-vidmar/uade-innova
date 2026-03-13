@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-13] User Story #30 & #34: Token-based Chunking & VTT Cleaning
+- **Status**: Completed
+- **Functional Change**: Switched to `js-tiktoken` for exact token-based splitting and added automated WebVTT metadata stripping.
+- **Business Impact**: Optimized context window usage for LLM queries and improved answer quality by removing non-educational technical noise from transcripts.
+
 ### [2026-03-13] User Story #28: Triggered Ingestion
 - **Status**: Completed
 - **Functional Change**: Refactored the ingestion pipeline to use an Azure Blob Trigger for automated, asynchronous processing.
