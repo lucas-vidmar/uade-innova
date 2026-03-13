@@ -161,8 +161,8 @@ async function runPipeline({ fileBuffer, fileContentType, fileName, classIds, su
 function parseMultipart(request) {
     return new Promise((resolve, reject) => {
         const contentType = request.headers.get('content-type') || '';
-        // Límite de 15MB por archivo para evitar OOM (Memory DoS)
-        const MAX_FILE_SIZE = 15 * 1024 * 1024;
+        // Límite de 25MB por archivo para cumplir con requerimientos de la historia de usuario
+        const MAX_FILE_SIZE = 25 * 1024 * 1024;
 
         const bb = busboy({
             headers: { 'content-type': contentType },

@@ -163,12 +163,21 @@ export async function renderTeacherUpload(container) {
           selectedClassIds.forEach(cid => {
             const cls = classes.find(c => c.id === cid);
             if (cls) {
-              cls.materials.push({
+              // Ensure we don't add duplicate material if it's already there
+              const existingIdx = cls.materials.findIndex(m => m.id === response.materialId);
+              const materialData = {
                 ...fileObj,
                 status: 'ready',
                 id: response.materialId || `m-new-${Date.now()}`,
-                classIds: selectedClassIds
-              });
+                classIds: [...selectedClassIds],
+                uploadedAt: new Date().toISOString()
+              };
+              
+              if (existingIdx >= 0) {
+                cls.materials[existingIdx] = materialData;
+              } else {
+                cls.materials.push(materialData);
+              }
             }
           });
         } catch (error) {

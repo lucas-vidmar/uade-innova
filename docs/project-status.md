@@ -1,8 +1,25 @@
-# Project Status Log
+# Centralized project status log
 
-## Automated Provisioning Workflow
-- **Status:** Completed
-- **Business Impact:** Ensures consistent and repeatable automated deployments of the backend and frontend Azure infrastructure via CLI, reducing manual configuration overhead.
-- **Key Milestones:**
-  - Integrated Azure Functions into the central `azd` framework alongside the Static Web App frontend.
-  - Resolved configuration drift by making the provisioning map explicit in `azure.yaml`.
+This file serves as a high-level changelog for the Educational Dashboard project, tracking functional milestones and business impact.
+
+## Project Summary
+Integrating a RAG-based AI system to enhance the educational experience at UADE, allowing students and teachers to interact with class materials through an intelligent dashboard.
+
+---
+
+## Status Log
+
+### [2026-03-13] User Story #1: Teacher Material Upload
+- **Status**: Completed
+- **Functional Change**: Enabled teachers to upload PDF, PPTX, TXT, and DOCX materials up to 25MB directly to the platform.
+- **Business Impact**: Provides the foundational data layer for the RAG system, ensuring that students have access to up-to-date and relevant class content.
+
+### [2026-03-13] Development Infrastructure: Local Storage Emulation
+- **Status**: Completed
+- **Functional Change**: Integrated Azurite for local storage emulation.
+- **Business Impact**: Accelerated development cycles and reduced Azure consumption costs by allowing full feature testing in local environments.
+
+### [2026-03-08] UADE Branding Refresh
+- **Status**: Completed
+- **Functional Change**: Applied institutional color palette (Astronaut Blue) and typography (Montserrat).
+- **Business Impact**: Strengthened institutional identity and improved user trust through a premium, branded interface.

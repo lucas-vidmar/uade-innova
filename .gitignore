@@ -34,4 +34,7 @@ logs/
 
 # ─── Build artifacts ──────────────────────────────────────────
 *.zip
-frontend/dist/
+# ─── Azurite & Local Testing ──────────────────────────────────
+.azurite/
+tmp/
+*.txt

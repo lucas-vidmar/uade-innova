@@ -6,24 +6,26 @@
     "main": "index.js",
     "scripts": {
         "start": "func start",
+        "azurite": "azurite --silent --location .azurite",
         "build": "echo 'No build step needed for JS'",
         "test": "node --test src/**/*.test.js"
     },
     "dependencies": {
         "@azure/functions": "^4.5.0",
         "@azure/identity": "^4.5.0",
-        "@azure/storage-blob": "^12.26.0",
         "@azure/keyvault-secrets": "^4.9.0",
-        "openai": "^4.77.0",
+        "@azure/storage-blob": "^12.26.0",
         "@pinecone-database/pinecone": "^3.0.3",
-        "mammoth": "^1.8.0",
-        "pdf-parse": "^1.1.1",
         "adm-zip": "^0.5.16",
         "busboy": "^1.6.0",
+        "mammoth": "^1.8.0",
+        "openai": "^4.77.0",
+        "pdf-parse": "^1.1.1",
         "uuid": "^11.0.5"
     },
     "devDependencies": {
-        "@types/node": "^22.0.0"
+        "@types/node": "^22.0.0",
+        "azurite": "^3.35.0"
     },
     "engines": {
         "node": ">=20.0.0"
