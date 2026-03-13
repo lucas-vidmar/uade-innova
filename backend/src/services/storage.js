@@ -31,19 +31,29 @@ function getClient() {
  * @param {string} blobName - ruta dentro del container (ej: "class-01/materialId.pdf")
  * @param {Buffer} buffer
  * @param {string} contentType - MIME type
+ * @param {object} metadata - metadatos del blob (opcional)
  * @returns {Promise<string>} URL del blob
  */
-export async function uploadFile(containerName, blobName, buffer, contentType) {
+export async function uploadFile(containerName, blobName, buffer, contentType, metadata = {}) {
     const client = getClient();
     const containerClient = client.getContainerClient(containerName);
 
-    // Aseguramos que el contenedor exista antes de guardar, especialmente `classes-config`
+    // Aseguramos que el contenedor exista antes de guardar
     await containerClient.createIfNotExists();
 
     const blockBlobClient = containerClient.getBlockBlobClient(blobName);
 
+    // Normalizar metadatos a lowercase y strings ASCII para evitar InvalidHeaderValue
+    const normalizedMetadata = {};
+    for (const [key, value] of Object.entries(metadata)) {
+        // Azure metadatos solo permiten caracteres ASCII
+        const asciiValue = String(value).replace(/[^\x00-\x7F]/g, '');
+        normalizedMetadata[key.toLowerCase()] = asciiValue;
+    }
+
     await blockBlobClient.uploadData(buffer, {
         blobHTTPHeaders: { blobContentType: contentType },
+        metadata: normalizedMetadata
     });
 
     return blockBlobClient.url;

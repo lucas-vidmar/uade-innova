@@ -43,20 +43,28 @@ app.http('ingest-material', {
         const primaryClassId = classIds[0];
         const blobName = `${primaryClassId}/${materialId}-${fileName}`;
 
-        // ── 2. Subir archivo crudo al Blob Storage ─────────────────
+        // ── 2. Subir archivo crudo al Blob Storage con Metadatos ────
+        const metadata = {
+            materialId,
+            classIds: classIds.join(','),
+            subjectId,
+            materialType,
+            fileName: fileName
+        };
+
         let blobUrl;
         try {
-            blobUrl = await uploadFile(CONTAINER_MATERIALS, blobName, fileBuffer, fileContentType);
-            context.log(`Archivo subido: ${blobUrl}`);
+            blobUrl = await uploadFile(CONTAINER_MATERIALS, blobName, fileBuffer, fileContentType, metadata);
+            context.log(`Archivo subido con metadatos: ${blobUrl}`);
         } catch (err) {
             context.error('Error subiendo a Storage:', err);
             return { status: 500, body: JSON.stringify({ error: 'Error subiendo archivo a Storage' }) };
         }
 
-        // Responder inmediatamente con 202 (pipeline es asíncrono)
+        // Responder inmediatamente con 202 (pipeline será disparado por el BlobTrigger)
         const responsePayload = { materialId, status: 'processing' };
 
-        // Registrar instantáneamente en Storage para que get-classes no lo pierda si la query RAG tarda
+        // Registrar estado inicial: processing
         const pendingState = {
             materialId,
             classIds,
@@ -70,10 +78,6 @@ app.http('ingest-material', {
         };
         await saveJson(CONTAINER_PROCESSED, `${materialId}.json`, pendingState);
 
-        // ── 3. Pipeline asíncrono (no bloqueamos la respuesta HTTP) ─
-        runPipeline({ fileBuffer, fileContentType, fileName, classIds, subjectId, materialType, materialId, blobUrl }, context)
-            .catch(err => context.error('Error en pipeline:', err));
-
         return {
             status: 202,
             headers: { 'Content-Type': 'application/json' },
@@ -82,80 +86,7 @@ app.http('ingest-material', {
     },
 });
 
-// ─── Pipeline de procesamiento ───────────────────────────────────
-async function runPipeline({ fileBuffer, fileContentType, fileName, classIds, subjectId, materialType, materialId, blobUrl }, context) {
-    try {
-        // 3a. Extraer texto según tipo de archivo
-        context.log(`Parseando archivo: ${fileName} (${fileContentType})`);
-        const text = await parseFile(fileBuffer, fileContentType, fileName);
-        context.log(`Texto extraído: ${text.length} caracteres`);
-
-        // 3b. Dividir en chunks
-        const chunks = chunkText(text, 512, 50);
-        context.log(`Chunks generados: ${chunks.length}`);
-
-        // 3c. Generar embeddings y preparar vectores para Pinecone
-        const vectors = [];
-        for (let i = 0; i < chunks.length; i++) {
-            const embedding = await generateEmbedding(chunks[i]);
-            vectors.push({
-                id: `${materialId}-chunk-${i}`,
-                values: embedding,
-                metadata: {
-                    subjectId,
-                    classIds,
-                    materialId,
-                    materialType,
-                    chunkIndex: i,
-                    sourceFilename: fileName,
-                    lectureDate: new Date().toISOString(),
-                    text: chunks[i],
-                },
-            });
-        }
-
-        // 3d. Upsert en Pinecone
-        context.log(`Indexando ${vectors.length} vectores en Pinecone index: ${process.env.PINECONE_INDEX_NAME}...`);
-        await upsertChunks(vectors);
-        context.log(`Vectores indexados con éxito.`);
-
-        // 3e. Guardar estado final: ready
-        const materialState = {
-            materialId,
-            classIds,
-            subjectId,
-            type: materialType,
-            filename: fileName,
-            status: 'ready',
-            blobUrl,
-            chunkCount: chunks.length,
-            processedAt: new Date().toISOString(),
-        };
-        await saveJson(CONTAINER_PROCESSED, `${materialId}.json`, materialState);
-        context.log(`Estado guardado: processed/${materialId}.json (ready)`);
-    } catch (err) {
-        context.error(`Error crítico en pipeline para material ${materialId}:`, err);
-        
-        // Guardar estado: error para evitar que quede stuck en "processing"
-        const errorState = {
-            materialId,
-            classIds,
-            subjectId,
-            type: materialType,
-            filename: fileName,
-            status: 'error',
-            blobUrl,
-            error: err.message,
-            processedAt: new Date().toISOString(),
-        };
-        try {
-            await saveJson(CONTAINER_PROCESSED, `${materialId}.json`, errorState);
-            context.log(`Estado de error persistido para ${materialId}`);
-        } catch (saveErr) {
-            context.error('No se pudo guardar ni siquiera el estado de error:', saveErr);
-        }
-    }
-}
+// Nota: se eliminó runPipeline de aquí porque ahora se ejecuta vía BlobTrigger en process-material.js
 
 // ─── Helper: parsear multipart/form-data ─────────────────────────
 function parseMultipart(request) {

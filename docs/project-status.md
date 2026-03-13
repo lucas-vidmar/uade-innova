@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-13] User Story #28: Triggered Ingestion
+- **Status**: Completed
+- **Functional Change**: Refactored the ingestion pipeline to use an Azure Blob Trigger for automated, asynchronous processing.
+- **Business Impact**: Improved system responsiveness and scalability by decoupling file uploads from complex RAG processing steps.
+
 ### [2026-03-13] User Story #1: Teacher Material Upload
 - **Status**: Completed
 - **Functional Change**: Enabled teachers to upload PDF, PPTX, TXT, and DOCX materials up to 25MB directly to the platform.
