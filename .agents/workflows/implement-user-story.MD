@@ -9,3 +9,5 @@ description: Standard process for implementing, testing, and expanding on GitHub
 4. **Verification**: Run existing tests and create new unit/integration tests for the new functionality. Verify all tests pass. At least one of the tests should be using Chrome to navigate to webpage and verify usability of the implemented feature.
 5. **Backlog Refinement**: Identify if the implementation uncovers any new requirements or edge cases that should be captured as new user stories. If so, list them clearly.
 6. **Final Walkthrough**: Produce a Walkthrough artifact summarizing the changes and verification results.
+
+Always abide by the documentation standards set in the rules.
