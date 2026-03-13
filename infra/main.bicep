@@ -52,9 +52,11 @@ param embeddingModelVersion string = '1'
 param embeddingDeploymentCapacity int = 10
 
 // Reservado para cuando UADE otorgue permisos roleAssignments/write
-#disable-next-line no-unused-params
-@description('Object ID del usuario que ejecuta azd provision (para permisos KV en el futuro).')
-param principalId string = ''
+// #disable-next-line no-unused-params
+// @description('Object ID del usuario que ejecuta azd provision (para permisos KV en el futuro).')
+@description('Pinecone API Key (Plan B)')
+@secure()
+param pineconeApiKey string = ''
 
 // ─── Variables & naming ──────────────────────────────────────────
 var abbrs = loadJsonContent('./abbreviations.json')
@@ -140,6 +142,7 @@ module functions './modules/functions.bicep' = {
     openAiEmbeddingDeployment: openAi.outputs.embeddingDeploymentName
     classMaterialsStorageAccount: safeStorageName
     keyVaultUri: keyVault.outputs.keyVaultUri
+    pineconeApiKey: pineconeApiKey
     openAiId: openAi.outputs.id
     storageAccountId: storage.outputs.accountId
     tags: tags

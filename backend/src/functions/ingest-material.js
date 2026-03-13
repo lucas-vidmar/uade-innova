@@ -84,53 +84,77 @@ app.http('ingest-material', {
 
 // ─── Pipeline de procesamiento ───────────────────────────────────
 async function runPipeline({ fileBuffer, fileContentType, fileName, classIds, subjectId, materialType, materialId, blobUrl }, context) {
-    // 3a. Extraer texto según tipo de archivo
-    context.log(`Parseando archivo: ${fileName} (${fileContentType})`);
-    const text = await parseFile(fileBuffer, fileContentType, fileName);
-    context.log(`Texto extraído: ${text.length} caracteres`);
+    try {
+        // 3a. Extraer texto según tipo de archivo
+        context.log(`Parseando archivo: ${fileName} (${fileContentType})`);
+        const text = await parseFile(fileBuffer, fileContentType, fileName);
+        context.log(`Texto extraído: ${text.length} caracteres`);
 
-    // 3b. Dividir en chunks
-    const chunks = chunkText(text, 512, 50);
-    context.log(`Chunks generados: ${chunks.length}`);
+        // 3b. Dividir en chunks
+        const chunks = chunkText(text, 512, 50);
+        context.log(`Chunks generados: ${chunks.length}`);
 
-    // 3c. Generar embeddings y preparar vectores para Pinecone
-    const vectors = [];
-    for (let i = 0; i < chunks.length; i++) {
-        const embedding = await generateEmbedding(chunks[i]);
-        vectors.push({
-            id: `${materialId}-chunk-${i}`,
-            values: embedding,
-            metadata: {
-                subjectId,
-                classIds, // Ahora es un array
-                materialId,
-                materialType,
-                chunkIndex: i,
-                sourceFilename: fileName,
-                lectureDate: new Date().toISOString(),
-                text: chunks[i], // Pasar el texto COMPLETO para que el RAG LLM pueda leer todo el contexto
-            },
-        });
+        // 3c. Generar embeddings y preparar vectores para Pinecone
+        const vectors = [];
+        for (let i = 0; i < chunks.length; i++) {
+            const embedding = await generateEmbedding(chunks[i]);
+            vectors.push({
+                id: `${materialId}-chunk-${i}`,
+                values: embedding,
+                metadata: {
+                    subjectId,
+                    classIds,
+                    materialId,
+                    materialType,
+                    chunkIndex: i,
+                    sourceFilename: fileName,
+                    lectureDate: new Date().toISOString(),
+                    text: chunks[i],
+                },
+            });
+        }
+
+        // 3d. Upsert en Pinecone
+        context.log(`Indexando ${vectors.length} vectores en Pinecone index: ${process.env.PINECONE_INDEX_NAME}...`);
+        await upsertChunks(vectors);
+        context.log(`Vectores indexados con éxito.`);
+
+        // 3e. Guardar estado final: ready
+        const materialState = {
+            materialId,
+            classIds,
+            subjectId,
+            type: materialType,
+            filename: fileName,
+            status: 'ready',
+            blobUrl,
+            chunkCount: chunks.length,
+            processedAt: new Date().toISOString(),
+        };
+        await saveJson(CONTAINER_PROCESSED, `${materialId}.json`, materialState);
+        context.log(`Estado guardado: processed/${materialId}.json (ready)`);
+    } catch (err) {
+        context.error(`Error crítico en pipeline para material ${materialId}:`, err);
+        
+        // Guardar estado: error para evitar que quede stuck en "processing"
+        const errorState = {
+            materialId,
+            classIds,
+            subjectId,
+            type: materialType,
+            filename: fileName,
+            status: 'error',
+            blobUrl,
+            error: err.message,
+            processedAt: new Date().toISOString(),
+        };
+        try {
+            await saveJson(CONTAINER_PROCESSED, `${materialId}.json`, errorState);
+            context.log(`Estado de error persistido para ${materialId}`);
+        } catch (saveErr) {
+            context.error('No se pudo guardar ni siquiera el estado de error:', saveErr);
+        }
     }
-
-    // 3d. Upsert en Pinecone
-    await upsertChunks(vectors);
-    context.log(`Vectores indexados en Pinecone: ${vectors.length}`);
-
-    // 3e. Guardar estado del material en Storage
-    const materialState = {
-        materialId,
-        classIds,
-        subjectId,
-        type: materialType,
-        filename: fileName,
-        status: 'ready',
-        blobUrl,
-        chunkCount: chunks.length,
-        processedAt: new Date().toISOString(),
-    };
-    await saveJson(CONTAINER_PROCESSED, `${materialId}.json`, materialState);
-    context.log(`Estado guardado: processed/${materialId}.json`);
 }
 
 // ─── Helper: parsear multipart/form-data ─────────────────────────

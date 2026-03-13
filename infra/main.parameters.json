@@ -37,6 +37,9 @@
         },
         "principalId": {
             "value": "${AZURE_PRINCIPAL_ID}"
+        },
+        "pineconeApiKey": {
+            "value": "${PINECONE_API_KEY}"
         }
     }
 }

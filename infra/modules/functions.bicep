@@ -43,6 +43,9 @@ param storageAccountId string
 @description('Tags to apply to resources.')
 param tags object = {}
 
+@description('Direct Pinecone API Key (Plan B fallback).')
+param pineconeApiKey string = ''
+
 // ─── Consumption Plan (Y1 — sin VM quota, serverless real) ───────
 resource consumptionPlan 'Microsoft.Web/serverfarms@2023-01-01' = {
   name: '${functionAppName}-plan'
@@ -141,10 +144,10 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           name: 'AZURE_STORAGE_CONTAINER_MATERIALS'
           value: 'class-materials'
         }
-        // Key Vault reference para Pinecone API Key
+        // Pinecone (Plan B: usa el valor directo si se provee, sino Key Vault)
         {
           name: 'PINECONE_API_KEY'
-          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/pinecone-api-key/)'
+          value: !empty(pineconeApiKey) ? pineconeApiKey : '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/pinecone-api-key/)'
         }
         {
           name: 'PINECONE_INDEX_NAME'

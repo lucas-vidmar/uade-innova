@@ -166,7 +166,22 @@ export function createChatWidget({ classes = [], subjectId = '' }) {
     scrollToBottom();
 
     try {
-      const result = await api.ragQuery({ question, classIds: selectedClassIds, subjectId });
+      const res = await fetch(`${api.BASE_URL}/rag-query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question, classIds: selectedClassIds, subjectId }),
+      });
+
+      if (!res.ok) {
+        let errorMsg = 'Ocurrió un error al procesar tu consulta.';
+        try {
+          const errData = await res.json();
+          if (errData.error) errorMsg = errData.error;
+        } catch (e) { /* ignore parse error */ }
+        throw new Error(errorMsg);
+      }
+
+      const result = await res.json();
 
       // Deduplicate sources by filename to prevent 5 identical chips
       const uniqueSources = [];
@@ -179,12 +194,12 @@ export function createChatWidget({ classes = [], subjectId = '' }) {
       }
 
       messages.push({ role: 'assistant', content: result.answer, sources: uniqueSources });
-    } catch {
-      messages.push({ role: 'assistant', content: 'Ocurrió un error al procesar tu consulta. Por favor intentá nuevamente.', sources: [] });
+    } catch (err) {
+      messages.push({ role: 'assistant', content: err.message || 'Error de conexión con el servidor. Por favor intentá nuevamente.', sources: [] });
+    } finally {
+      isLoading = false;
+      render();
     }
-
-    isLoading = false;
-    render();
   };
 
   const scrollToBottom = () => {
