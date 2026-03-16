@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.41.2.15936",
-      "templateHash": "17608483292794036243"
+      "templateHash": "12645854191957387927"
     }
   },
   "parameters": {
@@ -235,6 +235,7 @@
     "appInsightsName": "[format('{0}dashboard-{1}', variables('abbrs').insightsComponents, variables('resourceToken'))]",
     "keyVaultName": "[format('kv-edu-{0}', take(variables('resourceToken'), 17))]",
     "identityName": "[format('id-dashboard-edu-{0}', variables('resourceToken'))]",
+    "frontDoorName": "[format('afd-dashboard-{0}', variables('resourceToken'))]",
     "safeStorageName": "[take(replace(variables('storageAccountName'), '-', ''), 24)]"
   },
   "resources": [
@@ -1111,7 +1112,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "841259869604939520"
+              "templateHash": "10042508113454689588"
             }
           },
           "parameters": {
@@ -1345,10 +1346,17 @@
               },
               "value": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-01-01', 'full').identity.principalId]"
             },
-            "functionAppUri": {
+            "functionAppHostName": {
               "type": "string",
               "metadata": {
                 "description": "The default hostname of the Function App."
+              },
+              "value": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-01-01').defaultHostName]"
+            },
+            "functionAppUri": {
+              "type": "string",
+              "metadata": {
+                "description": "The full URI of the Function App."
               },
               "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-01-01').defaultHostName)]"
             },
@@ -1412,7 +1420,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "4707922358152515550"
+              "templateHash": "17556089198105547087"
             }
           },
           "parameters": {
@@ -1510,10 +1518,17 @@
               },
               "value": "[parameters('staticWebAppName')]"
             },
-            "staticWebAppUri": {
+            "staticWebAppHostName": {
               "type": "string",
               "metadata": {
                 "description": "The default hostname of the Static Web App."
+              },
+              "value": "[reference(resourceId('Microsoft.Web/staticSites', parameters('staticWebAppName')), '2023-01-01').defaultHostname]"
+            },
+            "staticWebAppUri": {
+              "type": "string",
+              "metadata": {
+                "description": "The full URI of the Static Web App."
               },
               "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/staticSites', parameters('staticWebAppName')), '2023-01-01').defaultHostname)]"
             },
@@ -1531,6 +1546,295 @@
         "[resourceId('Microsoft.Resources/deployments', 'appInsights')]",
         "[resourceId('Microsoft.Resources/deployments', 'functions')]",
         "[resourceId('Microsoft.Resources/deployments', 'openAi')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "frontDoor",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "profileName": {
+            "value": "[variables('frontDoorName')]"
+          },
+          "frontendHostName": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'staticWebApp'), '2025-04-01').outputs.staticWebAppHostName.value]"
+          },
+          "backendHostName": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'functions'), '2025-04-01').outputs.functionAppHostName.value]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.41.2.15936",
+              "templateHash": "9330915616265553385"
+            }
+          },
+          "parameters": {
+            "profileName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Front Door profile."
+              }
+            },
+            "frontendHostName": {
+              "type": "string",
+              "metadata": {
+                "description": "Hostname of the Static Web App (Frontend)."
+              }
+            },
+            "backendHostName": {
+              "type": "string",
+              "metadata": {
+                "description": "Hostname of the Function App (Backend)."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags for the resources."
+              }
+            }
+          },
+          "variables": {
+            "endpointName": "[format('fd-{0}', uniqueString(resourceGroup().id, parameters('profileName')))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Cdn/profiles",
+              "apiVersion": "2023-05-01",
+              "name": "[parameters('profileName')]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "Standard_AzureFrontDoor"
+              }
+            },
+            {
+              "type": "Microsoft.Cdn/profiles/afdEndpoints",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', parameters('profileName'), variables('endpointName'))]",
+              "location": "global",
+              "properties": {
+                "enabledState": "Enabled"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Cdn/profiles', parameters('profileName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Cdn/profiles/originGroups",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', parameters('profileName'), 'frontend-group')]",
+              "properties": {
+                "loadBalancingSettings": {
+                  "sampleSize": 4,
+                  "successfulSamplesRequired": 3
+                },
+                "healthProbeSettings": {
+                  "probePath": "/",
+                  "probeRequestType": "HEAD",
+                  "probeProtocol": "Https",
+                  "probeIntervalInSeconds": 100
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Cdn/profiles', parameters('profileName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Cdn/profiles/originGroups/origins",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', parameters('profileName'), 'frontend-group', 'frontend-origin')]",
+              "properties": {
+                "hostName": "[parameters('frontendHostName')]",
+                "httpPort": 80,
+                "httpsPort": 443,
+                "originHostHeader": "[parameters('frontendHostName')]",
+                "priority": 1,
+                "weight": 1000,
+                "enforceCertificateNameCheck": true
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Cdn/profiles/originGroups', parameters('profileName'), 'frontend-group')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Cdn/profiles/originGroups",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', parameters('profileName'), 'backend-group')]",
+              "properties": {
+                "loadBalancingSettings": {
+                  "sampleSize": 4,
+                  "successfulSamplesRequired": 3
+                },
+                "healthProbeSettings": {
+                  "probePath": "/api/health",
+                  "probeRequestType": "HEAD",
+                  "probeProtocol": "Https",
+                  "probeIntervalInSeconds": 100
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Cdn/profiles', parameters('profileName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Cdn/profiles/originGroups/origins",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', parameters('profileName'), 'backend-group', 'backend-origin')]",
+              "properties": {
+                "hostName": "[parameters('backendHostName')]",
+                "httpPort": 80,
+                "httpsPort": 443,
+                "originHostHeader": "[parameters('backendHostName')]",
+                "priority": 1,
+                "weight": 1000,
+                "enforceCertificateNameCheck": true
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Cdn/profiles/originGroups', parameters('profileName'), 'backend-group')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Cdn/profiles/afdEndpoints/routes",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', parameters('profileName'), variables('endpointName'), 'route-api')]",
+              "properties": {
+                "originGroup": {
+                  "id": "[resourceId('Microsoft.Cdn/profiles/originGroups', parameters('profileName'), 'backend-group')]"
+                },
+                "supportedProtocols": [
+                  "Http",
+                  "Https"
+                ],
+                "patternsToMatch": [
+                  "/api/*"
+                ],
+                "forwardingProtocol": "HttpsOnly",
+                "linkToDefaultDomain": "Enabled",
+                "httpsRedirect": "Enabled"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Cdn/profiles/originGroups/origins', parameters('profileName'), 'backend-group', 'backend-origin')]",
+                "[resourceId('Microsoft.Cdn/profiles/originGroups', parameters('profileName'), 'backend-group')]",
+                "[resourceId('Microsoft.Cdn/profiles/afdEndpoints', parameters('profileName'), variables('endpointName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Cdn/profiles/afdEndpoints/routes",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', parameters('profileName'), variables('endpointName'), 'route-ui')]",
+              "properties": {
+                "originGroup": {
+                  "id": "[resourceId('Microsoft.Cdn/profiles/originGroups', parameters('profileName'), 'frontend-group')]"
+                },
+                "supportedProtocols": [
+                  "Http",
+                  "Https"
+                ],
+                "patternsToMatch": [
+                  "/*"
+                ],
+                "forwardingProtocol": "HttpsOnly",
+                "linkToDefaultDomain": "Enabled",
+                "httpsRedirect": "Enabled"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Cdn/profiles/afdEndpoints', parameters('profileName'), variables('endpointName'))]",
+                "[resourceId('Microsoft.Cdn/profiles/originGroups/origins', parameters('profileName'), 'frontend-group', 'frontend-origin')]",
+                "[resourceId('Microsoft.Cdn/profiles/originGroups', parameters('profileName'), 'frontend-group')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/FrontDoorWebApplicationFirewallPolicies",
+              "apiVersion": "2022-05-01",
+              "name": "[format('{0}waf', replace(parameters('profileName'), '-', ''))]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "Standard_AzureFrontDoor"
+              },
+              "properties": {
+                "policySettings": {
+                  "enabledState": "Enabled",
+                  "mode": "Prevention",
+                  "requestBodyCheck": "Enabled"
+                },
+                "managedRules": {
+                  "managedRuleSets": [
+                    {
+                      "ruleSetType": "Microsoft_DefaultRuleSet",
+                      "ruleSetVersion": "2.1"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Cdn/profiles/securityPolicies",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', parameters('profileName'), 'waf-binding')]",
+              "properties": {
+                "parameters": {
+                  "type": "WebApplicationFirewall",
+                  "wafPolicy": {
+                    "id": "[resourceId('Microsoft.Network/FrontDoorWebApplicationFirewallPolicies', format('{0}waf', replace(parameters('profileName'), '-', '')))]"
+                  },
+                  "associations": [
+                    {
+                      "domains": [
+                        {
+                          "id": "[resourceId('Microsoft.Cdn/profiles/afdEndpoints', parameters('profileName'), variables('endpointName'))]"
+                        }
+                      ],
+                      "patternsToMatch": [
+                        "/*"
+                      ]
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Cdn/profiles/afdEndpoints', parameters('profileName'), variables('endpointName'))]",
+                "[resourceId('Microsoft.Cdn/profiles', parameters('profileName'))]",
+                "[resourceId('Microsoft.Network/FrontDoorWebApplicationFirewallPolicies', format('{0}waf', replace(parameters('profileName'), '-', '')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "frontDoorHostName": {
+              "type": "string",
+              "metadata": {
+                "description": "The host name of the Front Door endpoint."
+              },
+              "value": "[reference(resourceId('Microsoft.Cdn/profiles/afdEndpoints', parameters('profileName'), variables('endpointName')), '2023-05-01').hostName]"
+            },
+            "frontDoorUri": {
+              "type": "string",
+              "metadata": {
+                "description": "The URI of the Front Door endpoint."
+              },
+              "value": "[format('https://{0}', reference(resourceId('Microsoft.Cdn/profiles/afdEndpoints', parameters('profileName'), variables('endpointName')), '2023-05-01').hostName)]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'functions')]",
+        "[resourceId('Microsoft.Resources/deployments', 'staticWebApp')]"
       ]
     }
   ],
@@ -1570,6 +1874,10 @@
     "AZURE_STATIC_WEB_APP_URI": {
       "type": "string",
       "value": "[reference(resourceId('Microsoft.Resources/deployments', 'staticWebApp'), '2025-04-01').outputs.staticWebAppUri.value]"
+    },
+    "AZURE_FRONT_DOOR_URI": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'frontDoor'), '2025-04-01').outputs.frontDoorUri.value]"
     },
     "AZURE_RESOURCE_GROUP": {
       "type": "string",

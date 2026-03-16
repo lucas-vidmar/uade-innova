@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-16] User Story #9: Web Application Firewall (WAF)
+- **Status**: Completed
+- **Functional Change**: Engineered an Azure Front Door Edge topology in Bicep deploying a centralized Web Application Firewall (WAF) running Microsoft's managed Top 10 prevention ruleset across both backend API and frontend UX routes.
+- **Business Impact**: Provides enterprise-grade reverse-proxy security, automatically blocking malicious payloads (SQLi, XSS, etc.) globally at the edge before attacks ever reach isolated application environments. 
+
 ### [2026-03-16] User Story #8: Key Vault Reference Integration
 - **Status**: Completed
 - **Functional Change**: Hardened the backend configuration file locally by purging the runtime fallback parameter logic and strictly declaring the `@Microsoft.KeyVault` reference syntax.

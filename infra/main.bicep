@@ -85,6 +85,7 @@ var logAnalyticsName = '${abbrs.operationalInsightsWorkspaces}dashboard-${resour
 var appInsightsName = '${abbrs.insightsComponents}dashboard-${resourceToken}'
 var keyVaultName = 'kv-edu-${take(resourceToken, 17)}'
 var identityName = 'id-dashboard-edu-${resourceToken}'
+var frontDoorName = 'afd-dashboard-${resourceToken}'
 
 // Storage account: max 24 chars, no hyphens
 var safeStorageName = take(replace(storageAccountName, '-', ''), 24)
@@ -190,6 +191,18 @@ module staticWebApp './modules/staticwebapp.bicep' = {
   }
 }
 
+// ─── Module: Azure Front Door (WAF) ───────────────────────────────
+// Proporciona protección OWASP y enrutamiento a los endpoints
+module frontDoor './modules/frontdoor.bicep' = {
+  name: 'frontDoor'
+  params: {
+    profileName: frontDoorName
+    frontendHostName: staticWebApp.outputs.staticWebAppHostName
+    backendHostName: functions.outputs.functionAppHostName
+    tags: tags
+  }
+}
+
 // ─── Outputs ────────────────────────────────────────────────────
 output AZURE_OPENAI_ENDPOINT string = openAi.outputs.endpoint
 output AZURE_OPENAI_CHAT_DEPLOYMENT string = openAi.outputs.chatDeploymentName
@@ -200,4 +213,5 @@ output AZURE_KEY_VAULT_URI string = keyVault.outputs.keyVaultUri
 output AZURE_FUNCTION_APP_URI string = functions.outputs.functionAppUri
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = appInsights.outputs.connectionString
 output AZURE_STATIC_WEB_APP_URI string = staticWebApp.outputs.staticWebAppUri
+output AZURE_FRONT_DOOR_URI string = frontDoor.outputs.frontDoorUri
 output AZURE_RESOURCE_GROUP string = resourceGroup().name

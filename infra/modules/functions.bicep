@@ -179,6 +179,9 @@ output functionAppName string = functionApp.name
 output functionAppPrincipalId string = functionApp.identity.principalId
 
 @description('The default hostname of the Function App.')
+output functionAppHostName string = functionApp.properties.defaultHostName
+
+@description('The full URI of the Function App.')
 output functionAppUri string = 'https://${functionApp.properties.defaultHostName}'
 
 @description('The resource ID of the Function App.')
