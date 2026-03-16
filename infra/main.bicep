@@ -134,6 +134,7 @@ module keyVault './modules/keyvault.bicep' = {
   params: {
     location: location
     name: keyVaultName
+    pineconeApiKey: pineconeApiKey
     tags: tags
   }
 }

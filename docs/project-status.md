@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-16] User Story #7: Pinecone Secret Encapsulation
+- **Status**: Completed
+- **Functional Change**: Upgraded the Bicep deployment templates to natively insert the `pineconeApiKey` into Azure Key Vault as a secret upon provisioning.
+- **Business Impact**: Hardens the system against secret exposure and accelerates environment cloning by securely migrating configuration values out of manual portals and into automated IaC flows.
+
 ### [2026-03-16] User Story #6: Resource Group Scoped RBAC
 - **Status**: Completed
 - **Functional Change**: Modified the Role-Based Access Control configuration in Bicep so that roles (OpenAI, Storage, Key Vault) are scoped explicitly to their respective specific resources instead of inheriting across the entire Resource Group.

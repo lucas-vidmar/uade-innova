@@ -13,6 +13,10 @@ param name string
 @description('Azure AD Tenant ID.')
 param tenantId string = subscription().tenantId
 
+@description('Direct Pinecone API Key (Plan B fallback).')
+@secure()
+param pineconeApiKey string = ''
+
 @description('Tags to apply to the resource.')
 param tags object = {}
 
@@ -49,7 +53,7 @@ resource pineconeSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: keyVault
   name: 'pinecone-api-key'
   properties: {
-    value: 'PLACEHOLDER-SET-AFTER-PROVISION' // Replace with real value post-provision
+    value: !empty(pineconeApiKey) ? pineconeApiKey : 'PLACEHOLDER-SET-AFTER-PROVISION'
     attributes: {
       enabled: true
     }

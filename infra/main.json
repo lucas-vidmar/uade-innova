@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.41.2.15936",
-      "templateHash": "3443229040362789292"
+      "templateHash": "106741783271476594"
     }
   },
   "parameters": {
@@ -768,6 +768,9 @@
           "name": {
             "value": "[variables('keyVaultName')]"
           },
+          "pineconeApiKey": {
+            "value": "[parameters('pineconeApiKey')]"
+          },
           "tags": {
             "value": "[variables('tags')]"
           }
@@ -779,7 +782,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "13971185611825799050"
+              "templateHash": "9644409947418504327"
             }
           },
           "parameters": {
@@ -800,6 +803,13 @@
               "defaultValue": "[subscription().tenantId]",
               "metadata": {
                 "description": "Azure AD Tenant ID."
+              }
+            },
+            "pineconeApiKey": {
+              "type": "securestring",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Direct Pinecone API Key (Plan B fallback)."
               }
             },
             "tags": {
@@ -841,7 +851,7 @@
               "apiVersion": "2023-07-01",
               "name": "[format('{0}/{1}', parameters('name'), 'pinecone-api-key')]",
               "properties": {
-                "value": "PLACEHOLDER-SET-AFTER-PROVISION",
+                "value": "[if(not(empty(parameters('pineconeApiKey'))), parameters('pineconeApiKey'), 'PLACEHOLDER-SET-AFTER-PROVISION')]",
                 "attributes": {
                   "enabled": true
                 },
