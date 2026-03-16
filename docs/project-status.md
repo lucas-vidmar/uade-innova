@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-16] User Story #18: Role-Based Group Mapping
+- **Status**: Completed
+- **Functional Change**: Introduced `get-roles.js` in the backend resolving `rolesSource` integrations with SWA. Entra ID user group claims like "Alumnos-Pilot" are natively parsed and injected as explicit frontend and backend Role Claims.
+- **Business Impact**: Delivers rigorous Zero-Trust Role-Based Access Control (RBAC) linking directly back to UADE's central Identity tenant, automatically classifying Teachers vs Students seamlessly upon login without storing a disconnected parallel user database.
+
 ### [2026-03-16] User Story #17: Institutional SSO Login
 - **Status**: Completed
 - **Functional Change**: Injected a `staticwebapp.config.json` defining Microsoft Entra ID (Azure AD) as the exclusive global edge proxy Identity Provider for the frontend, enforcing forced `302 Redirects` and explicitly 404'ing generic social providers (GitHub/Twitter).
