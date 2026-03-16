@@ -34,9 +34,6 @@ param classMaterialsStorageAccount string
 @description('Key Vault URI.')
 param keyVaultUri string
 
-@description('Resource ID of the Azure OpenAI account.')
-param openAiId string
-
 @description('Resource ID of the Storage account.')
 param storageAccountId string
 
@@ -141,10 +138,6 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         {
           name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT'
           value: openAiEmbeddingDeployment
-        }
-        {
-          name: 'AZURE_OPENAI_API_KEY'
-          value: listKeys(openAiId, '2023-05-01').key1
         }
         {
           name: 'AZURE_STORAGE_CONNECTION_STRING'

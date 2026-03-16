@@ -169,7 +169,6 @@ module functions './modules/functions.bicep' = {
     pineconeApiKey: pineconeApiKey
     pineconeIndexName: pineconeIndexName
     classMaterialsContainerName: classMaterialsContainerName
-    openAiId: openAi.outputs.id
     storageAccountId: storage.outputs.accountId
     tags: tags
   }

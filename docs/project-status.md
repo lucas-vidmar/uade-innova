@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-16] User Story #5: Zero-Trust Backend Auth
+- **Status**: Completed
+- **Functional Change**: Removed the Azure OpenAI API Key from the Bicep template's application settings. The backend now authenticates exclusively using a Managed Identity via `DefaultAzureCredential`.
+- **Business Impact**: Fully eliminates secret-rotation overhead and enforces strict Zero-Trust security principles on the AI infrastructure.
+
 ### [2026-03-16] User Story #4: User-Assigned Managed Identity
 - **Status**: Completed
 - **Functional Change**: Abstracted the Function App's identity into a dedicated User-Assigned Managed Identity securely provisioned via Bicep.

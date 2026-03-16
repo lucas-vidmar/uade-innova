@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.41.2.15936",
-      "templateHash": "7646242002317509839"
+      "templateHash": "2591879773383703927"
     }
   },
   "parameters": {
@@ -1084,9 +1084,6 @@
           "classMaterialsContainerName": {
             "value": "[parameters('classMaterialsContainerName')]"
           },
-          "openAiId": {
-            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'openAi'), '2025-04-01').outputs.id.value]"
-          },
           "storageAccountId": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.accountId.value]"
           },
@@ -1101,7 +1098,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "5786336227563371464"
+              "templateHash": "14926779649272124599"
             }
           },
           "parameters": {
@@ -1157,12 +1154,6 @@
               "type": "string",
               "metadata": {
                 "description": "Key Vault URI."
-              }
-            },
-            "openAiId": {
-              "type": "string",
-              "metadata": {
-                "description": "Resource ID of the Azure OpenAI account."
               }
             },
             "storageAccountId": {
@@ -1296,10 +1287,6 @@
                     {
                       "name": "AZURE_OPENAI_EMBEDDING_DEPLOYMENT",
                       "value": "[parameters('openAiEmbeddingDeployment')]"
-                    },
-                    {
-                      "name": "AZURE_OPENAI_API_KEY",
-                      "value": "[listKeys(parameters('openAiId'), '2023-05-01').key1]"
                     },
                     {
                       "name": "AZURE_STORAGE_CONNECTION_STRING",
