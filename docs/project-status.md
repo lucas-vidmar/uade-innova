@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-16] User Story #6: Resource Group Scoped RBAC
+- **Status**: Completed
+- **Functional Change**: Modified the Role-Based Access Control configuration in Bicep so that roles (OpenAI, Storage, Key Vault) are scoped explicitly to their respective specific resources instead of inheriting across the entire Resource Group.
+- **Business Impact**: Hardens the backend authorization layer by applying strict Least-Privilege inheritance ("This resource" scoping), preventing identity compromise risks radiating through the Resource Group environment.
+
 ### [2026-03-16] User Story #5: Zero-Trust Backend Auth
 - **Status**: Completed
 - **Functional Change**: Removed the Azure OpenAI API Key from the Bicep template's application settings. The backend now authenticates exclusively using a Managed Identity via `DefaultAzureCredential`.

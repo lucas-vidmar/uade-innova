@@ -19,6 +19,24 @@ param storageAccountId string
 @description('Resource ID of the Key Vault.')
 param keyVaultId string
 
+// Parse resource names from their fully qualified resource IDs
+var openAiAccountName = last(split(openAiAccountId, '/'))
+var storageAccountName = last(split(storageAccountId, '/'))
+var keyVaultName = last(split(keyVaultId, '/'))
+
+// ─── Existing Resources for Scoping ──────────────────────────────
+resource openAiAccount 'Microsoft.CognitiveServices/accounts@2023-05-01' existing = {
+  name: openAiAccountName
+}
+
+resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' existing = {
+  name: storageAccountName
+}
+
+resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
+  name: keyVaultName
+}
+
 // ─── Role Definition IDs (Azure built-in) ──────────────────────
 // Cognitive Services OpenAI User
 var cognitiveServicesOpenAiUserRoleId = '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
@@ -38,7 +56,7 @@ var identityPrincipalId = managedIdentity.properties.principalId
 // ─── Function App: Cognitive Services OpenAI User ──────────────
 resource funcOpenAiRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(openAiAccountId, managedIdentity.id, cognitiveServicesOpenAiUserRoleId)
-  scope: resourceGroup()
+  scope: openAiAccount
   properties: {
     roleDefinitionId: subscriptionResourceId(
       'Microsoft.Authorization/roleDefinitions',
@@ -53,7 +71,7 @@ resource funcOpenAiRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 // ─── Function App: Storage Blob Data Contributor ───────────────
 resource funcStorageRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(storageAccountId, managedIdentity.id, storageBlobDataContributorRoleId)
-  scope: resourceGroup()
+  scope: storageAccount
   properties: {
     roleDefinitionId: subscriptionResourceId(
       'Microsoft.Authorization/roleDefinitions',
@@ -68,7 +86,7 @@ resource funcStorageRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = 
 // ─── Function App: Key Vault Secrets User ──────────────────────
 resource funcKeyVaultRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(keyVaultId, managedIdentity.id, keyVaultSecretsUserRoleId)
-  scope: resourceGroup()
+  scope: keyVault
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', keyVaultSecretsUserRoleId)
     principalId: identityPrincipalId
