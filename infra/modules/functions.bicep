@@ -52,6 +52,12 @@ param pineconeIndexName string = 'dashboard-edu-pilot'
 @description('Name of the Storage container for class materials.')
 param classMaterialsContainerName string = 'class-materials'
 
+@description('Resource ID of the User-Assigned Managed Identity.')
+param userAssignedIdentityId string
+
+@description('Client ID of the User-Assigned Managed Identity.')
+param userAssignedClientId string
+
 // ─── Consumption Plan (Y1 — sin VM quota, serverless real) ───────
 resource consumptionPlan 'Microsoft.Web/serverfarms@2023-01-01' = {
   name: '${functionAppName}-plan'
@@ -74,7 +80,10 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
   tags: union(tags, { 'azd-service-name': 'backend' })
   kind: 'functionapp,linux'
   identity: {
-    type: 'SystemAssigned'
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${userAssignedIdentityId}': {}
+    }
   }
   properties: {
     serverFarmId: consumptionPlan.id
@@ -162,6 +171,10 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         {
           name: 'NODE_ENV'
           value: 'production'
+        }
+        {
+          name: 'AZURE_CLIENT_ID'
+          value: userAssignedClientId
         }
       ]
     }

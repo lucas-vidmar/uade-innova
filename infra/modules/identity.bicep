@@ -4,8 +4,11 @@
   No resources created here — only roleAssignment objects.
 */
 
-@description('Principal ID of the Azure Functions Managed Identity.')
-param functionAppPrincipalId string
+@description('Name of the User-Assigned Managed Identity.')
+param identityName string
+
+@description('Azure region.')
+param location string
 
 @description('Resource ID of the Azure OpenAI account.')
 param openAiAccountId string
@@ -24,16 +27,24 @@ var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 // Key Vault Secrets User
 var keyVaultSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
 
+// ─── User-Assigned Managed Identity ────────────────────────────
+resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: identityName
+  location: location
+}
+
+var identityPrincipalId = managedIdentity.properties.principalId
+
 // ─── Function App: Cognitive Services OpenAI User ──────────────
 resource funcOpenAiRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(openAiAccountId, functionAppPrincipalId, cognitiveServicesOpenAiUserRoleId)
+  name: guid(openAiAccountId, managedIdentity.id, cognitiveServicesOpenAiUserRoleId)
   scope: resourceGroup()
   properties: {
     roleDefinitionId: subscriptionResourceId(
       'Microsoft.Authorization/roleDefinitions',
       cognitiveServicesOpenAiUserRoleId
     )
-    principalId: functionAppPrincipalId
+    principalId: identityPrincipalId
     principalType: 'ServicePrincipal'
     description: 'Allows Function App to call Azure OpenAI via Managed Identity'
   }
@@ -41,14 +52,14 @@ resource funcOpenAiRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 
 // ─── Function App: Storage Blob Data Contributor ───────────────
 resource funcStorageRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccountId, functionAppPrincipalId, storageBlobDataContributorRoleId)
+  name: guid(storageAccountId, managedIdentity.id, storageBlobDataContributorRoleId)
   scope: resourceGroup()
   properties: {
     roleDefinitionId: subscriptionResourceId(
       'Microsoft.Authorization/roleDefinitions',
       storageBlobDataContributorRoleId
     )
-    principalId: functionAppPrincipalId
+    principalId: identityPrincipalId
     principalType: 'ServicePrincipal'
     description: 'Allows Function App to read/write class materials in Blob Storage'
   }
@@ -56,13 +67,23 @@ resource funcStorageRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = 
 
 // ─── Function App: Key Vault Secrets User ──────────────────────
 resource funcKeyVaultRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(keyVaultId, functionAppPrincipalId, keyVaultSecretsUserRoleId)
+  name: guid(keyVaultId, managedIdentity.id, keyVaultSecretsUserRoleId)
   scope: resourceGroup()
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', keyVaultSecretsUserRoleId)
-    principalId: functionAppPrincipalId
+    principalId: identityPrincipalId
     principalType: 'ServicePrincipal'
     description: 'Allows Function App to read Pinecone API Key from Key Vault'
   }
 }
+
+// ─── Outputs ───────────────────────────────────────────────────
+@description('The resource ID of the User-Assigned Managed Identity.')
+output identityId string = managedIdentity.id
+
+@description('The principal ID of the User-Assigned Managed Identity.')
+output principalId string = managedIdentity.properties.principalId
+
+@description('The client ID of the User-Assigned Managed Identity.')
+output clientId string = managedIdentity.properties.clientId
 

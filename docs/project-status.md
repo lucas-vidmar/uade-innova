@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-16] User Story #4: User-Assigned Managed Identity
+- **Status**: Completed
+- **Functional Change**: Abstracted the Function App's identity into a dedicated User-Assigned Managed Identity securely provisioned via Bicep.
+- **Business Impact**: Improved security lifecycle management by decoupling access rights from the Function App instance, ensuring robust Zero-Trust policies.
+
 ### [2026-03-16] User Story #3: Bicep Parameterization for Environments
 - **Status**: Completed
 - **Functional Change**: Fully parameterized Bicep infrastructure templates to decouple environment names, regions, and naming conventions.

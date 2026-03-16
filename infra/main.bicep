@@ -84,6 +84,7 @@ var staticWebAppName = 'stapp-dashboard-${resourceToken}'
 var logAnalyticsName = '${abbrs.operationalInsightsWorkspaces}dashboard-${resourceToken}'
 var appInsightsName = '${abbrs.insightsComponents}dashboard-${resourceToken}'
 var keyVaultName = 'kv-edu-${take(resourceToken, 17)}'
+var identityName = 'id-dashboard-edu-${resourceToken}'
 
 // Storage account: max 24 chars, no hyphens
 var safeStorageName = take(replace(storageAccountName, '-', ''), 24)
@@ -137,6 +138,18 @@ module keyVault './modules/keyvault.bicep' = {
   }
 }
 
+// ─── Module: Identity & RBAC ─────────────────────────────────────
+module identity './modules/identity.bicep' = {
+  name: 'identity'
+  params: {
+    identityName: identityName
+    location: location
+    openAiAccountId: openAi.outputs.id
+    storageAccountId: storage.outputs.accountId
+    keyVaultId: keyVault.outputs.keyVaultId
+  }
+}
+
 // ─── Module: Azure Functions (Consumption Plan — sin VM quota) ────
 // Plan Y1/Dynamic: pago por ejecución, escala a 0, sin reserva de VM.
 module functions './modules/functions.bicep' = {
@@ -144,6 +157,8 @@ module functions './modules/functions.bicep' = {
   params: {
     location: location
     functionAppName: functionAppName
+    userAssignedIdentityId: identity.outputs.identityId
+    userAssignedClientId: identity.outputs.clientId
     storageAccountName: safeStorageName
     appInsightsConnectionString: appInsights.outputs.connectionString
     openAiEndpoint: openAi.outputs.endpoint
@@ -175,22 +190,6 @@ module staticWebApp './modules/staticwebapp.bicep' = {
     tags: tags
   }
 }
-
-// ─── Module: Identity & RBAC ─────────────────────────────────────
-// NOTA: Requiere rol Owner/User Access Administrator en el RG.
-// UADE debe asignar manualmente los roles de Managed Identity
-// o conceder el permiso 'Microsoft.Authorization/roleAssignments/write'.
-// Descomentar cuando UADE otorgue los permisos necesarios.
-//
-// module identity './modules/identity.bicep' = {
-//   name: 'identity'
-//   params: {
-//     functionAppPrincipalId: functions.outputs.functionAppPrincipalId
-//     openAiAccountId: openAi.outputs.id
-//     storageAccountId: storage.outputs.accountId
-//     keyVaultId: keyVault.outputs.keyVaultId
-//   }
-// }
 
 // ─── Outputs ────────────────────────────────────────────────────
 output AZURE_OPENAI_ENDPOINT string = openAi.outputs.endpoint
