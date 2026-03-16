@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-16] User Story #11: Local CORS Configuration
+- **Status**: Completed
+- **Functional Change**: Restricted the local Functions daemon (`local.settings.json`) to actively accept Cross-Origin Resource Sharing exactly against the origin `http://localhost:5173`.
+- **Business Impact**: Hardens the local development loopback against flaky wildcard pre-flight CORS failures, enhancing engineer velocity and environment consistency.
+
 ### [2026-03-16] User Story #9: Web Application Firewall (WAF)
 - **Status**: Completed
 - **Functional Change**: Engineered an Azure Front Door Edge topology in Bicep deploying a centralized Web Application Firewall (WAF) running Microsoft's managed Top 10 prevention ruleset across both backend API and frontend UX routes.
