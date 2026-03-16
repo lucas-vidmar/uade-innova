@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-16] User Story #17: Institutional SSO Login
+- **Status**: Completed
+- **Functional Change**: Injected a `staticwebapp.config.json` defining Microsoft Entra ID (Azure AD) as the exclusive global edge proxy Identity Provider for the frontend, enforcing forced `302 Redirects` and explicitly 404'ing generic social providers (GitHub/Twitter).
+- **Business Impact**: Hardens the UX immediately requiring institutional `@uade.edu.ar` authentication to load any application chunk, establishing robust single sign-on security effortlessly.
+
 ### [2026-03-16] User Story #11: Local CORS Configuration
 - **Status**: Completed
 - **Functional Change**: Restricted the local Functions daemon (`local.settings.json`) to actively accept Cross-Origin Resource Sharing exactly against the origin `http://localhost:5173`.
