@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-16] User Story #3: Bicep Parameterization for Environments
+- **Status**: Completed
+- **Functional Change**: Fully parameterized Bicep infrastructure templates to decouple environment names, regions, and naming conventions.
+- **Business Impact**: Lowered deployment risk and ensured completely isolated and reproducible dev/prod environments without manual template edits.
+
 ### [2026-03-13] User Story #30 & #34: Token-based Chunking & VTT Cleaning
 - **Status**: Completed
 - **Functional Change**: Switched to `js-tiktoken` for exact token-based splitting and added automated WebVTT metadata stripping.

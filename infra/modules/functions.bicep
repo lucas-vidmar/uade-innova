@@ -46,6 +46,12 @@ param tags object = {}
 @description('Direct Pinecone API Key (Plan B fallback).')
 param pineconeApiKey string = ''
 
+@description('Name of the Pinecone index.')
+param pineconeIndexName string = 'dashboard-edu-pilot'
+
+@description('Name of the Storage container for class materials.')
+param classMaterialsContainerName string = 'class-materials'
+
 // ─── Consumption Plan (Y1 — sin VM quota, serverless real) ───────
 resource consumptionPlan 'Microsoft.Web/serverfarms@2023-01-01' = {
   name: '${functionAppName}-plan'
@@ -142,7 +148,7 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         }
         {
           name: 'AZURE_STORAGE_CONTAINER_MATERIALS'
-          value: 'class-materials'
+          value: classMaterialsContainerName
         }
         // Pinecone (Plan B: usa el valor directo si se provee, sino Key Vault)
         {
@@ -151,7 +157,7 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         }
         {
           name: 'PINECONE_INDEX_NAME'
-          value: 'dashboard-edu-pilot'
+          value: pineconeIndexName
         }
         {
           name: 'NODE_ENV'

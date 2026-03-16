@@ -58,6 +58,15 @@ param embeddingDeploymentCapacity int = 10
 @secure()
 param pineconeApiKey string = ''
 
+@description('Location for the Static Web App. Note: limited region availability.')
+param staticWebAppLocation string = 'eastus2'
+
+@description('Name of the Pinecone index.')
+param pineconeIndexName string = 'dashboard-edu-pilot'
+
+@description('Name of the Storage container for class materials.')
+param classMaterialsContainerName string = 'class-materials'
+
 // ─── Variables & naming ──────────────────────────────────────────
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
@@ -143,6 +152,8 @@ module functions './modules/functions.bicep' = {
     classMaterialsStorageAccount: safeStorageName
     keyVaultUri: keyVault.outputs.keyVaultUri
     pineconeApiKey: pineconeApiKey
+    pineconeIndexName: pineconeIndexName
+    classMaterialsContainerName: classMaterialsContainerName
     openAiId: openAi.outputs.id
     storageAccountId: storage.outputs.accountId
     tags: tags
@@ -154,7 +165,7 @@ module functions './modules/functions.bicep' = {
 module staticWebApp './modules/staticwebapp.bicep' = {
   name: 'staticWebApp'
   params: {
-    location: 'eastus2' // Static Web Apps tienen disponibilidad limitada por región
+    location: staticWebAppLocation
     staticWebAppName: staticWebAppName
     openAiEndpoint: openAi.outputs.endpoint
     openAiChatDeployment: openAi.outputs.chatDeploymentName

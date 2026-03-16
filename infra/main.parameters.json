@@ -40,6 +40,15 @@
         },
         "pineconeApiKey": {
             "value": "${PINECONE_API_KEY}"
+        },
+        "staticWebAppLocation": {
+            "value": "eastus2"
+        },
+        "pineconeIndexName": {
+            "value": "dashboard-edu-pilot"
+        },
+        "classMaterialsContainerName": {
+            "value": "class-materials"
         }
     }
 }
