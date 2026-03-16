@@ -167,7 +167,6 @@ module functions './modules/functions.bicep' = {
     openAiEmbeddingDeployment: openAi.outputs.embeddingDeploymentName
     classMaterialsStorageAccount: safeStorageName
     keyVaultUri: keyVault.outputs.keyVaultUri
-    pineconeApiKey: pineconeApiKey
     pineconeIndexName: pineconeIndexName
     classMaterialsContainerName: classMaterialsContainerName
     storageAccountId: storage.outputs.accountId

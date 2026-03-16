@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-16] User Story #8: Key Vault Reference Integration
+- **Status**: Completed
+- **Functional Change**: Hardened the backend configuration file locally by purging the runtime fallback parameter logic and strictly declaring the `@Microsoft.KeyVault` reference syntax.
+- **Business Impact**: Hardens the runtime application state, stopping production code logic loops from needing to hold or route API Keys in raw memory mappings. Secure by Default deployment guaranteed.
+
 ### [2026-03-16] User Story #7: Pinecone Secret Encapsulation
 - **Status**: Completed
 - **Functional Change**: Upgraded the Bicep deployment templates to natively insert the `pineconeApiKey` into Azure Key Vault as a secret upon provisioning.

@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.41.2.15936",
-      "templateHash": "106741783271476594"
+      "templateHash": "17608483292794036243"
     }
   },
   "parameters": {
@@ -1091,9 +1091,6 @@
           "keyVaultUri": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'keyVault'), '2025-04-01').outputs.keyVaultUri.value]"
           },
-          "pineconeApiKey": {
-            "value": "[parameters('pineconeApiKey')]"
-          },
           "pineconeIndexName": {
             "value": "[parameters('pineconeIndexName')]"
           },
@@ -1114,7 +1111,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "14926779649272124599"
+              "templateHash": "841259869604939520"
             }
           },
           "parameters": {
@@ -1183,13 +1180,6 @@
               "defaultValue": {},
               "metadata": {
                 "description": "Tags to apply to resources."
-              }
-            },
-            "pineconeApiKey": {
-              "type": "string",
-              "defaultValue": "",
-              "metadata": {
-                "description": "Direct Pinecone API Key (Plan B fallback)."
               }
             },
             "pineconeIndexName": {
@@ -1318,7 +1308,7 @@
                     },
                     {
                       "name": "PINECONE_API_KEY",
-                      "value": "[if(not(empty(parameters('pineconeApiKey'))), parameters('pineconeApiKey'), format('@Microsoft.KeyVault(SecretUri={0}secrets/pinecone-api-key/)', parameters('keyVaultUri')))]"
+                      "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/pinecone-api-key/)', parameters('keyVaultUri'))]"
                     },
                     {
                       "name": "PINECONE_INDEX_NAME",
