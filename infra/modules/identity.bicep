@@ -42,6 +42,8 @@ resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
 var cognitiveServicesOpenAiUserRoleId = '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
 // Storage Blob Data Contributor
 var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
+// Storage Table Data Contributor
+var storageTableDataContributorRoleId = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
 // Key Vault Secrets User
 var keyVaultSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
 
@@ -80,6 +82,21 @@ resource funcStorageRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = 
     principalId: identityPrincipalId
     principalType: 'ServicePrincipal'
     description: 'Allows Function App to read/write class materials in Blob Storage'
+  }
+}
+
+// ─── Function App: Storage Table Data Contributor ──────────────
+resource funcTableRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAccountId, managedIdentity.id, storageTableDataContributorRoleId)
+  scope: storageAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      storageTableDataContributorRoleId
+    )
+    principalId: identityPrincipalId
+    principalType: 'ServicePrincipal'
+    description: 'Allows Function App to read/write persistent User Profiles in Table Storage'
   }
 }
 

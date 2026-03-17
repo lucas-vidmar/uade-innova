@@ -9,6 +9,16 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-16] User Story #20: Secure Token Exchange
+- **Status**: Completed
+- **Functional Change**: Re-engineered the client-side authentication provider allowing frontend frameworks to securely request session credentials asynchronously from the host native Edge proxies instead of depending on static payloads.
+- **Business Impact**: Hardens the UX explicitly binding live Entra ID institutional directories automatically rendering UI layouts dynamically scoped to Active Directory claims (Student/Teacher properties).
+
+### [2026-03-16] User Story #19: Persistent User Profiles
+- **Status**: Completed
+- **Functional Change**: Provisioned the Azure Table Storage component natively within Bicep and implemented explicit Azure SDK Function app integrations orchestrating Managed Identity calls securely bound to the user's Entra ID Object ID context to store preferences across sessions.
+- **Business Impact**: Allows long-lived metadata and UI state to exist disconnected from volatile client caches securely without rolling and maintaining a heavyweight Relational Database infrastructure block.
+
 ### [2026-03-16] User Story #18: Role-Based Group Mapping
 - **Status**: Completed
 - **Functional Change**: Introduced `get-roles.js` in the backend resolving `rolesSource` integrations with SWA. Entra ID user group claims like "Alumnos-Pilot" are natively parsed and injected as explicit frontend and backend Role Claims.

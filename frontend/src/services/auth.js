@@ -76,4 +76,43 @@ export const auth = {
         const isDev = import.meta.env.DEV || window.location.hostname === 'localhost';
         return isDev;
     },
+
+    async initAuth() {
+        try {
+            const response = await fetch('/.auth/me');
+            if (response.ok) {
+                const payload = await response.json();
+                const clientPrincipal = payload.clientPrincipal;
+                if (clientPrincipal) {
+                    // Extract roles and map to internal ones
+                    const isDocente = clientPrincipal.userRoles.includes('Docente');
+                    const role = isDocente ? 'teacher' : 'student';
+                    
+                    // Enrich our internal fallback user with the real name/email
+                    USERS[role].name = clientPrincipal.userDetails;
+                    USERS[role].email = clientPrincipal.userDetails;
+                    
+                    // We don't trigger events here to avoid race conditions on boot.
+                    // Just set state silently initially.
+                    sessionStorage.setItem('edu_role', role);
+                    
+                    const user = USERS[role];
+                    if (user.subjects && user.subjects.length > 0 && !sessionStorage.getItem('edu_active_subject')) {
+                        sessionStorage.setItem('edu_active_subject', user.subjects[0].id);
+                    }
+                    
+                    return true;
+                }
+            }
+        } catch (error) {
+            console.warn('SWA Auth no alcanzado, modo local activado.', error);
+        }
+        
+        // Fallback local
+        if (!sessionStorage.getItem('edu_role')) {
+             sessionStorage.setItem('edu_role', 'student');
+             sessionStorage.setItem('edu_active_subject', USERS.student.subjects[0].id);
+        }
+        return false;
+    }
 };

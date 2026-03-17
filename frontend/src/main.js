@@ -83,9 +83,15 @@ async function handleRoute() {
 window.addEventListener('hashchange', handleRoute);
 window.addEventListener('auth:roleChanged', () => handleRoute());
 
-// Default hash on first load
-if (!window.location.hash) {
-    window.location.hash = `#/${auth.getRole()}/dashboard`;
-} else {
-    handleRoute();
+async function bootstrap() {
+    await auth.initAuth();
+    
+    // Default hash on first load
+    if (!window.location.hash) {
+        window.location.hash = `#/${auth.getRole()}/dashboard`;
+    } else {
+        handleRoute();
+    }
 }
+
+bootstrap();
