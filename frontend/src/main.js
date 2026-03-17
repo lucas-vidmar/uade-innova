@@ -6,6 +6,7 @@ import { auth } from './services/auth.js';
 import { themeManager } from './services/theme.js';
 import { renderSidebar } from './components/Sidebar.js';
 import { renderPrivacyModal } from './components/PrivacyModal.js';
+import { inactivityMonitor } from './services/inactivity.js';
 
 // Init theme
 themeManager.init();
@@ -94,6 +95,7 @@ window.addEventListener('auth:roleChanged', () => handleRoute());
 
 async function bootstrap() {
     await auth.initAuth();
+    inactivityMonitor.init();
     
     // Check for privacy consent
     if (!auth.getConsentAccepted()) {

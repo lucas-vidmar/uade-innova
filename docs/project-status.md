@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-17] User Story #27: Automatic Logout on Inactivity
+- **Status**: Completed
+- **Functional Change**: Implemented a background inactivity monitor that terminates the session and redirects to logout after 60 minutes of idle time.
+- **Business Impact**: Enhances data privacy and platform security, particularly for students using library or laboratory computers.
+
 ### [2026-03-17] User Story #31: Async Embedding Generation
 - **Status**: Completed
 - **Functional Change**: Refactored the ingestion pipeline to support parallel batch embedding generation and automatic retries for rate limits.

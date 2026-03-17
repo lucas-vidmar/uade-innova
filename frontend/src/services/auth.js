@@ -101,6 +101,13 @@ export const auth = {
         return isDev;
     },
 
+    async logout() {
+        console.log('[Auth] Logging out...');
+        sessionStorage.clear();
+        // SWA standard logout endpoint
+        window.location.href = '/.auth/logout?post_logout_redirect_uri=/';
+    },
+
     async initAuth() {
         try {
             const response = await fetch('/.auth/me');
