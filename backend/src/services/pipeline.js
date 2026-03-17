@@ -2,12 +2,13 @@
  * services/pipeline.js — Orquestador del pipeline de RAG
  * Procesa un material (buffer + metadata) y lo indexa en Pinecone.
  */
-import { parseFile, chunkText } from './parser.js';
-import { generateEmbedding } from './openai.js';
+import { parseFile, chunkText, cleanText } from './parser.js';
+import { generateEmbeddingsBatch } from './openai.js';
 import { upsertChunks } from './pinecone.js';
 import { saveJson } from './storage.js';
 
 const CONTAINER_PROCESSED = 'processed';
+const BATCH_SIZE = 20; // Tamaño optimizado para embeddings batch v3
 
 /**
  * Ejecuta el pipeline completo de procesamiento de un archivo.
@@ -33,23 +34,34 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
         const chunks = chunkText(text, 512, 50);
         context.log(`[Pipeline] Chunks generados: ${chunks.length}`);
 
-        // 3. Generar embeddings y preparar vectores para Pinecone
+        if (chunks.length === 0) {
+            throw new Error('No se pudo extraer texto significativo del archivo para generar chunks.');
+        }
+
+        // 3. Generar embeddings en batches y preparar vectores para Pinecone
         const vectors = [];
-        for (let i = 0; i < chunks.length; i++) {
-            const embedding = await generateEmbedding(chunks[i]);
-            vectors.push({
-                id: `${materialId}-chunk-${i}`,
-                values: embedding,
-                metadata: {
-                    subjectId,
-                    classIds,
-                    materialId,
-                    materialType,
-                    chunkIndex: i,
-                    sourceFilename: fileName,
-                    lectureDate: new Date().toISOString(),
-                    text: chunks[i],
-                },
+        for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+            const currentBatch = chunks.slice(i, i + BATCH_SIZE);
+            context.log(`[Pipeline] Vectorizando batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(chunks.length / BATCH_SIZE)} (${currentBatch.length} chunks)...`);
+            
+            const embeddings = await generateEmbeddingsBatch(currentBatch);
+            
+            embeddings.forEach((embedding, index) => {
+                const chunkIndex = i + index;
+                vectors.push({
+                    id: `${materialId}-chunk-${chunkIndex}`,
+                    values: embedding,
+                    metadata: {
+                        subjectId,
+                        classIds,
+                        materialId,
+                        materialType,
+                        chunkIndex,
+                        sourceFilename: fileName,
+                        lectureDate: new Date().toISOString(),
+                        text: currentBatch[index],
+                    },
+                });
             });
         }
 

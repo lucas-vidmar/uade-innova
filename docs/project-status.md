@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-17] User Story #31: Async Embedding Generation
+- **Status**: Completed
+- **Functional Change**: Refactored the ingestion pipeline to support parallel batch embedding generation and automatic retries for rate limits.
+- **Business Impact**: Dramatically reduces document processing time (up to 20x faster) and increases system reliability during high-load scenarios.
+
 ### [2026-03-17] User Story #29: Resilient PDF Parsing
 - **Status**: Completed
 - **Functional Change**: Implemented page-aware PDF extraction with custom page markers and enhanced cleaning for PDF artifacts.

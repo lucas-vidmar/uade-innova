@@ -30,18 +30,48 @@ function getClient() {
 }
 
 /**
- * Genera un embedding vectorial para un texto dado.
+ * Genera embeddings vectoriales para un array de textos (batch processing).
  * Modelo: text-embedding-3-small → 1536 dimensiones
+ * @param {string[]} texts
+ * @returns {Promise<number[][]>}
+ */
+export async function generateEmbeddingsBatch(texts) {
+    const client = getClient();
+    
+    // Función de ayuda para reintentar con exponential backoff
+    const executeWithRetry = async (fn, retries = 3, delay = 1000) => {
+        try {
+            return await fn();
+        } catch (err) {
+            const isRateLimit = err.status === 429 || err.message?.includes('Too Many Requests');
+            if (retries > 0 && isRateLimit) {
+                const nextDelay = delay * 2;
+                console.warn(`[OpenAI] Rate limit alcanzado. Reintentando en ${delay}ms... (Intentos restantes: ${retries})`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                return executeWithRetry(fn, retries - 1, nextDelay);
+            }
+            throw err;
+        }
+    };
+
+    const response = await executeWithRetry(() => 
+        client.embeddings.create({
+            model: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT,
+            input: texts.map(t => t.trim()),
+        })
+    );
+
+    return response.data.map(d => d.embedding);
+}
+
+/**
+ * Genera un embedding vectorial para un texto dado.
  * @param {string} text
  * @returns {Promise<number[]>}
  */
 export async function generateEmbedding(text) {
-    const client = getClient();
-    const response = await client.embeddings.create({
-        model: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT,
-        input: text.trim(),
-    });
-    return response.data[0].embedding;
+    const embeddings = await generateEmbeddingsBatch([text]);
+    return embeddings[0];
 }
 
 /**
