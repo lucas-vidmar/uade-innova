@@ -166,24 +166,9 @@ export function createChatWidget({ classes = [], subjectId = '' }) {
     scrollToBottom();
 
     try {
-      const res = await fetch(`${api.BASE_URL}/rag-query`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, classIds: selectedClassIds, subjectId }),
-      });
-
-      if (!res.ok) {
-        let errorMsg = 'Ocurrió un error al procesar tu consulta.';
-        try {
-          const errData = await res.json();
-          if (errData.error) errorMsg = errData.error;
-        } catch (e) { /* ignore parse error */ }
-        throw new Error(errorMsg);
-      }
-
-      const result = await res.json();
-
-      // Deduplicate sources by filename to prevent 5 identical chips
+      const result = await api.ragQuery({ question, classIds: selectedClassIds, subjectId });
+      
+      // Deduplicate sources by filename
       const uniqueSources = [];
       const seen = new Set();
       for (const s of (result.sources || [])) {

@@ -38,7 +38,7 @@ app.http('rag-query', {
             questionEmbedding = await generateEmbedding(question);
         } catch (err) {
             context.error('Error generando embedding:', err);
-            return { status: 500, body: JSON.stringify({ error: 'Error procesando la pregunta' }) };
+            return { status: 500, body: JSON.stringify({ error: `Error procesando la pregunta (embedding): ${err.message}` }) };
         }
 
         // ── 3. Filtro Pinecone por subjectId y classIds ───────────
@@ -54,7 +54,7 @@ app.http('rag-query', {
             matches = await querySimilar(questionEmbedding, filter, 5);
         } catch (err) {
             context.error('Error consultando Pinecone:', err);
-            return { status: 500, body: JSON.stringify({ error: 'Error buscando en la base de conocimiento' }) };
+            return { status: 500, body: JSON.stringify({ error: `Error buscando en la base de conocimiento: ${err.message}` }) };
         }
 
         if (matches.length === 0) {
@@ -103,7 +103,7 @@ ${contextText}
             answer = await chatCompletion(messages);
         } catch (err) {
             context.error('Error en chat completion:', err);
-            return { status: 500, body: JSON.stringify({ error: 'Error generando respuesta' }) };
+            return { status: 500, body: JSON.stringify({ error: `Error generando respuesta (chat): ${err.message}` }) };
         }
 
         // ── 7. Construir respuesta con fuentes ────────────────────

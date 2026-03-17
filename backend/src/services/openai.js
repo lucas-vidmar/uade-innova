@@ -11,20 +11,31 @@ let _client = null;
 function getClient() {
     if (!_client) {
         const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
+        const apiKey = process.env.AZURE_OPENAI_KEY;
+        
         if (!endpoint) {
             throw new Error('AZURE_OPENAI_ENDPOINT is not defined in environment variables.');
         }
 
-        // Use DefaultAzureCredential as the primary and only way to authenticate
-        const credential = new DefaultAzureCredential();
-        const scope = 'https://cognitiveservices.azure.com/.default';
-        const azureADTokenProvider = getBearerTokenProvider(credential, scope);
+        if (apiKey) {
+            // Plan B: Use API Key (for environments with restricted RBAC/Managed Identity)
+            _client = new AzureOpenAI({
+                endpoint,
+                apiKey,
+                apiVersion: '2024-08-01-preview',
+            });
+        } else {
+            // Plan A: Use DefaultAzureCredential (Managed Identity)
+            const credential = new DefaultAzureCredential();
+            const scope = 'https://cognitiveservices.azure.com/.default';
+            const azureADTokenProvider = getBearerTokenProvider(credential, scope);
 
-        _client = new AzureOpenAI({
-            endpoint,
-            azureADTokenProvider,
-            apiVersion: '2024-08-01-preview',
-        });
+            _client = new AzureOpenAI({
+                endpoint,
+                azureADTokenProvider,
+                apiVersion: '2024-08-01-preview',
+            });
+        }
     }
     return _client;
 }

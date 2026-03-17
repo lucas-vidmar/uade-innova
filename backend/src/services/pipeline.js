@@ -112,6 +112,7 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
             status: 'error',
             blobUrl,
             error: err.message,
+            stack: err.stack,
             processedAt: new Date().toISOString(),
         };
         try {
