@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-17] User Story #21: Local SWA Auth Emulation
+- **Status**: Completed
+- **Functional Change**: Provisioned the native Azure Static Web Apps `@azure/static-web-apps-cli` CLI emulator directly inside the frontend developer loop (`npm start`), bridging Vite's hot-reloading with live Cloud identity proxy emulation capabilities.
+- **Business Impact**: Drastically increases developer velocity and code hygiene by allowing UI engineers to inject dynamic Entra ID mock claims locally testing security restrictions flawlessly without deploying Cloud infrastructure changes.
+
 ### [2026-03-16] User Story #20: Secure Token Exchange
 - **Status**: Completed
 - **Functional Change**: Re-engineered the client-side authentication provider allowing frontend frameworks to securely request session credentials asynchronously from the host native Edge proxies instead of depending on static payloads.
