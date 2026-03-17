@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-17] User Story #14: Local-to-Cloud Auth Parity
+- **Status**: Completed
+- **Functional Change**: Standardized all Azure resource clients (OpenAI, Storage) on `DefaultAzureCredential`, removing conditional branching for local vs. cloud authentication.
+- **Business Impact**: Simplifies the codebase, enhances security by eliminating static API key usage, and ensures the application behaves identically across all development and production tiers.
+
 ### [2026-03-17] User Story #13: GitHub Actions CI/CD Pipeline
 - **Status**: Completed
 - **Functional Change**: Implemented a fully automated deployment pipeline using GitHub Actions and the Azure Developer CLI (`azd`).
