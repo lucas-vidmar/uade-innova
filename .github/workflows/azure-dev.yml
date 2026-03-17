@@ -18,13 +18,14 @@ jobs:
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       AZURE_ENV_NAME: ${{ secrets.AZURE_ENV_NAME }}
       AZURE_LOCATION: ${{ secrets.AZURE_LOCATION }}
+      AZURE_DEV_COLLECT_TELEMETRY: no
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Install azd
-        uses: Azure/setup-azd@v1.0.0
+        uses: Azure/setup-azd@v1
 
       - name: Log in to Azure (Federated Credentials)
         uses: azure/login@v2
