@@ -3,25 +3,17 @@
  * Procesa un material (buffer + metadata) y lo indexa en Pinecone.
  */
 import { parseFile, chunkText, cleanText } from './parser.js';
-import { generateEmbeddingsBatch } from './openai.js';
+import { generateEmbeddingsBatch, generateClassSummary } from './openai.js';
 import { upsertChunks } from './pinecone.js';
 import { saveJson } from './storage.js';
 
 const CONTAINER_PROCESSED = 'processed';
-const BATCH_SIZE = 20; // Tamaño optimizado para embeddings batch v3
+const CONTAINER_SUMMARIES = 'class-summaries';
+const BATCH_SIZE = 20;
 
 /**
  * Ejecuta el pipeline completo de procesamiento de un archivo.
- * @param {object} params
- * @param {Buffer} params.fileBuffer - binario del archivo
- * @param {string} params.fileContentType - MIME type
- * @param {string} params.fileName - nombre original
- * @param {string[]} params.classIds - IDs de las clases asociadas
- * @param {string} params.subjectId - ID de la materia
- * @param {string} params.materialType - tipo (transcript, presentation, etc.)
- * @param {string} params.materialId - UUID del material
- * @param {string} params.blobUrl - URL pública o local del archivo
- * @param {import('@azure/functions').InvocationContext} context - contexto de la función Azure
+ * ... (existing jsdocs)
  */
 export async function runPipeline({ fileBuffer, fileContentType, fileName, classIds, subjectId, materialType, materialId, blobUrl }, context) {
     try {
@@ -65,12 +57,35 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
             });
         }
 
-        // 4. Upsert en Pinecone
+        // 4. Indexar en Pinecone
         context.log(`[Pipeline] Indexando ${vectors.length} vectores en Pinecone index: ${process.env.PINECONE_INDEX_NAME}...`);
         await upsertChunks(vectors);
         context.log(`[Pipeline] Vectores indexados con éxito.`);
 
-        // 5. Guardar estado final: ready
+        // 5. Generar resumen si es un tipo de material rico en texto
+        if (materialType === 'transcript' || materialType === 'notes') {
+            context.log(`[Pipeline] Generando resumen IA para material ${materialId}...`);
+            try {
+                const summary = await generateClassSummary(text);
+                
+                // Guardar el resumen para cada clase asociada
+                for (const classId of classIds) {
+                    await saveJson(CONTAINER_SUMMARIES, `${classId}.json`, {
+                        classId,
+                        subjectId,
+                        summary,
+                        generatedFrom: materialId,
+                        generatedAt: new Date().toISOString(),
+                        lastModifiedBy: 'AI'
+                    });
+                }
+                context.log(`[Pipeline] Resúmenes guardados en ${CONTAINER_SUMMARIES}`);
+            } catch (sumErr) {
+                context.error(`[Pipeline] Error generando resumen (no bloqueante):`, sumErr);
+            }
+        }
+
+        // 6. Guardar estado final: ready
         const materialState = {
             materialId,
             classIds,
@@ -88,7 +103,6 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
     } catch (err) {
         context.error(`[Pipeline] Error crítico para material ${materialId}:`, err);
         
-        // Guardar estado: error
         const errorState = {
             materialId,
             classIds,

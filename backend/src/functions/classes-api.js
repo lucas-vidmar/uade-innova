@@ -129,6 +129,57 @@ app.http('save-classes', {
     }
 });
 
+// ── GET /api/class-summary/{classId} ───────────────────────────────
+// Devuelve el resumen generado por IA para una clase
+app.http('get-class-summary', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'class-summary/{classId}',
+    handler: async (request, context) => {
+        const classId = request.params.classId;
+        const CONTAINER_SUMMARIES = 'class-summaries';
+        try {
+            const summaryData = await loadJson(CONTAINER_SUMMARIES, `${classId}.json`);
+            if (!summaryData) return { status: 404, body: JSON.stringify({ error: 'Resumen no encontrado' }) };
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(summaryData) };
+        } catch (err) {
+            return { status: 500, body: JSON.stringify({ error: `Error cargando resumen: ${err.message}` }) };
+        }
+    }
+});
+
+// ── POST /api/class-summary/{classId} ──────────────────────────────
+// Guarda o valida un resumen (acción del docente)
+app.http('save-class-summary', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'class-summary/{classId}',
+    handler: async (request, context) => {
+        const classId = request.params.classId;
+        const CONTAINER_SUMMARIES = 'class-summaries';
+        const principal = parseClientPrincipal(request);
+        
+        try {
+            const body = await request.json(); // { summary: "...", validated: true }
+            const existingData = await loadJson(CONTAINER_SUMMARIES, `${classId}.json`) || { classId };
+            
+            const updatedData = {
+                ...existingData,
+                summary: body.summary,
+                lastModifiedAt: new Date().toISOString(),
+                lastModifiedBy: principal?.userDetails || 'docente',
+                validated: body.validated || false
+            };
+
+            await saveJson(CONTAINER_SUMMARIES, `${classId}.json`, updatedData);
+
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updatedData) };
+        } catch (err) {
+            return { status: 500, body: JSON.stringify({ error: `Error guardando resumen: ${err.message}` }) };
+        }
+    }
+});
+
 // ── DELETE /api/materials/{id} ────────────────────────────────────
 // Borra un material (del JSON. Dejar huérfano en pinecone por ahora o borrar metadata)
 app.http('delete-material', {

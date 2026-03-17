@@ -2,6 +2,7 @@ import { renderHeader } from '../../components/Header.js';
 import { api } from '../../services/api.js';
 import { auth } from '../../services/auth.js';
 import { toast } from '../../components/Toast.js';
+import { createSummaryReviewModal } from '../../components/SummaryReviewModal.js';
 
 export async function renderClassManager() {
     renderHeader('Gestión de Clases');
@@ -13,7 +14,6 @@ export async function renderClassManager() {
         mainEl.innerHTML = `<div class="empty-state">No hay materia seleccionada.</div>`;
         return;
     }
-
     try {
         let classes = await api.getClasses(subjectId);
 
@@ -56,8 +56,9 @@ export async function renderClassManager() {
                                         <tr>
                                             <th>ID Clase</th>
                                             <th>Título</th>
-                                            <th>Fecha Relevante</th>
-                                            <th>Materiales Asociados</th>
+                                            <th>Fecha</th>
+                                            <th>Materiales</th>
+                                            <th>Resumen IA</th>
                                             <th style="width:100px;text-align:right">Acciones</th>
                                         </tr>
                                     </thead>
@@ -75,6 +76,13 @@ export async function renderClassManager() {
                                                     <div style="font-size:0.875rem; color:var(--color-text-muted)">
                                                         ${c.materials.length} archivo(s)
                                                     </div>
+                                                </td>
+                                                <td>
+                                                    ${c.materials.some(m => m.type === 'transcript' || m.type === 'notes') ? `
+                                                        <button class="btn btn-sm ${c.summaryReady ? 'btn-ghost' : 'btn-secondary'} btn-review-summary" data-idx="${i}">
+                                                            ${c.summaryReady ? '✅ Ver Resumen' : '✍️ Revisar'}
+                                                        </button>
+                                                    ` : '<span style="color:var(--color-text-muted); font-size:0.8rem">Sin material</span>'}
                                                 </td>
                                                 <td style="text-align:right">
                                                     <button class="btn btn-icon btn-ghost btn-delete-class" data-idx="${i}" title="Eliminar Clase">
@@ -110,6 +118,20 @@ export async function renderClassManager() {
                         classes.splice(idx, 1);
                         saveAllClasses(classes);
                     }
+                });
+            });
+            mainEl.querySelectorAll('.btn-review-summary').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const idx = parseInt(e.currentTarget.getAttribute('data-idx'));
+                    createSummaryReviewModal(classes[idx].id, classes[idx].title, async (isValidated) => {
+                        // Si se valida, actualizamos el state local y el backend
+                        if (isValidated) {
+                            classes[idx].summaryReady = true;
+                            // Update total config
+                            await api.saveClasses(subjectId, classes);
+                            render();
+                        }
+                    });
                 });
             });
 
