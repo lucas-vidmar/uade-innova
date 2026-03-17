@@ -71,6 +71,29 @@ export const auth = {
         return sessionStorage.getItem('edu_role') || 'student';
     },
 
+    getConsentAccepted() {
+        return sessionStorage.getItem('edu_consent_accepted') === 'true';
+    },
+
+    async acceptPrivacyPolicy() {
+        const user = this.getUser();
+        const profile = {
+            theme: sessionStorage.getItem('edu_theme') || 'light',
+            language: sessionStorage.getItem('edu_lang') || 'es',
+            consentAccepted: true
+        };
+        
+        try {
+            await api.saveProfile(profile);
+            sessionStorage.setItem('edu_consent_accepted', 'true');
+            window.dispatchEvent(new CustomEvent('auth:consentAccepted'));
+            return true;
+        } catch (err) {
+            console.error('Error saving privacy consent:', err);
+            return false;
+        }
+    },
+
     isAuthenticated() {
         // En desarrollo local (Vite lo inyecta), permitimos el bypass. 
         // En build de producción real, esto obligaría a fallar si no hay SSO real.
@@ -108,6 +131,16 @@ export const auth = {
                     const user = USERS[role];
                     if (user.subjects && user.subjects.length > 0 && !sessionStorage.getItem('edu_active_subject')) {
                         sessionStorage.setItem('edu_active_subject', user.subjects[0].id);
+                    }
+
+                    // Sync profile and consent
+                    try {
+                        const profile = await api.getProfile();
+                        sessionStorage.setItem('edu_consent_accepted', profile.consentAccepted ? 'true' : 'false');
+                        sessionStorage.setItem('edu_theme', profile.theme);
+                        sessionStorage.setItem('edu_lang', profile.language);
+                    } catch (err) {
+                        console.error('Error fetching user profile:', err);
                     }
                     
                     return true;

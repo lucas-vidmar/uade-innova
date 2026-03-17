@@ -218,4 +218,23 @@ export const api = {
         const res = await fetch(`${BASE_URL}/analytics?subjectId=${subjectId}`);
         return res.json();
     },
+    
+    async getProfile() {
+        if (USE_MOCK) {
+            await delay(300);
+            return { theme: 'light', language: 'es', consentAccepted: false };
+        }
+        const res = await fetch(`${BASE_URL}/get-profile`);
+        return res.json();
+    },
+
+    async saveProfile(data) {
+        if (USE_MOCK) return;
+        const res = await fetch(`${BASE_URL}/save-profile`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        return res.json();
+    },
 };

@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-17] User Story #24: Privacy Consent Management
+- **Status**: Completed
+- **Functional Change**: Implemented a mandatory privacy policy consent modal and state persistence in the user profile.
+- **Business Impact**: Ensures institutional compliance with data protection regulations and provides transparency to users regarding AI data usage.
+
 ### [2026-03-17] User Story #15: Consumption Plan Quota Resolution
 - **Status**: Completed
 - **Functional Change**: Consolidated the infrastructure to be 100% serverless by removing legacy VM-based Bicep modules and parameters.

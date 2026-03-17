@@ -30,7 +30,8 @@ app.http('get-profile', {
                 return {
                     jsonBody: {
                         theme: entity.theme || "light",
-                        language: entity.language || "es"
+                        language: entity.language || "es",
+                        consentAccepted: entity.consentAccepted || false
                     }
                 };
             } catch (err) {
@@ -39,7 +40,8 @@ app.http('get-profile', {
                     return {
                         jsonBody: {
                             theme: "light",
-                            language: "es"
+                            language: "es",
+                            consentAccepted: false
                         }
                     };
                 }

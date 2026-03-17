@@ -26,7 +26,8 @@ app.http('save-profile', {
                 partitionKey: "Profiles",
                 rowKey: userId,
                 theme: reqBody.theme || "light",
-                language: reqBody.language || "es"
+                language: reqBody.language || "es",
+                consentAccepted: reqBody.consentAccepted ?? false
             };
 
             const credential = new DefaultAzureCredential();

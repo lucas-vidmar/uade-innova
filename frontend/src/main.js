@@ -5,6 +5,7 @@ import './diagnostic.js';
 import { auth } from './services/auth.js';
 import { themeManager } from './services/theme.js';
 import { renderSidebar } from './components/Sidebar.js';
+import { renderPrivacyModal } from './components/PrivacyModal.js';
 
 // Init theme
 themeManager.init();
@@ -85,6 +86,11 @@ window.addEventListener('auth:roleChanged', () => handleRoute());
 
 async function bootstrap() {
     await auth.initAuth();
+    
+    // Check for privacy consent
+    if (!auth.getConsentAccepted()) {
+        renderPrivacyModal();
+    }
     
     // Default hash on first load
     if (!window.location.hash) {
