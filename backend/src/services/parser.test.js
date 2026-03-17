@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { chunkText, cleanTranscript } from './parser.js';
+import { chunkText, cleanTranscript, cleanText } from './parser.js';
 import { getEncoding } from 'js-tiktoken';
 
 const encoder = getEncoding('cl100k_base');
@@ -60,3 +60,12 @@ test('chunkText handles empty input', () => {
     assert.deepStrictEqual(chunkText(''), []);
     assert.deepStrictEqual(chunkText(null), []);
 });
+
+test('cleanText handles PDF artifacts', () => {
+    const textWithArtifacts = 'Texto\u00ADbloqueado con guion\u2010largo y   espacios.';
+    const cleaned = cleanText(textWithArtifacts);
+    assert.ok(cleaned.includes('Textobloqueado'), 'Soft hyphen should be removed');
+    assert.ok(cleaned.includes('guion-largo'), 'Hyphen should be normalized');
+    assert.ok(!cleaned.includes('   '), 'Multiple spaces should be collapsed');
+});
+

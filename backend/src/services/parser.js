@@ -41,10 +41,31 @@ export async function parseFile(buffer, mimeType, filename = '') {
         const result = await mammoth.extractRawText({ buffer });
         rawText = result.value;
     }
-    // PDF
+    // PDF - Resilient parsing with page markers (US #29)
     else if (mimeType === 'application/pdf' || ext === 'pdf') {
-        const result = await pdfParse(buffer);
-        rawText = result.text;
+        try {
+            const options = {
+                // Custom pagerender to inject [Página X] markers
+                pagerender: function(pageData) {
+                    return pageData.getTextContent().then(function(textContent) {
+                        let lastY, text = '';
+                        for (let item of textContent.items) {
+                            if (lastY !== undefined && lastY !== item.transform[5]) {
+                                text += '\n';
+                            }
+                            text += item.str;
+                            lastY = item.transform[5];
+                        }
+                        return `\n\n[Página ${pageData.pageIndex + 1}]\n\n${text}`;
+                    });
+                }
+            };
+            const result = await pdfParse(buffer, options);
+            rawText = result.text;
+        } catch (err) {
+            console.error(`[Parser] Error parseando PDF ${filename}:`, err);
+            throw new Error(`Error al procesar el PDF: ${err.message}. Asegúrese de que no esté protegido por contraseña.`);
+        }
     }
     // PPTX — extracción básica desde XML interno
     else if (
@@ -118,9 +139,16 @@ export function cleanTranscript(text) {
 
 // ─── Helpers privados ────────────────────────────────────────────
 
-function cleanText(text) {
+/**
+ * Limpia ruido común de texto y normaliza espaciado.
+ * @param {string} text 
+ * @returns {string}
+ */
+export function cleanText(text) {
     if (!text) return '';
     return text
+        .replace(/\u00AD/g, '')           // eliminar soft hyphens (comunes en PDF)
+        .replace(/\u2010/g, '-')          // normalizar guiones
         .replace(/\r\n/g, '\n')           // normalizar line breaks
         .replace(/\t/g, ' ')              // tabs a espacios
         .replace(/ {2,}/g, ' ')          // múltiples espacios

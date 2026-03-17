@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-17] User Story #29: Resilient PDF Parsing
+- **Status**: Completed
+- **Functional Change**: Implemented page-aware PDF extraction with custom page markers and enhanced cleaning for PDF artifacts.
+- **Business Impact**: Improves RAG citation accuracy by allowing the LLM to reference specific pages and enhances pipeline reliability for large academic documents.
+
 ### [2026-03-17] User Story #23: Admin Dashboard for User Management
 - **Status**: Completed
 - **Functional Change**: Implemented a restricted administrative dashboard with role-based access control and user auditing capabilities.
