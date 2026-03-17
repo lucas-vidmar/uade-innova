@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-17] User Story #13: GitHub Actions CI/CD Pipeline
+- **Status**: Completed
+- **Functional Change**: Implemented a fully automated deployment pipeline using GitHub Actions and the Azure Developer CLI (`azd`).
+- **Business Impact**: Reduces deployment cycle time and minimizes human error by automating code synchronization from the repository to the live environment.
+
 ### [2026-03-17] User Story #12: Secure Blob Access
 - **Status**: Completed
 - **Functional Change**: Shifted application-level Blob Storage access from connection strings to a Zero-Trust model using Azure Managed Identities (`DefaultAzureCredential`).
