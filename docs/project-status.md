@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-17] User Story #15: Consumption Plan Quota Resolution
+- **Status**: Completed
+- **Functional Change**: Consolidated the infrastructure to be 100% serverless by removing legacy VM-based Bicep modules and parameters.
+- **Business Impact**: Eliminates deployment blockers related to VM quotas in the UADE tenant and ensures a lean, cost-effective serverless architecture as per project requirements.
+
 ### [2026-03-17] User Story #14: Local-to-Cloud Auth Parity
 - **Status**: Completed
 - **Functional Change**: Standardized all Azure resource clients (OpenAI, Storage) on `DefaultAzureCredential`, removing conditional branching for local vs. cloud authentication.
