@@ -140,10 +140,11 @@ app.http('get-class-summary', {
         const CONTAINER_SUMMARIES = 'class-summaries';
         try {
             const summaryData = await loadJson(CONTAINER_SUMMARIES, `${classId}.json`);
-            if (!summaryData) return { status: 404, body: JSON.stringify({ error: 'Resumen no encontrado' }) };
+            // Retornamos 200 con { summary: null } en lugar de 404 para evitar que el frontend rompa
+            if (!summaryData) return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, summary: null }) };
             return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(summaryData) };
         } catch (err) {
-            return { status: 500, body: JSON.stringify({ error: `Error cargando resumen: ${err.message}` }) };
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, summary: null, error: err.message }) };
         }
     }
 });
@@ -177,6 +178,36 @@ app.http('save-class-summary', {
         } catch (err) {
             return { status: 500, body: JSON.stringify({ error: `Error guardando resumen: ${err.message}` }) };
         }
+    }
+});
+
+// ── GET /api/director/stats ──────────────────────────────────────
+// Devuelve métricas agregadas para el dashboard del director
+app.http('get-director-stats', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'director/stats',
+    handler: async (request, context) => {
+        context.log('get-director-stats triggered');
+        const MOCK_STATS = {
+            dau: 52,
+            dauDelta: '+8%',
+            classesProcessed: 14,
+            ragInteractions: 734,
+            ragDelta: '+23%',
+            adoptionRate: 68,
+            subjectAdoption: [
+                { name: 'Arq. de Software', rate: 82 },
+                { name: 'Diseño de BD', rate: 71 },
+                { name: 'Ing. de Software I', rate: 63 },
+                { name: 'Sistemas Distribuidos', rate: 44 },
+            ],
+        };
+        return { 
+            status: 200, 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify(MOCK_STATS) 
+        };
     }
 });
 

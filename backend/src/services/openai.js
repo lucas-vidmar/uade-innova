@@ -89,3 +89,47 @@ export async function chatCompletion(messages) {
     });
     return response.choices[0].message.content;
 }
+/**
+ * Genera un resumen estructurado de una clase basándose en el texto extraído.
+ * @param {string} text - Texto completo de la clase (transcripción o apuntes).
+ * @param {string} subjectName - Nombre de la materia para contexto.
+ * @returns {Promise<Object>} - Objeto con el resumen estructurado.
+ */
+export async function generateClassSummary(text, subjectName = "") {
+    const client = getClient();
+    const prompt = `
+Eres un asistente académico experto en la Universidad Argentina de la Empresa (UADE). 
+Tu tarea es generar un resumen estructurado de una clase universitaria basada en el texto proporcionado.
+
+REGLAS DE FORMATO:
+1. El resumen debe estar en ESPAÑOL.
+2. Usa Markdown para el formato.
+3. Divide el contenido en estas secciones:
+   - **Temas Principales**: Lista con los 3-5 conceptos clave.
+   - **Puntos Clave**: Explicación concisa de cada tema.
+   - **Conclusión/Cierre**: Un párrafo resumen de la clase.
+
+MATERIA: ${subjectName}
+TEXTO DE LA CLASE:
+${text.substring(0, 15000)} // Limitar para evitar exceder ventana de contexto de gpt-4o-mini
+
+Resumen académico:`;
+
+    const response = await client.chat.completions.create({
+        model: process.env.AZURE_OPENAI_CHAT_DEPLOYMENT, // gpt-4o-mini
+        messages: [
+            { role: "system", content: "Generas resúmenes académicos estructurados y profesionales." },
+            { role: "user", content: prompt }
+        ],
+        temperature: 0.5,
+        max_tokens: 2000,
+    });
+
+    const content = response.choices[0].message.content;
+    
+    return {
+        content,
+        generatedAt: new Date().toISOString(),
+        model: process.env.AZURE_OPENAI_CHAT_DEPLOYMENT
+    };
+}

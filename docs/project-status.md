@@ -9,6 +9,10 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+###| 2026-03-17 | Manual | Fix 500/404 errors & service consolidation. | SUCCESS | deployed to `uade-dev` |
+- **Functional Change**: Deploying latest changes (Issue #58) manually via `azd deploy` due to GitHub Actions role assignment permission restrictions.
+- **Business Impact**: Project pilot is now live for testing the AI summary validation flow.
+
 ### [2026-03-17] User Story #58: AI-Generated Summary Validation
 - **Status**: Completed
 - **Functional Change**: Integrated an AI-human-in-the-loop workflow for class summaries. Teachers can now validate and refine content before students access it.

@@ -220,4 +220,52 @@ export const api = {
         });
         return res.json();
     },
+
+    async getClassSummary(classId) {
+        if (USE_MOCK) {
+            await delay(800);
+            return { classId, summary: "Resumen simulado para la clase " + classId, validated: false };
+        }
+        const res = await fetch(`${BASE_URL}/class-summary/${classId}`);
+        if (!res.ok) return null;
+        return res.json();
+    },
+
+    async saveClassSummary(classId, data) {
+        if (USE_MOCK) return;
+        const res = await fetch(`${BASE_URL}/class-summary/${classId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        return res.json();
+    },
+
+    // ── Academic SGA Methods (Moved from academic.js) ───────
+    async getTasks(studentId) {
+        // Mock data as defined in academic.js
+        const MOCK_TASKS = [
+            { id: 't-01', title: 'TP1: Diagrama de Arquitectura C4', dueDate: '2026-03-28', weight: 25, status: 'pending', classIds: ['class-01', 'class-02'], grade: null, subjectId: 'arq-software-2026' },
+            { id: 't-02', title: 'Quiz Online — Estilos Arquitectónicos', dueDate: '2026-03-20', weight: 10, status: 'completed', classIds: ['class-02'], grade: 8.5, subjectId: 'arq-software-2026' },
+            { id: 't-03', title: 'Parcial 1 — Arquitectura y Patrones', dueDate: '2026-04-16', weight: 35, status: 'pending', classIds: ['class-01', 'class-02', 'class-03', 'class-04'], grade: null, subjectId: 'arq-software-2026' },
+            { id: 't-04', title: 'Lectura: "Clean Architecture" (caps 1-5)', dueDate: '2026-03-19', weight: 5, status: 'completed', classIds: ['class-01'], grade: 10, subjectId: 'arq-software-2026' },
+        ];
+        await delay(400);
+        return MOCK_TASKS;
+    },
+
+    async getEarlyAlerts(subjectId) {
+        const MOCK_EARLY_ALERTS = [
+            { id: 'alu-012', name: 'Tomás García', subjectId: 'arq-software-2026', subject: 'Arq. de Software', risk: 'high', attendance: '45%', avgGrade: 4.2 },
+            { id: 'alu-031', name: 'Lucía Martínez', subjectId: 'diseno-sistemas-2026', subject: 'Sistemas Dist.', risk: 'medium', attendance: '62%', avgGrade: 5.1 },
+            { id: 'alu-008', name: 'Nicolás Peralta', subjectId: 'arq-software-2026', subject: 'Arq. de Software', risk: 'medium', attendance: '70%', avgGrade: 5.8 },
+        ];
+        await delay(400);
+        return subjectId ? MOCK_EARLY_ALERTS.filter(a => a.subjectId === subjectId) : MOCK_EARLY_ALERTS;
+    },
+
+    async getAttendanceStats(subjectId) {
+        await delay(400);
+        return { average: 78, critical: 3, trend: 'stable' };
+    }
 };

@@ -42,7 +42,7 @@ export async function renderClassManager() {
                         </button>
                     </div>
                     
-                    ${classes.length === 0 ? `
+                    ${Array.isArray(classes) && classes.length === 0 ? `
                         <div class="empty-state">
                             <span class="empty-icon">📚</span>
                             <h3>No hay clases creadas</h3>
@@ -63,7 +63,7 @@ export async function renderClassManager() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        ${classes.map((c, i) => `
+                                        ${Array.isArray(classes) && classes.map((c, i) => `
                                             <tr>
                                                 <td><div class="badge badge-gray">${c.id}</div></td>
                                                 <td>

@@ -2,7 +2,6 @@
    Director Dashboard — Adoption metrics & early alerts
    ============================================================ */
 import { api } from '../../services/api.js';
-import { academic } from '../../services/academic.js';
 import { renderHeader } from '../../components/Header.js';
 
 export async function renderDirectorDashboard(container) {
@@ -11,7 +10,7 @@ export async function renderDirectorDashboard(container) {
 
     const [data, earlyAlerts] = await Promise.all([
         api.getDirectorStats(),
-        academic.getEarlyAlerts()
+        api.getEarlyAlerts()
     ]);
     
     // Inject early alerts into the data object for compatibility with the existing template
