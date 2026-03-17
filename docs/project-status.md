@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-17] User Story #25: Mock Academic Data Bridge
+- **Status**: Completed
+- **Functional Change**: Introduced `academic.js` as a formal abstraction layer for grades, attendance, and risk alerts, separating institutional data from the core application API.
+- **Business Impact**: Simplifies future integration with the University's SGA system and provides a cleaner architecture for managing student academic records.
+
 ### [2026-03-17] User Story #27: Automatic Logout on Inactivity
 - **Status**: Completed
 - **Functional Change**: Implemented a background inactivity monitor that terminates the session and redirects to logout after 60 minutes of idle time.
