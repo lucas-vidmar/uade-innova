@@ -1,6 +1,7 @@
 import { app } from '@azure/functions';
 import { loadJson, saveJson, listBlobs, deleteBlob } from '../services/storage.js';
 import { v4 as uuidv4 } from 'uuid';
+import { parseClientPrincipal } from '../services/auth-utils.js';
 
 const CONTAINER_CLASSES = process.env.AZURE_STORAGE_CONTAINER_CLASSES || 'classes-config';
 const CONTAINER_PROCESSED = 'processed';
@@ -13,11 +14,32 @@ app.http('get-subjects', {
     route: 'subjects',
     handler: async (request, context) => {
         context.log('get-subjects triggered');
-        const subjects = [
-            { id: 'arq-software-2026', name: 'Arquitectura de Software' },
-            { id: 'diseno-sistemas-2026', name: 'Diseño de Sistemas' }
+
+        const principal = parseClientPrincipal(request);
+        const groups = principal?.groups || [];
+        const isTeacher = groups.includes('Docentes-Pilot');
+
+        const ALL_SUBJECTS = [
+            { id: 'arq-software-2026', name: 'Arquitectura de Software', group: 'GRP-ARQ-SOFT-2026' },
+            { id: 'diseno-sistemas-2026', name: 'Diseño de Sistemas', group: 'GRP-DIS-SIST-2026' }
         ];
-        return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(subjects) };
+
+        // Filtering logic:
+        // 1. Teachers see all subjects in the pilot.
+        // 2. Students see only subjects whose 'group' they belong to.
+        // 3. Local dev (no principal) sees everything for convenience.
+        
+        let filteredSubjects = ALL_SUBJECTS;
+        
+        if (principal && !isTeacher) {
+            filteredSubjects = ALL_SUBJECTS.filter(s => groups.includes(s.group));
+        }
+
+        return { 
+            status: 200, 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify(filteredSubjects.map(({id, name}) => ({id, name}))) 
+        };
     }
 });
 

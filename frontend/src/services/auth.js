@@ -1,6 +1,7 @@
 /* ============================================================
    Auth Service — Mock SSO for local development
    ============================================================ */
+import { api } from './api.js';
 
 const USERS = {
     student: {
@@ -96,6 +97,14 @@ export const auth = {
                     // Just set state silently initially.
                     sessionStorage.setItem('edu_role', role);
                     
+                    // Sync subjects from backend
+                    try {
+                        const subjects = await api.getSubjects();
+                        USERS[role].subjects = subjects;
+                    } catch (err) {
+                        console.error('Error fetching enrolled subjects:', err);
+                    }
+
                     const user = USERS[role];
                     if (user.subjects && user.subjects.length > 0 && !sessionStorage.getItem('edu_active_subject')) {
                         sessionStorage.setItem('edu_active_subject', user.subjects[0].id);

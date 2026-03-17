@@ -1,6 +1,7 @@
-const { app } = require('@azure/functions');
-const { TableClient } = require('@azure/data-tables');
-const { DefaultAzureCredential } = require('@azure/identity');
+import { app } from '@azure/functions';
+import { TableClient } from '@azure/data-tables';
+import { DefaultAzureCredential } from '@azure/identity';
+import { parseClientPrincipal } from '../services/auth-utils.js';
 
 const tableName = "UserProfiles";
 const storageAccountUrl = `https://${process.env.AZURE_STORAGE_ACCOUNT_NAME}.table.core.windows.net`;
@@ -10,26 +11,14 @@ app.http('get-profile', {
     authLevel: 'anonymous',
     handler: async (request, context) => {
         try {
-            // In SWA production, Entra ID data comes securely in this header
-            const clientPrincipalHeader = request.headers.get('x-ms-client-principal');
+            // Use shared auth utility to parse identity
+            const principal = parseClientPrincipal(request);
 
-            if (!clientPrincipalHeader && process.env.AZURE_FUNCTIONS_ENVIRONMENT !== "Development") {
+            if (!principal && process.env.AZURE_FUNCTIONS_ENVIRONMENT !== "Development") {
                 return { status: 401, body: "Unauthorized - missing identity" };
             }
 
-            let userId = "local-dev-user"; // Fallback for local testing
-            if (clientPrincipalHeader) {
-                const encoded = Buffer.from(clientPrincipalHeader, 'base64').toString('utf-8');
-                const principal = JSON.parse(encoded);
-                
-                // Find the OID (Object ID) from the claims to use as the unique RowKey
-                const oidClaim = principal.claims.find(c => c.typ === "http://schemas.microsoft.com/identity/claims/objectidentifier");
-                if (oidClaim) {
-                    userId = oidClaim.val;
-                } else {
-                    userId = principal.userId;
-                }
-            }
+            const userId = principal?.oid || "local-dev-user";
 
             // Initialize Table SDK with Zero-Trust identity
             const credential = new DefaultAzureCredential();

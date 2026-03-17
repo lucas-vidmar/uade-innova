@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-17] User Story #22: Course Enrollment Resolution
+- **Status**: Completed
+- **Functional Change**: Implemented a dynamic enrollment mapping layer that translates Microsoft Entra ID group claims into specific subject visibility. Filtered API responses ensure students only interact with authorized course materials.
+- **Business Impact**: Delivers a personalized and secure academic experience, preventing cross-course data leakage and streamlining the UI for students.
+
 ### [2026-03-17] User Story #21: Local SWA Auth Emulation
 - **Status**: Completed
 - **Functional Change**: Provisioned the native Azure Static Web Apps `@azure/static-web-apps-cli` CLI emulator directly inside the frontend developer loop (`npm start`), bridging Vite's hot-reloading with live Cloud identity proxy emulation capabilities.

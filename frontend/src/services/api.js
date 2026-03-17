@@ -143,6 +143,18 @@ export const api = {
         return res.json();
     },
 
+    async getSubjects() {
+        if (USE_MOCK) {
+            await delay(400);
+            return [
+                { id: 'arq-software-2026', name: 'Arquitectura de Software' },
+                { id: 'diseno-sistemas-2026', name: 'Diseño de Sistemas' }
+            ];
+        }
+        const res = await fetch(`${BASE_URL}/subjects`);
+        return res.json();
+    },
+
     async saveClasses(subjectId, classesArray) {
         if (USE_MOCK) return;
         const res = await fetch(`${BASE_URL}/classes?subjectId=${subjectId}`, {
