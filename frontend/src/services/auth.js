@@ -110,7 +110,11 @@ export const auth = {
                 if (clientPrincipal) {
                     // Extract roles and map to internal ones
                     const isDocente = clientPrincipal.userRoles.includes('Docente');
-                    const role = isDocente ? 'teacher' : 'student';
+                    const isDirector = clientPrincipal.userRoles.includes('Director');
+                    
+                    let role = 'student';
+                    if (isDirector) role = 'director';
+                    else if (isDocente) role = 'teacher';
                     
                     // Enrich our internal fallback user with the real name/email
                     USERS[role].name = clientPrincipal.userDetails;

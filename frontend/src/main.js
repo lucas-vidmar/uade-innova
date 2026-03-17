@@ -21,6 +21,7 @@ const ROUTES = {
     '/teacher/upload': () => import('./pages/teacher/UploadMaterials.js').then(m => m.renderTeacherUpload),
     '/teacher/analytics': () => import('./pages/teacher/Analytics.js').then(m => m.renderTeacherAnalytics),
     '/director/dashboard': () => import('./pages/director/Dashboard.js').then(m => m.renderDirectorDashboard),
+    '/admin/users': () => import('./pages/admin/UserManagement.js').then(m => m.renderUserManagement),
 };
 
 /* ── App shell ───────────────────────────────────────────── */
@@ -49,6 +50,13 @@ async function handleRoute() {
 
     buildShell();
     renderSidebar();
+
+    // Route Guard: Admin paths
+    if (path.startsWith('/admin') && auth.getRole() !== 'director') {
+        console.warn('[Router] Access Denied to admin path');
+        window.location.hash = `#/${auth.getRole()}/dashboard`;
+        return;
+    }
 
     // Highlight active nav item
     document.querySelectorAll('.sidebar-item').forEach(el => {

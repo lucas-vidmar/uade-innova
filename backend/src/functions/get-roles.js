@@ -26,6 +26,10 @@ app.http('get-roles', {
             if (groupClaims.includes('Docentes-Pilot')) {
                 roles.push('Docente');
             }
+            
+            if (groupClaims.includes('Directores-Pilot')) {
+                roles.push('Director');
+            }
 
             // A user could theoretically be both, or none. If none, they just remain 'authenticated'.
             return {

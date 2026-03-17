@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-17] User Story #23: Admin Dashboard for User Management
+- **Status**: Completed
+- **Functional Change**: Implemented a restricted administrative dashboard with role-based access control and user auditing capabilities.
+- **Business Impact**: Provides institutional directors with oversight of the platform's adoption and user compliance (e.g., privacy consent verification).
+
 ### [2026-03-17] User Story #24: Privacy Consent Management
 - **Status**: Completed
 - **Functional Change**: Implemented a mandatory privacy policy consent modal and state persistence in the user profile.

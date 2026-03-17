@@ -213,6 +213,20 @@ export const api = {
         return res.json();
     },
 
+    async getAdminUsers() {
+        if (USE_MOCK) {
+            await delay(400);
+            return [
+                { id: 'alu-001', theme: 'light', language: 'es', consentAccepted: true, lastActive: '2026-03-17T12:00:00Z' },
+                { id: 'doc-001', theme: 'dark', language: 'es', consentAccepted: true, lastActive: '2026-03-17T11:45:00Z' },
+                { id: 'alu-new', theme: 'light', language: 'es', consentAccepted: false, lastActive: '2026-03-17T10:30:00Z' }
+            ];
+        }
+        const res = await fetch(`${BASE_URL}/admin/users`);
+        if (!res.ok) throw new Error('Unauthorized or Server Error');
+        return res.json();
+    },
+
     async getTeacherAnalytics(subjectId) {
         if (USE_MOCK) { await delay(400); return MOCK_TEACHER_ANALYTICS; }
         const res = await fetch(`${BASE_URL}/analytics?subjectId=${subjectId}`);
