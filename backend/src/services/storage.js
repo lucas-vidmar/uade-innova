@@ -9,18 +9,16 @@ let _client = null;
 
 function getClient() {
     if (!_client) {
-        // En local: usa connection string. En producción: usará Managed Identity.
-        const connString = process.env.AZURE_STORAGE_CONNECTION_STRING;
-        if (connString && !connString.startsWith('FILL_WITH')) {
-            _client = BlobServiceClient.fromConnectionString(connString);
-        } else {
-            // Fallback: construir desde account name + DefaultAzureCredential (producción)
-            const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
-            _client = new BlobServiceClient(
-                `https://${accountName}.blob.core.windows.net`,
-                new DefaultAzureCredential()
-            );
+        // Zero-Trust: Use account name + DefaultAzureCredential (Managed Identity in Cloud)
+        const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
+        if (!accountName) {
+            throw new Error('AZURE_STORAGE_ACCOUNT_NAME is not defined in environment variables.');
         }
+
+        _client = new BlobServiceClient(
+            `https://${accountName}.blob.core.windows.net`,
+            new DefaultAzureCredential()
+        );
     }
     return _client;
 }

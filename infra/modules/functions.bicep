@@ -136,10 +136,6 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT'
           value: openAiEmbeddingDeployment
         }
-        {
-          name: 'AZURE_STORAGE_CONNECTION_STRING'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${listKeys(storageAccountId, '2023-01-01').keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
-        }
         // Storage
         {
           name: 'AZURE_STORAGE_ACCOUNT_NAME'

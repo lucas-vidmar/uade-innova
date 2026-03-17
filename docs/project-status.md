@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-17] User Story #12: Secure Blob Access
+- **Status**: Completed
+- **Functional Change**: Shifted application-level Blob Storage access from connection strings to a Zero-Trust model using Azure Managed Identities (`DefaultAzureCredential`).
+- **Business Impact**: Hardens the platform's security posture by eliminating long-lived credentials, reducing the risk of credential leakage and simplifying secret rotation.
+
 ### [2026-03-17] User Story #22: Course Enrollment Resolution
 - **Status**: Completed
 - **Functional Change**: Implemented a dynamic enrollment mapping layer that translates Microsoft Entra ID group claims into specific subject visibility. Filtered API responses ensure students only interact with authorized course materials.
