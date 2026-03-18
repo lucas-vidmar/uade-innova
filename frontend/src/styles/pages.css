@@ -401,6 +401,50 @@
     color: var(--color-text-muted);
 }
 
+/* US#48 Chat History Dashboard */
+.chat-history-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-2);
+    margin-bottom: var(--space-2);
+    transition: all var(--transition);
+}
+
+.chat-history-item:hover {
+    border-color: var(--color-primary);
+    background: var(--color-surface-3);
+    transform: translateX(4px);
+}
+
+.chat-history-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.chat-history-q {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--color-text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 2px;
+}
+
+.chat-history-date {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+}
+
+.chat-history-arrow {
+    color: var(--color-text-muted);
+    font-weight: 700;
+}
+
 /* ── Calendar ────────────────────────────────────────────── */
 .calendar-wrapper {
     max-width: 860px;

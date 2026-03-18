@@ -663,6 +663,20 @@
     animation: slideInRight 0.3s ease forwards;
 }
 
+/* ── Chat Highlights ─────────────────────────────────────── */
+.highlight-msg {
+    background: rgba(0, 64, 92, 0.05);
+    border-radius: var(--radius-md);
+    box-shadow: 0 0 0 2px var(--color-primary);
+    animation: pulseHighlight 2s ease-in-out infinite;
+}
+
+@keyframes pulseHighlight {
+    0% { box-shadow: 0 0 0 0px rgba(0, 64, 92, 0.4); }
+    70% { box-shadow: 0 0 0 6px rgba(0, 64, 92, 0); }
+    100% { box-shadow: 0 0 0 0px rgba(0, 64, 92, 0); }
+}
+
 @media (max-width: 480px) {
     .slide-panel {
         width: 100%;

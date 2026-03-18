@@ -4,7 +4,7 @@
 import { api } from '../services/api.js';
 import { auth } from '../services/auth.js';
 
-export function createChatWidget({ classes = [], subjectId = '', initialMessages = [] }) {
+export function createChatWidget({ classes = [], subjectId = '', initialMessages = [], highlightMessageId = null }) {
   const user = auth.getUser();
   let selectedClassIds = classes.slice(0, 2).map(c => c.id);
   let messages = [...initialMessages];
@@ -93,7 +93,7 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
       `;
     }
     return `
-      <div class="chat-msg chat-msg-assistant animate-fade">
+      <div class="chat-msg chat-msg-assistant animate-fade ${msg.id === highlightMessageId ? 'highlight-msg' : ''}" id="msg-${msg.id || ''}">
         <div class="chat-avatar-bot">🤖</div>
         <div class="chat-msg-body">
           <div class="chat-bubble chat-bubble-assistant">${renderMarkdown(msg.content)}</div>
@@ -238,7 +238,16 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
   const scrollToBottom = () => {
     requestAnimationFrame(() => {
       const el = container.querySelector('#chat-messages');
-      if (el) el.scrollTop = el.scrollHeight;
+      if (!el) return;
+
+      if (highlightMessageId) {
+        const target = el.querySelector(`#msg-${highlightMessageId}`);
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          return;
+        }
+      }
+      el.scrollTop = el.scrollHeight;
     });
   };
 

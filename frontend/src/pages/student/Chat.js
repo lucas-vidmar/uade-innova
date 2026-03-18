@@ -12,6 +12,12 @@ export async function renderStudentChat(container) {
 
     const user = auth.getUser();
     const activeSubjectId = auth.getActiveSubjectId();
+
+    // Extract query params from hash: #/student/chat?id=123
+    const hashParts = window.location.hash.split('?');
+    const queryParams = new URLSearchParams(hashParts[1] || '');
+    const highlightId = queryParams.get('id');
+
     const [classes, history] = await Promise.all([
         api.getClasses(activeSubjectId),
         api.getChatHistory(activeSubjectId)
@@ -21,6 +27,7 @@ export async function renderStudentChat(container) {
     const widget = createChatWidget({ 
         classes, 
         subjectId: activeSubjectId, 
+        highlightMessageId: highlightId,
         initialMessages: history.map(h => ([
             { role: 'user', content: h.question },
             { role: 'assistant', content: h.answer, sources: h.sources, id: h.id, feedback: h.feedback }
