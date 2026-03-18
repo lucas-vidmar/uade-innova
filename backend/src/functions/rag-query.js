@@ -44,10 +44,16 @@ app.http('rag-query', {
         }
 
         // ── 3. Filtro Pinecone por subjectId y classIds ───────────
-        const filter = { subjectId: { $eq: subjectId } };
-        // Si hay classIds y NO incluye "Todas las clases", filtramos
-        if (classIds && classIds.length > 0 && !classIds.includes('all')) {
-            filter.classIds = { $in: classIds };
+        const filter = {
+            subjectId: { $eq: subjectId },
+            $or: [
+                { classIds: { $in: classIds } },
+                { materialType: { $eq: 'bibliography' } }
+            ]
+        };
+        // Si classIds incluye 'all' o está vacío, simplificamos a solo subjectId
+        if (!classIds || classIds.length === 0 || classIds.includes('all')) {
+            delete filter.$or;
         }
 
         // ── 4. Búsqueda de similitud en Pinecone ──────────────────
@@ -110,7 +116,7 @@ ${contextText}
         // ── 7. Construir respuesta con fuentes ────────────────────
         const sources = matches.map(m => ({
             materialType: m.metadata?.materialType,
-            classId: m.metadata?.classId,
+            classIds: m.metadata?.classIds,
             chunkIndex: m.metadata?.chunkIndex,
             sourceFilename: m.metadata?.sourceFilename,
             score: Math.round(m.score * 100) / 100,

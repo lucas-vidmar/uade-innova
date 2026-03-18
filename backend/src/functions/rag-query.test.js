@@ -15,7 +15,7 @@ const pineconeMocks = {
                 sourceFilename: 'clase1.pdf',
                 text: 'Contenido de la clase 1',
                 materialType: 'pdf',
-                classId: 'class1',
+                classIds: ['class1'],
                 chunkIndex: 0
             }
         }

@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-18] User Story #39: Subject-Filtered Retrieval
+- **Status**: Completed
+- **Functional Change**: Implemented a robust Pinecone metadata filter that enforces subject-level isolation and ensures bibliography materials are always included in the RAG context.
+- **Business Impact**: Guaranteed academic data integrity by preventing context leaking between different subjects.
+
 ### [2026-03-18] User Story #41: Source-Only Grounding Mode
 - **Status**: Completed
 - **Functional Change**: Hardened the RAG system prompt to EXCLUSIVELY rely on the provided context, rejecting general knowledge and instruction overrides.
