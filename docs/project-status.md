@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-18] User Story #41: Source-Only Grounding Mode
+- **Status**: Completed
+- **Functional Change**: Hardened the RAG system prompt to EXCLUSIVELY rely on the provided context, rejecting general knowledge and instruction overrides.
+- **Business Impact**: Ensures the bot remains an academic tutor grounded in UADE-specific materials, preventing hallucinations or reliance on external data that might conflict with institutional regulations.
+
 ###| 2026-03-17 | Manual | Fix 500/404 errors & service consolidation. | SUCCESS | deployed to `uade-dev` |
 - **Functional Change**: Deploying latest changes (Issue #58) manually via `azd deploy` due to GitHub Actions role assignment permission restrictions.
 - **Business Impact**: Project pilot is now live for testing the AI summary validation flow.
