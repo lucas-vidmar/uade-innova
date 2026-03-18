@@ -5,6 +5,8 @@
 import { app } from '@azure/functions';
 import { generateEmbedding, chatCompletion } from '../services/openai.js';
 import { querySimilar } from '../services/pinecone.js';
+import { saveJson } from '../services/storage.js';
+import { v4 as uuidv4 } from 'uuid';
 
 app.http('rag-query', {
     methods: ['POST'],
@@ -115,10 +117,34 @@ ${contextText}
             score: Math.round(m.score * 100) / 100,
         }));
 
+        // ── 8. Guardar log de interacción (HU#62) ─────────────────
+        const interactionId = uuidv4();
+        const chatLog = {
+            id: interactionId,
+            userId: request.user?.id || 'anonymous',
+            subjectId,
+            classIds,
+            question,
+            answer,
+            sources,
+            timestamp: new Date().toISOString(),
+            feedback: null
+        };
+        
+        try {
+            // Guardamos en un container específico para logs
+            // Usamos una ruta que facilite la búsqueda por usuario y materia
+            const userIdSanitized = (request.user?.id || 'anon').replace(/[^a-zA-Z0-9]/g, '_');
+            await saveJson('chat-logs', `${userIdSanitized}/${subjectId}/${interactionId}.json`, chatLog);
+        } catch (logErr) {
+            context.error('Error guardando log de chat:', logErr);
+            // No bloqueamos la respuesta al usuario si falla el logging
+        }
+
         return {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ answer, sources }),
+            body: JSON.stringify({ id: interactionId, answer, sources }),
         };
     },
 });

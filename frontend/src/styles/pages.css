@@ -865,6 +865,44 @@
     max-width: 75%;
 }
 
+.chat-msg-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-3);
+    margin-top: var(--space-1);
+}
+
+.chat-feedback-btns {
+    display: flex;
+    gap: 4px;
+}
+
+.feedback-btn {
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.feedback-btn:hover {
+    background: var(--color-surface-3);
+    color: var(--color-text-primary);
+}
+
+.feedback-btn.active {
+    background: rgba(0, 64, 92, 0.15);
+    color: var(--color-primary-light);
+    border-color: var(--color-primary);
+}
+
 .chat-sources {
     display: flex;
     flex-wrap: wrap;

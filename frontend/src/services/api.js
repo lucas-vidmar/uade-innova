@@ -290,5 +290,25 @@ export const api = {
     async getAttendanceStats(subjectId) {
         await delay(400);
         return { average: 78, critical: 3, trend: 'stable' };
+    },
+
+    async getChatHistory(subjectId) {
+        if (USE_MOCK) {
+            await delay(600);
+            return [];
+        }
+        const res = await fetch(`${BASE_URL}/chat-history?subjectId=${subjectId}`);
+        if (!res.ok) return [];
+        return res.json();
+    },
+
+    async sendChatFeedback({ messageId, subjectId, isPositive }) {
+        if (USE_MOCK) return { success: true };
+        const res = await fetch(`${BASE_URL}/chat-feedback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ messageId, subjectId, isPositive })
+        });
+        return res.json();
     }
 };

@@ -12,9 +12,19 @@ export async function renderStudentChat(container) {
 
     const user = auth.getUser();
     const activeSubjectId = auth.getActiveSubjectId();
-    const classes = await api.getClasses(activeSubjectId);
+    const [classes, history] = await Promise.all([
+        api.getClasses(activeSubjectId),
+        api.getChatHistory(activeSubjectId)
+    ]);
 
     container.innerHTML = '';
-    const widget = createChatWidget({ classes, subjectId: activeSubjectId });
+    const widget = createChatWidget({ 
+        classes, 
+        subjectId: activeSubjectId, 
+        initialMessages: history.map(h => ([
+            { role: 'user', content: h.question },
+            { role: 'assistant', content: h.answer, sources: h.sources, id: h.id, feedback: h.feedback }
+        ])).flat()
+    });
     container.appendChild(widget);
 }
