@@ -109,8 +109,11 @@ export async function renderStudentDashboard(container) {
                 <div class="class-progress-title">${c.title.split('—')[1]?.trim() || c.title}</div>
                 <div class="class-progress-date">${c.date ? new Date(c.date).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }) : 'Sin fecha'}</div>
               </div>
-              <span class="badge ${c.summaryReady ? 'badge-success' : (c.materials && c.materials.length > 0) ? 'badge-warning' : 'badge-neutral'}">
-                ${c.summaryReady ? '✅ Listo' : (c.materials && c.materials.length > 0) ? '⚙️ Procesando' : '⏳ Sin material'}
+                ${c.summaryReady 
+                  ? `<a href="#/student/class/${c.id}" class="badge badge-success" style="text-decoration:none">✅ Listo</a>` 
+                  : (c.materials && c.materials.length > 0) 
+                    ? '<span class="badge badge-warning">⚙️ Procesando</span>' 
+                    : '<span class="badge badge-neutral">⏳ Sin material</span>'}
               </span>
             </div>
           `).join('')}

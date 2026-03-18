@@ -144,3 +144,42 @@ Resumen académico:`;
         model: process.env.AZURE_OPENAI_CHAT_DEPLOYMENT
     };
 }
+
+/**
+ * Genera un mapa conceptual en formato Mermaid.js basado en el texto de la clase.
+ * @param {string} text - Texto de la clase.
+ * @returns {Promise<Object>} - Objeto con el código Mermaid y metadatos.
+ */
+export async function generateClassMap(text) {
+    const client = getClient();
+    const prompt = `
+Eres un experto en diseño instruccional y pedagogía visual.
+Tu tarea es generar un mapa conceptual (Diagrama de Flujo) en formato Mermaid.js que organice visualmente los conceptos clave del texto proporcionado.
+
+REGLAS:
+1. Usa el formato Mermaid 'graph TD' (Top-Down).
+2. Los nodos deben ser concisos (max 4 palabras).
+3. Usa relaciones claras entre conceptos (ej: A -->|parte de| B).
+4. El resultado debe ser EXCLUSIVAMENTE el código Mermaid, sin bloques de código markdown ni explicaciones.
+5. Si el contenido es muy extenso, prioriza los 10 conceptos más importantes.
+
+TEXTO DE LA CLASE:
+${text.substring(0, 10000)}
+
+Código Mermaid:`;
+
+    const response = await client.chat.completions.create({
+        model: process.env.AZURE_OPENAI_CHAT_DEPLOYMENT,
+        messages: [
+            { role: "system", content: "Generas diagramas Mermaid.js precisos y pedagógicos." },
+            { role: "user", content: prompt }
+        ],
+        temperature: 0.4,
+        max_tokens: 1500,
+    });
+
+    return {
+        code: response.choices[0].message.content.replace(/```mermaid\n?|```/g, '').trim(),
+        generatedAt: new Date().toISOString(),
+    };
+}

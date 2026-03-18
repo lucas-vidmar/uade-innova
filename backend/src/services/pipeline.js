@@ -62,14 +62,18 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
         await upsertChunks(vectors);
         context.log(`[Pipeline] Vectores indexados con éxito.`);
 
-        // 5. Generar resumen si es un tipo de material rico en texto
+        // 5. Generar resumen y mapa conceptual si es un tipo de material rico en texto
         if (materialType === 'transcript' || materialType === 'notes') {
-            context.log(`[Pipeline] Generando resumen IA para material ${materialId}...`);
+            context.log(`[Pipeline] Generando activos IA (resumen y mapa) para material ${materialId}...`);
             try {
-                const summary = await generateClassSummary(text);
+                const [summary, mapData] = await Promise.all([
+                    generateClassSummary(text),
+                    generateClassMap(text)
+                ]);
                 
-                // Guardar el resumen para cada clase asociada
+                // Guardar activos para cada clase asociada
                 for (const classId of classIds) {
+                    // Guardar Resumen
                     await saveJson(CONTAINER_SUMMARIES, `${classId}.json`, {
                         classId,
                         subjectId,
@@ -78,10 +82,18 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
                         generatedAt: new Date().toISOString(),
                         lastModifiedBy: 'AI'
                     });
+
+                    // Guardar Mapa Conceptual (Nuevo en HU#61)
+                    await saveJson('class-maps', `${classId}.json`, {
+                        classId,
+                        subjectId,
+                        mapCode: mapData.code,
+                        generatedAt: mapData.generatedAt
+                    });
                 }
-                context.log(`[Pipeline] Resúmenes guardados en ${CONTAINER_SUMMARIES}`);
+                context.log(`[Pipeline] Activos IA guardados con éxito para clases: ${classIds.join(', ')}`);
             } catch (sumErr) {
-                context.error(`[Pipeline] Error generando resumen (no bloqueante):`, sumErr);
+                context.error(`[Pipeline] Error generando activos IA (no bloqueante):`, sumErr);
             }
         }
 

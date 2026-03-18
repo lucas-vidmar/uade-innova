@@ -149,6 +149,46 @@ app.http('get-class-summary', {
     }
 });
 
+// ── GET /api/class-map/{classId} ───────────────────────────────────
+// Devuelve el código Mermaid del mapa conceptual generado por IA
+app.http('get-class-map', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'class-map/{classId}',
+    handler: async (request, context) => {
+        const classId = request.params.classId;
+        const CONTAINER_MAPS = 'class-maps';
+        try {
+            const mapData = await loadJson(CONTAINER_MAPS, `${classId}.json`);
+            if (!mapData) return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, mapCode: null }) };
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mapData) };
+        } catch (err) {
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, mapCode: null, error: err.message }) };
+        }
+    }
+});
+
+// ── POST /api/class-map/{classId} ──────────────────────────────────
+// Guarda o actualiza un mapa conceptual
+app.http('save-class-map', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'class-map/{classId}',
+    handler: async (request, context) => {
+        const classId = request.params.classId;
+        const CONTAINER_MAPS = 'class-maps';
+        try {
+            const body = await request.json(); // { mapCode: "..." }
+            const existingData = await loadJson(CONTAINER_MAPS, `${classId}.json`) || { classId };
+            const updatedData = { ...existingData, mapCode: body.mapCode, lastModifiedAt: new Date().toISOString() };
+            await saveJson(CONTAINER_MAPS, `${classId}.json`, updatedData);
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updatedData) };
+        } catch (err) {
+            return { status: 500, body: JSON.stringify({ error: `Error guardando mapa: ${err.message}` }) };
+        }
+    }
+});
+
 // ── POST /api/class-summary/{classId} ──────────────────────────────
 // Guarda o valida un resumen (acción del docente)
 app.http('save-class-summary', {

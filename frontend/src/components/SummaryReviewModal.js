@@ -5,17 +5,23 @@ export function createSummaryReviewModal(classId, className, onSaved) {
     const modal = document.createElement('div');
     modal.className = 'modal-backdrop';
     modal.innerHTML = `
-        <div class="modal-card" style="max-width:800px; width:90%">
+        <div class="modal-card" style="max-width:800px; width:95%; position:relative; margin: 40px auto;">
             <div class="modal-header">
                 <h3 class="modal-title">Revisar Resumen IA: ${className}</h3>
                 <button class="btn-close">&times;</button>
             </div>
-            <div class="modal-body">
+            <div class="modal-body" style="max-height: calc(100vh - 200px); overflow-y: auto;">
                 <p style="margin-bottom:1rem; color:var(--color-text-secondary); font-size:0.875rem;">
                     Este resumen fue generado automáticamente. Podés editarlo antes de publicarlo para los alumnos.
                 </p>
-                <div class="loading-summary" style="padding:40px; text-align:center;">Cargando resumen...</div>
-                <textarea id="summary-editor" class="form-input" style="height:400px; display:none; font-family:var(--font-mono); font-size:0.875rem; line-height:1.6;"></textarea>
+                <div class="loading-summary" style="padding:40px; text-align:center;">Cargando activos...</div>
+                <div id="editor-container" style="display:none">
+                    <label style="display:block; margin-bottom:8px; font-weight:600">📝 Resumen Detallado (Markdown)</label>
+                    <textarea id="summary-editor" class="form-input" style="height:250px; margin-bottom:20px; font-family:var(--font-mono); font-size:0.875rem; line-height:1.6; padding:15px; border-radius:8px;"></textarea>
+                    
+                    <label style="display:block; margin-bottom:8px; font-weight:600">🗺️ Mapa Conceptual (Mermaid.js)</label>
+                    <textarea id="map-editor" class="form-input" style="height:150px; font-family:var(--font-mono); font-size:0.875rem; line-height:1.6; padding:15px; border-radius:8px;" placeholder="graph TD..."></textarea>
+                </div>
             </div>
             <div class="modal-footer row space-between">
                 <button class="btn btn-ghost" id="btn-cancel-summary">Cancelar</button>
@@ -29,22 +35,37 @@ export function createSummaryReviewModal(classId, className, onSaved) {
 
     document.body.appendChild(modal);
 
-    const editor = modal.querySelector('#summary-editor');
+    const summaryEditor = modal.querySelector('#summary-editor');
+    const mapEditor = modal.querySelector('#map-editor');
+    const editorContainer = modal.querySelector('#editor-container');
     const loading = modal.querySelector('.loading-summary');
     const btnApprove = modal.querySelector('#btn-approve-summary');
     const btnSaveDraft = modal.querySelector('#btn-save-draft');
 
-    // Load actual summary
-    api.getClassSummary(classId).then(data => {
+    // Load actual summary and map
+    Promise.all([
+        api.getClassSummary(classId),
+        api.getClassMap(classId)
+    ]).then(([summaryData, mapData]) => {
         loading.style.display = 'none';
-        editor.style.display = 'block';
-        if (data && data.summary) {
-            editor.value = data.summary;
+        editorContainer.style.display = 'block';
+        
+        // Handle summary (could be a string or object depending on version)
+        if (summaryData && summaryData.summary) {
+            summaryEditor.value = typeof summaryData.summary === 'object' ? summaryData.summary.content : summaryData.summary;
         } else {
-            editor.value = "No se encontró un resumen generado. ¿Subiste el material de la clase?";
+            summaryEditor.value = "";
+        }
+
+        // Handle map
+        if (mapData && mapData.mapCode) {
+            mapEditor.value = mapData.mapCode;
+        } else {
+            mapEditor.value = "";
         }
     }).catch(err => {
-        toast('error', 'Error', 'No se pudo cargar el resumen.');
+        console.error('Error loading class assets:', err);
+        toast('error', 'Error', 'No se pudieron cargar los activos de la clase.');
         modal.remove();
     });
 
@@ -56,10 +77,17 @@ export function createSummaryReviewModal(classId, className, onSaved) {
         try {
             btnApprove.disabled = true;
             btnSaveDraft.disabled = true;
-            await api.saveClassSummary(classId, { 
-                summary: editor.value, 
-                validated 
-            });
+            
+            // Save Summary and Map in parallel
+            await Promise.all([
+                api.saveClassSummary(classId, { 
+                    summary: summaryEditor.value, 
+                    validated 
+                }),
+                // We reuse saveClassSummary or create a specific one? 
+                // Let's assume for now we might need a saveClassMap or just extend the API if not existing
+                api.saveClassMap ? api.saveClassMap(classId, { mapCode: mapEditor.value }) : Promise.resolve()
+            ]);
             toast('success', validated ? 'Publicado' : 'Guardado', validated ? 'El resumen ya es visible para los alumnos.' : 'Cambios guardados como borrador.');
             onSaved(validated);
             close();

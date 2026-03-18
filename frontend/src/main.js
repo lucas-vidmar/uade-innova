@@ -14,6 +14,7 @@ themeManager.init();
 /* ── Page registry ───────────────────────────────────────── */
 const ROUTES = {
     '/student/dashboard': () => import('./pages/student/Dashboard.js').then(m => m.renderStudentDashboard),
+    '/student/class': () => import('./pages/student/ClassDetail.js').then(m => m.renderClassDetail),
     '/student/chat': () => import('./pages/student/Chat.js').then(m => m.renderStudentChat),
     '/student/tasks': () => import('./pages/student/Tasks.js').then(m => m.renderStudentTasks),
     '/student/calendar': () => import('./pages/student/Calendar.js').then(m => m.renderStudentCalendar),
@@ -47,13 +48,19 @@ export const router = {
 
 async function handleRoute() {
     const hash = window.location.hash || '';
-    const path = hash.replace(/^#/, '').split('?')[0] || '/student/dashboard';
+    const fullPath = hash.replace(/^#/, '').split('?')[0] || '/student/dashboard';
+    
+    // Simple dynamic route matching: /student/class/class-01 -> /student/class
+    let matchedPath = fullPath;
+    if (fullPath.startsWith('/student/class/')) {
+        matchedPath = '/student/class';
+    }
 
     buildShell();
     renderSidebar();
 
     // Route Guard: Admin paths
-    if (path.startsWith('/admin') && auth.getRole() !== 'director') {
+    if (matchedPath.startsWith('/admin') && auth.getRole() !== 'director') {
         console.warn('[Router] Access Denied to admin path');
         window.location.hash = `#/${auth.getRole()}/dashboard`;
         return;
@@ -61,7 +68,8 @@ async function handleRoute() {
 
     // Highlight active nav item
     document.querySelectorAll('.sidebar-item').forEach(el => {
-        el.classList.toggle('active', el.getAttribute('href') === `#${path}`);
+        const href = el.getAttribute('href')?.replace(/^#/, '');
+        el.classList.toggle('active', href === matchedPath || (matchedPath === '/student/class' && href === '/student/dashboard'));
     });
 
     const pageContent = document.getElementById('page-content');
@@ -73,7 +81,7 @@ async function handleRoute() {
     </div>
   `;
 
-    const routeLoader = ROUTES[path];
+    const routeLoader = ROUTES[matchedPath];
     if (routeLoader) {
         try {
             const renderFn = await routeLoader();

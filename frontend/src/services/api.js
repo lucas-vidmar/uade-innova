@@ -241,6 +241,29 @@ export const api = {
         return res.json();
     },
 
+    async getClassMap(classId) {
+        if (USE_MOCK) {
+            await delay(600);
+            return {
+                classId,
+                mapCode: "graph TD\nA[Arquitectura] --> B[Patrones]\nA --> C[Atributos]\nB --> D[Microservicios]\nB --> E[Monolito]"
+            };
+        }
+        const res = await fetch(`${BASE_URL}/class-map/${classId}`);
+        if (!res.ok) return null;
+        return res.json();
+    },
+
+    async saveClassMap(classId, data) {
+        if (USE_MOCK) return;
+        const res = await fetch(`${BASE_URL}/class-map/${classId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        return res.json();
+    },
+
     // ── Academic SGA Methods (Moved from academic.js) ───────
     async getTasks(studentId) {
         // Mock data as defined in academic.js
