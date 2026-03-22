@@ -3,7 +3,7 @@
  * Procesa un material (buffer + metadata) y lo indexa en Pinecone.
  */
 import { parseFile, chunkText, cleanText } from './parser.js';
-import { generateEmbeddingsBatch, generateClassSummary } from './openai.js';
+import { generateEmbeddingsBatch, generateClassSummary, generateClassMap } from './openai.js';
 import { upsertChunks } from './pinecone.js';
 import { saveJson } from './storage.js';
 

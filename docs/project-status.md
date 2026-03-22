@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-21] User Story #86: Fix Missing Import in Pipeline
+- **Status**: Completed
+- **Functional Change**: Corrected a missing function import in the backend ingestion pipeline.
+- **Business Impact**: Restores pipeline reliability for teachers, ensuring that class transcripts and notes are successfully processed and AI conceptual maps are consistently generated.
+
 ### [2026-03-21] User Story #87: Fix IDOR in Class APIs
 - **Status**: Completed
 - **Functional Change**: Implemented strict Role-Based Access Control (RBAC) on backend modifying endpoints to prevent unauthorized class and material modifications.
