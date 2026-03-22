@@ -86,6 +86,7 @@ var appInsightsName = '${abbrs.insightsComponents}dashboard-${resourceToken}'
 var keyVaultName = 'kv-edu-${take(resourceToken, 17)}'
 var identityName = 'id-dashboard-edu-${resourceToken}'
 var frontDoorName = 'afd-dashboard-${resourceToken}'
+var workbookName = guid(resourceGroup().id, 'cost-per-interaction-workbook')
 
 // Storage account: max 24 chars, no hyphens
 var safeStorageName = take(replace(storageAccountName, '-', ''), 24)
@@ -191,6 +192,17 @@ module staticWebApp './modules/staticwebapp.bicep' = {
   }
 }
 
+// ─── Module: Azure Workbook (Cost-per-Interaction) ──────────────
+module workbook './modules/workbook.bicep' = {
+  name: 'workbook'
+  params: {
+    location: location
+    workbookName: workbookName
+    appInsightsId: appInsights.outputs.logAnalyticsWorkspaceId
+    tags: tags
+  }
+}
+
 // ─── Module: Azure Front Door (WAF) ───────────────────────────────
 // Proporciona protección OWASP y enrutamiento a los endpoints
 module frontDoor './modules/frontdoor.bicep' = {
@@ -226,3 +238,4 @@ output APPLICATIONINSIGHTS_CONNECTION_STRING string = appInsights.outputs.connec
 output AZURE_STATIC_WEB_APP_URI string = staticWebApp.outputs.staticWebAppUri
 output AZURE_FRONT_DOOR_URI string = frontDoor.outputs.frontDoorUri
 output AZURE_RESOURCE_GROUP string = resourceGroup().name
+output AZURE_WORKBOOK_ID string = workbook.outputs.workbookId

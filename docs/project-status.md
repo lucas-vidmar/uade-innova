@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-22] User Story #79: Cost-per-Interaction Dashboard
+- **Status**: Completed
+- **Functional Change**: Provisioned an Azure Workbook (`infra/modules/workbook.bicep`) with KQL queries computing real-time GPT-4o-mini cost at $0.15/1M input tokens and $0.60/1M output tokens, with daily trend charts and A/B prompt-version cost breakdown.
+- **Business Impact**: Directors can monitor precise AI spend per interaction in the Azure Portal without manual data extraction.
+
 ### [2026-03-22] User Story #80: A/B Testing Framework (Shadow Prompting)
 - **Status**: Completed
 - **Functional Change**: Abstracted the core RAG system prompt into a modular `prompts.js` registry, implementing a pseudo-random branch selector to enforce distinct Persona rulesets (`v1-baseline`, `v2-empathetic`). Dynamically mapped the executed Persona ID directly into Application Insights `context.log` emissions and Table Storage metric aggregations.
