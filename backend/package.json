@@ -20,6 +20,7 @@
         "@azure/storage-blob": "^12.26.0",
         "@pinecone-database/pinecone": "^3.0.3",
         "adm-zip": "^0.5.16",
+        "applicationinsights": "^3.14.0",
         "busboy": "^1.6.0",
         "js-tiktoken": "^1.0.21",
         "mammoth": "^1.8.0",

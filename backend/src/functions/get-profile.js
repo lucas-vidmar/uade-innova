@@ -2,6 +2,7 @@ import { app } from '@azure/functions';
 import { TableClient } from '@azure/data-tables';
 import { DefaultAzureCredential } from '@azure/identity';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
+import { trackUserLogin } from '../services/telemetry.js';
 
 const tableName = "UserProfiles";
 const storageAccountUrl = `https://${process.env.AZURE_STORAGE_ACCOUNT_NAME}.table.core.windows.net`;
@@ -20,6 +21,14 @@ app.http('get-profile', {
             }
 
             const userId = principal?.oid || "local-dev-user";
+
+            // Emit UserLogin telemetry event for login-frequency analysis (Issue #69)
+            if (principal) {
+                trackUserLogin({
+                    userId,
+                    roles: principal.userRoles || [],
+                }).catch(err => console.error('[Telemetry] Error emitting UserLogin event:', err));
+            }
 
             // Initialize Table SDK with Zero-Trust identity
             const credential = new DefaultAzureCredential();

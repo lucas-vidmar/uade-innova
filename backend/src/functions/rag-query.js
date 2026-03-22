@@ -1,4 +1,3 @@
-import { validateFrontDoorId } from '../services/auth-utils.js';
 /**
  * rag-query.js — POST /api/rag-query
  * Motor RAG: embedding de la pregunta → similitud Pinecone → chat con contexto
@@ -8,6 +7,8 @@ import { generateEmbedding, chatCompletion } from '../services/openai.js';
 import { querySimilar } from '../services/pinecone.js';
 import { saveJson, saveMetricsToTable } from '../services/storage.js';
 import { getShadowPrompt } from '../services/prompts.js';
+import { trackRAGInteraction } from '../services/telemetry.js';
+import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { v4 as uuidv4 } from 'uuid';
 
 app.http('rag-query', {
@@ -17,6 +18,9 @@ app.http('rag-query', {
     handler: async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         context.log('rag-query triggered');
+
+        // Capture start time for end-to-end latency measurement (Issue #69)
+        const startTime = Date.now();
 
         // ── 1. Parsear request ────────────────────────────────────
         let body;
@@ -115,6 +119,21 @@ ${contextText}
             context.error('Error en chat completion:', err);
             return { status: 500, body: JSON.stringify({ error: `Error generando respuesta (chat): ${err.message}` }) };
         }
+
+        // ── 6b. Emit App Insights telemetry (Issue #69) ───────────
+        const durationMs = Date.now() - startTime;
+        const principal = parseClientPrincipal(request);
+        const userId = principal?.oid || 'anonymous';
+        trackRAGInteraction({
+            userId,
+            subjectId,
+            promptTokens: chatUsage?.prompt_tokens || 0,
+            completionTokens: chatUsage?.completion_tokens || 0,
+            totalTokens: chatUsage?.total_tokens || 0,
+            durationMs,
+            promptVersion: promptId,
+            interactionId: uuidv4(),
+        }).catch(err => context.error('[Telemetry] Error emitting RAGInteraction event:', err));
 
         // ── 7. Construir respuesta con fuentes ────────────────────
         const sources = matches.map(m => ({

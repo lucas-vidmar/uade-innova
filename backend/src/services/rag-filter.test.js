@@ -30,10 +30,21 @@ const storageMocks = {
     saveMetricsToTable: mock.fn(async () => true)
 };
 
+const authUtilsMocks = {
+    validateFrontDoorId: mock.fn(() => true),
+    parseClientPrincipal: mock.fn(() => ({ oid: 'test-user-oid', userRoles: ['Alumno'] })),
+};
+
+const telemetryMocks = {
+    trackRAGInteraction: mock.fn(async () => {}),
+};
+
 // Mock dependencies
 mock.module('../services/openai.js', { namedExports: openaiMocks });
 mock.module('../services/pinecone.js', { namedExports: pineconeMocks });
 mock.module('../services/storage.js', { namedExports: storageMocks });
+mock.module('../services/auth-utils.js', { namedExports: authUtilsMocks });
+mock.module('../services/telemetry.js', { namedExports: telemetryMocks });
 
 // Mock @azure/functions to capture the handler
 let capturedHandler;
