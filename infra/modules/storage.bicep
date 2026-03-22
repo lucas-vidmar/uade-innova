@@ -103,6 +103,29 @@ resource blobLifecyclePolicy 'Microsoft.Storage/storageAccounts/managementPolici
             }
           }
         }
+        {
+          enabled: true
+          name: 'ArchiveOldSemesterMaterials'
+          type: 'Lifecycle'
+          definition: {
+            actions: {
+              baseBlob: {
+                tierToArchive: {
+                  daysAfterModificationGreaterThan: 180
+                }
+              }
+            }
+            filters: {
+              blobTypes: [
+                'blockBlob'
+              ]
+              prefixMatch: [
+                'class-materials/semester-'
+                'processed/semester-'
+              ]
+            }
+          }
+        }
       ]
     }
   }

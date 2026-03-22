@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-22] User Story #81: Automated Blob Tiering
+- **Status**: Completed
+- **Functional Change**: Modified `infra/modules/storage.bicep` to natively append a 180-day `tierToArchive` Azure Storage Lifecycle Management rule uniquely filtered for `semester-` prefixes. 
+- **Business Impact**: Maximizes FinOps targets by systematically delegating non-active academic historicals (out-of-season lecture backups and JSON mappings) seamlessly into Microsoft's Cold/Archive capacities.
+
 ### [2026-03-22] User Story #82: Vector Index Portability
 - **Status**: Completed
 - **Functional Change**: Engineered a Node.js utility (`export-pinecone.js`) embedded within the backend to fetch, partition, and export Pinecone vector maps to Azure Blob Storage as JSON. Added functionality to natively scrub exported vectors using a strict `--delete` validation switch.
