@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-21] User Story #85: Archived Content Restoration
+- **Status**: Completed
+- **Functional Change**: Introduced a script-driven hydration utility (`restore-archive.js`) enabling users to search for and restore archived Blob files automatically back to the Hot tier.
+- **Business Impact**: Provides a safe fallback path to retrieve class materials that have been cooled by automated retention policies.
+
 ### [2026-03-21] User Story #84: Enforced Data Retention & Disposal
 - **Status**: Completed
 - **Functional Change**: Configured automated Azure Blob Storage lifecycle management policies to automatically delete class materials and processed data older than 2 years.
