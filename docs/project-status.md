@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-22] User Story #82: Vector Index Portability
+- **Status**: Completed
+- **Functional Change**: Engineered a Node.js utility (`export-pinecone.js`) embedded within the backend to fetch, partition, and export Pinecone vector maps to Azure Blob Storage as JSON. Added functionality to natively scrub exported vectors using a strict `--delete` validation switch.
+- **Business Impact**: Saves immediate CapEx/OpEx overages for Pinecone data quotas by enabling DevOps forces to safely purge older academic vectors without losing historical context data.
+
 ### [2026-03-22] User Story #89: Critical Azure Key Vault Publicly Accessible
 - **Status**: Completed (Verified No Change Needed)
 - **Functional Change**: Verified existing architecture enforces `defaultAction: Deny` and `bypass: AzureServices` natively within `keyvault.bicep`. No code updates were required as the posture aligns optimally with FinOps constraint limitations.
