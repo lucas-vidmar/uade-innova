@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-21] User Story #89: Critical: Azure Key Vault Publicly Accessible
+- **Status**: Completed (Verified No Change Needed)
+- **Functional Change**: Verified existing Key Vault ARM configurations effectively fulfilled Zero-Trust criteria targeting `defaultAction: 'Deny'` with `bypass: 'AzureServices'`. No IaC changes were required.
+- **Business Impact**: Confirms the integrity of secrets and avoids introducing breaking changes to the Serverless architecture constraints.
+
 ### [2026-03-21] User Story #85: Archived Content Restoration
 - **Status**: Completed
 - **Functional Change**: Introduced a script-driven hydration utility (`restore-archive.js`) enabling users to search for and restore archived Blob files automatically back to the Hot tier.
