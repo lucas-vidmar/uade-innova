@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-22] User Story #89: Critical Azure Key Vault Publicly Accessible
+- **Status**: Completed (Verified No Change Needed)
+- **Functional Change**: Verified existing architecture enforces `defaultAction: Deny` and `bypass: AzureServices` natively within `keyvault.bicep`. No code updates were required as the posture aligns optimally with FinOps constraint limitations.
+- **Business Impact**: Assures leadership that sensitive encryption keys and AI connectivity schemas natively reject public internet ingress, keeping foundational secrets natively secure.
+
 ### [2026-03-21] User Story #83: Metrics Persistence for Analysis
 - **Status**: Completed
 - **Functional Change**: Decoupled LLM token metrics from conversational output blobs. Provisioned `SessionMetrics` inside Azure Table Storage and asynchronously dispatched Open AI token loads into partition-driven log sheets.
