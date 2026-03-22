@@ -7,6 +7,7 @@ import { app } from '@azure/functions';
 import { generateEmbedding, chatCompletion } from '../services/openai.js';
 import { querySimilar } from '../services/pinecone.js';
 import { saveJson, saveMetricsToTable } from '../services/storage.js';
+import { getShadowPrompt } from '../services/prompts.js';
 import { v4 as uuidv4 } from 'uuid';
 
 app.http('rag-query', {
@@ -83,22 +84,19 @@ app.http('rag-query', {
             .map((m, i) => `[Fuente ${i + 1} - Archivo: ${m.metadata?.sourceFilename || 'Desconocido'}]\n${m.metadata?.text || ''}`)
             .join('\n\n---\n\n');
 
+        const { id: promptId, content: systemPromptBase } = getShadowPrompt();
+        // Log telemetry explicit event inside standard console output for App Insights Analytics mapping
+        context.log(`[A/B Test] Interaction initialized using prompt version: ${promptId}`);
+
         const messages = [
             {
                 role: 'system',
-                content: `Eres el Asistente Académico Experto del Dashboard UADE Innova.
-Tu objetivo es asistir a los estudiantes manteniendo un tono académico formal, preciso y profesional, siguiendo el estilo institucional de la UADE.
-
-REGLAS DE COMPORTAMIENTO:
-1. Responde ÚNICAMENTE basándote en el "CONTEXTO DE LOS MATERIALES" proporcionado abajo. No utilices conocimiento externo, previo o general.
-2. Si la información necesaria para responder no se encuentra en el contexto, debes responder exactamente: "No encontré información sobre eso en los materiales seleccionados."
-3. Si el usuario realiza preguntas fuera de los temas académicos o de los materiales proporcionados, declina la respuesta de manera formal y profesional.
-4. Cita siempre tus fuentes utilizando el formato (Fuente 1), (Fuente 2), etc., para respaldar cada afirmación.
-5. Mantén estrictamente un lenguaje formal y académico en español.
+                content: `${systemPromptBase}
 
 ### CONTEXTO DE LOS MATERIALES:
 ${contextText}
 ### FIN DEL CONTEXTO`,
+
             },
             {
                 role: 'user',
@@ -137,6 +135,7 @@ ${contextText}
             question,
             answer,
             sources,
+            promptVersion: promptId,
             timestamp: new Date().toISOString(),
             feedback: null
         };
@@ -155,6 +154,7 @@ ${contextText}
                 promptTokens: chatUsage?.prompt_tokens || 0,
                 completionTokens: chatUsage?.completion_tokens || 0,
                 totalTokens: chatUsage?.total_tokens || 0,
+                promptVersion: promptId,
                 timestamp: new Date().toISOString()
             }).catch(e => context.error('Error insertando Table Metrics de sesión silenciosa:', e));
         } catch (logErr) {

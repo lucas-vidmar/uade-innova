@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-22] User Story #80: A/B Testing Framework (Shadow Prompting)
+- **Status**: Completed
+- **Functional Change**: Abstracted the core RAG system prompt into a modular `prompts.js` registry, implementing a pseudo-random branch selector to enforce distinct Persona rulesets (`v1-baseline`, `v2-empathetic`). Dynamically mapped the executed Persona ID directly into Application Insights `context.log` emissions and Table Storage metric aggregations.
+- **Business Impact**: Allows business analysts and AI Engineers to quantitatively measure Response Acceptability (SAT) per prompt style dynamically in Production without tearing down CI/CD.
+
 ### [2026-03-22] User Story #90: Critical: Function App Publicly Accessible
 - **Status**: Completed
 - **Functional Change**: Injected a global application-level firewall interceptor natively into the Node.js `preInvocation` middleware sequence. Automatically rejects unauthenticated HTTP ingress unconditionally mapping `X-Azure-FDID` checks against our unified Front Door instance profile.
