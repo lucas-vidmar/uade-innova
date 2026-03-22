@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-22] User Story #90: Critical: Function App Publicly Accessible
+- **Status**: Completed
+- **Functional Change**: Injected a global application-level firewall interceptor natively into the Node.js `preInvocation` middleware sequence. Automatically rejects unauthenticated HTTP ingress unconditionally mapping `X-Azure-FDID` checks against our unified Front Door instance profile.
+- **Business Impact**: Hardens origin infrastructure against generic WAF-bypass scenarios and tenant spoofing attacks, dropping CVSS score footprint to zero for external lateral movement vectors.
+
 ### [2026-03-22] User Story #81: Automated Blob Tiering
 - **Status**: Completed
 - **Functional Change**: Modified `infra/modules/storage.bicep` to natively append a 180-day `tierToArchive` Azure Storage Lifecycle Management rule uniquely filtered for `semester-` prefixes. 
