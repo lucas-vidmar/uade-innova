@@ -174,6 +174,10 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           value: userAssignedClientId
         }
         {
+          name: 'SWA_ROLES_SECRET'
+          value: 'UADE-Pilot-Secure-Roles-Secret-2026'
+        }
+        {
           name: 'FRONT_DOOR_ID'
           value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/FRONT-DOOR-ID/)'
         }

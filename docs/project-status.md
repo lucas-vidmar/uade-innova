@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-21] User Story #88: Insecure Role Assignment Endpoint
+- **Status**: Completed
+- **Functional Change**: Hardened the SWA custom authentication function (`get-roles`) with a matched secret-code validation to strictly block anonymous calls from the public internet or attackers traversing Front Door.
+- **Business Impact**: Closes a critical loop that would have enabled privilege escalation. Assures application role grants are restricted exclusively to our authenticated identity flow infrastructure.
+
 ### [2026-03-21] User Story #90: Function App Publicly Accessible WAF Bypass
 - **Status**: Completed
 - **Functional Change**: Hardened the backend Functions app to strictly allow IP traffic from Azure Front Door and validate the native `X-Azure-FDID` header against Key Vault secrets.

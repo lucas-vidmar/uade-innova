@@ -27,7 +27,7 @@
     }
   },
   "auth": {
-    "rolesSource": "/api/get-roles",
+    "rolesSource": "/api/get-roles?code=UADE-Pilot-Secure-Roles-Secret-2026",
     "identityProviders": {
       "azureActiveDirectory": {
         "registration": {

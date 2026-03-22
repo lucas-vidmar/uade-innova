@@ -5,7 +5,13 @@ app.http('get-roles', {
     methods: ['POST'],
     authLevel: 'anonymous', // SWA calls this internally, and the route must be accessible for its proxy
     handler: async (request, context) => {
-        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+        const receivedCode = request.query.get('code');
+        const expectedCode = process.env.SWA_ROLES_SECRET || 'UADE-Pilot-Secure-Roles-Secret-2026';
+        
+        if (receivedCode !== expectedCode) {
+            context.log.warn('Unauthorized attempt to access get-roles endpoint.');
+            return { status: 401, body: JSON.stringify({ error: 'Unauthorized - Invalid SWA Secret' }) };
+        }
         try {
             // SWA passes the claims inside the body of the POST request
             const reqBody = await request.json();
