@@ -1,3 +1,4 @@
+import { validateFrontDoorId } from '../services/auth-utils.js';
 /**
  * rag-query.js — POST /api/rag-query
  * Motor RAG: embedding de la pregunta → similitud Pinecone → chat con contexto
@@ -13,6 +14,7 @@ app.http('rag-query', {
     authLevel: 'anonymous',
     route: 'rag-query',
     handler: async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         context.log('rag-query triggered');
 
         // ── 1. Parsear request ────────────────────────────────────

@@ -1,9 +1,11 @@
+import { validateFrontDoorId } from '../services/auth-utils.js';
 import { app } from '@azure/functions';
 
 app.http('get-roles', {
     methods: ['POST'],
     authLevel: 'anonymous', // SWA calls this internally, and the route must be accessible for its proxy
     handler: async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         try {
             // SWA passes the claims inside the body of the POST request
             const reqBody = await request.json();

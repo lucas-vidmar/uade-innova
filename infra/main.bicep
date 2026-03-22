@@ -203,6 +203,17 @@ module frontDoor './modules/frontdoor.bicep' = {
   }
 }
 
+// ─── Front Door ID Secret in Key Vault ────────────────────────────
+resource fdSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  name: '${keyVaultName}/FRONT-DOOR-ID'
+  dependsOn: [
+    keyVault
+  ]
+  properties: {
+    value: frontDoor.outputs.frontDoorId
+  }
+}
+
 // ─── Outputs ────────────────────────────────────────────────────
 output AZURE_OPENAI_ENDPOINT string = openAi.outputs.endpoint
 output AZURE_OPENAI_CHAT_DEPLOYMENT string = openAi.outputs.chatDeploymentName

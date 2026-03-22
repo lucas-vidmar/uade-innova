@@ -1,3 +1,4 @@
+import { validateFrontDoorId } from '../services/auth-utils.js';
 /**
  * chat-api.js — Azure Functions para feedback e historial de chat
  */
@@ -12,6 +13,7 @@ app.http('get-chat-history', {
     authLevel: 'anonymous',
     route: 'chat-history',
     handler: async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         const subjectId = request.query.get('subjectId');
         const userId = request.user?.id || 'anonymous';
         const userIdSanitized = userId.replace(/[^a-zA-Z0-9]/g, '_');
@@ -51,6 +53,7 @@ app.http('chat-feedback', {
     authLevel: 'anonymous',
     route: 'chat-feedback',
     handler: async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         try {
             const { messageId, subjectId, isPositive } = await request.json();
             const userId = request.user?.id || 'anonymous';

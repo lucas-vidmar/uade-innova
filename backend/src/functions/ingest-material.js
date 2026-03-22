@@ -1,3 +1,4 @@
+import { validateFrontDoorId } from '../services/auth-utils.js';
 /**
  * ingest-material.js — POST /api/ingest-material
  * Pipeline completo de ingesta: parsea archivo → chunks → embeddings → Pinecone
@@ -19,6 +20,7 @@ app.http('ingest-material', {
     authLevel: 'anonymous',
     route: 'ingest-material',
     handler: async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         context.log('ingest-material triggered');
 
         // ── 1. Parsear multipart/form-data ─────────────────────────

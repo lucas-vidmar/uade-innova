@@ -206,3 +206,6 @@ output frontDoorHostName string = endpoint.properties.hostName
 
 @description('The URI of the Front Door endpoint.')
 output frontDoorUri string = 'https://${endpoint.properties.hostName}'
+
+@description('The globally unique ID of the Front Door profile (for X-Azure-FDID validation).')
+output frontDoorId string = profile.properties.frontDoorId

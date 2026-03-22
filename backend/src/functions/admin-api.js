@@ -1,7 +1,7 @@
 import { app } from '@azure/functions';
 import { TableClient } from '@azure/data-tables';
 import { DefaultAzureCredential } from '@azure/identity';
-import { parseClientPrincipal } from '../services/auth-utils.js';
+import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 
 const tableName = "UserProfiles";
 const storageAccountUrl = `https://${process.env.AZURE_STORAGE_ACCOUNT_NAME}.table.core.windows.net`;
@@ -15,6 +15,7 @@ app.http('admin-get-users', {
     authLevel: 'anonymous',
     route: 'admin/users',
     handler: async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         try {
             const principal = parseClientPrincipal(request);
             

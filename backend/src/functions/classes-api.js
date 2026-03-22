@@ -1,7 +1,7 @@
 import { app } from '@azure/functions';
 import { loadJson, saveJson, listBlobs, deleteBlob } from '../services/storage.js';
 import { v4 as uuidv4 } from 'uuid';
-import { parseClientPrincipal } from '../services/auth-utils.js';
+import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 
 const CONTAINER_CLASSES = process.env.AZURE_STORAGE_CONTAINER_CLASSES || 'classes-config';
 const CONTAINER_PROCESSED = 'processed';
@@ -13,6 +13,7 @@ app.http('get-subjects', {
     authLevel: 'anonymous',
     route: 'subjects',
     handler: async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         context.log('get-subjects triggered');
 
         const principal = parseClientPrincipal(request);
@@ -50,6 +51,7 @@ app.http('get-classes', {
     authLevel: 'anonymous',
     route: 'classes',
     handler: async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         context.log('get-classes triggered');
         const subjectId = request.query.get('subjectId');
         if (!subjectId || subjectId === 'undefined') return { status: 400, body: JSON.stringify({ error: 'Falta subjectId' }) };
@@ -107,6 +109,7 @@ app.http('save-classes', {
     authLevel: 'anonymous',
     route: 'classes',
     handler: async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         context.log('save-classes triggered');
 
         const principal = parseClientPrincipal(request);
@@ -143,6 +146,7 @@ app.http('get-class-summary', {
     authLevel: 'anonymous',
     route: 'class-summary/{classId}',
     handler: async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         const classId = request.params.classId;
         const CONTAINER_SUMMARIES = 'class-summaries';
         try {
@@ -163,6 +167,7 @@ app.http('get-class-map', {
     authLevel: 'anonymous',
     route: 'class-map/{classId}',
     handler: async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         const classId = request.params.classId;
         const CONTAINER_MAPS = 'class-maps';
         try {
@@ -182,6 +187,7 @@ app.http('save-class-map', {
     authLevel: 'anonymous',
     route: 'class-map/{classId}',
     handler: async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         const principal = parseClientPrincipal(request);
         const isAuthorized = principal?.userRoles?.some(role => ['Docente', 'Director'].includes(role)) || process.env.AZURE_FUNCTIONS_ENVIRONMENT === "Development";
         if (!isAuthorized) {
@@ -209,6 +215,7 @@ app.http('save-class-summary', {
     authLevel: 'anonymous',
     route: 'class-summary/{classId}',
     handler: async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         const classId = request.params.classId;
         const CONTAINER_SUMMARIES = 'class-summaries';
         const principal = parseClientPrincipal(request);
@@ -246,6 +253,7 @@ app.http('get-director-stats', {
     authLevel: 'anonymous',
     route: 'director/stats',
     handler: async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         context.log('get-director-stats triggered');
         const MOCK_STATS = {
             dau: 52,
@@ -276,6 +284,7 @@ app.http('delete-material', {
     authLevel: 'anonymous',
     route: 'materials/{materialId}',
     handler: async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         const principal = parseClientPrincipal(request);
         const isAuthorized = principal?.userRoles?.some(role => ['Docente', 'Director'].includes(role)) || process.env.AZURE_FUNCTIONS_ENVIRONMENT === "Development";
         if (!isAuthorized) {

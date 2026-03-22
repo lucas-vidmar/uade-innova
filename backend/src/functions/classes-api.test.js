@@ -3,6 +3,7 @@ import assert from 'node:assert';
 
 // Define mocks before importing
 const authUtilsMocks = {
+    validateFrontDoorId: mock.fn(() => true),
     parseClientPrincipal: mock.fn(() => ({ userRoles: [] }))
 };
 

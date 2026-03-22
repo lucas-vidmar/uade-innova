@@ -1,3 +1,4 @@
+import { validateFrontDoorId } from '../services/auth-utils.js';
 /**
  * get-tasks.js — GET /api/tasks?studentId={id}
  * Retorna las tareas priorizadas del alumno.
@@ -10,6 +11,7 @@ app.http('get-tasks', {
     authLevel: 'anonymous',
     route: 'tasks',
     handler: async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         context.log('get-tasks triggered');
 
         const studentId = request.query.get('studentId');

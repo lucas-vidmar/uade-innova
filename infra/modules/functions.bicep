@@ -88,6 +88,17 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
       functionAppScaleLimit: 10
       minimumElasticInstanceCount: 0
       use32BitWorkerProcess: false
+      ipSecurityRestrictions: [
+        {
+          ipAddress: 'AzureFrontDoor.Backend'
+          action: 'Allow'
+          tag: 'ServiceTag'
+          priority: 100
+          name: 'Allow Front Door'
+          description: 'Allow traffic only from Azure Front Door Backend'
+        }
+      ]
+      scmIpSecurityRestrictionsUseMain: true
       cors: {
         allowedOrigins: ['*']
         supportCredentials: false
@@ -161,6 +172,10 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         {
           name: 'AZURE_CLIENT_ID'
           value: userAssignedClientId
+        }
+        {
+          name: 'FRONT_DOOR_ID'
+          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/FRONT-DOOR-ID/)'
         }
       ]
     }

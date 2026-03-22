@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-21] User Story #90: Function App Publicly Accessible WAF Bypass
+- **Status**: Completed
+- **Functional Change**: Hardened the backend Functions app to strictly allow IP traffic from Azure Front Door and validate the native `X-Azure-FDID` header against Key Vault secrets.
+- **Business Impact**: Eliminates a severe vulnerability that allowed full bypass of the Web Application Firewall (WAF) protections and authentication spoofing, ensuring a zero-trust entry perimeter.
+
 ### [2026-03-21] User Story #89: Restrict Key Vault Public Access
 - **Status**: Completed
 - **Functional Change**: Hardened the Azure Key Vault provisioning configuration by setting external Network ACLs to Deny by default.

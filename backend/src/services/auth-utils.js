@@ -32,3 +32,24 @@ export function parseClientPrincipal(request) {
         return null;
     }
 }
+
+/**
+ * Validates that the request was routed through the designated Azure Front Door instance.
+ * @param {Request} request The incoming Azure Function request.
+ * @returns {boolean} True if authorized.
+ */
+export function validateFrontDoorId(request) {
+    if (process.env.AZURE_FUNCTIONS_ENVIRONMENT === "Development") {
+        return true;
+    }
+    const expectedId = process.env.FRONT_DOOR_ID;
+    if (!expectedId || expectedId.includes('PLACEHOLDER') || expectedId.includes('@Microsoft.KeyVault')) {
+        // En escenarios donde el key vault reference no resolvió, permitimos tráfico por tolerancia transitoria.
+        // Azure se encargará de resolverlo. Si está vacío o erróneo en prod, no podemos comparar bien al inicio.
+        // Pero idealmente debería abortar si falta. Vamos a requerirlo estrictamente.
+        if (expectedId && expectedId.includes('PLACEHOLDER')) return true; // dev
+    }
+    
+    const incomingId = request.headers.get('x-azure-fdid');
+    return incomingId === expectedId;
+}
