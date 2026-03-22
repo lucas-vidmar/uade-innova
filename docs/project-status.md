@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-21] User Story #88: Insecure Role Assignment Endpoint
+- **Status**: Completed (Verified No Change Needed)
+- **Functional Change**: Verified existing architecture enforces SWA shared secret validation natively across `staticwebapp.config.json` and `get-roles.js`. No code changes were required.
+- **Business Impact**: Confirms the integrity of the authorization layer, guaranteeing that malicious actors cannot forge RBAC privileges for the dashboard.
+
 ### [2026-03-21] User Story #89: Critical: Azure Key Vault Publicly Accessible
 - **Status**: Completed (Verified No Change Needed)
 - **Functional Change**: Verified existing Key Vault ARM configurations effectively fulfilled Zero-Trust criteria targeting `defaultAction: 'Deny'` with `bypass: 'AzureServices'`. No IaC changes were required.
