@@ -4,7 +4,7 @@
  */
 import { parseFile, chunkText, cleanText } from './parser.js';
 import { generateEmbeddingsBatch, generateClassSummary, generateClassMap } from './openai.js';
-import { upsertChunks } from './pinecone.js';
+import { upsertChunks, getIndexStats } from './pinecone.js';
 import { saveJson } from './storage.js';
 
 const CONTAINER_PROCESSED = 'processed';
@@ -61,6 +61,13 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
         context.log(`[Pipeline] Indexando ${vectors.length} vectores en Pinecone index: ${process.env.PINECONE_INDEX_NAME}...`);
         await upsertChunks(vectors);
         context.log(`[Pipeline] Vectores indexados con éxito.`);
+
+        // ── 4b. Log Pinecone index health metrics (Issue #78) ────────
+        getIndexStats().then(stats => {
+            context.log(`[Pinecone Health] Index: ${process.env.PINECONE_INDEX_NAME} | totalVectorCount: ${stats.totalVectorCount} | indexFullness: ${(stats.indexFullness * 100).toFixed(2)}%`);
+        }).catch(statsErr => {
+            context.warn(`[Pinecone Health] No se pudo obtener stats del índice: ${statsErr.message}`);
+        });
 
         // 5. Generar resumen y mapa conceptual si es un tipo de material rico en texto
         if (materialType === 'transcript' || materialType === 'notes') {

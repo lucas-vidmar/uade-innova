@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-22] User Story #78: Pinecone Index Health Monitoring
+- **Status**: Completed
+- **Functional Change**: Added `getIndexStats()` to the Pinecone service and wired a non-blocking health telemetry call inside the ingestion pipeline emitting `totalVectorCount` and `indexFullness` to Application Insights after every successful upsert.
+- **Business Impact**: Technical Leads can query Application Insights to visualize index growth trends and proactively plan Pinecone capacity upgrades.
+
 ### [2026-03-22] User Story #79: Cost-per-Interaction Dashboard
 - **Status**: Completed
 - **Functional Change**: Provisioned an Azure Workbook (`infra/modules/workbook.bicep`) with KQL queries computing real-time GPT-4o-mini cost at $0.15/1M input tokens and $0.60/1M output tokens, with daily trend charts and A/B prompt-version cost breakdown.

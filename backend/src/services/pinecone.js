@@ -46,3 +46,17 @@ export async function querySimilar(embedding, filter, topK = 5) {
     });
     return response.matches || [];
 }
+
+/**
+ * Retrieves current index statistics for health monitoring.
+ * @returns {Promise<{totalVectorCount: number, indexFullness: number, namespaces: object}>}
+ */
+export async function getIndexStats() {
+    const index = getIndex();
+    const stats = await index.describeIndexStats();
+    return {
+        totalVectorCount: stats.totalVectorCount ?? 0,
+        indexFullness: stats.indexFullness ?? 0,
+        namespaces: stats.namespaces ?? {}
+    };
+}

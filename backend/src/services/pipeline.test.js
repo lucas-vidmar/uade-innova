@@ -15,7 +15,8 @@ const openaiMocks = {
 };
 
 const pineconeMocks = {
-    upsertChunks: mock.fn(async () => true)
+    upsertChunks: mock.fn(async () => true),
+    getIndexStats: mock.fn(async () => ({ totalVectorCount: 5, indexFullness: 0.001, namespaces: {} }))
 };
 
 const storageMocks = {

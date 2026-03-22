@@ -22,7 +22,8 @@ const pineconeMocks = {
                 chunkIndex: 0
             }
         }
-    ])
+    ]),
+    getIndexStats: mock.fn(async () => ({ totalVectorCount: 0, indexFullness: 0, namespaces: {} }))
 };
 
 const storageMocks = {
