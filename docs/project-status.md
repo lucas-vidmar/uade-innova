@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-21] User Story #87: Fix IDOR in Class APIs
+- **Status**: Completed
+- **Functional Change**: Implemented strict Role-Based Access Control (RBAC) on backend modifying endpoints to prevent unauthorized class and material modifications.
+- **Business Impact**: Hardens platform security and preserves academic data integrity by ensuring only authenticated teachers and directors can modify course content.
+
 ### [2026-03-18] User Story #39: Subject-Filtered Retrieval
 - **Status**: Completed
 - **Functional Change**: Implemented a robust Pinecone metadata filter that enforces subject-level isolation and ensures bibliography materials are always included in the RAG context.

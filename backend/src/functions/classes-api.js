@@ -108,6 +108,13 @@ app.http('save-classes', {
     route: 'classes',
     handler: async (request, context) => {
         context.log('save-classes triggered');
+
+        const principal = parseClientPrincipal(request);
+        const isAuthorized = principal?.userRoles?.some(role => ['Docente', 'Director'].includes(role)) || process.env.AZURE_FUNCTIONS_ENVIRONMENT === "Development";
+        if (!isAuthorized) {
+            return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: "Forbidden - Teacher access required" }) };
+        }
+
         const subjectId = request.query.get('subjectId');
         if (!subjectId || subjectId === 'undefined') return { status: 400, body: JSON.stringify({ error: 'Falta subjectId' }) };
 
@@ -175,6 +182,12 @@ app.http('save-class-map', {
     authLevel: 'anonymous',
     route: 'class-map/{classId}',
     handler: async (request, context) => {
+        const principal = parseClientPrincipal(request);
+        const isAuthorized = principal?.userRoles?.some(role => ['Docente', 'Director'].includes(role)) || process.env.AZURE_FUNCTIONS_ENVIRONMENT === "Development";
+        if (!isAuthorized) {
+            return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: "Forbidden - Teacher access required" }) };
+        }
+
         const classId = request.params.classId;
         const CONTAINER_MAPS = 'class-maps';
         try {
@@ -199,6 +212,11 @@ app.http('save-class-summary', {
         const classId = request.params.classId;
         const CONTAINER_SUMMARIES = 'class-summaries';
         const principal = parseClientPrincipal(request);
+        
+        const isAuthorized = principal?.userRoles?.some(role => ['Docente', 'Director'].includes(role)) || process.env.AZURE_FUNCTIONS_ENVIRONMENT === "Development";
+        if (!isAuthorized) {
+            return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: "Forbidden - Teacher access required" }) };
+        }
         
         try {
             const body = await request.json(); // { summary: "...", validated: true }
@@ -258,6 +276,12 @@ app.http('delete-material', {
     authLevel: 'anonymous',
     route: 'materials/{materialId}',
     handler: async (request, context) => {
+        const principal = parseClientPrincipal(request);
+        const isAuthorized = principal?.userRoles?.some(role => ['Docente', 'Director'].includes(role)) || process.env.AZURE_FUNCTIONS_ENVIRONMENT === "Development";
+        if (!isAuthorized) {
+            return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: "Forbidden - Teacher access required" }) };
+        }
+
         const materialId = request.params.materialId;
         try {
             await deleteBlob(CONTAINER_PROCESSED, `${materialId}.json`);
