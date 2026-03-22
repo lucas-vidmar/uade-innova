@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-21] User Story #83: Metrics Persistence for Analysis
+- **Status**: Completed
+- **Functional Change**: Decoupled LLM token metrics from conversational output blobs. Provisioned `SessionMetrics` inside Azure Table Storage and asynchronously dispatched Open AI token loads into partition-driven log sheets.
+- **Business Impact**: Provides the dashboard Director role with a scalable, highly-available NoSQL index enabling robust query-based KPI dashboards regarding token utility and billing monitoring per user per subject.
+
 ### [2026-03-21] User Story #88: Insecure Role Assignment Endpoint
 - **Status**: Completed (Verified No Change Needed)
 - **Functional Change**: Verified existing architecture enforces SWA shared secret validation natively across `staticwebapp.config.json` and `get-roles.js`. No code changes were required.

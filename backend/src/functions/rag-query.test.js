@@ -4,7 +4,10 @@ import assert from 'node:assert';
 // Define mocks before importing the function under test
 const openaiMocks = {
     generateEmbedding: mock.fn(async () => [0.1, 0.2, 0.3]),
-    chatCompletion: mock.fn(async () => 'Respuesta simulada (Fuente 1).')
+    chatCompletion: mock.fn(async () => ({ 
+        content: 'Respuesta simulada (Fuente 1).',
+        usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 }
+    }))
 };
 
 const pineconeMocks = {
@@ -23,7 +26,8 @@ const pineconeMocks = {
 };
 
 const storageMocks = {
-    saveJson: mock.fn(async () => true)
+    saveJson: mock.fn(async () => true),
+    saveMetricsToTable: mock.fn(async () => true)
 };
 
 // Mock dependencies
@@ -93,7 +97,10 @@ test('rag-query should include correct system prompt and rules', async (t) => {
 test('rag-query should return the refusal message if OpenAI returns it', async (t) => {
     const refusalMessage = 'No encontré información sobre eso en los materiales seleccionados.';
     openaiMocks.chatCompletion.mock.resetCalls();
-    openaiMocks.chatCompletion.mock.mockImplementationOnce(async () => refusalMessage);
+    openaiMocks.chatCompletion.mock.mockImplementationOnce(async () => ({ 
+        content: refusalMessage,
+        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+    }));
 
     const mockContext = {
         log: mock.fn(),

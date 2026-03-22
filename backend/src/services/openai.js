@@ -85,9 +85,9 @@ export async function generateEmbedding(text) {
 }
 
 /**
- * Genera una respuesta de chat con contexto RAG.
+ * Genera una respuesta de chat con contexto RAG. Retorna contenido textual y desglose de tokens.
  * @param {Array<{role: string, content: string}>} messages
- * @returns {Promise<string>}
+ * @returns {Promise<{content: string, usage: object}>}
  */
 export async function chatCompletion(messages) {
     const client = getClient();
@@ -97,7 +97,10 @@ export async function chatCompletion(messages) {
         temperature: 0.3,
         max_tokens: 1500,
     });
-    return response.choices[0].message.content;
+    return {
+        content: response.choices[0].message.content,
+        usage: response.usage
+    };
 }
 /**
  * Genera un resumen estructurado de una clase basándose en el texto extraído.

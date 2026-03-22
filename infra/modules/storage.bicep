@@ -120,6 +120,12 @@ resource userProfilesTable 'Microsoft.Storage/storageAccounts/tableServices/tabl
   name: 'UserProfiles'
 }
 
+// ─── Table: SessionMetrics ─────────────────────────────────────
+resource sessionMetricsTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-01-01' = {
+  parent: tableService
+  name: 'SessionMetrics'
+}
+
 // ─── Outputs ───────────────────────────────────────────────────
 @description('The name of the Storage Account.')
 output accountName string = storageAccount.name

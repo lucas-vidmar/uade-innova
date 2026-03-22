@@ -6,7 +6,7 @@ import { validateFrontDoorId } from '../services/auth-utils.js';
 import { app } from '@azure/functions';
 import { generateEmbedding, chatCompletion } from '../services/openai.js';
 import { querySimilar } from '../services/pinecone.js';
-import { saveJson } from '../services/storage.js';
+import { saveJson, saveMetricsToTable } from '../services/storage.js';
 import { v4 as uuidv4 } from 'uuid';
 
 app.http('rag-query', {
@@ -108,8 +108,11 @@ ${contextText}
 
         // ── 6. Generar respuesta con GPT-4o mini ──────────────────
         let answer;
+        let chatUsage;
         try {
-            answer = await chatCompletion(messages);
+            const chatResult = await chatCompletion(messages);
+            answer = chatResult.content;
+            chatUsage = chatResult.usage;
         } catch (err) {
             context.error('Error en chat completion:', err);
             return { status: 500, body: JSON.stringify({ error: `Error generando respuesta (chat): ${err.message}` }) };
@@ -143,6 +146,17 @@ ${contextText}
             // Usamos una ruta que facilite la búsqueda por usuario y materia
             const userIdSanitized = (request.user?.id || 'anon').replace(/[^a-zA-Z0-9]/g, '_');
             await saveJson('chat-logs', `${userIdSanitized}/${subjectId}/${interactionId}.json`, chatLog);
+
+            // Asíncronamente persistimos las métricas RAG en la Table Storage (HU #83)
+            saveMetricsToTable('SessionMetrics', {
+                partitionKey: subjectId,
+                rowKey: interactionId,
+                userId: request.user?.id || 'anonymous',
+                promptTokens: chatUsage?.prompt_tokens || 0,
+                completionTokens: chatUsage?.completion_tokens || 0,
+                totalTokens: chatUsage?.total_tokens || 0,
+                timestamp: new Date().toISOString()
+            }).catch(e => context.error('Error insertando Table Metrics de sesión silenciosa:', e));
         } catch (logErr) {
             context.error('Error guardando log de chat:', logErr);
             // No bloqueamos la respuesta al usuario si falla el logging

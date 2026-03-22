@@ -3,6 +3,7 @@
  * Gestiona archivos de clase y estado del pipeline.
  */
 import { BlobServiceClient, StorageSharedKeyCredential } from '@azure/storage-blob';
+import { TableClient, AzureNamedKeyCredential } from '@azure/data-tables';
 import { DefaultAzureCredential } from '@azure/identity';
 
 let _client = null;
@@ -150,4 +151,44 @@ export async function deleteBlob(containerName, blobName) {
     const containerClient = client.getContainerClient(containerName);
     const blockBlobClient = containerClient.getBlockBlobClient(blobName);
     await blockBlobClient.deleteIfExists();
+}
+
+// ─── Table Storage Client ──────────────────────────────────────────
+
+function getTableClient(tableName) {
+    const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
+    const accountKey = process.env.AZURE_STORAGE_ACCESS_KEY;
+    
+    if (!accountName) {
+        throw new Error('AZURE_STORAGE_ACCOUNT_NAME is not defined in environment variables.');
+    }
+
+    if (accountKey) {
+        return new TableClient(
+            `https://${accountName}.table.core.windows.net`, 
+            tableName, 
+            new AzureNamedKeyCredential(accountName, accountKey)
+        );
+    } else {
+        return new TableClient(
+            `https://${accountName}.table.core.windows.net`, 
+            tableName, 
+            new DefaultAzureCredential()
+        );
+    }
+}
+
+/**
+ * Guarda una entidad (métrica o log) permanentemente en el repositorio Table Storage.
+ * @param {string} tableName
+ * @param {object} entity - Requiere partitionKey y rowKey nativos.
+ */
+export async function saveMetricsToTable(tableName, entity) {
+    try {
+        const tableClient = getTableClient(tableName);
+        await tableClient.createTable(); // Si ya existe, no hace nada peligroso 
+        await tableClient.createEntity(entity);
+    } catch (err) {
+        console.error(`[Storage] Error persistiendo métricas a tabla ${tableName}:`, err.message);
+    }
 }

@@ -4,7 +4,10 @@ import assert from 'node:assert';
 // Define mocks before importing the function under test
 const openaiMocks = {
     generateEmbedding: mock.fn(async () => [0.1, 0.2, 0.3]),
-    chatCompletion: mock.fn(async () => 'Respuesta simulada.')
+    chatCompletion: mock.fn(async () => ({ 
+        content: 'Respuesta simulada.',
+        usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 }
+    }))
 };
 
 const pineconeMocks = {
@@ -23,7 +26,8 @@ const pineconeMocks = {
 };
 
 const storageMocks = {
-    saveJson: mock.fn(async () => true)
+    saveJson: mock.fn(async () => true),
+    saveMetricsToTable: mock.fn(async () => true)
 };
 
 // Mock dependencies
