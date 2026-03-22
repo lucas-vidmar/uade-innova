@@ -73,6 +73,41 @@ resource processedContainer 'Microsoft.Storage/storageAccounts/blobServices/cont
   }
 }
 
+// ─── Lifecycle Management Policy (2-Year Retention) ─────────────
+resource blobLifecyclePolicy 'Microsoft.Storage/storageAccounts/managementPolicies@2023-01-01' = {
+  parent: storageAccount
+  name: 'default'
+  properties: {
+    policy: {
+      rules: [
+        {
+          enabled: true
+          name: 'DeleteArchiveAfter2Years'
+          type: 'Lifecycle'
+          definition: {
+            actions: {
+              baseBlob: {
+                delete: {
+                  daysAfterModificationGreaterThan: 730
+                }
+              }
+            }
+            filters: {
+              blobTypes: [
+                'blockBlob'
+              ]
+              prefixMatch: [
+                'class-materials/'
+                'processed/'
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+
 // ─── Table Service ──────────────────────────────────────────────
 resource tableService 'Microsoft.Storage/storageAccounts/tableServices@2023-01-01' = {
   parent: storageAccount

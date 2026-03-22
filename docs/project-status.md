@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-21] User Story #84: Enforced Data Retention & Disposal
+- **Status**: Completed
+- **Functional Change**: Configured automated Azure Blob Storage lifecycle management policies to automatically delete class materials and processed data older than 2 years.
+- **Business Impact**: Enforces strict data retention compliance and ensures long-term storage costs are minimized by pruning stale assets.
+
 ### [2026-03-21] User Story #88: Insecure Role Assignment Endpoint
 - **Status**: Completed
 - **Functional Change**: Hardened the SWA custom authentication function (`get-roles`) with a matched secret-code validation to strictly block anonymous calls from the public internet or attackers traversing Front Door.
