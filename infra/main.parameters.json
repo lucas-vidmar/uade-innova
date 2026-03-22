@@ -32,14 +32,20 @@
         "embeddingDeploymentCapacity": {
             "value": 10
         },
-        "appServiceSkuName": {
-            "value": "B1"
-        },
         "principalId": {
             "value": "${AZURE_PRINCIPAL_ID}"
         },
         "pineconeApiKey": {
             "value": "${PINECONE_API_KEY}"
+        },
+        "staticWebAppLocation": {
+            "value": "eastus2"
+        },
+        "pineconeIndexName": {
+            "value": "dashboard-edu-pilot"
+        },
+        "classMaterialsContainerName": {
+            "value": "class-materials"
         }
     }
 }

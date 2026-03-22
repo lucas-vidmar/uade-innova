@@ -5,6 +5,8 @@ import './diagnostic.js';
 import { auth } from './services/auth.js';
 import { themeManager } from './services/theme.js';
 import { renderSidebar } from './components/Sidebar.js';
+import { renderPrivacyModal } from './components/PrivacyModal.js';
+import { inactivityMonitor } from './services/inactivity.js';
 
 // Init theme
 themeManager.init();
@@ -12,6 +14,7 @@ themeManager.init();
 /* ── Page registry ───────────────────────────────────────── */
 const ROUTES = {
     '/student/dashboard': () => import('./pages/student/Dashboard.js').then(m => m.renderStudentDashboard),
+    '/student/class': () => import('./pages/student/ClassDetail.js').then(m => m.renderClassDetail),
     '/student/chat': () => import('./pages/student/Chat.js').then(m => m.renderStudentChat),
     '/student/tasks': () => import('./pages/student/Tasks.js').then(m => m.renderStudentTasks),
     '/student/calendar': () => import('./pages/student/Calendar.js').then(m => m.renderStudentCalendar),
@@ -20,6 +23,7 @@ const ROUTES = {
     '/teacher/upload': () => import('./pages/teacher/UploadMaterials.js').then(m => m.renderTeacherUpload),
     '/teacher/analytics': () => import('./pages/teacher/Analytics.js').then(m => m.renderTeacherAnalytics),
     '/director/dashboard': () => import('./pages/director/Dashboard.js').then(m => m.renderDirectorDashboard),
+    '/admin/users': () => import('./pages/admin/UserManagement.js').then(m => m.renderUserManagement),
 };
 
 /* ── App shell ───────────────────────────────────────────── */
@@ -44,14 +48,28 @@ export const router = {
 
 async function handleRoute() {
     const hash = window.location.hash || '';
-    const path = hash.replace(/^#/, '').split('?')[0] || '/student/dashboard';
+    const fullPath = hash.replace(/^#/, '').split('?')[0] || '/student/dashboard';
+    
+    // Simple dynamic route matching: /student/class/class-01 -> /student/class
+    let matchedPath = fullPath;
+    if (fullPath.startsWith('/student/class/')) {
+        matchedPath = '/student/class';
+    }
 
     buildShell();
     renderSidebar();
 
+    // Route Guard: Admin paths
+    if (matchedPath.startsWith('/admin') && auth.getRole() !== 'director') {
+        console.warn('[Router] Access Denied to admin path');
+        window.location.hash = `#/${auth.getRole()}/dashboard`;
+        return;
+    }
+
     // Highlight active nav item
     document.querySelectorAll('.sidebar-item').forEach(el => {
-        el.classList.toggle('active', el.getAttribute('href') === `#${path}`);
+        const href = el.getAttribute('href')?.replace(/^#/, '');
+        el.classList.toggle('active', href === matchedPath || (matchedPath === '/student/class' && href === '/student/dashboard'));
     });
 
     const pageContent = document.getElementById('page-content');
@@ -63,7 +81,7 @@ async function handleRoute() {
     </div>
   `;
 
-    const routeLoader = ROUTES[path];
+    const routeLoader = ROUTES[matchedPath];
     if (routeLoader) {
         try {
             const renderFn = await routeLoader();
@@ -83,9 +101,21 @@ async function handleRoute() {
 window.addEventListener('hashchange', handleRoute);
 window.addEventListener('auth:roleChanged', () => handleRoute());
 
-// Default hash on first load
-if (!window.location.hash) {
-    window.location.hash = `#/${auth.getRole()}/dashboard`;
-} else {
-    handleRoute();
+async function bootstrap() {
+    await auth.initAuth();
+    inactivityMonitor.init();
+    
+    // Check for privacy consent
+    if (!auth.getConsentAccepted()) {
+        renderPrivacyModal();
+    }
+    
+    // Default hash on first load
+    if (!window.location.hash) {
+        window.location.hash = `#/${auth.getRole()}/dashboard`;
+    } else {
+        handleRoute();
+    }
 }
+
+bootstrap();

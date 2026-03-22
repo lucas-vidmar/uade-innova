@@ -1,6 +1,7 @@
 import { app } from '@azure/functions';
 import { loadJson, saveJson, listBlobs, deleteBlob } from '../services/storage.js';
 import { v4 as uuidv4 } from 'uuid';
+import { parseClientPrincipal } from '../services/auth-utils.js';
 
 const CONTAINER_CLASSES = process.env.AZURE_STORAGE_CONTAINER_CLASSES || 'classes-config';
 const CONTAINER_PROCESSED = 'processed';
@@ -13,11 +14,32 @@ app.http('get-subjects', {
     route: 'subjects',
     handler: async (request, context) => {
         context.log('get-subjects triggered');
-        const subjects = [
-            { id: 'arq-software-2026', name: 'Arquitectura de Software' },
-            { id: 'diseno-sistemas-2026', name: 'Diseño de Sistemas' }
+
+        const principal = parseClientPrincipal(request);
+        const groups = principal?.groups || [];
+        const isTeacher = groups.includes('Docentes-Pilot');
+
+        const ALL_SUBJECTS = [
+            { id: 'arq-software-2026', name: 'Arquitectura de Software', group: 'GRP-ARQ-SOFT-2026' },
+            { id: 'diseno-sistemas-2026', name: 'Diseño de Sistemas', group: 'GRP-DIS-SIST-2026' }
         ];
-        return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(subjects) };
+
+        // Filtering logic:
+        // 1. Teachers see all subjects in the pilot.
+        // 2. Students see only subjects whose 'group' they belong to.
+        // 3. Local dev (no principal) sees everything for convenience.
+        
+        let filteredSubjects = ALL_SUBJECTS;
+        
+        if (principal && !isTeacher) {
+            filteredSubjects = ALL_SUBJECTS.filter(s => groups.includes(s.group));
+        }
+
+        return { 
+            status: 200, 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify(filteredSubjects.map(({id, name}) => ({id, name}))) 
+        };
     }
 });
 
@@ -104,6 +126,128 @@ app.http('save-classes', {
             context.error(err);
             return { status: 500, body: JSON.stringify({ error: `Error interno guardando clases: ${err.message}` }) };
         }
+    }
+});
+
+// ── GET /api/class-summary/{classId} ───────────────────────────────
+// Devuelve el resumen generado por IA para una clase
+app.http('get-class-summary', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'class-summary/{classId}',
+    handler: async (request, context) => {
+        const classId = request.params.classId;
+        const CONTAINER_SUMMARIES = 'class-summaries';
+        try {
+            const summaryData = await loadJson(CONTAINER_SUMMARIES, `${classId}.json`);
+            // Retornamos 200 con { summary: null } en lugar de 404 para evitar que el frontend rompa
+            if (!summaryData) return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, summary: null }) };
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(summaryData) };
+        } catch (err) {
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, summary: null, error: err.message }) };
+        }
+    }
+});
+
+// ── GET /api/class-map/{classId} ───────────────────────────────────
+// Devuelve el código Mermaid del mapa conceptual generado por IA
+app.http('get-class-map', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'class-map/{classId}',
+    handler: async (request, context) => {
+        const classId = request.params.classId;
+        const CONTAINER_MAPS = 'class-maps';
+        try {
+            const mapData = await loadJson(CONTAINER_MAPS, `${classId}.json`);
+            if (!mapData) return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, mapCode: null }) };
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mapData) };
+        } catch (err) {
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, mapCode: null, error: err.message }) };
+        }
+    }
+});
+
+// ── POST /api/class-map/{classId} ──────────────────────────────────
+// Guarda o actualiza un mapa conceptual
+app.http('save-class-map', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'class-map/{classId}',
+    handler: async (request, context) => {
+        const classId = request.params.classId;
+        const CONTAINER_MAPS = 'class-maps';
+        try {
+            const body = await request.json(); // { mapCode: "..." }
+            const existingData = await loadJson(CONTAINER_MAPS, `${classId}.json`) || { classId };
+            const updatedData = { ...existingData, mapCode: body.mapCode, lastModifiedAt: new Date().toISOString() };
+            await saveJson(CONTAINER_MAPS, `${classId}.json`, updatedData);
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updatedData) };
+        } catch (err) {
+            return { status: 500, body: JSON.stringify({ error: `Error guardando mapa: ${err.message}` }) };
+        }
+    }
+});
+
+// ── POST /api/class-summary/{classId} ──────────────────────────────
+// Guarda o valida un resumen (acción del docente)
+app.http('save-class-summary', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'class-summary/{classId}',
+    handler: async (request, context) => {
+        const classId = request.params.classId;
+        const CONTAINER_SUMMARIES = 'class-summaries';
+        const principal = parseClientPrincipal(request);
+        
+        try {
+            const body = await request.json(); // { summary: "...", validated: true }
+            const existingData = await loadJson(CONTAINER_SUMMARIES, `${classId}.json`) || { classId };
+            
+            const updatedData = {
+                ...existingData,
+                summary: body.summary,
+                lastModifiedAt: new Date().toISOString(),
+                lastModifiedBy: principal?.userDetails || 'docente',
+                validated: body.validated || false
+            };
+
+            await saveJson(CONTAINER_SUMMARIES, `${classId}.json`, updatedData);
+
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updatedData) };
+        } catch (err) {
+            return { status: 500, body: JSON.stringify({ error: `Error guardando resumen: ${err.message}` }) };
+        }
+    }
+});
+
+// ── GET /api/director/stats ──────────────────────────────────────
+// Devuelve métricas agregadas para el dashboard del director
+app.http('get-director-stats', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'director/stats',
+    handler: async (request, context) => {
+        context.log('get-director-stats triggered');
+        const MOCK_STATS = {
+            dau: 52,
+            dauDelta: '+8%',
+            classesProcessed: 14,
+            ragInteractions: 734,
+            ragDelta: '+23%',
+            adoptionRate: 68,
+            subjectAdoption: [
+                { name: 'Arq. de Software', rate: 82 },
+                { name: 'Diseño de BD', rate: 71 },
+                { name: 'Ing. de Software I', rate: 63 },
+                { name: 'Sistemas Distribuidos', rate: 44 },
+            ],
+        };
+        return { 
+            status: 200, 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify(MOCK_STATS) 
+        };
     }
 });
 

@@ -4,10 +4,10 @@
 import { api } from '../services/api.js';
 import { auth } from '../services/auth.js';
 
-export function createChatWidget({ classes = [], subjectId = '' }) {
+export function createChatWidget({ classes = [], subjectId = '', initialMessages = [], highlightMessageId = null }) {
   const user = auth.getUser();
   let selectedClassIds = classes.slice(0, 2).map(c => c.id);
-  let messages = [];
+  let messages = [...initialMessages];
   let isLoading = false;
 
   const container = document.createElement('div');
@@ -33,6 +33,10 @@ export function createChatWidget({ classes = [], subjectId = '' }) {
             <span class="badge badge-primary">${selectedClassIds.length} clase${selectedClassIds.length !== 1 ? 's' : ''} seleccionada${selectedClassIds.length !== 1 ? 's' : ''}</span>
           </div>
         ` : `<div class="chat-context-warn">⚠️ Seleccioná al menos una clase</div>`}
+        <button class="btn btn-sm btn-ghost" id="chat-clear" title="Limpiar conversación" style="margin-left:auto; height: 28px; padding: 0 8px;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+          Limpiar
+        </button>
       </div>
 
       <!-- Messages -->
@@ -89,21 +93,33 @@ export function createChatWidget({ classes = [], subjectId = '' }) {
       `;
     }
     return `
-      <div class="chat-msg chat-msg-assistant animate-fade">
+      <div class="chat-msg chat-msg-assistant animate-fade ${msg.id === highlightMessageId ? 'highlight-msg' : ''}" id="msg-${msg.id || ''}">
         <div class="chat-avatar-bot">🤖</div>
         <div class="chat-msg-body">
           <div class="chat-bubble chat-bubble-assistant">${renderMarkdown(msg.content)}</div>
-          ${msg.sources?.length > 0 ? `
-            <div class="chat-sources">
-              <span class="chat-sources-label">📎 Fuentes:</span>
-              ${msg.sources.map(s => `
-                <span class="source-chip" title="${s.sourceFilename}">
-                  ${{ transcript: '📝', presentation: '📊', notes: '📓', bibliography: '📚' }[s.materialType] || '📄'}
-                  ${s.sourceFilename}
-                </span>
-              `).join('')}
+          
+          <div class="chat-msg-footer">
+            ${msg.sources?.length > 0 ? `
+              <div class="chat-sources">
+                <span class="chat-sources-label">📎 Fuentes:</span>
+                ${msg.sources.map(s => `
+                  <span class="source-chip" title="${s.sourceFilename}">
+                    ${{ transcript: '📝', presentation: '📊', notes: '📓', bibliography: '📚' }[s.materialType] || '📄'}
+                    ${s.sourceFilename}
+                  </span>
+                `).join('')}
+              </div>
+            ` : '<span></span>'}
+
+            <div class="chat-feedback-btns" data-message-id="${msg.id || ''}">
+              <button class="feedback-btn ${msg.feedback === 'positive' ? 'active' : ''}" data-type="positive" title="Útil">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.53l-1.6 7A2 2 0 0 1 18.23 21H7a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h4l.5-1c.9-1.8 1.8-3 3.5-3 1.1 0 2 1.1 2 2.5 0 1-.3 1.5-1 2.38Z"/></svg>
+              </button>
+              <button class="feedback-btn ${msg.feedback === 'negative' ? 'active' : ''}" data-type="negative" title="No es útil">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.53l1.6-7A2 2 0 0 1 5.77 3H17a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-4l-.5 1c-.9 1.8-1.8 3-3.5 3-1.1 0-2-1.1-2-2.5 0-1 .3-1.5 1-2.38Z"/></svg>
+              </button>
             </div>
-          ` : ''}
+          </div>
         </div>
       </div>
     `;
@@ -142,6 +158,33 @@ export function createChatWidget({ classes = [], subjectId = '' }) {
       });
     });
 
+    // Feedback buttons
+    container.querySelectorAll('.feedback-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const messageId = btn.parentElement.dataset.messageId;
+        const type = btn.dataset.type;
+        if (!messageId || btn.classList.contains('active')) return;
+
+        // Visual update
+        btn.parentElement.querySelectorAll('.feedback-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        try {
+          await api.sendChatFeedback({ messageId, subjectId, isPositive: type === 'positive' });
+        } catch (err) {
+          console.error('Error sending feedback:', err);
+        }
+      });
+    });
+
+    // Clear
+    container.querySelector('#chat-clear')?.addEventListener('click', () => {
+      if (confirm('¿Estás seguro de que querés limpiar la conversación actual?')) {
+        messages = [];
+        render();
+      }
+    });
+
     // Send
     const sendBtn = container.querySelector('#chat-send');
     const input = container.querySelector('#chat-input');
@@ -166,24 +209,9 @@ export function createChatWidget({ classes = [], subjectId = '' }) {
     scrollToBottom();
 
     try {
-      const res = await fetch(`${api.BASE_URL}/rag-query`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, classIds: selectedClassIds, subjectId }),
-      });
-
-      if (!res.ok) {
-        let errorMsg = 'Ocurrió un error al procesar tu consulta.';
-        try {
-          const errData = await res.json();
-          if (errData.error) errorMsg = errData.error;
-        } catch (e) { /* ignore parse error */ }
-        throw new Error(errorMsg);
-      }
-
-      const result = await res.json();
-
-      // Deduplicate sources by filename to prevent 5 identical chips
+      const result = await api.ragQuery({ question, classIds: selectedClassIds, subjectId });
+      
+      // Deduplicate sources by filename
       const uniqueSources = [];
       const seen = new Set();
       for (const s of (result.sources || [])) {
@@ -193,7 +221,12 @@ export function createChatWidget({ classes = [], subjectId = '' }) {
         }
       }
 
-      messages.push({ role: 'assistant', content: result.answer, sources: uniqueSources });
+      messages.push({ 
+        role: 'assistant', 
+        content: result.answer, 
+        sources: uniqueSources,
+        id: result.id 
+      });
     } catch (err) {
       messages.push({ role: 'assistant', content: err.message || 'Error de conexión con el servidor. Por favor intentá nuevamente.', sources: [] });
     } finally {
@@ -205,7 +238,16 @@ export function createChatWidget({ classes = [], subjectId = '' }) {
   const scrollToBottom = () => {
     requestAnimationFrame(() => {
       const el = container.querySelector('#chat-messages');
-      if (el) el.scrollTop = el.scrollHeight;
+      if (!el) return;
+
+      if (highlightMessageId) {
+        const target = el.querySelector(`#msg-${highlightMessageId}`);
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          return;
+        }
+      }
+      el.scrollTop = el.scrollHeight;
     });
   };
 

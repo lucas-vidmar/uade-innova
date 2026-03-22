@@ -73,6 +73,18 @@ resource processedContainer 'Microsoft.Storage/storageAccounts/blobServices/cont
   }
 }
 
+// ─── Table Service ──────────────────────────────────────────────
+resource tableService 'Microsoft.Storage/storageAccounts/tableServices@2023-01-01' = {
+  parent: storageAccount
+  name: 'default'
+}
+
+// ─── Table: UserProfiles ───────────────────────────────────────
+resource userProfilesTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-01-01' = {
+  parent: tableService
+  name: 'UserProfiles'
+}
+
 // ─── Outputs ───────────────────────────────────────────────────
 @description('The name of the Storage Account.')
 output accountName string = storageAccount.name

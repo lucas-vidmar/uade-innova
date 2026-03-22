@@ -58,6 +58,15 @@ param embeddingDeploymentCapacity int = 10
 @secure()
 param pineconeApiKey string = ''
 
+@description('Location for the Static Web App. Note: limited region availability.')
+param staticWebAppLocation string = 'eastus2'
+
+@description('Name of the Pinecone index.')
+param pineconeIndexName string = 'dashboard-edu-pilot'
+
+@description('Name of the Storage container for class materials.')
+param classMaterialsContainerName string = 'class-materials'
+
 // ─── Variables & naming ──────────────────────────────────────────
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
@@ -75,6 +84,8 @@ var staticWebAppName = 'stapp-dashboard-${resourceToken}'
 var logAnalyticsName = '${abbrs.operationalInsightsWorkspaces}dashboard-${resourceToken}'
 var appInsightsName = '${abbrs.insightsComponents}dashboard-${resourceToken}'
 var keyVaultName = 'kv-edu-${take(resourceToken, 17)}'
+var identityName = 'id-dashboard-edu-${resourceToken}'
+var frontDoorName = 'afd-dashboard-${resourceToken}'
 
 // Storage account: max 24 chars, no hyphens
 var safeStorageName = take(replace(storageAccountName, '-', ''), 24)
@@ -124,7 +135,20 @@ module keyVault './modules/keyvault.bicep' = {
   params: {
     location: location
     name: keyVaultName
+    pineconeApiKey: pineconeApiKey
     tags: tags
+  }
+}
+
+// ─── Module: Identity & RBAC ─────────────────────────────────────
+module identity './modules/identity.bicep' = {
+  name: 'identity'
+  params: {
+    identityName: identityName
+    location: location
+    openAiAccountId: openAi.outputs.id
+    storageAccountId: storage.outputs.accountId
+    keyVaultId: keyVault.outputs.keyVaultId
   }
 }
 
@@ -135,6 +159,8 @@ module functions './modules/functions.bicep' = {
   params: {
     location: location
     functionAppName: functionAppName
+    userAssignedIdentityId: identity.outputs.identityId
+    userAssignedClientId: identity.outputs.clientId
     storageAccountName: safeStorageName
     appInsightsConnectionString: appInsights.outputs.connectionString
     openAiEndpoint: openAi.outputs.endpoint
@@ -142,8 +168,8 @@ module functions './modules/functions.bicep' = {
     openAiEmbeddingDeployment: openAi.outputs.embeddingDeploymentName
     classMaterialsStorageAccount: safeStorageName
     keyVaultUri: keyVault.outputs.keyVaultUri
-    pineconeApiKey: pineconeApiKey
-    openAiId: openAi.outputs.id
+    pineconeIndexName: pineconeIndexName
+    classMaterialsContainerName: classMaterialsContainerName
     storageAccountId: storage.outputs.accountId
     tags: tags
   }
@@ -154,7 +180,7 @@ module functions './modules/functions.bicep' = {
 module staticWebApp './modules/staticwebapp.bicep' = {
   name: 'staticWebApp'
   params: {
-    location: 'eastus2' // Static Web Apps tienen disponibilidad limitada por región
+    location: staticWebAppLocation
     staticWebAppName: staticWebAppName
     openAiEndpoint: openAi.outputs.endpoint
     openAiChatDeployment: openAi.outputs.chatDeploymentName
@@ -165,21 +191,17 @@ module staticWebApp './modules/staticwebapp.bicep' = {
   }
 }
 
-// ─── Module: Identity & RBAC ─────────────────────────────────────
-// NOTA: Requiere rol Owner/User Access Administrator en el RG.
-// UADE debe asignar manualmente los roles de Managed Identity
-// o conceder el permiso 'Microsoft.Authorization/roleAssignments/write'.
-// Descomentar cuando UADE otorgue los permisos necesarios.
-//
-// module identity './modules/identity.bicep' = {
-//   name: 'identity'
-//   params: {
-//     functionAppPrincipalId: functions.outputs.functionAppPrincipalId
-//     openAiAccountId: openAi.outputs.id
-//     storageAccountId: storage.outputs.accountId
-//     keyVaultId: keyVault.outputs.keyVaultId
-//   }
-// }
+// ─── Module: Azure Front Door (WAF) ───────────────────────────────
+// Proporciona protección OWASP y enrutamiento a los endpoints
+module frontDoor './modules/frontdoor.bicep' = {
+  name: 'frontDoor'
+  params: {
+    profileName: frontDoorName
+    frontendHostName: staticWebApp.outputs.staticWebAppHostName
+    backendHostName: functions.outputs.functionAppHostName
+    tags: tags
+  }
+}
 
 // ─── Outputs ────────────────────────────────────────────────────
 output AZURE_OPENAI_ENDPOINT string = openAi.outputs.endpoint
@@ -191,4 +213,5 @@ output AZURE_KEY_VAULT_URI string = keyVault.outputs.keyVaultUri
 output AZURE_FUNCTION_APP_URI string = functions.outputs.functionAppUri
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = appInsights.outputs.connectionString
 output AZURE_STATIC_WEB_APP_URI string = staticWebApp.outputs.staticWebAppUri
+output AZURE_FRONT_DOOR_URI string = frontDoor.outputs.frontDoorUri
 output AZURE_RESOURCE_GROUP string = resourceGroup().name

@@ -2,25 +2,18 @@
  * services/pipeline.js — Orquestador del pipeline de RAG
  * Procesa un material (buffer + metadata) y lo indexa en Pinecone.
  */
-import { parseFile, chunkText } from './parser.js';
-import { generateEmbedding } from './openai.js';
+import { parseFile, chunkText, cleanText } from './parser.js';
+import { generateEmbeddingsBatch, generateClassSummary } from './openai.js';
 import { upsertChunks } from './pinecone.js';
 import { saveJson } from './storage.js';
 
 const CONTAINER_PROCESSED = 'processed';
+const CONTAINER_SUMMARIES = 'class-summaries';
+const BATCH_SIZE = 20;
 
 /**
  * Ejecuta el pipeline completo de procesamiento de un archivo.
- * @param {object} params
- * @param {Buffer} params.fileBuffer - binario del archivo
- * @param {string} params.fileContentType - MIME type
- * @param {string} params.fileName - nombre original
- * @param {string[]} params.classIds - IDs de las clases asociadas
- * @param {string} params.subjectId - ID de la materia
- * @param {string} params.materialType - tipo (transcript, presentation, etc.)
- * @param {string} params.materialId - UUID del material
- * @param {string} params.blobUrl - URL pública o local del archivo
- * @param {import('@azure/functions').InvocationContext} context - contexto de la función Azure
+ * ... (existing jsdocs)
  */
 export async function runPipeline({ fileBuffer, fileContentType, fileName, classIds, subjectId, materialType, materialId, blobUrl }, context) {
     try {
@@ -33,32 +26,78 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
         const chunks = chunkText(text, 512, 50);
         context.log(`[Pipeline] Chunks generados: ${chunks.length}`);
 
-        // 3. Generar embeddings y preparar vectores para Pinecone
+        if (chunks.length === 0) {
+            throw new Error('No se pudo extraer texto significativo del archivo para generar chunks.');
+        }
+
+        // 3. Generar embeddings en batches y preparar vectores para Pinecone
         const vectors = [];
-        for (let i = 0; i < chunks.length; i++) {
-            const embedding = await generateEmbedding(chunks[i]);
-            vectors.push({
-                id: `${materialId}-chunk-${i}`,
-                values: embedding,
-                metadata: {
-                    subjectId,
-                    classIds,
-                    materialId,
-                    materialType,
-                    chunkIndex: i,
-                    sourceFilename: fileName,
-                    lectureDate: new Date().toISOString(),
-                    text: chunks[i],
-                },
+        for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+            const currentBatch = chunks.slice(i, i + BATCH_SIZE);
+            context.log(`[Pipeline] Vectorizando batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(chunks.length / BATCH_SIZE)} (${currentBatch.length} chunks)...`);
+            
+            const embeddings = await generateEmbeddingsBatch(currentBatch);
+            
+            embeddings.forEach((embedding, index) => {
+                const chunkIndex = i + index;
+                vectors.push({
+                    id: `${materialId}-chunk-${chunkIndex}`,
+                    values: embedding,
+                    metadata: {
+                        subjectId,
+                        classIds,
+                        materialId,
+                        materialType,
+                        chunkIndex,
+                        sourceFilename: fileName,
+                        lectureDate: new Date().toISOString(),
+                        text: currentBatch[index],
+                    },
+                });
             });
         }
 
-        // 4. Upsert en Pinecone
+        // 4. Indexar en Pinecone
         context.log(`[Pipeline] Indexando ${vectors.length} vectores en Pinecone index: ${process.env.PINECONE_INDEX_NAME}...`);
         await upsertChunks(vectors);
         context.log(`[Pipeline] Vectores indexados con éxito.`);
 
-        // 5. Guardar estado final: ready
+        // 5. Generar resumen y mapa conceptual si es un tipo de material rico en texto
+        if (materialType === 'transcript' || materialType === 'notes') {
+            context.log(`[Pipeline] Generando activos IA (resumen y mapa) para material ${materialId}...`);
+            try {
+                const [summary, mapData] = await Promise.all([
+                    generateClassSummary(text),
+                    generateClassMap(text)
+                ]);
+                
+                // Guardar activos para cada clase asociada
+                for (const classId of classIds) {
+                    // Guardar Resumen
+                    await saveJson(CONTAINER_SUMMARIES, `${classId}.json`, {
+                        classId,
+                        subjectId,
+                        summary,
+                        generatedFrom: materialId,
+                        generatedAt: new Date().toISOString(),
+                        lastModifiedBy: 'AI'
+                    });
+
+                    // Guardar Mapa Conceptual (Nuevo en HU#61)
+                    await saveJson('class-maps', `${classId}.json`, {
+                        classId,
+                        subjectId,
+                        mapCode: mapData.code,
+                        generatedAt: mapData.generatedAt
+                    });
+                }
+                context.log(`[Pipeline] Activos IA guardados con éxito para clases: ${classIds.join(', ')}`);
+            } catch (sumErr) {
+                context.error(`[Pipeline] Error generando activos IA (no bloqueante):`, sumErr);
+            }
+        }
+
+        // 6. Guardar estado final: ready
         const materialState = {
             materialId,
             classIds,
@@ -76,7 +115,6 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
     } catch (err) {
         context.error(`[Pipeline] Error crítico para material ${materialId}:`, err);
         
-        // Guardar estado: error
         const errorState = {
             materialId,
             classIds,
@@ -86,6 +124,7 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
             status: 'error',
             blobUrl,
             error: err.message,
+            stack: err.stack,
             processedAt: new Date().toISOString(),
         };
         try {

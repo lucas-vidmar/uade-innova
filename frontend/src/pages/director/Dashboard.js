@@ -8,7 +8,13 @@ export async function renderDirectorDashboard(container) {
     renderHeader('Panel Directivo');
     container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando datos directivos...</div>`;
 
-    const data = await api.getDirectorStats();
+    const [data, earlyAlerts] = await Promise.all([
+        api.getDirectorStats(),
+        api.getEarlyAlerts()
+    ]);
+    
+    // Inject early alerts into the data object for compatibility with the existing template
+    data.earlyAlerts = earlyAlerts;
     const maxRate = Math.max(...data.subjectAdoption.map(s => s.rate));
 
     container.innerHTML = `

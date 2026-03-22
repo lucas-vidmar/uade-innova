@@ -1,0 +1,1919 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.41.2.15936",
+      "templateHash": "8927647652056646309"
+    }
+  },
+  "parameters": {
+    "environmentName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "metadata": {
+        "description": "Nombre del entorno azd (ej: uade-dev)."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "minLength": 1,
+      "metadata": {
+        "description": "Región Azure primaria para todos los recursos."
+      }
+    },
+    "openAiLocation": {
+      "type": "string",
+      "defaultValue": "eastus2",
+      "metadata": {
+        "description": "Región para Azure OpenAI. eastus2 tiene quota de gpt-4o-mini en UADE."
+      }
+    },
+    "openAiSkuName": {
+      "type": "string",
+      "defaultValue": "S0",
+      "metadata": {
+        "description": "SKU del recurso Azure OpenAI."
+      }
+    },
+    "gptModelName": {
+      "type": "string",
+      "defaultValue": "gpt-4o-mini",
+      "metadata": {
+        "description": "Nombre del modelo GPT a deployar."
+      }
+    },
+    "gptModelVersion": {
+      "type": "string",
+      "defaultValue": "2024-07-18",
+      "metadata": {
+        "description": "Versión del modelo GPT."
+      }
+    },
+    "gptDeploymentCapacity": {
+      "type": "int",
+      "defaultValue": 10,
+      "metadata": {
+        "description": "Capacidad del deployment GPT en miles de TPM."
+      }
+    },
+    "embeddingModelName": {
+      "type": "string",
+      "defaultValue": "text-embedding-3-small",
+      "metadata": {
+        "description": "Nombre del modelo de embeddings a deployar."
+      }
+    },
+    "embeddingModelVersion": {
+      "type": "string",
+      "defaultValue": "1",
+      "metadata": {
+        "description": "Versión del modelo de embeddings."
+      }
+    },
+    "embeddingDeploymentCapacity": {
+      "type": "int",
+      "defaultValue": 10,
+      "metadata": {
+        "description": "Capacidad del deployment de embeddings en miles de TPM."
+      }
+    },
+    "pineconeApiKey": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Pinecone API Key (Plan B)"
+      }
+    },
+    "staticWebAppLocation": {
+      "type": "string",
+      "defaultValue": "eastus2",
+      "metadata": {
+        "description": "Location for the Static Web App. Note: limited region availability."
+      }
+    },
+    "pineconeIndexName": {
+      "type": "string",
+      "defaultValue": "dashboard-edu-pilot",
+      "metadata": {
+        "description": "Name of the Pinecone index."
+      }
+    },
+    "classMaterialsContainerName": {
+      "type": "string",
+      "defaultValue": "class-materials",
+      "metadata": {
+        "description": "Name of the Storage container for class materials."
+      }
+    }
+  },
+  "variables": {
+    "$fxv#0": {
+      "analysisServicesServers": "as",
+      "apiManagementService": "apim-",
+      "appConfigurationStores": "appcs-",
+      "appManagedEnvironments": "cae-",
+      "appContainerApps": "ca-",
+      "authorizationPolicyDefinitions": "policy-",
+      "automationAutomationAccounts": "aa-",
+      "blueprintBlueprints": "bp-",
+      "blueprintBlueprintsArtifacts": "bpa-",
+      "cacheRedis": "redis-",
+      "cdnProfiles": "cdnp-",
+      "cdnProfilesEndpoints": "cdne-",
+      "cognitiveServicesAccounts": "cog-",
+      "cognitiveServicesFormRecognizer": "cog-fr-",
+      "cognitiveServicesTextAnalytics": "cog-ta-",
+      "computeAvailabilitySets": "avail-",
+      "computeDisks": "disk-",
+      "computeVirtualMachines": "vm",
+      "computeVirtualMachineScaleSets": "vmss-",
+      "containerRegistryRegistries": "cr",
+      "containerServiceManagedClusters": "aks-",
+      "databricksWorkspaces": "dbw-",
+      "dBforMySQLServers": "mysql-",
+      "dBforPostgreSQLServers": "psql-",
+      "devTestLabLabs": "lab-",
+      "documentDBDatabaseAccounts": "cosmos-",
+      "eventGridDomains": "evgd-",
+      "eventGridEventSubscriptions": "evgs-",
+      "eventGridTopics": "evgt-",
+      "eventHubNamespaces": "evhns-",
+      "eventHubNamespacesEventHubs": "evh-",
+      "hdInsightClustersHadoop": "hadoop-",
+      "hdInsightClustersHBase": "hbase-",
+      "hdInsightClustersKafka": "kafka-",
+      "hdInsightClustersSpark": "spark-",
+      "hdInsightClustersStorm": "storm-",
+      "hdInsightClustersMlServices": "mls-",
+      "insightsComponents": "appi-",
+      "keyVaultVaults": "kv-",
+      "kubernetesConnectedClusters": "arck",
+      "kustoClusters": "dec",
+      "kustoClustersDatabases": "dedb",
+      "logicWorkflows": "logic-",
+      "machineLearningWorkspaces": "mlw-",
+      "managedIdentityUserAssignedIdentities": "id-",
+      "managementManagementGroups": "mg-",
+      "migrateAssessmentProjects": "migr-",
+      "networkApplicationGateways": "agw-",
+      "networkApplicationSecurityGroups": "asg-",
+      "networkAzureFirewalls": "afw-",
+      "networkBastionHosts": "bas-",
+      "networkConnections": "con-",
+      "networkDnsZones": "dnsz-",
+      "networkExpressRouteCircuits": "erc-",
+      "networkFirewallPolicies": "afwp-",
+      "networkFrontDoors": "fd-",
+      "networkFrontdoorWebApplicationFirewallPolicies": "fdfp-",
+      "networkLoadBalancersExternal": "lbe-",
+      "networkLoadBalancersInternal": "lbi-",
+      "networkLoadBalancersInboundNatRules": "rule-",
+      "networkLocalNetworkGateways": "lgw-",
+      "networkNatGateways": "ng-",
+      "networkNetworkInterfaces": "nic-",
+      "networkNetworkSecurityGroups": "nsg-",
+      "networkNetworkWatchers": "nw-",
+      "networkPrivateDnsZones": "pdnsz-",
+      "networkPublicIPAddresses": "pip-",
+      "networkPublicIPPrefixes": "ippre-",
+      "networkRouteFilters": "rf-",
+      "networkRouteTables": "rt-",
+      "networkServiceEndpointPolicies": "se-",
+      "networkTrafficManagerProfiles": "traf-",
+      "networkVirtualNetworkGateways": "vgw-",
+      "networkVirtualNetworks": "vnet-",
+      "networkVirtualNetworksSubnets": "snet-",
+      "networkVirtualNetworksVirtualNetworkPeerings": "peer-",
+      "networkVirtualWans": "vwan-",
+      "notificationHubsNamespaces": "ntfns-",
+      "notificationHubsNamespacesNotificationHubs": "ntf-",
+      "operationalInsightsWorkspaces": "log-",
+      "portalDashboards": "dash-",
+      "powerBIDedicatedCapacities": "pbi-",
+      "purviewAccounts": "pview-",
+      "recoveryServicesVaults": "rsv-",
+      "resourcesResourceGroups": "rg-",
+      "searchSearchServices": "srch-",
+      "serviceBusNamespaces": "sb-",
+      "serviceBusNamespacesQueues": "sbq-",
+      "serviceBusNamespacesTopics": "sbt-",
+      "serviceEndPointPolicies": "se-",
+      "serviceFabricClusters": "sf-",
+      "signalRServiceSignalR": "sigr",
+      "sqlManagedInstances": "sqlmi-",
+      "sqlServers": "sql-",
+      "sqlServersDataWarehouse": "sqldw-",
+      "sqlServersDatabases": "sqldb-",
+      "sqlServersDatabasesStretch": "sqlstrdb-",
+      "storageStorageAccounts": "st",
+      "streamAnalyticsCluster": "asa-",
+      "synapseAnalyticsWorkspaces": "syn",
+      "synapseAnalyticsWorkspacesSqlPoolsDedicated": "syndp",
+      "synapseAnalyticsWorkspacesSqlPoolsSpark": "synsp",
+      "timeSeriesInsightsEnvironments": "tsi-",
+      "webServerFarms": "plan-",
+      "webSitesAppService": "app-",
+      "webSitesWebApp": "app-",
+      "webSitesFunctions": "func-"
+    },
+    "abbrs": "[variables('$fxv#0')]",
+    "resourceToken": "[toLower(uniqueString(subscription().id, parameters('environmentName'), parameters('location')))]",
+    "tags": {
+      "azd-env-name": "[parameters('environmentName')]",
+      "project": "dashboard-educativo-uade",
+      "environment": "[parameters('environmentName')]"
+    },
+    "openAiName": "[format('{0}dashboard-{1}', variables('abbrs').cognitiveServicesAccounts, variables('resourceToken'))]",
+    "storageAccountName": "[format('{0}dashboard{1}', variables('abbrs').storageStorageAccounts, variables('resourceToken'))]",
+    "functionAppName": "[format('{0}dashboard-ingest-{1}', variables('abbrs').webSitesFunctions, variables('resourceToken'))]",
+    "staticWebAppName": "[format('stapp-dashboard-{0}', variables('resourceToken'))]",
+    "logAnalyticsName": "[format('{0}dashboard-{1}', variables('abbrs').operationalInsightsWorkspaces, variables('resourceToken'))]",
+    "appInsightsName": "[format('{0}dashboard-{1}', variables('abbrs').insightsComponents, variables('resourceToken'))]",
+    "keyVaultName": "[format('kv-edu-{0}', take(variables('resourceToken'), 17))]",
+    "identityName": "[format('id-dashboard-edu-{0}', variables('resourceToken'))]",
+    "frontDoorName": "[format('afd-dashboard-{0}', variables('resourceToken'))]",
+    "safeStorageName": "[take(replace(variables('storageAccountName'), '-', ''), 24)]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "appInsights",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "logAnalyticsName": {
+            "value": "[variables('logAnalyticsName')]"
+          },
+          "appInsightsName": {
+            "value": "[variables('appInsightsName')]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.41.2.15936",
+              "templateHash": "6969293367927273862"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for resources."
+              }
+            },
+            "logAnalyticsName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Log Analytics Workspace."
+              }
+            },
+            "appInsightsName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Application Insights resource."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags to apply to resources."
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.OperationalInsights/workspaces",
+              "apiVersion": "2022-10-01",
+              "name": "[parameters('logAnalyticsName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "sku": {
+                  "name": "PerGB2018"
+                },
+                "retentionInDays": 30,
+                "features": {
+                  "enableLogAccessUsingOnlyResourcePermissions": true
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Insights/components",
+              "apiVersion": "2020-02-02",
+              "name": "[parameters('appInsightsName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "web",
+              "properties": {
+                "Application_Type": "web",
+                "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsName'))]",
+                "RetentionInDays": 30,
+                "IngestionMode": "LogAnalytics",
+                "publicNetworkAccessForIngestion": "Enabled",
+                "publicNetworkAccessForQuery": "Enabled"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "connectionString": {
+              "type": "string",
+              "metadata": {
+                "description": "Application Insights connection string (injected as env var)."
+              },
+              "value": "[reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString]"
+            },
+            "instrumentationKey": {
+              "type": "string",
+              "metadata": {
+                "description": "Application Insights instrumentation key (legacy, still needed by some SDKs)."
+              },
+              "value": "[reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').InstrumentationKey]"
+            },
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "The resource name of Application Insights."
+              },
+              "value": "[parameters('appInsightsName')]"
+            },
+            "logAnalyticsWorkspaceId": {
+              "type": "string",
+              "metadata": {
+                "description": "The resource ID of the Log Analytics Workspace."
+              },
+              "value": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsName'))]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "openAi",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('openAiLocation')]"
+          },
+          "name": {
+            "value": "[variables('openAiName')]"
+          },
+          "skuName": {
+            "value": "[parameters('openAiSkuName')]"
+          },
+          "gptModelName": {
+            "value": "[parameters('gptModelName')]"
+          },
+          "gptModelVersion": {
+            "value": "[parameters('gptModelVersion')]"
+          },
+          "gptDeploymentCapacity": {
+            "value": "[parameters('gptDeploymentCapacity')]"
+          },
+          "embeddingModelName": {
+            "value": "[parameters('embeddingModelName')]"
+          },
+          "embeddingModelVersion": {
+            "value": "[parameters('embeddingModelVersion')]"
+          },
+          "embeddingDeploymentCapacity": {
+            "value": "[parameters('embeddingDeploymentCapacity')]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.41.2.15936",
+              "templateHash": "608084552462910092"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "defaultValue": "eastus",
+              "metadata": {
+                "description": "Azure region for the OpenAI resource."
+              }
+            },
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Azure OpenAI resource."
+              }
+            },
+            "skuName": {
+              "type": "string",
+              "defaultValue": "S0",
+              "metadata": {
+                "description": "SKU for the OpenAI resource."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags to apply to the resource."
+              }
+            },
+            "gptModelName": {
+              "type": "string",
+              "defaultValue": "gpt-4o-mini",
+              "metadata": {
+                "description": "Name of the GPT model to deploy."
+              }
+            },
+            "gptModelVersion": {
+              "type": "string",
+              "defaultValue": "2024-07-18",
+              "metadata": {
+                "description": "Version of the GPT model."
+              }
+            },
+            "gptDeploymentCapacity": {
+              "type": "int",
+              "defaultValue": 10,
+              "metadata": {
+                "description": "Capacity (K TPM) for the GPT deployment."
+              }
+            },
+            "embeddingModelName": {
+              "type": "string",
+              "defaultValue": "text-embedding-3-small",
+              "metadata": {
+                "description": "Name of the embedding model to deploy."
+              }
+            },
+            "embeddingModelVersion": {
+              "type": "string",
+              "defaultValue": "1",
+              "metadata": {
+                "description": "Version of the embedding model."
+              }
+            },
+            "embeddingDeploymentCapacity": {
+              "type": "int",
+              "defaultValue": 10,
+              "metadata": {
+                "description": "Capacity (K TPM) for the embedding deployment."
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.CognitiveServices/accounts",
+              "apiVersion": "2023-05-01",
+              "name": "[parameters('name')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "OpenAI",
+              "sku": {
+                "name": "[parameters('skuName')]"
+              },
+              "properties": {
+                "customSubDomainName": "[parameters('name')]",
+                "publicNetworkAccess": "Enabled",
+                "disableLocalAuth": false
+              }
+            },
+            {
+              "type": "Microsoft.CognitiveServices/accounts/deployments",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', parameters('name'), parameters('gptModelName'))]",
+              "properties": {
+                "model": {
+                  "format": "OpenAI",
+                  "name": "[parameters('gptModelName')]",
+                  "version": "[parameters('gptModelVersion')]"
+                },
+                "raiPolicyName": "Microsoft.Default"
+              },
+              "sku": {
+                "name": "Standard",
+                "capacity": "[parameters('gptDeploymentCapacity')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.CognitiveServices/accounts/deployments",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', parameters('name'), parameters('embeddingModelName'))]",
+              "properties": {
+                "model": {
+                  "format": "OpenAI",
+                  "name": "[parameters('embeddingModelName')]",
+                  "version": "[parameters('embeddingModelVersion')]"
+                }
+              },
+              "sku": {
+                "name": "Standard",
+                "capacity": "[parameters('embeddingDeploymentCapacity')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.CognitiveServices/accounts/deployments', parameters('name'), parameters('gptModelName'))]",
+                "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "endpoint": {
+              "type": "string",
+              "metadata": {
+                "description": "The Azure OpenAI service endpoint URL."
+              },
+              "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', parameters('name')), '2023-05-01').endpoint]"
+            },
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "The name of the Azure OpenAI resource."
+              },
+              "value": "[parameters('name')]"
+            },
+            "id": {
+              "type": "string",
+              "metadata": {
+                "description": "The resource ID of the Azure OpenAI resource."
+              },
+              "value": "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]"
+            },
+            "chatDeploymentName": {
+              "type": "string",
+              "metadata": {
+                "description": "The deployment name for the GPT chat model."
+              },
+              "value": "[parameters('gptModelName')]"
+            },
+            "embeddingDeploymentName": {
+              "type": "string",
+              "metadata": {
+                "description": "The deployment name for the embedding model."
+              },
+              "value": "[parameters('embeddingModelName')]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "storage",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "name": {
+            "value": "[variables('safeStorageName')]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.41.2.15936",
+              "templateHash": "14398951521189111586"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for the Storage Account."
+              }
+            },
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Storage Account (3-24 chars, lowercase alphanumeric)."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags to apply to the resource."
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Storage/storageAccounts",
+              "apiVersion": "2023-01-01",
+              "name": "[parameters('name')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "Standard_LRS"
+              },
+              "kind": "StorageV2",
+              "properties": {
+                "accessTier": "Hot",
+                "allowBlobPublicAccess": false,
+                "allowSharedKeyAccess": true,
+                "supportsHttpsTrafficOnly": true,
+                "minimumTlsVersion": "TLS1_2",
+                "encryption": {
+                  "services": {
+                    "blob": {
+                      "enabled": true
+                    },
+                    "file": {
+                      "enabled": true
+                    }
+                  },
+                  "keySource": "Microsoft.Storage"
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}', parameters('name'), 'default')]",
+              "properties": {
+                "deleteRetentionPolicy": {
+                  "enabled": true,
+                  "days": 7
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('name'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'class-materials')]",
+              "properties": {
+                "publicAccess": "None",
+                "metadata": {
+                  "purpose": "Raw class material files uploaded by teachers"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('name'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'processed')]",
+              "properties": {
+                "publicAccess": "None",
+                "metadata": {
+                  "purpose": "Processed chunk JSON and pipeline state files"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('name'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/tableServices",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}', parameters('name'), 'default')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('name'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'UserProfiles')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
+              ]
+            }
+          ],
+          "outputs": {
+            "accountName": {
+              "type": "string",
+              "metadata": {
+                "description": "The name of the Storage Account."
+              },
+              "value": "[parameters('name')]"
+            },
+            "accountId": {
+              "type": "string",
+              "metadata": {
+                "description": "The resource ID of the Storage Account."
+              },
+              "value": "[resourceId('Microsoft.Storage/storageAccounts', parameters('name'))]"
+            },
+            "blobEndpoint": {
+              "type": "string",
+              "metadata": {
+                "description": "The primary blob endpoint URL."
+              },
+              "value": "[reference(resourceId('Microsoft.Storage/storageAccounts', parameters('name')), '2023-01-01').primaryEndpoints.blob]"
+            },
+            "classMaterialsContainerName": {
+              "type": "string",
+              "metadata": {
+                "description": "The name of the class-materials container."
+              },
+              "value": "class-materials"
+            },
+            "processedContainerName": {
+              "type": "string",
+              "metadata": {
+                "description": "The name of the processed container."
+              },
+              "value": "processed"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "keyVault",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "name": {
+            "value": "[variables('keyVaultName')]"
+          },
+          "pineconeApiKey": {
+            "value": "[parameters('pineconeApiKey')]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.41.2.15936",
+              "templateHash": "9644409947418504327"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for the Key Vault."
+              }
+            },
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Key Vault (3-24 chars, globally unique)."
+              }
+            },
+            "tenantId": {
+              "type": "string",
+              "defaultValue": "[subscription().tenantId]",
+              "metadata": {
+                "description": "Azure AD Tenant ID."
+              }
+            },
+            "pineconeApiKey": {
+              "type": "securestring",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Direct Pinecone API Key (Plan B fallback)."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags to apply to the resource."
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.KeyVault/vaults",
+              "apiVersion": "2023-07-01",
+              "name": "[parameters('name')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "tenantId": "[parameters('tenantId')]",
+                "sku": {
+                  "family": "A",
+                  "name": "standard"
+                },
+                "enableRbacAuthorization": true,
+                "enableSoftDelete": true,
+                "softDeleteRetentionInDays": 7,
+                "enabledForDeployment": false,
+                "enabledForTemplateDeployment": false,
+                "enabledForDiskEncryption": false,
+                "publicNetworkAccess": "Enabled",
+                "networkAcls": {
+                  "defaultAction": "Allow",
+                  "bypass": "AzureServices"
+                }
+              }
+            },
+            {
+              "type": "Microsoft.KeyVault/vaults/secrets",
+              "apiVersion": "2023-07-01",
+              "name": "[format('{0}/{1}', parameters('name'), 'pinecone-api-key')]",
+              "properties": {
+                "value": "[if(not(empty(parameters('pineconeApiKey'))), parameters('pineconeApiKey'), 'PLACEHOLDER-SET-AFTER-PROVISION')]",
+                "attributes": {
+                  "enabled": true
+                },
+                "contentType": "text/plain"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('name'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "keyVaultName": {
+              "type": "string",
+              "metadata": {
+                "description": "The name of the Key Vault."
+              },
+              "value": "[parameters('name')]"
+            },
+            "keyVaultUri": {
+              "type": "string",
+              "metadata": {
+                "description": "The URI of the Key Vault."
+              },
+              "value": "[reference(resourceId('Microsoft.KeyVault/vaults', parameters('name')), '2023-07-01').vaultUri]"
+            },
+            "keyVaultId": {
+              "type": "string",
+              "metadata": {
+                "description": "The resource ID of the Key Vault."
+              },
+              "value": "[resourceId('Microsoft.KeyVault/vaults', parameters('name'))]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "identity",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "identityName": {
+            "value": "[variables('identityName')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "openAiAccountId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'openAi'), '2025-04-01').outputs.id.value]"
+          },
+          "storageAccountId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.accountId.value]"
+          },
+          "keyVaultId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'keyVault'), '2025-04-01').outputs.keyVaultId.value]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.41.2.15936",
+              "templateHash": "13559400451627940908"
+            }
+          },
+          "parameters": {
+            "identityName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the User-Assigned Managed Identity."
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region."
+              }
+            },
+            "openAiAccountId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Azure OpenAI account."
+              }
+            },
+            "storageAccountId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Storage Account."
+              }
+            },
+            "keyVaultId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Key Vault."
+              }
+            }
+          },
+          "variables": {
+            "openAiAccountName": "[last(split(parameters('openAiAccountId'), '/'))]",
+            "storageAccountName": "[last(split(parameters('storageAccountId'), '/'))]",
+            "keyVaultName": "[last(split(parameters('keyVaultId'), '/'))]",
+            "cognitiveServicesOpenAiUserRoleId": "5e0bd9bd-7b93-4f28-af87-19fc36ad61bd",
+            "storageBlobDataContributorRoleId": "ba92f5b4-2d11-453d-a403-e96b0029c9fe",
+            "storageTableDataContributorRoleId": "0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3",
+            "keyVaultSecretsUserRoleId": "4633458b-17de-408a-b874-0445c86b69e6"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+              "apiVersion": "2023-01-31",
+              "name": "[parameters('identityName')]",
+              "location": "[parameters('location')]"
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.CognitiveServices/accounts', variables('openAiAccountName'))]",
+              "name": "[guid(parameters('openAiAccountId'), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName')), variables('cognitiveServicesOpenAiUserRoleId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('cognitiveServicesOpenAiUserRoleId'))]",
+                "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName')), '2023-01-31').principalId]",
+                "principalType": "ServicePrincipal",
+                "description": "Allows Function App to call Azure OpenAI via Managed Identity"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
+              "name": "[guid(parameters('storageAccountId'), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName')), variables('storageBlobDataContributorRoleId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageBlobDataContributorRoleId'))]",
+                "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName')), '2023-01-31').principalId]",
+                "principalType": "ServicePrincipal",
+                "description": "Allows Function App to read/write class materials in Blob Storage"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
+              "name": "[guid(parameters('storageAccountId'), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName')), variables('storageTableDataContributorRoleId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageTableDataContributorRoleId'))]",
+                "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName')), '2023-01-31').principalId]",
+                "principalType": "ServicePrincipal",
+                "description": "Allows Function App to read/write persistent User Profiles in Table Storage"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]",
+              "name": "[guid(parameters('keyVaultId'), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName')), variables('keyVaultSecretsUserRoleId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('keyVaultSecretsUserRoleId'))]",
+                "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName')), '2023-01-31').principalId]",
+                "principalType": "ServicePrincipal",
+                "description": "Allows Function App to read Pinecone API Key from Key Vault"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "identityId": {
+              "type": "string",
+              "metadata": {
+                "description": "The resource ID of the User-Assigned Managed Identity."
+              },
+              "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName'))]"
+            },
+            "principalId": {
+              "type": "string",
+              "metadata": {
+                "description": "The principal ID of the User-Assigned Managed Identity."
+              },
+              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName')), '2023-01-31').principalId]"
+            },
+            "clientId": {
+              "type": "string",
+              "metadata": {
+                "description": "The client ID of the User-Assigned Managed Identity."
+              },
+              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName')), '2023-01-31').clientId]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'keyVault')]",
+        "[resourceId('Microsoft.Resources/deployments', 'openAi')]",
+        "[resourceId('Microsoft.Resources/deployments', 'storage')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "functions",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "functionAppName": {
+            "value": "[variables('functionAppName')]"
+          },
+          "userAssignedIdentityId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'identity'), '2025-04-01').outputs.identityId.value]"
+          },
+          "userAssignedClientId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'identity'), '2025-04-01').outputs.clientId.value]"
+          },
+          "storageAccountName": {
+            "value": "[variables('safeStorageName')]"
+          },
+          "appInsightsConnectionString": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appInsights'), '2025-04-01').outputs.connectionString.value]"
+          },
+          "openAiEndpoint": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'openAi'), '2025-04-01').outputs.endpoint.value]"
+          },
+          "openAiChatDeployment": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'openAi'), '2025-04-01').outputs.chatDeploymentName.value]"
+          },
+          "openAiEmbeddingDeployment": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'openAi'), '2025-04-01').outputs.embeddingDeploymentName.value]"
+          },
+          "classMaterialsStorageAccount": {
+            "value": "[variables('safeStorageName')]"
+          },
+          "keyVaultUri": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'keyVault'), '2025-04-01').outputs.keyVaultUri.value]"
+          },
+          "pineconeIndexName": {
+            "value": "[parameters('pineconeIndexName')]"
+          },
+          "classMaterialsContainerName": {
+            "value": "[parameters('classMaterialsContainerName')]"
+          },
+          "storageAccountId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.accountId.value]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.41.2.15936",
+              "templateHash": "10042508113454689588"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for resources."
+              }
+            },
+            "functionAppName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Function App."
+              }
+            },
+            "storageAccountName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Storage Account required by the Function runtime."
+              }
+            },
+            "appInsightsConnectionString": {
+              "type": "string",
+              "metadata": {
+                "description": "Application Insights connection string."
+              }
+            },
+            "openAiEndpoint": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure OpenAI endpoint."
+              }
+            },
+            "openAiChatDeployment": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure OpenAI chat model deployment name."
+              }
+            },
+            "openAiEmbeddingDeployment": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure OpenAI embedding model deployment name."
+              }
+            },
+            "classMaterialsStorageAccount": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure Storage account name for class materials."
+              }
+            },
+            "keyVaultUri": {
+              "type": "string",
+              "metadata": {
+                "description": "Key Vault URI."
+              }
+            },
+            "storageAccountId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Storage account."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags to apply to resources."
+              }
+            },
+            "pineconeIndexName": {
+              "type": "string",
+              "defaultValue": "dashboard-edu-pilot",
+              "metadata": {
+                "description": "Name of the Pinecone index."
+              }
+            },
+            "classMaterialsContainerName": {
+              "type": "string",
+              "defaultValue": "class-materials",
+              "metadata": {
+                "description": "Name of the Storage container for class materials."
+              }
+            },
+            "userAssignedIdentityId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the User-Assigned Managed Identity."
+              }
+            },
+            "userAssignedClientId": {
+              "type": "string",
+              "metadata": {
+                "description": "Client ID of the User-Assigned Managed Identity."
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Web/serverfarms",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}-plan', parameters('functionAppName'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "Y1",
+                "tier": "Dynamic"
+              },
+              "kind": "functionapp",
+              "properties": {
+                "reserved": true
+              }
+            },
+            {
+              "type": "Microsoft.Web/sites",
+              "apiVersion": "2023-01-01",
+              "name": "[parameters('functionAppName')]",
+              "location": "[parameters('location')]",
+              "tags": "[union(parameters('tags'), createObject('azd-service-name', 'backend'))]",
+              "kind": "functionapp,linux",
+              "identity": {
+                "type": "UserAssigned",
+                "userAssignedIdentities": {
+                  "[format('{0}', parameters('userAssignedIdentityId'))]": {}
+                }
+              },
+              "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', format('{0}-plan', parameters('functionAppName')))]",
+                "reserved": true,
+                "httpsOnly": true,
+                "siteConfig": {
+                  "linuxFxVersion": "NODE|20",
+                  "functionAppScaleLimit": 10,
+                  "minimumElasticInstanceCount": 0,
+                  "use32BitWorkerProcess": false,
+                  "cors": {
+                    "allowedOrigins": [
+                      "*"
+                    ],
+                    "supportCredentials": false
+                  },
+                  "appSettings": [
+                    {
+                      "name": "AzureWebJobsStorage",
+                      "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(parameters('storageAccountId'), '2023-01-01').keys[0].value, environment().suffixes.storage)]"
+                    },
+                    {
+                      "name": "FUNCTIONS_EXTENSION_VERSION",
+                      "value": "~4"
+                    },
+                    {
+                      "name": "FUNCTIONS_WORKER_RUNTIME",
+                      "value": "node"
+                    },
+                    {
+                      "name": "WEBSITE_NODE_DEFAULT_VERSION",
+                      "value": "~20"
+                    },
+                    {
+                      "name": "AzureWebJobsFeatureFlags",
+                      "value": "EnableWorkerIndexing"
+                    },
+                    {
+                      "name": "SCM_DO_BUILD_DURING_DEPLOYMENT",
+                      "value": "true"
+                    },
+                    {
+                      "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                      "value": "[parameters('appInsightsConnectionString')]"
+                    },
+                    {
+                      "name": "AZURE_OPENAI_ENDPOINT",
+                      "value": "[parameters('openAiEndpoint')]"
+                    },
+                    {
+                      "name": "AZURE_OPENAI_CHAT_DEPLOYMENT",
+                      "value": "[parameters('openAiChatDeployment')]"
+                    },
+                    {
+                      "name": "AZURE_OPENAI_EMBEDDING_DEPLOYMENT",
+                      "value": "[parameters('openAiEmbeddingDeployment')]"
+                    },
+                    {
+                      "name": "AZURE_STORAGE_CONNECTION_STRING",
+                      "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(parameters('storageAccountId'), '2023-01-01').keys[0].value, environment().suffixes.storage)]"
+                    },
+                    {
+                      "name": "AZURE_STORAGE_ACCOUNT_NAME",
+                      "value": "[parameters('classMaterialsStorageAccount')]"
+                    },
+                    {
+                      "name": "AZURE_STORAGE_CONTAINER_MATERIALS",
+                      "value": "[parameters('classMaterialsContainerName')]"
+                    },
+                    {
+                      "name": "PINECONE_API_KEY",
+                      "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/pinecone-api-key/)', parameters('keyVaultUri'))]"
+                    },
+                    {
+                      "name": "PINECONE_INDEX_NAME",
+                      "value": "[parameters('pineconeIndexName')]"
+                    },
+                    {
+                      "name": "NODE_ENV",
+                      "value": "production"
+                    },
+                    {
+                      "name": "AZURE_CLIENT_ID",
+                      "value": "[parameters('userAssignedClientId')]"
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', format('{0}-plan', parameters('functionAppName')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "functionAppName": {
+              "type": "string",
+              "metadata": {
+                "description": "The name of the Function App."
+              },
+              "value": "[parameters('functionAppName')]"
+            },
+            "functionAppPrincipalId": {
+              "type": "string",
+              "metadata": {
+                "description": "The principal ID of the Function App Managed Identity."
+              },
+              "value": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-01-01', 'full').identity.principalId]"
+            },
+            "functionAppHostName": {
+              "type": "string",
+              "metadata": {
+                "description": "The default hostname of the Function App."
+              },
+              "value": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-01-01').defaultHostName]"
+            },
+            "functionAppUri": {
+              "type": "string",
+              "metadata": {
+                "description": "The full URI of the Function App."
+              },
+              "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-01-01').defaultHostName)]"
+            },
+            "functionAppId": {
+              "type": "string",
+              "metadata": {
+                "description": "The resource ID of the Function App."
+              },
+              "value": "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'appInsights')]",
+        "[resourceId('Microsoft.Resources/deployments', 'identity')]",
+        "[resourceId('Microsoft.Resources/deployments', 'keyVault')]",
+        "[resourceId('Microsoft.Resources/deployments', 'openAi')]",
+        "[resourceId('Microsoft.Resources/deployments', 'storage')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "staticWebApp",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('staticWebAppLocation')]"
+          },
+          "staticWebAppName": {
+            "value": "[variables('staticWebAppName')]"
+          },
+          "openAiEndpoint": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'openAi'), '2025-04-01').outputs.endpoint.value]"
+          },
+          "openAiChatDeployment": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'openAi'), '2025-04-01').outputs.chatDeploymentName.value]"
+          },
+          "openAiEmbeddingDeployment": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'openAi'), '2025-04-01').outputs.embeddingDeploymentName.value]"
+          },
+          "functionAppUri": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'functions'), '2025-04-01').outputs.functionAppUri.value]"
+          },
+          "appInsightsConnectionString": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appInsights'), '2025-04-01').outputs.connectionString.value]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.41.2.15936",
+              "templateHash": "17556089198105547087"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "defaultValue": "eastus2",
+              "metadata": {
+                "description": "Azure region for the Static Web App."
+              }
+            },
+            "staticWebAppName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Static Web App."
+              }
+            },
+            "openAiEndpoint": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure OpenAI endpoint URL."
+              }
+            },
+            "openAiChatDeployment": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure OpenAI chat model deployment name."
+              }
+            },
+            "openAiEmbeddingDeployment": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure OpenAI embedding model deployment name."
+              }
+            },
+            "functionAppUri": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure Functions base URL for API calls."
+              }
+            },
+            "appInsightsConnectionString": {
+              "type": "string",
+              "metadata": {
+                "description": "Application Insights connection string."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags to apply to resources."
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Web/staticSites",
+              "apiVersion": "2023-01-01",
+              "name": "[parameters('staticWebAppName')]",
+              "location": "[parameters('location')]",
+              "tags": "[union(parameters('tags'), createObject('azd-service-name', 'frontend'))]",
+              "sku": {
+                "name": "Free",
+                "tier": "Free"
+              },
+              "properties": {
+                "stagingEnvironmentPolicy": "Enabled",
+                "allowConfigFileUpdates": true,
+                "buildProperties": {
+                  "skipGithubActionWorkflowGeneration": true
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Web/staticSites/config",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}', parameters('staticWebAppName'), 'appsettings')]",
+              "properties": {
+                "VITE_API_BASE_URL": "[format('{0}/api', parameters('functionAppUri'))]",
+                "VITE_AZURE_OPENAI_ENDPOINT": "[parameters('openAiEndpoint')]",
+                "VITE_AZURE_OPENAI_CHAT_DEPLOYMENT": "[parameters('openAiChatDeployment')]",
+                "VITE_AZURE_OPENAI_EMBEDDING_DEPLOYMENT": "[parameters('openAiEmbeddingDeployment')]",
+                "APPLICATIONINSIGHTS_CONNECTION_STRING": "[parameters('appInsightsConnectionString')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/staticSites', parameters('staticWebAppName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "staticWebAppName": {
+              "type": "string",
+              "metadata": {
+                "description": "The name of the Static Web App."
+              },
+              "value": "[parameters('staticWebAppName')]"
+            },
+            "staticWebAppHostName": {
+              "type": "string",
+              "metadata": {
+                "description": "The default hostname of the Static Web App."
+              },
+              "value": "[reference(resourceId('Microsoft.Web/staticSites', parameters('staticWebAppName')), '2023-01-01').defaultHostname]"
+            },
+            "staticWebAppUri": {
+              "type": "string",
+              "metadata": {
+                "description": "The full URI of the Static Web App."
+              },
+              "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/staticSites', parameters('staticWebAppName')), '2023-01-01').defaultHostname)]"
+            },
+            "staticWebAppId": {
+              "type": "string",
+              "metadata": {
+                "description": "The resource ID of the Static Web App."
+              },
+              "value": "[resourceId('Microsoft.Web/staticSites', parameters('staticWebAppName'))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'appInsights')]",
+        "[resourceId('Microsoft.Resources/deployments', 'functions')]",
+        "[resourceId('Microsoft.Resources/deployments', 'openAi')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "frontDoor",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "profileName": {
+            "value": "[variables('frontDoorName')]"
+          },
+          "frontendHostName": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'staticWebApp'), '2025-04-01').outputs.staticWebAppHostName.value]"
+          },
+          "backendHostName": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'functions'), '2025-04-01').outputs.functionAppHostName.value]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.41.2.15936",
+              "templateHash": "9330915616265553385"
+            }
+          },
+          "parameters": {
+            "profileName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Front Door profile."
+              }
+            },
+            "frontendHostName": {
+              "type": "string",
+              "metadata": {
+                "description": "Hostname of the Static Web App (Frontend)."
+              }
+            },
+            "backendHostName": {
+              "type": "string",
+              "metadata": {
+                "description": "Hostname of the Function App (Backend)."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags for the resources."
+              }
+            }
+          },
+          "variables": {
+            "endpointName": "[format('fd-{0}', uniqueString(resourceGroup().id, parameters('profileName')))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Cdn/profiles",
+              "apiVersion": "2023-05-01",
+              "name": "[parameters('profileName')]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "Standard_AzureFrontDoor"
+              }
+            },
+            {
+              "type": "Microsoft.Cdn/profiles/afdEndpoints",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', parameters('profileName'), variables('endpointName'))]",
+              "location": "global",
+              "properties": {
+                "enabledState": "Enabled"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Cdn/profiles', parameters('profileName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Cdn/profiles/originGroups",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', parameters('profileName'), 'frontend-group')]",
+              "properties": {
+                "loadBalancingSettings": {
+                  "sampleSize": 4,
+                  "successfulSamplesRequired": 3
+                },
+                "healthProbeSettings": {
+                  "probePath": "/",
+                  "probeRequestType": "HEAD",
+                  "probeProtocol": "Https",
+                  "probeIntervalInSeconds": 100
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Cdn/profiles', parameters('profileName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Cdn/profiles/originGroups/origins",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', parameters('profileName'), 'frontend-group', 'frontend-origin')]",
+              "properties": {
+                "hostName": "[parameters('frontendHostName')]",
+                "httpPort": 80,
+                "httpsPort": 443,
+                "originHostHeader": "[parameters('frontendHostName')]",
+                "priority": 1,
+                "weight": 1000,
+                "enforceCertificateNameCheck": true
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Cdn/profiles/originGroups', parameters('profileName'), 'frontend-group')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Cdn/profiles/originGroups",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', parameters('profileName'), 'backend-group')]",
+              "properties": {
+                "loadBalancingSettings": {
+                  "sampleSize": 4,
+                  "successfulSamplesRequired": 3
+                },
+                "healthProbeSettings": {
+                  "probePath": "/api/health",
+                  "probeRequestType": "HEAD",
+                  "probeProtocol": "Https",
+                  "probeIntervalInSeconds": 100
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Cdn/profiles', parameters('profileName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Cdn/profiles/originGroups/origins",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', parameters('profileName'), 'backend-group', 'backend-origin')]",
+              "properties": {
+                "hostName": "[parameters('backendHostName')]",
+                "httpPort": 80,
+                "httpsPort": 443,
+                "originHostHeader": "[parameters('backendHostName')]",
+                "priority": 1,
+                "weight": 1000,
+                "enforceCertificateNameCheck": true
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Cdn/profiles/originGroups', parameters('profileName'), 'backend-group')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Cdn/profiles/afdEndpoints/routes",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', parameters('profileName'), variables('endpointName'), 'route-api')]",
+              "properties": {
+                "originGroup": {
+                  "id": "[resourceId('Microsoft.Cdn/profiles/originGroups', parameters('profileName'), 'backend-group')]"
+                },
+                "supportedProtocols": [
+                  "Http",
+                  "Https"
+                ],
+                "patternsToMatch": [
+                  "/api/*"
+                ],
+                "forwardingProtocol": "HttpsOnly",
+                "linkToDefaultDomain": "Enabled",
+                "httpsRedirect": "Enabled"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Cdn/profiles/originGroups/origins', parameters('profileName'), 'backend-group', 'backend-origin')]",
+                "[resourceId('Microsoft.Cdn/profiles/originGroups', parameters('profileName'), 'backend-group')]",
+                "[resourceId('Microsoft.Cdn/profiles/afdEndpoints', parameters('profileName'), variables('endpointName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Cdn/profiles/afdEndpoints/routes",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', parameters('profileName'), variables('endpointName'), 'route-ui')]",
+              "properties": {
+                "originGroup": {
+                  "id": "[resourceId('Microsoft.Cdn/profiles/originGroups', parameters('profileName'), 'frontend-group')]"
+                },
+                "supportedProtocols": [
+                  "Http",
+                  "Https"
+                ],
+                "patternsToMatch": [
+                  "/*"
+                ],
+                "forwardingProtocol": "HttpsOnly",
+                "linkToDefaultDomain": "Enabled",
+                "httpsRedirect": "Enabled"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Cdn/profiles/afdEndpoints', parameters('profileName'), variables('endpointName'))]",
+                "[resourceId('Microsoft.Cdn/profiles/originGroups/origins', parameters('profileName'), 'frontend-group', 'frontend-origin')]",
+                "[resourceId('Microsoft.Cdn/profiles/originGroups', parameters('profileName'), 'frontend-group')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/FrontDoorWebApplicationFirewallPolicies",
+              "apiVersion": "2022-05-01",
+              "name": "[format('{0}waf', replace(parameters('profileName'), '-', ''))]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "Standard_AzureFrontDoor"
+              },
+              "properties": {
+                "policySettings": {
+                  "enabledState": "Enabled",
+                  "mode": "Prevention",
+                  "requestBodyCheck": "Enabled"
+                },
+                "managedRules": {
+                  "managedRuleSets": [
+                    {
+                      "ruleSetType": "Microsoft_DefaultRuleSet",
+                      "ruleSetVersion": "2.1"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Cdn/profiles/securityPolicies",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', parameters('profileName'), 'waf-binding')]",
+              "properties": {
+                "parameters": {
+                  "type": "WebApplicationFirewall",
+                  "wafPolicy": {
+                    "id": "[resourceId('Microsoft.Network/FrontDoorWebApplicationFirewallPolicies', format('{0}waf', replace(parameters('profileName'), '-', '')))]"
+                  },
+                  "associations": [
+                    {
+                      "domains": [
+                        {
+                          "id": "[resourceId('Microsoft.Cdn/profiles/afdEndpoints', parameters('profileName'), variables('endpointName'))]"
+                        }
+                      ],
+                      "patternsToMatch": [
+                        "/*"
+                      ]
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Cdn/profiles/afdEndpoints', parameters('profileName'), variables('endpointName'))]",
+                "[resourceId('Microsoft.Cdn/profiles', parameters('profileName'))]",
+                "[resourceId('Microsoft.Network/FrontDoorWebApplicationFirewallPolicies', format('{0}waf', replace(parameters('profileName'), '-', '')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "frontDoorHostName": {
+              "type": "string",
+              "metadata": {
+                "description": "The host name of the Front Door endpoint."
+              },
+              "value": "[reference(resourceId('Microsoft.Cdn/profiles/afdEndpoints', parameters('profileName'), variables('endpointName')), '2023-05-01').hostName]"
+            },
+            "frontDoorUri": {
+              "type": "string",
+              "metadata": {
+                "description": "The URI of the Front Door endpoint."
+              },
+              "value": "[format('https://{0}', reference(resourceId('Microsoft.Cdn/profiles/afdEndpoints', parameters('profileName'), variables('endpointName')), '2023-05-01').hostName)]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'functions')]",
+        "[resourceId('Microsoft.Resources/deployments', 'staticWebApp')]"
+      ]
+    }
+  ],
+  "outputs": {
+    "AZURE_OPENAI_ENDPOINT": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'openAi'), '2025-04-01').outputs.endpoint.value]"
+    },
+    "AZURE_OPENAI_CHAT_DEPLOYMENT": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'openAi'), '2025-04-01').outputs.chatDeploymentName.value]"
+    },
+    "AZURE_OPENAI_EMBEDDING_DEPLOYMENT": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'openAi'), '2025-04-01').outputs.embeddingDeploymentName.value]"
+    },
+    "AZURE_STORAGE_ACCOUNT_NAME": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.accountName.value]"
+    },
+    "AZURE_STORAGE_CONTAINER_MATERIALS": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.classMaterialsContainerName.value]"
+    },
+    "AZURE_KEY_VAULT_URI": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'keyVault'), '2025-04-01').outputs.keyVaultUri.value]"
+    },
+    "AZURE_FUNCTION_APP_URI": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'functions'), '2025-04-01').outputs.functionAppUri.value]"
+    },
+    "APPLICATIONINSIGHTS_CONNECTION_STRING": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appInsights'), '2025-04-01').outputs.connectionString.value]"
+    },
+    "AZURE_STATIC_WEB_APP_URI": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'staticWebApp'), '2025-04-01').outputs.staticWebAppUri.value]"
+    },
+    "AZURE_FRONT_DOOR_URI": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'frontDoor'), '2025-04-01').outputs.frontDoorUri.value]"
+    },
+    "AZURE_RESOURCE_GROUP": {
+      "type": "string",
+      "value": "[resourceGroup().name]"
+    }
+  }
+}

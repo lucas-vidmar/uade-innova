@@ -2,24 +2,35 @@
  * services/storage.js — Cliente Azure Blob Storage
  * Gestiona archivos de clase y estado del pipeline.
  */
-import { BlobServiceClient } from '@azure/storage-blob';
+import { BlobServiceClient, StorageSharedKeyCredential } from '@azure/storage-blob';
 import { DefaultAzureCredential } from '@azure/identity';
 
 let _client = null;
 
 function getClient() {
     if (!_client) {
-        // En local: usa connection string. En producción: usará Managed Identity.
-        const connString = process.env.AZURE_STORAGE_CONNECTION_STRING;
-        if (connString && !connString.startsWith('FILL_WITH')) {
-            _client = BlobServiceClient.fromConnectionString(connString);
+        const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
+        const accountKey = process.env.AZURE_STORAGE_ACCESS_KEY;
+        
+        if (!accountName) {
+            throw new Error('AZURE_STORAGE_ACCOUNT_NAME is not defined in environment variables.');
+        }
+
+        if (accountKey) {
+            // Plan B: Use Storage Access Key (if RBAC/Managed Identity is not yet configured)
+            const sharedKeyCredential = new StorageSharedKeyCredential(accountName, accountKey);
+            _client = new BlobServiceClient(
+                `https://${accountName}.blob.core.windows.net`,
+                sharedKeyCredential
+            );
+            console.log('[Storage] Authenticated using Access Key');
         } else {
-            // Fallback: construir desde account name + DefaultAzureCredential (producción)
-            const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
+            // Plan A (Zero-Trust): Use Managed Identity / DefaultAzureCredential
             _client = new BlobServiceClient(
                 `https://${accountName}.blob.core.windows.net`,
                 new DefaultAzureCredential()
             );
+            console.log('[Storage] Authenticated using DefaultAzureCredential');
         }
     }
     return _client;
@@ -114,9 +125,19 @@ export async function loadJson(containerName, blobName) {
 export async function listBlobs(containerName, prefix = '') {
     const client = getClient();
     const containerClient = client.getContainerClient(containerName);
+    
+    // Si el contenedor no existe, devolvemos lista vacía en lugar de fallar
+    const exists = await containerClient.exists();
+    if (!exists) return [];
+
     const names = [];
-    for await (const blob of containerClient.listBlobsFlat({ prefix })) {
-        names.push(blob.name);
+    try {
+        for await (const blob of containerClient.listBlobsFlat({ prefix })) {
+            names.push(blob.name);
+        }
+    } catch (err) {
+        console.warn(`[Storage] Error listando blobs en ${containerName}:`, err.message);
+        return [];
     }
     return names;
 }

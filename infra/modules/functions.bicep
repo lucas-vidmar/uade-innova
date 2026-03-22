@@ -34,17 +34,23 @@ param classMaterialsStorageAccount string
 @description('Key Vault URI.')
 param keyVaultUri string
 
-@description('Resource ID of the Azure OpenAI account.')
-param openAiId string
-
 @description('Resource ID of the Storage account.')
 param storageAccountId string
 
 @description('Tags to apply to resources.')
 param tags object = {}
 
-@description('Direct Pinecone API Key (Plan B fallback).')
-param pineconeApiKey string = ''
+@description('Name of the Pinecone index.')
+param pineconeIndexName string = 'dashboard-edu-pilot'
+
+@description('Name of the Storage container for class materials.')
+param classMaterialsContainerName string = 'class-materials'
+
+@description('Resource ID of the User-Assigned Managed Identity.')
+param userAssignedIdentityId string
+
+@description('Client ID of the User-Assigned Managed Identity.')
+param userAssignedClientId string
 
 // ─── Consumption Plan (Y1 — sin VM quota, serverless real) ───────
 resource consumptionPlan 'Microsoft.Web/serverfarms@2023-01-01' = {
@@ -68,7 +74,10 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
   tags: union(tags, { 'azd-service-name': 'backend' })
   kind: 'functionapp,linux'
   identity: {
-    type: 'SystemAssigned'
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${userAssignedIdentityId}': {}
+    }
   }
   properties: {
     serverFarmId: consumptionPlan.id
@@ -127,14 +136,6 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT'
           value: openAiEmbeddingDeployment
         }
-        {
-          name: 'AZURE_OPENAI_API_KEY'
-          value: listKeys(openAiId, '2023-05-01').key1
-        }
-        {
-          name: 'AZURE_STORAGE_CONNECTION_STRING'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${listKeys(storageAccountId, '2023-01-01').keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
-        }
         // Storage
         {
           name: 'AZURE_STORAGE_ACCOUNT_NAME'
@@ -142,20 +143,24 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         }
         {
           name: 'AZURE_STORAGE_CONTAINER_MATERIALS'
-          value: 'class-materials'
+          value: classMaterialsContainerName
         }
-        // Pinecone (Plan B: usa el valor directo si se provee, sino Key Vault)
+        // Pinecone
         {
           name: 'PINECONE_API_KEY'
-          value: !empty(pineconeApiKey) ? pineconeApiKey : '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/pinecone-api-key/)'
+          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/pinecone-api-key/)'
         }
         {
           name: 'PINECONE_INDEX_NAME'
-          value: 'dashboard-edu-pilot'
+          value: pineconeIndexName
         }
         {
           name: 'NODE_ENV'
           value: 'production'
+        }
+        {
+          name: 'AZURE_CLIENT_ID'
+          value: userAssignedClientId
         }
       ]
     }
@@ -170,6 +175,9 @@ output functionAppName string = functionApp.name
 output functionAppPrincipalId string = functionApp.identity.principalId
 
 @description('The default hostname of the Function App.')
+output functionAppHostName string = functionApp.properties.defaultHostName
+
+@description('The full URI of the Function App.')
 output functionAppUri string = 'https://${functionApp.properties.defaultHostName}'
 
 @description('The resource ID of the Function App.')

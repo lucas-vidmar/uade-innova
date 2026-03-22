@@ -5,10 +5,12 @@
     "type": "module",
     "scripts": {
         "dev": "vite",
+        "start": "swa start",
         "build": "vite build",
         "preview": "vite preview"
     },
     "devDependencies": {
+        "@azure/static-web-apps-cli": "^2.0.8",
         "vite": "^5.4.2"
     }
 }

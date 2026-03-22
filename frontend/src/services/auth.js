@@ -1,6 +1,7 @@
 /* ============================================================
    Auth Service — Mock SSO for local development
    ============================================================ */
+import { api } from './api.js';
 
 const USERS = {
     student: {
@@ -70,10 +71,101 @@ export const auth = {
         return sessionStorage.getItem('edu_role') || 'student';
     },
 
+    getConsentAccepted() {
+        return sessionStorage.getItem('edu_consent_accepted') === 'true';
+    },
+
+    async acceptPrivacyPolicy() {
+        const user = this.getUser();
+        const profile = {
+            theme: sessionStorage.getItem('edu_theme') || 'light',
+            language: sessionStorage.getItem('edu_lang') || 'es',
+            consentAccepted: true
+        };
+        
+        try {
+            await api.saveProfile(profile);
+            sessionStorage.setItem('edu_consent_accepted', 'true');
+            window.dispatchEvent(new CustomEvent('auth:consentAccepted'));
+            return true;
+        } catch (err) {
+            console.error('Error saving privacy consent:', err);
+            return false;
+        }
+    },
+
     isAuthenticated() {
         // En desarrollo local (Vite lo inyecta), permitimos el bypass. 
         // En build de producción real, esto obligaría a fallar si no hay SSO real.
         const isDev = import.meta.env.DEV || window.location.hostname === 'localhost';
         return isDev;
     },
+
+    async logout() {
+        console.log('[Auth] Logging out...');
+        sessionStorage.clear();
+        // SWA standard logout endpoint
+        window.location.href = '/.auth/logout?post_logout_redirect_uri=/';
+    },
+
+    async initAuth() {
+        try {
+            const response = await fetch('/.auth/me');
+            if (response.ok) {
+                const payload = await response.json();
+                const clientPrincipal = payload.clientPrincipal;
+                if (clientPrincipal) {
+                    // Extract roles and map to internal ones
+                    const isDocente = clientPrincipal.userRoles.includes('Docente');
+                    const isDirector = clientPrincipal.userRoles.includes('Director');
+                    
+                    let role = 'student';
+                    if (isDirector) role = 'director';
+                    else if (isDocente) role = 'teacher';
+                    
+                    // Enrich our internal fallback user with the real name/email
+                    USERS[role].name = clientPrincipal.userDetails;
+                    USERS[role].email = clientPrincipal.userDetails;
+                    
+                    // We don't trigger events here to avoid race conditions on boot.
+                    // Just set state silently initially.
+                    sessionStorage.setItem('edu_role', role);
+                    
+                    // Sync subjects from backend
+                    try {
+                        const subjects = await api.getSubjects();
+                        USERS[role].subjects = subjects;
+                    } catch (err) {
+                        console.error('Error fetching enrolled subjects:', err);
+                    }
+
+                    const user = USERS[role];
+                    if (user.subjects && user.subjects.length > 0 && !sessionStorage.getItem('edu_active_subject')) {
+                        sessionStorage.setItem('edu_active_subject', user.subjects[0].id);
+                    }
+
+                    // Sync profile and consent
+                    try {
+                        const profile = await api.getProfile();
+                        sessionStorage.setItem('edu_consent_accepted', profile.consentAccepted ? 'true' : 'false');
+                        sessionStorage.setItem('edu_theme', profile.theme);
+                        sessionStorage.setItem('edu_lang', profile.language);
+                    } catch (err) {
+                        console.error('Error fetching user profile:', err);
+                    }
+                    
+                    return true;
+                }
+            }
+        } catch (error) {
+            console.warn('SWA Auth no alcanzado, modo local activado.', error);
+        }
+        
+        // Fallback local
+        if (!sessionStorage.getItem('edu_role')) {
+             sessionStorage.setItem('edu_role', 'student');
+             sessionStorage.setItem('edu_active_subject', USERS.student.subjects[0].id);
+        }
+        return false;
+    }
 };

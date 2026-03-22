@@ -10,7 +10,8 @@ export async function renderStudentTasks(container) {
     container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando tareas...</div>`;
 
     const user = auth.getUser();
-    const tasks = await api.getTasks(user.id);
+    const tasksData = await api.getTasks(user.id);
+    const tasks = Array.isArray(tasksData) ? tasksData : [];
 
     const pending = tasks.filter(t => t.status === 'pending');
     const completed = tasks.filter(t => t.status === 'completed');

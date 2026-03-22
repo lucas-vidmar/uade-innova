@@ -66,6 +66,9 @@ resource staticWebAppSettings 'Microsoft.Web/staticSites/config@2023-01-01' = {
 output staticWebAppName string = staticWebApp.name
 
 @description('The default hostname of the Static Web App.')
+output staticWebAppHostName string = staticWebApp.properties.defaultHostname
+
+@description('The full URI of the Static Web App.')
 output staticWebAppUri string = 'https://${staticWebApp.properties.defaultHostname}'
 
 @description('The resource ID of the Static Web App.')
