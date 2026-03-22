@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-21] User Story #89: Restrict Key Vault Public Access
+- **Status**: Completed
+- **Functional Change**: Hardened the Azure Key Vault provisioning configuration by setting external Network ACLs to Deny by default.
+- **Business Impact**: Eliminates a critical zero-trust violation by blocking all public internet exposure, preventing unauthorized access while maintaining service reliability.
+
 ### [2026-03-21] User Story #86: Fix Missing Import in Pipeline
 - **Status**: Completed
 - **Functional Change**: Corrected a missing function import in the backend ingestion pipeline.
