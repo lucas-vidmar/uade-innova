@@ -16,10 +16,14 @@ export async function renderTeacherAnalytics(container) {
     return;
   }
 
-  const data = await api.getTeacherAnalytics(activeSubjectId);
-  const maxCount = Math.max(...data.topQuestions.map(q => q.count));
+  try {
+    const data = await api.getTeacherAnalytics(activeSubjectId);
+    if (!data || !data.topQuestions || !data.frictionTopics) {
+      throw new Error('Datos de analítica incompletos');
+    }
+    const maxCount = Math.max(...data.topQuestions.map(q => q.count));
 
-  container.innerHTML = `
+    container.innerHTML = `
     <div class="grid-2" style="margin-bottom:var(--space-8)">
       <!-- Top Questions -->
       <div class="card">
@@ -80,4 +84,15 @@ export async function renderTeacherAnalytics(container) {
       </div>
     </div>
   `;
+  } catch (err) {
+    console.error('Error loading analytics:', err);
+    container.innerHTML = `
+      <div class="card" style="max-width:480px;margin:var(--space-10) auto;text-align:center">
+        <div class="empty-state-icon" aria-hidden="true">📊</div>
+        <h2 class="h3">Analítica no disponible</h2>
+        <p style="color:var(--color-text-secondary)">No se pudieron cargar los datos de analítica. Posiblemente el endpoint del backend no está activo.</p>
+        <button class="btn btn-secondary" onclick="window.location.reload()" aria-label="Reintentar cargar la página">Reintentar</button>
+      </div>
+    `;
+  }
 }

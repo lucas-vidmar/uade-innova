@@ -106,7 +106,10 @@ export async function renderClassDetail(container) {
         // Initialize Mermaid if code exists
         if (mapData?.mapCode && typeof mermaid !== 'undefined') {
             try {
-                mermaid.run({ nodes: [document.getElementById('mermaid-container')] });
+                const mermaidEl = document.querySelector('#mermaid-container .mermaid');
+                if (mermaidEl) {
+                    mermaid.run({ nodes: [mermaidEl] });
+                }
             } catch (err) {
                 console.error('Mermaid render error:', err);
             }

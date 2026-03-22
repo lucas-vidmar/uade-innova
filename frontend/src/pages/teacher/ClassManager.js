@@ -4,14 +4,13 @@ import { auth } from '../../services/auth.js';
 import { toast } from '../../components/Toast.js';
 import { createSummaryReviewModal } from '../../components/SummaryReviewModal.js';
 
-export async function renderClassManager() {
+export async function renderClassManager(container) {
     renderHeader('Gestión de Clases');
-    const mainEl = document.getElementById('main-content');
-    mainEl.innerHTML = `<div class="loading-state">Cargando clases...</div>`;
+    container.innerHTML = `<div class="loading-state">Cargando clases...</div>`;
 
     const subjectId = auth.getActiveSubjectId();
     if (!subjectId) {
-        mainEl.innerHTML = `<div class="empty-state">No hay materia seleccionada.</div>`;
+        container.innerHTML = `<div class="empty-state">No hay materia seleccionada.</div>`;
         return;
     }
     try {
@@ -19,20 +18,20 @@ export async function renderClassManager() {
 
         const saveAllClasses = async (newClassesList) => {
             try {
-                mainEl.style.opacity = '0.5';
+                container.style.opacity = '0.5';
                 await api.saveClasses(subjectId, newClassesList);
                 classes = newClassesList;
                 toast('success', 'Guardado', 'Cambios guardados correctamente.');
             } catch (e) {
                 toast('error', 'Error', 'No se pudieron guardar los cambios.');
             } finally {
-                mainEl.style.opacity = '1';
+                container.style.opacity = '1';
                 render();
             }
         };
 
         const render = () => {
-            mainEl.innerHTML = `
+            container.innerHTML = `
                 <div class="page-container">
                     <div class="row align-center space-between m-b-4">
                         <h2 style="font-size:1.5rem;font-weight:600;">Clases del Cuatrimestre</h2>
@@ -107,7 +106,7 @@ export async function renderClassManager() {
             });
 
             // Borrar clase
-            mainEl.querySelectorAll('.btn-delete-class').forEach(btn => {
+            container.querySelectorAll('.btn-delete-class').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     const idx = parseInt(e.currentTarget.getAttribute('data-idx'));
                     if (classes[idx].materials.length > 0) {
@@ -120,7 +119,7 @@ export async function renderClassManager() {
                     }
                 });
             });
-            mainEl.querySelectorAll('.btn-review-summary').forEach(btn => {
+            container.querySelectorAll('.btn-review-summary').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     const idx = parseInt(e.currentTarget.getAttribute('data-idx'));
                     createSummaryReviewModal(classes[idx].id, classes[idx].title, async (isValidated) => {
@@ -136,14 +135,14 @@ export async function renderClassManager() {
             });
 
             // Live edit en título y fecha (Auto-save on blur)
-            mainEl.querySelectorAll('.class-title-input').forEach(input => {
+            container.querySelectorAll('.class-title-input').forEach(input => {
                 input.addEventListener('change', (e) => {
                     const idx = parseInt(e.target.getAttribute('data-idx'));
                     classes[idx].title = e.target.value;
                     saveAllClasses(classes);
                 });
             });
-            mainEl.querySelectorAll('.class-date-input').forEach(input => {
+            container.querySelectorAll('.class-date-input').forEach(input => {
                 input.addEventListener('change', (e) => {
                     const idx = parseInt(e.target.getAttribute('data-idx'));
                     classes[idx].date = e.target.value;
@@ -155,6 +154,6 @@ export async function renderClassManager() {
         render();
     } catch (e) {
         console.error(e);
-        mainEl.innerHTML = `<div class="empty-state">Ocurrió un error cargando las clases.</div>`;
+        container.innerHTML = `<div class="empty-state">Ocurrió un error cargando las clases.</div>`;
     }
 }

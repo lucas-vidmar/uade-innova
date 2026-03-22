@@ -2,6 +2,7 @@
    FileUpload — Drag & drop with progress, type icons, status
    ============================================================ */
 import { toast } from './Toast.js';
+import { api } from '../services/api.js';
 
 const TYPE_CONFIG = {
   transcript: { label: 'Transcripción', icon: '📝', accept: '.txt,.docx,.vtt,.pdf', hint: 'TXT, DOCX, VTT o PDF' },
