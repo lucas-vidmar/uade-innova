@@ -10,6 +10,7 @@ import { getShadowPrompt } from '../services/prompts.js';
 import { trackRAGInteraction } from '../services/telemetry.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { v4 as uuidv4 } from 'uuid';
+const MAX_RAG_CHUNKS = 4;
 
 app.http('rag-query', {
     methods: ['POST'],
@@ -69,7 +70,7 @@ app.http('rag-query', {
         // ── 4. Búsqueda de similitud en Pinecone ──────────────────
         let matches;
         try {
-            matches = await querySimilar(questionEmbedding, filter, 5);
+            matches = await querySimilar(questionEmbedding, filter, MAX_RAG_CHUNKS);
         } catch (err) {
             context.error('Error consultando Pinecone:', err);
             return { status: 500, body: JSON.stringify({ error: `Error buscando en la base de conocimiento: ${err.message}` }) };
@@ -142,18 +143,6 @@ ${contextText}
             interactionId: uuidv4(),
         }).catch(err => context.error('[Telemetry] Error emitting RAGInteraction event:', err));
         
-        // Also log to saveMetricsToTable for session tracking
-        saveMetricsToTable('SessionMetrics', {
-            partitionKey: subjectId,
-            rowKey: uuidv4(),
-            userId,
-            promptTokens: chatUsage?.prompt_tokens || 0,
-            completionTokens: chatUsage?.completion_tokens || 0,
-            totalTokens: totalInteractionTokens,
-            promptVersion: promptId,
-            timestamp: new Date().toISOString()
-        }).catch(e => context.error('Error insertando Table Metrics de sesión:', e));
-
         // ── 7. Construir respuesta con fuentes ────────────────────
         const sources = matches.map(m => ({
             materialType: m.metadata?.materialType,
@@ -191,7 +180,7 @@ ${contextText}
                 userId: request.user?.id || 'anonymous',
                 promptTokens: chatUsage?.prompt_tokens || 0,
                 completionTokens: chatUsage?.completion_tokens || 0,
-                totalTokens: chatUsage?.total_tokens || 0,
+                totalTokens: totalInteractionTokens,
                 promptVersion: promptId,
                 timestamp: new Date().toISOString()
             }).catch(e => context.error('Error insertando Table Metrics de sesión silenciosa:', e));
