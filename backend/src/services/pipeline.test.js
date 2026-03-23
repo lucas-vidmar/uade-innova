@@ -9,9 +9,20 @@ const parserMocks = {
 };
 
 const openaiMocks = {
-    generateEmbeddingsBatch: mock.fn(async () => [[0.1, 0.2], [0.3, 0.4]]),
-    generateClassSummary: mock.fn(async () => 'summary'),
-    generateClassMap: mock.fn(async () => ({ code: 'graph TD; A-->B', generatedAt: new Date().toISOString() }))
+    generateEmbeddingsBatch: mock.fn(async () => ({ 
+        embeddings: [[0.1, 0.2], [0.3, 0.4]], 
+        usage: { total_tokens: 100 } 
+    })),
+    generateClassSummary: mock.fn(async () => ({ 
+        content: 'summary', 
+        usage: { total_tokens: 50 },
+        generatedAt: new Date().toISOString() 
+    })),
+    generateClassMap: mock.fn(async () => ({ 
+        code: 'graph TD; A-->B', 
+        usage: { total_tokens: 30 },
+        generatedAt: new Date().toISOString() 
+    }))
 };
 
 const pineconeMocks = {

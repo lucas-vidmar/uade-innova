@@ -43,8 +43,11 @@ app.http('rag-query', {
 
         // ── 2. Embedding de la pregunta ───────────────────────────
         let questionEmbedding;
+        let embeddingUsage;
         try {
-            questionEmbedding = await generateEmbedding(question);
+            const embeddingResult = await generateEmbedding(question);
+            questionEmbedding = embeddingResult.embedding;
+            embeddingUsage = embeddingResult.usage;
         } catch (err) {
             context.error('Error generando embedding:', err);
             return { status: 500, body: JSON.stringify({ error: `Error procesando la pregunta (embedding): ${err.message}` }) };
@@ -124,16 +127,32 @@ ${contextText}
         const durationMs = Date.now() - startTime;
         const principal = parseClientPrincipal(request);
         const userId = principal?.oid || 'anonymous';
+        
+        // Accumulate total tokens for this interaction (embedding + chat)
+        const totalInteractionTokens = (embeddingUsage?.total_tokens || 0) + (chatUsage?.total_tokens || 0);
+
         trackRAGInteraction({
             userId,
             subjectId,
             promptTokens: chatUsage?.prompt_tokens || 0,
             completionTokens: chatUsage?.completion_tokens || 0,
-            totalTokens: chatUsage?.total_tokens || 0,
+            totalTokens: totalInteractionTokens,
             durationMs,
             promptVersion: promptId,
             interactionId: uuidv4(),
         }).catch(err => context.error('[Telemetry] Error emitting RAGInteraction event:', err));
+        
+        // Also log to saveMetricsToTable for session tracking
+        saveMetricsToTable('SessionMetrics', {
+            partitionKey: subjectId,
+            rowKey: uuidv4(),
+            userId,
+            promptTokens: chatUsage?.prompt_tokens || 0,
+            completionTokens: chatUsage?.completion_tokens || 0,
+            totalTokens: totalInteractionTokens,
+            promptVersion: promptId,
+            timestamp: new Date().toISOString()
+        }).catch(e => context.error('Error insertando Table Metrics de sesión:', e));
 
         // ── 7. Construir respuesta con fuentes ────────────────────
         const sources = matches.map(m => ({

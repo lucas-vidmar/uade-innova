@@ -26,6 +26,7 @@ app.storageBlob('process-material', {
             subjectId: metadata.subjectid || 'unknown',
             materialType: metadata.materialtype || 'notes',
             materialId: metadata.materialid || 'unknown',
+            userId: metadata.userid || 'anonymous',
             blobUrl: context.triggerMetadata.uri
         };
 

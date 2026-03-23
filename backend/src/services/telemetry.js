@@ -87,6 +87,46 @@ export async function trackRAGInteraction({
 }
 
 /**
+ * Tracks a material ingestion (file processing) custom event in App Insights.
+ *
+ * @param {object} params
+ * @param {string} params.userId         - Entra ID OID who initiated the upload
+ * @param {string} params.materialId     - Unique identifier for the material
+ * @param {string} params.fileName       - Original filename
+ * @param {string} params.materialType   - Material type (transcript, notes, etc.)
+ * @param {number} params.totalTokens    - Sum of all tokens used (embeddings + summary + map)
+ * @param {number} params.durationMs     - Full execution time of the document pipeline (ms)
+ * @param {string} [params.status]       - 'success' or 'error'
+ */
+export async function trackIngestionInteraction({
+    userId,
+    materialId,
+    fileName,
+    materialType,
+    totalTokens,
+    durationMs,
+    status = 'success',
+}) {
+    const client = await getClient();
+    if (!client) return;
+
+    client.trackEvent({
+        name: 'IngestionInteraction',
+        properties: {
+            userId: userId || 'anonymous',
+            materialId,
+            fileName,
+            materialType,
+            status,
+        },
+        measurements: {
+            totalTokens: totalTokens || 0,
+            durationMs: durationMs || 0,
+        },
+    });
+}
+
+/**
  * Tracks a user login event in App Insights for login-frequency analysis.
  *
  * @param {object} params
@@ -101,7 +141,7 @@ export async function trackUserLogin({ userId, roles = [] }) {
         name: 'UserLogin',
         properties: {
             userId: userId || 'anonymous',
-            roles: roles.join(','),
+            roles: Array.isArray(roles) ? roles.join(',') : String(roles),
         },
     });
 }

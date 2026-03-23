@@ -71,7 +71,10 @@ export async function generateEmbeddingsBatch(texts) {
         })
     );
 
-    return response.data.map(d => d.embedding);
+    return {
+        embeddings: response.data.map(d => d.embedding),
+        usage: response.usage
+    };
 }
 
 /**
@@ -80,8 +83,8 @@ export async function generateEmbeddingsBatch(texts) {
  * @returns {Promise<number[]>}
  */
 export async function generateEmbedding(text) {
-    const embeddings = await generateEmbeddingsBatch([text]);
-    return embeddings[0];
+    const { embeddings, usage } = await generateEmbeddingsBatch([text]);
+    return { embedding: embeddings[0], usage };
 }
 
 /**
@@ -142,6 +145,7 @@ Resumen académico:`;
     
     return {
         content,
+        usage: response.usage,
         generatedAt: new Date().toISOString(),
         model: process.env.AZURE_OPENAI_CHAT_DEPLOYMENT
     };
@@ -182,6 +186,7 @@ Código Mermaid:`;
 
     return {
         code: response.choices[0].message.content.replace(/```mermaid\n?|```/g, '').trim(),
+        usage: response.usage,
         generatedAt: new Date().toISOString(),
     };
 }

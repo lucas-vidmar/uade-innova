@@ -45,13 +45,17 @@ app.http('ingest-material', {
         const primaryClassId = classIds[0];
         const blobName = `${primaryClassId}/${materialId}-${fileName}`;
 
+        const principal = parseClientPrincipal(request);
+        const userId = principal?.oid || 'anonymous';
+
         // ── 2. Subir archivo crudo al Blob Storage con Metadatos ────
         const metadata = {
             materialId,
             classIds: classIds.join(','),
             subjectId,
             materialType,
-            fileName: fileName
+            fileName: fileName,
+            userId: userId
         };
 
         let blobUrl;

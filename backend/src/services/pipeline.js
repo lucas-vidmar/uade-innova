@@ -6,16 +6,19 @@ import { parseFile, chunkText, cleanText } from './parser.js';
 import { generateEmbeddingsBatch, generateClassSummary, generateClassMap } from './openai.js';
 import { upsertChunks, getIndexStats } from './pinecone.js';
 import { saveJson } from './storage.js';
+import { trackIngestionInteraction } from './telemetry.js';
 
 const CONTAINER_PROCESSED = 'processed';
 const CONTAINER_SUMMARIES = 'class-summaries';
 const BATCH_SIZE = 20;
 
 /**
- * Ejecuta el pipeline completo de procesamiento de un archivo.
- * ... (existing jsdocs)
+ * Ejecuta el pipeline completo de procesamiento de un archivo con telemetría.
  */
-export async function runPipeline({ fileBuffer, fileContentType, fileName, classIds, subjectId, materialType, materialId, blobUrl }, context) {
+export async function runPipeline({ fileBuffer, fileContentType, fileName, classIds, subjectId, materialType, materialId, userId, blobUrl }, context) {
+    const startTime = Date.now();
+    let totalTokens = 0;
+
     try {
         // 1. Extraer texto según tipo de archivo
         context.log(`[Pipeline] Parseando archivo: ${fileName} (${fileContentType})`);
@@ -36,8 +39,9 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
             const currentBatch = chunks.slice(i, i + BATCH_SIZE);
             context.log(`[Pipeline] Vectorizando batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(chunks.length / BATCH_SIZE)} (${currentBatch.length} chunks)...`);
             
-            const embeddings = await generateEmbeddingsBatch(currentBatch);
-            
+            const { embeddings, usage } = await generateEmbeddingsBatch(currentBatch);
+            totalTokens += (usage?.total_tokens || 0);
+
             embeddings.forEach((embedding, index) => {
                 const chunkIndex = i + index;
                 vectors.push({
@@ -73,10 +77,14 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
         if (materialType === 'transcript' || materialType === 'notes') {
             context.log(`[Pipeline] Generando activos IA (resumen y mapa) para material ${materialId}...`);
             try {
-                const [summary, mapData] = await Promise.all([
+                // Ejecutamos en paralelo para optimizar tiempo
+                const [summaryResult, mapResult] = await Promise.all([
                     generateClassSummary(text),
                     generateClassMap(text)
                 ]);
+
+                totalTokens += (summaryResult.usage?.total_tokens || 0);
+                totalTokens += (mapResult.usage?.total_tokens || 0);
                 
                 // Guardar activos para cada clase asociada
                 for (const classId of classIds) {
@@ -84,9 +92,9 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
                     await saveJson(CONTAINER_SUMMARIES, `${classId}.json`, {
                         classId,
                         subjectId,
-                        summary,
+                        summary: summaryResult.content,
                         generatedFrom: materialId,
-                        generatedAt: new Date().toISOString(),
+                        generatedAt: summaryResult.generatedAt,
                         lastModifiedBy: 'AI'
                     });
 
@@ -94,8 +102,8 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
                     await saveJson('class-maps', `${classId}.json`, {
                         classId,
                         subjectId,
-                        mapCode: mapData.code,
-                        generatedAt: mapData.generatedAt
+                        mapCode: mapResult.code,
+                        generatedAt: mapResult.generatedAt
                     });
                 }
                 context.log(`[Pipeline] Activos IA guardados con éxito para clases: ${classIds.join(', ')}`);
@@ -119,6 +127,17 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
         await saveJson(CONTAINER_PROCESSED, `${materialId}.json`, materialState);
         context.log(`[Pipeline] Estado guardado: processed/${materialId}.json (ready)`);
 
+        // ── 7. Emitir telemetría de éxito (Issue #69) ──────────────
+        trackIngestionInteraction({
+            userId,
+            materialId,
+            fileName,
+            materialType,
+            totalTokens,
+            durationMs: Date.now() - startTime,
+            status: 'success'
+        }).catch(e => context.error('[Telemetry] Error logging IngestionInteraction success:', e));
+
     } catch (err) {
         context.error(`[Pipeline] Error crítico para material ${materialId}:`, err);
         
@@ -134,6 +153,18 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
             stack: err.stack,
             processedAt: new Date().toISOString(),
         };
+
+        // Emitir telemetría de error
+        trackIngestionInteraction({
+            userId,
+            materialId,
+            fileName,
+            materialType,
+            totalTokens,
+            durationMs: Date.now() - startTime,
+            status: 'error'
+        }).catch(e => context.error('[Telemetry] Error logging IngestionInteraction failure:', e));
+
         try {
             await saveJson(CONTAINER_PROCESSED, `${materialId}.json`, errorState);
             context.log(`[Pipeline] Estado de error persistido para ${materialId}`);

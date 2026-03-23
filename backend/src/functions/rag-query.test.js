@@ -3,7 +3,10 @@ import assert from 'node:assert';
 
 // Define mocks before importing the function under test
 const openaiMocks = {
-    generateEmbedding: mock.fn(async () => [0.1, 0.2, 0.3]),
+    generateEmbedding: mock.fn(async () => ({
+        embedding: [0.1, 0.2, 0.3],
+        usage: { total_tokens: 5 }
+    })),
     chatCompletion: mock.fn(async () => ({ 
         content: 'Respuesta simulada (Fuente 1).',
         usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 }
