@@ -164,6 +164,15 @@ export const api = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ question, classIds, subjectId }),
         });
+        
+        if (res.status === 429) {
+            throw new Error('The AI tutor is resting, please try again in a few minutes');
+        }
+        
+        if (!res.ok) {
+            throw new Error(`Error ${res.status}: No se pudo obtener respuesta de la IA`);
+        }
+        
         return res.json();
     },
 
