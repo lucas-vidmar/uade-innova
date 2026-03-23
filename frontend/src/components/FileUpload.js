@@ -4,6 +4,8 @@
 import { toast } from './Toast.js';
 import { api } from '../services/api.js';
 
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
 const TYPE_CONFIG = {
   transcript: { label: 'Transcripción', icon: '📝', accept: '.txt,.docx,.vtt,.pdf', hint: 'TXT, DOCX, VTT o PDF' },
   presentation: { label: 'Presentación', icon: '📊', accept: '.pptx,.pdf', hint: 'PPTX o PDF' },
@@ -31,7 +33,7 @@ export function createFileUpload({ type = 'transcript', onUpload, existingFiles 
         <input type="file" id="file-input-${type}" accept="${cfg.accept}" multiple class="file-input-hidden" />
         <div class="file-drop-icon">${cfg.icon}</div>
         <div class="file-drop-title">Arrastrá tu <strong>${cfg.label}</strong> aquí</div>
-        <div class="file-drop-sub">Formatos aceptados: <span class="file-drop-badge">${cfg.hint}</span></div>
+        <div class="file-drop-sub">Formatos: <span class="file-drop-badge">${cfg.hint}</span> • <span class="file-drop-badge">Máx 10MB</span></div>
         <button class="btn btn-secondary btn-sm" id="file-browse-${type}" type="button">Buscar archivo</button>
       </div>
 
@@ -111,6 +113,11 @@ export function createFileUpload({ type = 'transcript', onUpload, existingFiles 
 
   const handleFiles = async (rawFiles) => {
     for (const file of rawFiles) {
+      if (file.size > MAX_FILE_SIZE) {
+        toast('error', 'Archivo demasiado grande', `"${file.name}" supera el límite de 10MB.`);
+        continue;
+      }
+
       const fileObj = {
         _new: true,
         filename: file.name,
