@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-23] User Story #43: Persistent Sidebar State
+- **Status**: Completed
+- **Functional Change**: Replaced `sessionStorage` with `localStorage` for the `sidebar_mini` state in `Sidebar.js`.
+- **Business Impact**: Improves user retention and personalization by remembering the student's layout preference (mini vs expanded) across browser sessions.
+
 ### [2026-03-23] User Story #44: Streaming Chat Responses (SSE)
 - **Status**: Completed
 - **Functional Change**: Implemented Server-Sent Events (SSE) for the RAG query pipeline. Modified the OpenAI service to support asynchronous iterables and updated the `rag-query` function to stream `metadata` (sources) and `delta` (content) packets to the frontend.
