@@ -109,12 +109,12 @@ export function renderSidebar() {
   });
 
   // Toggle collapse
-  let mini = sessionStorage.getItem('sidebar_mini') === 'true';
+  let mini = localStorage.getItem('sidebar_mini') === 'true';
   if (mini) toggleMini(sidebar, true);
 
   document.getElementById('sidebar-toggle-btn').addEventListener('click', () => {
     mini = !mini;
-    sessionStorage.setItem('sidebar_mini', mini);
+    localStorage.setItem('sidebar_mini', mini);
     toggleMini(sidebar, mini);
   });
 }
