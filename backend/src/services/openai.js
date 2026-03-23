@@ -89,17 +89,27 @@ export async function generateEmbedding(text) {
 
 /**
  * Genera una respuesta de chat con contexto RAG. Retorna contenido textual y desglose de tokens.
+ * Si stream es true, retorna un async iterable.
  * @param {Array<{role: string, content: string}>} messages
- * @returns {Promise<{content: string, usage: object}>}
+ * @param {boolean} stream
+ * @returns {Promise<{content: string, usage: object} | AsyncIterable<object>>}
  */
-export async function chatCompletion(messages) {
+export async function chatCompletion(messages, stream = false) {
     const client = getClient();
-    const response = await client.chat.completions.create({
+    const options = {
         model: process.env.AZURE_OPENAI_CHAT_DEPLOYMENT,
         messages,
         temperature: 0.3,
         max_tokens: 1500,
-    });
+        stream,
+    };
+
+    if (stream) {
+        // En modo stream, retornamos el iterador directamente
+        return await client.chat.completions.create(options);
+    }
+
+    const response = await client.chat.completions.create(options);
     return {
         content: response.choices[0].message.content,
         usage: response.usage

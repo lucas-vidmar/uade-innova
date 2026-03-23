@@ -199,40 +199,90 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
     const question = input?.value?.trim();
     if (!question || isLoading || selectedClassIds.length === 0) return;
 
+    input.value = '';
     messages.push({ role: 'user', content: question });
     isLoading = true;
     render();
 
-    // Show typing
-    const messagesEl = container.querySelector('#chat-messages');
-    if (messagesEl) messagesEl.insertAdjacentHTML('beforeend', renderTyping());
-    scrollToBottom();
+    // Placeholder para la respuesta de la IA
+    const assistantMsg = {
+      id: 'ai-' + Date.now(),
+      role: 'assistant',
+      content: '',
+      sources: []
+    };
+    messages.push(assistantMsg);
+    render();
+
+    const getMsgEl = () => container.querySelector(`#msg-${assistantMsg.id}`);
 
     try {
-      const result = await api.ragQuery({ question, classIds: selectedClassIds, subjectId });
-      
-      // Deduplicate sources by filename
-      const uniqueSources = [];
-      const seen = new Set();
-      for (const s of (result.sources || [])) {
-        if (s.sourceFilename && !seen.has(s.sourceFilename)) {
-          seen.add(s.sourceFilename);
-          uniqueSources.push(s);
-        }
-      }
+      await api.ragQueryStream({ question, classIds: selectedClassIds, subjectId }, (type, data) => {
+        const msgEl = getMsgEl();
+        if (!msgEl) return;
 
-      messages.push({ 
-        role: 'assistant', 
-        content: result.answer, 
-        sources: uniqueSources,
-        id: result.id 
+        if (type === 'metadata') {
+          assistantMsg.sources = data.sources || [];
+          const footerEl = msgEl.querySelector('.chat-msg-footer');
+          if (footerEl && assistantMsg.sources.length > 0) {
+            footerEl.innerHTML = `
+              <div class="chat-sources">
+                <span class="chat-sources-label">📎 Fuentes:</span>
+                ${assistantMsg.sources.map(s => `
+                  <span class="source-chip" title="${s.sourceFilename}">
+                    ${( { transcript: '📝', presentation: '📊', notes: '📓', bibliography: '📚' }[s.materialType] || '📄' )}
+                    ${s.sourceFilename}
+                  </span>
+                `).join('')}
+              </div>
+              <div class="chat-feedback-btns" data-message-id="${assistantMsg.id}">
+                <button class="feedback-btn" data-type="positive" title="Útil">👍</button>
+                <button class="feedback-btn" data-type="negative" title="No es útil">👎</button>
+              </div>
+            `;
+            bindFeedbackEvents(footerEl);
+          }
+        } else if (type === 'delta') {
+          assistantMsg.content += data.content;
+          const bubbleEl = msgEl.querySelector('.chat-bubble-assistant');
+          if (bubbleEl) {
+            bubbleEl.innerHTML = renderMarkdown(assistantMsg.content);
+            scrollToBottom();
+          }
+        }
+ else if (type === 'done') {
+          assistantMsg.content = data.answer;
+          assistantMsg.streaming = false;
+        }
       });
     } catch (err) {
-      messages.push({ role: 'assistant', content: err.message || 'Error de conexión con el servidor. Por favor intentá nuevamente.', sources: [] });
+      assistantMsg.content = err.message || 'Error de conexión con el servidor. Por favor intentá nuevamente.';
+      assistantMsg.streaming = false;
+      render();
     } finally {
       isLoading = false;
-      render();
+      // No re-renderizamos todo al final para evitar parpadeo si ya está actualizado vía DOM
+      const sendBtn = container.querySelector('#chat-send');
+      if (sendBtn) sendBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`;
+      if (sendBtn) sendBtn.disabled = false;
+      const textarea = container.querySelector('#chat-input');
+      if (textarea) textarea.disabled = false;
     }
+  };
+
+  const bindFeedbackEvents = (parent) => {
+    parent.querySelectorAll('.feedback-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const messageId = btn.parentElement.dataset.messageId;
+        const type = btn.dataset.type;
+        if (!messageId || btn.classList.contains('active')) return;
+        btn.parentElement.querySelectorAll('.feedback-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        try {
+          await api.sendChatFeedback({ messageId, subjectId, isPositive: type === 'positive' });
+        } catch (err) { console.error('Error sending feedback:', err); }
+      });
+    });
   };
 
   const scrollToBottom = () => {

@@ -162,7 +162,7 @@ export const api = {
         const res = await fetch(`${BASE_URL}/rag-query`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question, classIds, subjectId }),
+            body: JSON.stringify({ question, classIds, subjectId, stream: false }),
         });
         
         if (res.status === 429) {
@@ -174,6 +174,89 @@ export const api = {
         }
         
         return res.json();
+    },
+
+    /**
+     * Realiza una consulta RAG con streaming (SSE).
+     * @param {Object} params - { question, classIds, subjectId }
+     * @param {Function} onEvent - Callback para cada evento del stream: (type, data) => void
+     */
+    async ragQueryStream({ question, classIds, subjectId }, onEvent) {
+        if (USE_MOCK) {
+            // Simular streaming para mocks
+            await delay(400);
+            onEvent('metadata', { 
+                interactionId: 'mock-id-' + Date.now(), 
+                sources: [
+                    { materialType: 'transcript', sourceFilename: 'clase3_transcript.txt', classId: 'class-03' },
+                    { materialType: 'presentation', sourceFilename: 'clase3_slides.pdf', classId: 'class-03' }
+                ] 
+            });
+            const mockText = "Esta es una respuesta simulada por stream. La arquitectura hexagonal permite desacoplar la lógica de negocio de los detalles técnicos.";
+            const words = mockText.split(' ');
+            for (const word of words) {
+                await delay(50);
+                onEvent('delta', { content: word + ' ' });
+            }
+            onEvent('done', { answer: mockText });
+            return;
+        }
+
+        const response = await fetch(`${BASE_URL}/rag-query`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question, classIds, subjectId, stream: true }),
+        });
+
+        if (response.status === 429) {
+            throw new Error('The AI tutor is resting, please try again in a few minutes');
+        }
+
+        if (!response.ok) {
+            throw new Error(`Error ${response.status}: No se pudo iniciar el stream de respuesta`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const parts = buffer.split('\n\n');
+                buffer = parts.pop(); // El último puede estar incompleto
+
+                for (const part of parts) {
+                    if (!part.trim()) continue;
+                    
+                    const lines = part.split('\n');
+                    let eventType = 'message';
+                    let data = null;
+
+                    for (const line of lines) {
+                        if (line.startsWith('event: ')) {
+                            eventType = line.slice(7).trim();
+                        } else if (line.startsWith('data: ')) {
+                            try {
+                                data = JSON.parse(line.slice(6));
+                            } catch (e) {
+                                console.error('Error parseando SSE data:', line);
+                            }
+                        }
+                    }
+
+                    if (data) {
+                        onEvent(eventType, data);
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('[API] Stream interrupted:', err);
+            throw err;
+        }
     },
 
     async ingestMaterial(formData) {

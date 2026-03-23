@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-23] User Story #44: Streaming Chat Responses (SSE)
+- **Status**: Completed
+- **Functional Change**: Implemented Server-Sent Events (SSE) for the RAG query pipeline. Modified the OpenAI service to support asynchronous iterables and updated the `rag-query` function to stream `metadata` (sources) and `delta` (content) packets to the frontend.
+- **Business Impact**: Significantly reduces perceived latency for students by providing immediate visual feedback ("typing" effect), achieving a Time To First Byte (TTFT) of under 1.5 seconds.
+
 ### [2026-03-22] User Story #78: Pinecone Index Health Monitoring
 - **Status**: Completed
 - **Functional Change**: Added `getIndexStats()` to the Pinecone service and wired a non-blocking health telemetry call inside the ingestion pipeline emitting `totalVectorCount` and `indexFullness` to Application Insights after every successful upsert.
