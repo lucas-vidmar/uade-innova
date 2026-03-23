@@ -272,6 +272,8 @@ export const api = {
             { id: 't-02', title: 'Quiz Online — Estilos Arquitectónicos', dueDate: '2026-03-20', weight: 10, status: 'completed', classIds: ['class-02'], grade: 8.5, subjectId: 'arq-software-2026' },
             { id: 't-03', title: 'Parcial 1 — Arquitectura y Patrones', dueDate: '2026-04-16', weight: 35, status: 'pending', classIds: ['class-01', 'class-02', 'class-03', 'class-04'], grade: null, subjectId: 'arq-software-2026' },
             { id: 't-04', title: 'Lectura: "Clean Architecture" (caps 1-5)', dueDate: '2026-03-19', weight: 5, status: 'completed', classIds: ['class-01'], grade: 10, subjectId: 'arq-software-2026' },
+            { id: 't-05', title: 'Entrega: Documento de Visión', dueDate: '2026-03-24', weight: 15, status: 'pending', classIds: ['class-01'], grade: null, subjectId: 'arq-software-2026' },
+            { id: 't-06', title: 'Repaso: Atributos de Calidad', dueDate: '2026-03-22', weight: 4, status: 'pending', classIds: ['class-01'], grade: null, subjectId: 'arq-software-2026' },
         ];
         await delay(400);
         return MOCK_TASKS;

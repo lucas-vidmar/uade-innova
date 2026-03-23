@@ -23,9 +23,20 @@ export async function renderStudentDashboard(container) {
     api.getChatHistory(activeSubjectId),
   ]);
 
-  // Lógica para mockear las tareas a mano ya que nuestro backend todavía devuelve todas las materias del alumno
+  // Priority logic for student tasks
+  const calculatePriority = (t) => {
+    const daysUntil = Math.max(0, Math.ceil((new Date(t.dueDate) - new Date()) / 86400000));
+    const proximity = 10 / (daysUntil + 1);
+    const weightFactor = t.weight / 5;
+    return proximity + weightFactor;
+  };
+
   const subjectTasks = tasks.filter(t => t.subjectId === activeSubjectId);
-  const pendingTasks = subjectTasks.filter(t => t.status === 'pending').slice(0, 3);
+  const pendingTasks = subjectTasks
+    .filter(t => t.status === 'pending')
+    .sort((a, b) => calculatePriority(b) - calculatePriority(a))
+    .slice(0, 3);
+  
   const completedTasks = subjectTasks.filter(t => t.status === 'completed');
   const avgGrade = completedTasks.length > 0 
     ? completedTasks.reduce((a, t) => a + (t.grade || 0), 0) / completedTasks.length
