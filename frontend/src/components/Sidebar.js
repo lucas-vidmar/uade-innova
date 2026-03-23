@@ -68,6 +68,14 @@ export function renderSidebar() {
     </div>
   `;
 
+  // Sidebar Overlay for Mobile
+  let overlay = document.querySelector('.sidebar-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.className = 'sidebar-overlay';
+    document.body.appendChild(overlay);
+  }
+
   // Prepend to #app shell (before main-content)
   const mainContent = document.querySelector('.main-content');
   if (mainContent) {
@@ -75,6 +83,20 @@ export function renderSidebar() {
   } else {
     appEl.prepend(sidebar);
   }
+
+  // Close sidebar on overlay click
+  overlay.addEventListener('click', () => {
+    document.body.classList.remove('sidebar-mobile-open');
+  });
+
+  // Close sidebar on nav link click (mobile only)
+  sidebar.querySelectorAll('.sidebar-item').forEach(item => {
+    item.addEventListener('click', () => {
+      if (window.innerWidth <= 768) {
+        document.body.classList.remove('sidebar-mobile-open');
+      }
+    });
+  });
 
   // Role switcher
   sidebar.querySelectorAll('.role-btn').forEach(btn => {

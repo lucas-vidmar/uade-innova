@@ -66,4 +66,8 @@ export function renderHeader(title = 'Dashboard') {
     auth.setActiveSubjectId(e.target.value);
     window.location.reload();
   });
+
+  document.getElementById('mobile-menu-btn')?.addEventListener('click', () => {
+    document.body.classList.toggle('sidebar-mobile-open');
+  });
 }
