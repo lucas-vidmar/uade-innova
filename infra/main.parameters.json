@@ -46,6 +46,12 @@
         },
         "classMaterialsContainerName": {
             "value": "class-materials"
+        },
+        "budgetAmount": {
+            "value": 100
+        },
+        "notificationEmail": {
+            "value": ""
         }
     }
 }

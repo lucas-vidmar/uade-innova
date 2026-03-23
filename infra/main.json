@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.41.2.15936",
-      "templateHash": "8927647652056646309"
+      "templateHash": "15517662989320391782"
     }
   },
   "parameters": {
@@ -107,6 +107,20 @@
       "defaultValue": "class-materials",
       "metadata": {
         "description": "Name of the Storage container for class materials."
+      }
+    },
+    "budgetAmount": {
+      "type": "int",
+      "defaultValue": 100,
+      "metadata": {
+        "description": "Monto total del presupuesto mensual."
+      }
+    },
+    "notificationEmail": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Lista de correos para notificaciones de presupuesto."
       }
     }
   },
@@ -236,9 +250,21 @@
     "keyVaultName": "[format('kv-edu-{0}', take(variables('resourceToken'), 17))]",
     "identityName": "[format('id-dashboard-edu-{0}', variables('resourceToken'))]",
     "frontDoorName": "[format('afd-dashboard-{0}', variables('resourceToken'))]",
+    "workbookName": "[guid(resourceGroup().id, 'cost-per-interaction-workbook')]",
     "safeStorageName": "[take(replace(variables('storageAccountName'), '-', ''), 24)]"
   },
   "resources": [
+    {
+      "type": "Microsoft.KeyVault/vaults/secrets",
+      "apiVersion": "2023-07-01",
+      "name": "[format('{0}/FRONT-DOOR-ID', variables('keyVaultName'))]",
+      "properties": {
+        "value": "[reference(resourceId('Microsoft.Resources/deployments', 'frontDoor'), '2025-04-01').outputs.frontDoorId.value]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'frontDoor')]"
+      ]
+    },
     {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
@@ -616,7 +642,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "14398951521189111586"
+              "templateHash": "1106543577754600453"
             }
           },
           "parameters": {
@@ -713,6 +739,66 @@
               ]
             },
             {
+              "type": "Microsoft.Storage/storageAccounts/managementPolicies",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}', parameters('name'), 'default')]",
+              "properties": {
+                "policy": {
+                  "rules": [
+                    {
+                      "enabled": true,
+                      "name": "DeleteArchiveAfter2Years",
+                      "type": "Lifecycle",
+                      "definition": {
+                        "actions": {
+                          "baseBlob": {
+                            "delete": {
+                              "daysAfterModificationGreaterThan": 730
+                            }
+                          }
+                        },
+                        "filters": {
+                          "blobTypes": [
+                            "blockBlob"
+                          ],
+                          "prefixMatch": [
+                            "class-materials/",
+                            "processed/"
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "enabled": true,
+                      "name": "ArchiveOldSemesterMaterials",
+                      "type": "Lifecycle",
+                      "definition": {
+                        "actions": {
+                          "baseBlob": {
+                            "tierToArchive": {
+                              "daysAfterModificationGreaterThan": 180
+                            }
+                          }
+                        },
+                        "filters": {
+                          "blobTypes": [
+                            "blockBlob"
+                          ],
+                          "prefixMatch": [
+                            "class-materials/semester-",
+                            "processed/semester-"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('name'))]"
+              ]
+            },
+            {
               "type": "Microsoft.Storage/storageAccounts/tableServices",
               "apiVersion": "2023-01-01",
               "name": "[format('{0}/{1}', parameters('name'), 'default')]",
@@ -724,6 +810,14 @@
               "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
               "apiVersion": "2023-01-01",
               "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'UserProfiles')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'SessionMetrics')]",
               "dependsOn": [
                 "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
               ]
@@ -799,7 +893,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "9644409947418504327"
+              "templateHash": "14901476775670358511"
             }
           },
           "parameters": {
@@ -858,7 +952,7 @@
                 "enabledForDiskEncryption": false,
                 "publicNetworkAccess": "Enabled",
                 "networkAcls": {
-                  "defaultAction": "Allow",
+                  "defaultAction": "Deny",
                   "bypass": "AzureServices"
                 }
               }
@@ -1144,7 +1238,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "10042508113454689588"
+              "templateHash": "8915847405761460221"
             }
           },
           "parameters": {
@@ -1280,6 +1374,17 @@
                   "functionAppScaleLimit": 10,
                   "minimumElasticInstanceCount": 0,
                   "use32BitWorkerProcess": false,
+                  "ipSecurityRestrictions": [
+                    {
+                      "ipAddress": "AzureFrontDoor.Backend",
+                      "action": "Allow",
+                      "tag": "ServiceTag",
+                      "priority": 100,
+                      "name": "Allow Front Door",
+                      "description": "Allow traffic only from Azure Front Door Backend"
+                    }
+                  ],
+                  "scmIpSecurityRestrictionsUseMain": true,
                   "cors": {
                     "allowedOrigins": [
                       "*"
@@ -1328,10 +1433,6 @@
                       "value": "[parameters('openAiEmbeddingDeployment')]"
                     },
                     {
-                      "name": "AZURE_STORAGE_CONNECTION_STRING",
-                      "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(parameters('storageAccountId'), '2023-01-01').keys[0].value, environment().suffixes.storage)]"
-                    },
-                    {
                       "name": "AZURE_STORAGE_ACCOUNT_NAME",
                       "value": "[parameters('classMaterialsStorageAccount')]"
                     },
@@ -1354,6 +1455,14 @@
                     {
                       "name": "AZURE_CLIENT_ID",
                       "value": "[parameters('userAssignedClientId')]"
+                    },
+                    {
+                      "name": "SWA_ROLES_SECRET",
+                      "value": "UADE-Pilot-Secure-Roles-Secret-2026"
+                    },
+                    {
+                      "name": "FRONT_DOOR_ID",
+                      "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/FRONT-DOOR-ID/)', parameters('keyVaultUri'))]"
                     }
                   ]
                 }
@@ -1583,6 +1692,246 @@
     {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
+      "name": "workbook",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "workbookName": {
+            "value": "[variables('workbookName')]"
+          },
+          "appInsightsId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appInsights'), '2025-04-01').outputs.logAnalyticsWorkspaceId.value]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.41.2.15936",
+              "templateHash": "9100696820550022040"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for resources."
+              }
+            },
+            "workbookName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the workbook."
+              }
+            },
+            "workbookDisplayName": {
+              "type": "string",
+              "defaultValue": "Cost-per-Interaction Dashboard",
+              "metadata": {
+                "description": "Display name shown in the Azure Portal."
+              }
+            },
+            "appInsightsId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Application Insights instance."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags to apply to resources."
+              }
+            }
+          },
+          "variables": {
+            "workbookContent": {
+              "version": "Notebook/1.0",
+              "items": [
+                {
+                  "type": 1,
+                  "content": {
+                    "json": "## 💰 Cost-per-Interaction Dashboard\nReal-time GPT-4o-mini cost tracking. Pricing: **$0.15/1M input tokens** · **$0.60/1M output tokens**"
+                  },
+                  "name": "header"
+                },
+                {
+                  "type": 9,
+                  "content": {
+                    "version": "KqlParameterItem/1.0",
+                    "parameters": [
+                      {
+                        "id": "timeRange",
+                        "version": "KqlParameterItem/1.0",
+                        "name": "TimeRange",
+                        "type": 4,
+                        "isRequired": true,
+                        "value": {
+                          "durationMs": 604800000
+                        },
+                        "typeSettings": {
+                          "selectableValues": [
+                            {
+                              "durationMs": 3600000
+                            },
+                            {
+                              "durationMs": 86400000
+                            },
+                            {
+                              "durationMs": 604800000
+                            },
+                            {
+                              "durationMs": 2592000000
+                            }
+                          ]
+                        }
+                      }
+                    ],
+                    "style": "pills",
+                    "queryType": 0,
+                    "resourceType": "microsoft.insights/components"
+                  },
+                  "name": "timePicker"
+                },
+                {
+                  "type": 3,
+                  "content": {
+                    "version": "KqlItem/1.0",
+                    "query": "traces\n| where timestamp {TimeRange}\n| where message startswith \"[A/B Test]\"\n| extend props = customDimensions\n| extend promptTokens    = toint(props[\"promptTokens\"])\n| extend completionTokens = toint(props[\"completionTokens\"])\n| summarize\n    TotalInteractions   = count(),\n    TotalPromptTokens   = sum(promptTokens),\n    TotalCompletionTokens = sum(completionTokens)\n| extend\n    TotalInputCost  = round(TotalPromptTokens    * 0.00000015, 4),\n    TotalOutputCost = round(TotalCompletionTokens * 0.0000006, 4)\n| extend TotalCost = round(TotalInputCost + TotalOutputCost, 4)\n| extend AvgCostPerInteraction = round(TotalCost / max_of(TotalInteractions, 1), 6)\n| project TotalInteractions, TotalPromptTokens, TotalCompletionTokens, TotalInputCost, TotalOutputCost, TotalCost, AvgCostPerInteraction\n",
+                    "size": 4,
+                    "title": "Cost Summary (Period)",
+                    "timeContextFromParameter": "TimeRange",
+                    "queryType": 0,
+                    "resourceType": "microsoft.insights/components",
+                    "visualization": "tiles",
+                    "tileSettings": {
+                      "titleContent": {
+                        "columnMatch": "TotalCost",
+                        "formatter": 12,
+                        "formatOptions": {
+                          "palette": "greenRed"
+                        }
+                      },
+                      "leftContent": {
+                        "columnMatch": "TotalCost",
+                        "formatter": 12
+                      },
+                      "showBorder": true
+                    }
+                  },
+                  "name": "kpiTiles"
+                },
+                {
+                  "type": 3,
+                  "content": {
+                    "version": "KqlItem/1.0",
+                    "query": "traces\n| where timestamp {TimeRange}\n| where message startswith \"[A/B Test]\"\n| extend props = customDimensions\n| extend promptTokens     = toint(props[\"promptTokens\"])\n| extend completionTokens = toint(props[\"completionTokens\"])\n| summarize\n    DailyInputCost  = round(sum(promptTokens)     * 0.00000015, 4),\n    DailyOutputCost = round(sum(completionTokens)  * 0.0000006,  4),\n    Interactions    = count()\n    by Day = startofday(timestamp)\n| extend DailyTotalCost = round(DailyInputCost + DailyOutputCost, 4)\n| project Day, DailyTotalCost, DailyInputCost, DailyOutputCost, Interactions\n| order by Day asc\n",
+                    "size": 0,
+                    "title": "Daily Cost Trend ($USD)",
+                    "timeContextFromParameter": "TimeRange",
+                    "queryType": 0,
+                    "resourceType": "microsoft.insights/components",
+                    "visualization": "linechart",
+                    "chartSettings": {
+                      "yAxis": "DailyTotalCost",
+                      "xAxis": "Day"
+                    }
+                  },
+                  "name": "dailyCostChart"
+                },
+                {
+                  "type": 3,
+                  "content": {
+                    "version": "KqlItem/1.0",
+                    "query": "traces\n| where timestamp {TimeRange}\n| where message startswith \"[A/B Test]\"\n| extend props = customDimensions\n| extend promptTokens     = toint(props[\"promptTokens\"])\n| extend completionTokens = toint(props[\"completionTokens\"])\n| extend promptVersion    = tostring(props[\"promptVersion\"])\n| summarize\n    Interactions        = count(),\n    TotalPromptTokens   = sum(promptTokens),\n    TotalCompletionTokens = sum(completionTokens)\n    by PromptVersion = promptVersion\n| extend\n    InputCost  = round(TotalPromptTokens     * 0.00000015, 6),\n    OutputCost = round(TotalCompletionTokens  * 0.0000006,  6)\n| extend TotalCost = round(InputCost + OutputCost, 6)\n| extend AvgCost   = round(TotalCost / max_of(Interactions, 1), 8)\n| project PromptVersion, Interactions, TotalPromptTokens, TotalCompletionTokens, InputCost, OutputCost, TotalCost, AvgCost\n| order by TotalCost desc\n",
+                    "size": 1,
+                    "title": "Cost by Prompt Version (A/B Testing)",
+                    "timeContextFromParameter": "TimeRange",
+                    "queryType": 0,
+                    "resourceType": "microsoft.insights/components",
+                    "visualization": "table",
+                    "gridSettings": {
+                      "formatters": [
+                        {
+                          "columnMatch": "TotalCost",
+                          "formatter": 8,
+                          "formatOptions": {
+                            "palette": "yellowOrangeRed"
+                          }
+                        },
+                        {
+                          "columnMatch": "AvgCost",
+                          "formatter": 8,
+                          "formatOptions": {
+                            "palette": "blue"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "name": "abCostTable"
+                }
+              ],
+              "fallbackResourceIds": [
+                "[parameters('appInsightsId')]"
+              ],
+              "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Insights/workbooks",
+              "apiVersion": "2022-04-01",
+              "name": "[parameters('workbookName')]",
+              "location": "[parameters('location')]",
+              "tags": "[union(parameters('tags'), createObject('purpose', 'cost-per-interaction-finops'))]",
+              "kind": "shared",
+              "properties": {
+                "displayName": "[parameters('workbookDisplayName')]",
+                "serializedData": "[string(variables('workbookContent'))]",
+                "version": "1.0",
+                "sourceId": "[parameters('appInsightsId')]",
+                "category": "workbook"
+              }
+            }
+          ],
+          "outputs": {
+            "workbookId": {
+              "type": "string",
+              "metadata": {
+                "description": "The resource ID of the Azure Workbook."
+              },
+              "value": "[resourceId('Microsoft.Insights/workbooks', parameters('workbookName'))]"
+            },
+            "workbookDisplayName": {
+              "type": "string",
+              "metadata": {
+                "description": "The display name of the deployed workbook."
+              },
+              "value": "[reference(resourceId('Microsoft.Insights/workbooks', parameters('workbookName')), '2022-04-01').displayName]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'appInsights')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
       "name": "frontDoor",
       "properties": {
         "expressionEvaluationOptions": {
@@ -1610,7 +1959,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "9330915616265553385"
+              "templateHash": "2510611764466325307"
             }
           },
           "parameters": {
@@ -1860,6 +2209,13 @@
                 "description": "The URI of the Front Door endpoint."
               },
               "value": "[format('https://{0}', reference(resourceId('Microsoft.Cdn/profiles/afdEndpoints', parameters('profileName'), variables('endpointName')), '2023-05-01').hostName)]"
+            },
+            "frontDoorId": {
+              "type": "string",
+              "metadata": {
+                "description": "The globally unique ID of the Front Door profile (for X-Azure-FDID validation)."
+              },
+              "value": "[reference(resourceId('Microsoft.Cdn/profiles', parameters('profileName')), '2023-05-01').frontDoorId]"
             }
           }
         }
@@ -1868,6 +2224,107 @@
         "[resourceId('Microsoft.Resources/deployments', 'functions')]",
         "[resourceId('Microsoft.Resources/deployments', 'staticWebApp')]"
       ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "budget",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "budgetAmount": {
+            "value": "[parameters('budgetAmount')]"
+          },
+          "contactEmails": "[if(not(empty(parameters('notificationEmail'))), createObject('value', createArray(parameters('notificationEmail'))), createObject('value', createArray()))]"
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.41.2.15936",
+              "templateHash": "10736267250075119963"
+            }
+          },
+          "parameters": {
+            "budgetAmount": {
+              "type": "int",
+              "defaultValue": 100,
+              "metadata": {
+                "description": "Monto total del presupuesto mensual."
+              }
+            },
+            "contactEmails": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "Lista de correos para notificaciones de presupuesto."
+              }
+            },
+            "startDate": {
+              "type": "string",
+              "defaultValue": "[format('{0}-01T00:00:00Z', utcNow('yyyy-MM'))]",
+              "metadata": {
+                "description": "Fecha de inicio del presupuesto (formato YYYY-MM-01T00:00:00Z)."
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Consumption/budgets",
+              "apiVersion": "2021-10-01",
+              "name": "pilot-budget",
+              "properties": {
+                "timeGrain": "Monthly",
+                "amount": "[parameters('budgetAmount')]",
+                "category": "Cost",
+                "timePeriod": {
+                  "startDate": "[parameters('startDate')]"
+                },
+                "notifications": {
+                  "Actual_50_Percent": {
+                    "enabled": true,
+                    "operator": "GreaterThan",
+                    "threshold": 50,
+                    "contactEmails": "[parameters('contactEmails')]",
+                    "contactRoles": [
+                      "Owner",
+                      "Contributor"
+                    ],
+                    "thresholdType": "Actual"
+                  },
+                  "Actual_80_Percent": {
+                    "enabled": true,
+                    "operator": "GreaterThan",
+                    "threshold": 80,
+                    "contactEmails": "[parameters('contactEmails')]",
+                    "contactRoles": [
+                      "Owner",
+                      "Contributor"
+                    ],
+                    "thresholdType": "Actual"
+                  },
+                  "Actual_100_Percent": {
+                    "enabled": true,
+                    "operator": "GreaterThan",
+                    "threshold": 100,
+                    "contactEmails": "[parameters('contactEmails')]",
+                    "contactRoles": [
+                      "Owner",
+                      "Contributor"
+                    ],
+                    "thresholdType": "Actual"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
     }
   ],
   "outputs": {
@@ -1914,6 +2371,10 @@
     "AZURE_RESOURCE_GROUP": {
       "type": "string",
       "value": "[resourceGroup().name]"
+    },
+    "AZURE_WORKBOOK_ID": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'workbook'), '2025-04-01').outputs.workbookId.value]"
     }
   }
 }

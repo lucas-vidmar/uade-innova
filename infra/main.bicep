@@ -67,6 +67,12 @@ param pineconeIndexName string = 'dashboard-edu-pilot'
 @description('Name of the Storage container for class materials.')
 param classMaterialsContainerName string = 'class-materials'
 
+@description('Monto total del presupuesto mensual.')
+param budgetAmount int = 100
+
+@description('Lista de correos para notificaciones de presupuesto.')
+param notificationEmail string = ''
+
 // ─── Variables & naming ──────────────────────────────────────────
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
@@ -215,12 +221,18 @@ module frontDoor './modules/frontdoor.bicep' = {
   }
 }
 
+// ─── Module: Azure Budget (Issue #71) ─────────────────────────────
+module budget './modules/budget.bicep' = {
+  name: 'budget'
+  params: {
+    budgetAmount: budgetAmount
+    contactEmails: !empty(notificationEmail) ? [ notificationEmail ] : []
+  }
+}
+
 // ─── Front Door ID Secret in Key Vault ────────────────────────────
 resource fdSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   name: '${keyVaultName}/FRONT-DOOR-ID'
-  dependsOn: [
-    keyVault
-  ]
   properties: {
     value: frontDoor.outputs.frontDoorId
   }
