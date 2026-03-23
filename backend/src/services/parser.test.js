@@ -25,26 +25,16 @@ Bienvenidos a la clase.
 });
 
 test('chunkText creates exact token-sized chunks with overlap', () => {
-    // Generate a long text: "word " repeated 50 times
     const text = Array(50).fill('word').join(' ');
     const tokens = encoder.encode(text);
-    
-    // maxTokens 20, overlap 5
     const maxTokens = 20;
     const overlapTokens = 5;
-    
     const chunks = chunkText(text, maxTokens, overlapTokens);
-    
-    // First chunk should be around maxTokens
     const firstChunkTokens = encoder.encode(chunks[0]);
     assert.ok(firstChunkTokens.length <= maxTokens, `First chunk too large: ${firstChunkTokens.length}`);
-    
-    // Total tokens in chunks should be more than original due to overlap
     let totalChunkTokens = 0;
     chunks.forEach(c => totalChunkTokens += encoder.encode(c).length);
     assert.ok(totalChunkTokens > tokens.length, 'Total tokens should increase with overlap');
-    
-    // Text should be reconstructed (mostly, ignoring whitespace variations)
     const allText = chunks.join(' ');
     assert.ok(allText.includes('word'), 'Content preserved');
 });
@@ -62,10 +52,11 @@ test('chunkText handles empty input', () => {
 });
 
 test('cleanText handles PDF artifacts', () => {
-    const textWithArtifacts = 'Texto\u00ADbloqueado con guion\u2010largo y   espacios.';
+    // US #29: verify soft hyphen and page marker normalization
+    const textWithArtifacts = 'Texto\u00ADbloqueado con guion\u2010largo y   espacios.\n\n[Página 1]\nContenido';
     const cleaned = cleanText(textWithArtifacts);
     assert.ok(cleaned.includes('Textobloqueado'), 'Soft hyphen should be removed');
     assert.ok(cleaned.includes('guion-largo'), 'Hyphen should be normalized');
     assert.ok(!cleaned.includes('   '), 'Multiple spaces should be collapsed');
+    assert.ok(cleaned.includes('[Página 1]'), 'Page markers should be preserved');
 });
-
