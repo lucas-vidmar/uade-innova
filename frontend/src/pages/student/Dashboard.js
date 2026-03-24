@@ -7,7 +7,12 @@ import { renderHeader } from '../../components/Header.js';
 import { toast } from '../../components/Toast.js';
 
 function renderSearchResult(result, classesById) {
-  const materialIcon = { transcript: '📝', bibliography: '📚' }[result.materialType] || '📄';
+  const materialIcon = {
+    transcript: icon('document'),
+    bibliography: icon('book'),
+    presentation: icon('presentation'),
+    notes: icon('notes'),
+  }[result.materialType] || icon('document');
   const classNames = (result.classIds || [])
     .map(classId => classesById.get(classId)?.title || classId)
     .map(label => label.split('—')[0]?.trim() || label)
@@ -40,6 +45,23 @@ function escapeHtml(value = '') {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function icon(name) {
+  const icons = {
+    search: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>',
+    chat: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></svg>',
+    tasks: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11h11"/><path d="M9 16h11"/><path d="M9 6h11"/><path d="M4 6h.01"/><path d="M4 11h.01"/><path d="M4 16h.01"/></svg>',
+    calendar: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>',
+    deadline: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v6l4 2"/></svg>',
+    activity: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg>',
+    document: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>',
+    book: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>',
+    presentation: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>',
+    notes: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 3h16v18H4z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>',
+  };
+
+  return `<span class="ui-icon" aria-hidden="true">${icons[name] || icons.document}</span>`;
 }
 
 export async function renderStudentDashboard(container) {
@@ -97,7 +119,7 @@ export async function renderStudentDashboard(container) {
     <!-- Hero -->
     <div class="student-hero">
       <div>
-        <h1 class="student-hero-title">¡Hola, <span class="gradient-text">${user.name.split(' ')[0]}</span>! 👋</h1>
+        <h1 class="student-hero-title">Hola, <span class="gradient-text">${user.name.split(' ')[0]}</span></h1>
         <p class="student-hero-sub">${activeSubjectName}</p>
       </div>
       <div class="student-hero-stats">
@@ -120,7 +142,7 @@ export async function renderStudentDashboard(container) {
 
     <div class="card global-search-card" id="global-search-card">
       <div class="card-header">
-        <span class="card-title">🔎 Búsqueda Global de Conocimiento</span>
+        <span class="card-title">${icon('search')} Búsqueda Global de Conocimiento</span>
         <span class="badge badge-info">${activeSubjectName}</span>
       </div>
       <div class="global-search-controls">
@@ -136,7 +158,7 @@ export async function renderStudentDashboard(container) {
       <div class="global-search-hint">La búsqueda usa el índice completo de la materia activa y prioriza coincidencias semánticas + keyword.</div>
       <div class="global-search-results" id="global-search-results">
         <div class="empty-state" style="padding:20px 0">
-          <span class="empty-state-icon">📚</span>
+          <span class="empty-state-icon">${icon('book')}</span>
           <p>Ingresá un término para explorar conocimiento en todas las clases.</p>
         </div>
       </div>
@@ -145,17 +167,17 @@ export async function renderStudentDashboard(container) {
     <!-- Quick actions -->
     <div class="quick-actions">
       <a href="#/student/chat" class="quick-action-card">
-        <span class="quick-action-icon">💬</span>
+        <span class="quick-action-icon">${icon('chat')}</span>
         <span class="quick-action-label">Consultar con IA</span>
         <span class="quick-action-arrow">→</span>
       </a>
       <a href="#/student/tasks" class="quick-action-card">
-        <span class="quick-action-icon">📋</span>
+        <span class="quick-action-icon">${icon('tasks')}</span>
         <span class="quick-action-label">Ver mis tareas</span>
         <span class="quick-action-arrow">→</span>
       </a>
       <a href="#/student/calendar" class="quick-action-card">
-        <span class="quick-action-icon">📅</span>
+        <span class="quick-action-icon">${icon('calendar')}</span>
         <span class="quick-action-label">Calendario</span>
         <span class="quick-action-arrow">→</span>
       </a>
@@ -163,7 +185,7 @@ export async function renderStudentDashboard(container) {
 
     <div class="card global-search-card" style="margin-top:0;margin-bottom:var(--space-8)">
       <div class="card-header">
-        <span class="card-title">📌 Deadlines activos</span>
+        <span class="card-title">${icon('deadline')} Deadlines activos</span>
         <a href="#/student/calendar" class="btn btn-ghost btn-sm">Ver calendario</a>
       </div>
       <div class="class-list">
@@ -171,7 +193,7 @@ export async function renderStudentDashboard(container) {
           const relatedClass = classesById.get(deadline.classId);
           return `
             <div class="class-list-item">
-              <div class="class-list-date">⏰</div>
+              <div class="class-list-date">${icon('deadline')}</div>
               <div class="class-list-info">
                 <div class="class-list-title">${deadline.title}</div>
                 <div class="class-list-topics">${deadline.description || 'Sin descripción'}</div>
@@ -191,11 +213,11 @@ export async function renderStudentDashboard(container) {
       <!-- Upcoming tasks -->
       <div class="card">
         <div class="card-header">
-          <span class="card-title">📋 Tareas Próximas</span>
+          <span class="card-title">${icon('tasks')} Tareas Próximas</span>
           <a href="#/student/tasks" class="btn btn-ghost btn-sm">Ver todas</a>
         </div>
         <div class="card-body">
-          ${pendingTasks.length === 0 ? `<div class="empty-state" style="padding:24px"><span class="empty-state-icon">🎉</span><p>¡No tenés tareas pendientes!</p></div>` :
+          ${pendingTasks.length === 0 ? `<div class="empty-state" style="padding:24px"><span class="empty-state-icon">${icon('activity')}</span><p>¡No tenés tareas pendientes!</p></div>` :
             pendingTasks.map(t => {
               const daysUntil = Math.ceil((new Date(t.dueDate) - new Date()) / 86400000);
               const urgency = daysUntil <= 3 ? 'error' : daysUntil <= 7 ? 'warning' : 'success';
@@ -216,11 +238,11 @@ export async function renderStudentDashboard(container) {
       <!-- Recent Chats (New section for US#48) -->
       <div class="card">
         <div class="card-header">
-          <span class="card-title">💬 Consultas Recientes</span>
+          <span class="card-title">${icon('chat')} Consultas Recientes</span>
           <a href="#/student/chat" class="btn btn-ghost btn-sm">Ir al chat</a>
         </div>
         <div class="card-body">
-          ${(chatHistory || []).length === 0 ? `<div class="empty-state" style="padding:24px"><span class="empty-state-icon">🗨️</span><p>No hay consultas previas.</p></div>` :
+          ${(chatHistory || []).length === 0 ? `<div class="empty-state" style="padding:24px"><span class="empty-state-icon">${icon('chat')}</span><p>No hay consultas previas.</p></div>` :
             chatHistory.slice(0, 3).map(chat => `
               <a href="#/student/chat?id=${chat.id}" class="chat-history-item" style="text-decoration:none">
                 <div class="chat-history-info">
@@ -237,7 +259,7 @@ export async function renderStudentDashboard(container) {
       <!-- Subject progress -->
       <div class="card">
         <div class="card-header">
-          <span class="card-title">📚 Progreso de la Materia</span>
+          <span class="card-title">${icon('book')} Progreso de la Materia</span>
         </div>
         <div class="card-body">
           <div class="subject-progress">
@@ -248,10 +270,10 @@ export async function renderStudentDashboard(container) {
                   <div class="class-progress-date">${c.date ? new Date(c.date).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }) : 'Sin fecha'}</div>
                 </div>
                 ${c.summaryReady 
-                  ? `<a href="#/student/class/${c.id}" class="badge badge-success" style="text-decoration:none">✅ Listo</a>` 
+                  ? `<a href="#/student/class/${c.id}" class="badge badge-success" style="text-decoration:none">Listo</a>` 
                   : (c.materials && c.materials.length > 0) 
-                    ? '<span class="badge badge-warning">⚙️ Procesando</span>' 
-                    : '<span class="badge badge-neutral">⏳ Sin material</span>'}
+                    ? '<span class="badge badge-warning">Procesando</span>' 
+                    : '<span class="badge badge-neutral">Sin material</span>'}
               </div>
             `).join('')}
           </div>
@@ -285,7 +307,7 @@ export async function renderStudentDashboard(container) {
       if (!results.length) {
         resultsContainer.innerHTML = `
           <div class="empty-state" style="padding:24px 0">
-            <span class="empty-state-icon">🕵️</span>
+            <span class="empty-state-icon">${icon('search')}</span>
             <p>No encontramos coincidencias para "${escapeHtml(query)}" en esta materia.</p>
           </div>
         `;

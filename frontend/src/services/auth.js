@@ -71,6 +71,10 @@ export const auth = {
         return sessionStorage.getItem('edu_role') || 'student';
     },
 
+    isLoggedIn() {
+        return sessionStorage.getItem('edu_logged_in') !== 'false';
+    },
+
     getConsentAccepted() {
         return sessionStorage.getItem('edu_consent_accepted') === 'true';
     },
@@ -108,6 +112,17 @@ export const auth = {
         window.location.href = '/.auth/logout?post_logout_redirect_uri=/';
     },
 
+    mockLogout() {
+        sessionStorage.setItem('edu_logged_in', 'false');
+        window.dispatchEvent(new CustomEvent('auth:loggedOut'));
+    },
+
+    mockLoginAs(role) {
+        if (!USERS[role]) return;
+        sessionStorage.setItem('edu_logged_in', 'true');
+        this.setRole(role);
+    },
+
     async initAuth() {
         try {
             const response = await fetch('/.auth/me');
@@ -130,6 +145,7 @@ export const auth = {
                     // We don't trigger events here to avoid race conditions on boot.
                     // Just set state silently initially.
                     sessionStorage.setItem('edu_role', role);
+                    sessionStorage.setItem('edu_logged_in', 'true');
                     
                     // Sync subjects from backend
                     try {
@@ -165,6 +181,9 @@ export const auth = {
         if (!sessionStorage.getItem('edu_role')) {
              sessionStorage.setItem('edu_role', 'student');
              sessionStorage.setItem('edu_active_subject', USERS.student.subjects[0].id);
+        }
+        if (!sessionStorage.getItem('edu_logged_in')) {
+            sessionStorage.setItem('edu_logged_in', 'true');
         }
         return false;
     }

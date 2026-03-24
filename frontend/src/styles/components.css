@@ -14,7 +14,7 @@
     font-size: var(--font-size-sm);
     font-weight: 600;
     cursor: pointer;
-    border: none;
+    border: 1px solid transparent;
     transition: all var(--transition);
     white-space: nowrap;
     text-decoration: none;
@@ -24,12 +24,12 @@
 .btn-primary {
     background: var(--gradient-brand);
     color: #fff;
-    box-shadow: 0 2px 12px rgba(0, 64, 92, 0.4);
+    box-shadow: none;
 }
 
 .btn-primary:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 20px rgba(0, 64, 92, 0.6);
+    transform: none;
+    opacity: 0.95;
 }
 
 .btn-secondary {
@@ -46,11 +46,11 @@
 .btn-ghost {
     background: transparent;
     color: var(--color-text-secondary);
-    border: 1px solid var(--color-border);
+    border: none;
 }
 
 .btn-ghost:hover {
-    background: var(--color-surface-2);
+    background: rgba(0, 64, 92, 0.08);
     color: var(--color-text-primary);
 }
 
@@ -90,15 +90,15 @@
 
 /* ── Cards ───────────────────────────────────────────────── */
 .card {
-    background: var(--color-surface);
+    background: color-mix(in srgb, var(--color-surface) 82%, transparent);
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
+    border-radius: 12px;
     padding: var(--space-6);
-    transition: all var(--transition);
+    transition: border-color var(--transition), background var(--transition);
 }
 
 .card:hover {
-    border-color: rgba(0, 64, 92, 0.3);
+    border-color: rgba(0, 64, 92, 0.22);
 }
 
 .card-header {
@@ -121,31 +121,20 @@
 }
 
 .kpi-card {
-    background: var(--color-surface);
+    background: color-mix(in srgb, var(--color-surface) 80%, transparent);
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
+    border-radius: 12px;
     padding: var(--space-6);
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
     transition: all var(--transition);
     position: relative;
-    overflow: hidden;
-}
-
-.kpi-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: var(--gradient-brand);
 }
 
 .kpi-card:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-md);
+    transform: none;
+    border-color: rgba(0, 64, 92, 0.22);
 }
 
 .kpi-value {
@@ -555,6 +544,14 @@
     font-weight: 700;
     color: #fff;
     flex-shrink: 0;
+}
+
+.ui-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: currentColor;
+    vertical-align: middle;
 }
 
 .avatar-lg {

@@ -48,7 +48,7 @@ export async function renderDirectorDashboard(container) {
       <!-- Adoption by subject -->
       <div class="card">
         <div class="card-header">
-          <span class="card-title">📚 Adopción por Materia</span>
+          <span class="card-title">${icon('book')} Adopción por Materia</span>
           <span class="badge badge-info">Piloto 2026-1</span>
         </div>
         <div style="display:flex;flex-direction:column;gap:var(--space-5)">
@@ -69,7 +69,7 @@ export async function renderDirectorDashboard(container) {
       <!-- Early alerts -->
       <div class="card">
         <div class="card-header">
-          <span class="card-title">⚠️ Alertas Tempranas</span>
+          <span class="card-title">${icon('alert')} Alertas Tempranas</span>
           <span class="badge badge-error">${data.earlyAlerts.length} alumnos</span>
         </div>
         <div class="table-wrap">
@@ -84,16 +84,25 @@ export async function renderDirectorDashboard(container) {
                   <td style="color:var(--color-text-secondary);font-size:var(--font-size-xs)">${a.subject}</td>
                   <td>${a.attendance}</td>
                   <td style="color:${parseFloat(a.avgGrade) >= 6 ? 'var(--color-success)' : 'var(--color-error)'}">${a.avgGrade}</td>
-                  <td><span class="badge ${a.risk === 'high' ? 'badge-error' : 'badge-warning'}">${a.risk === 'high' ? '🔴 Alto' : '🟡 Medio'}</span></td>
+                  <td><span class="badge ${a.risk === 'high' ? 'badge-error' : 'badge-warning'}">${a.risk === 'high' ? 'Alto' : 'Medio'}</span></td>
                 </tr>
               `).join('') : '<tr><td colspan="5" style="text-align:center;padding:20px">No hay alertas tempranas activas.</td></tr>'}
             </tbody>
           </table>
         </div>
         <div style="margin-top:var(--space-4)">
-          <button class="btn btn-secondary btn-sm">📥 Exportar listado</button>
+          <button class="btn btn-secondary btn-sm">Exportar listado</button>
         </div>
       </div>
     </div>
   `;
+}
+
+function icon(name) {
+    const icons = {
+        alert: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.86 1.82 18a2 2 0 0 0 1.72 3h16.92a2 2 0 0 0 1.72-3L13.7 3.86a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
+        book: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>',
+    };
+
+    return `<span class="ui-icon" aria-hidden="true">${icons[name] || icons.alert}</span>`;
 }

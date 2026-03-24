@@ -34,9 +34,9 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
         ${selectedClassIds.length > 0 ? `
           <div class="chat-context-info">
             <span class="badge badge-primary">${selectedClassIds.length} clase${selectedClassIds.length !== 1 ? 's' : ''} seleccionada${selectedClassIds.length !== 1 ? 's' : ''}</span>
-            ${transcriptFocus ? `<span class="badge badge-info" id="chat-transcript-focus">🎯 ${escapeHtml(transcriptFocus.label || 'Sección de transcripción')}</span>` : ''}
+            ${transcriptFocus ? `<span class="badge badge-info" id="chat-transcript-focus">${icon('target')} ${escapeHtml(transcriptFocus.label || 'Sección de transcripción')}</span>` : ''}
           </div>
-        ` : `<div class="chat-context-warn">⚠️ Seleccioná al menos una clase</div>`}
+        ` : `<div class="chat-context-warn">${icon('alert')} Seleccioná al menos una clase</div>`}
         <button class="btn btn-sm btn-ghost" id="chat-clear" title="Limpiar conversación" style="margin-left:auto; height: 28px; padding: 0 8px;">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
           Limpiar
@@ -76,7 +76,7 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
 
   const renderWelcome = () => `
     <div class="chat-welcome">
-      <div class="chat-welcome-icon">🤖</div>
+      <div class="chat-welcome-icon">${icon('bot')}</div>
       <h3 class="chat-welcome-title">Hola, ${user.name.split(' ')[0]}!</h3>
       <p class="chat-welcome-sub">Seleccioná las clases arriba y haceme cualquier pregunta sobre los materiales.</p>
       <div class="chat-suggestions">
@@ -98,17 +98,17 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
     }
     return `
       <div class="chat-msg chat-msg-assistant animate-fade ${msg.id === highlightMessageId ? 'highlight-msg' : ''}" id="msg-${msg.id || ''}">
-        <div class="chat-avatar-bot">🤖</div>
+        <div class="chat-avatar-bot">${icon('bot')}</div>
         <div class="chat-msg-body">
           <div class="chat-bubble chat-bubble-assistant">${renderMarkdown(msg.content)}</div>
           
           <div class="chat-msg-footer">
             ${msg.sources?.length > 0 ? `
               <div class="chat-sources">
-                <span class="chat-sources-label">📎 Fuentes:</span>
+                <span class="chat-sources-label">Fuentes:</span>
                 ${msg.sources.map(s => `
                   <span class="source-chip" title="${s.sourceFilename}">
-                    ${{ transcript: '📝', presentation: '📊', notes: '📓', bibliography: '📚' }[s.materialType] || '📄'}
+                    ${materialIcon(s.materialType)}
                     ${s.sourceFilename}
                   </span>
                 `).join('')}
@@ -131,7 +131,7 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
 
   const renderTyping = () => `
     <div class="chat-msg chat-msg-assistant" id="typing-indicator">
-      <div class="chat-avatar-bot">🤖</div>
+      <div class="chat-avatar-bot">${icon('bot')}</div>
       <div class="chat-bubble chat-bubble-assistant">
         <div class="typing-dots">
           <span></span><span></span><span></span>
@@ -243,10 +243,10 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
           if (footerEl && assistantMsg.sources.length > 0) {
             footerEl.innerHTML = `
               <div class="chat-sources">
-                <span class="chat-sources-label">📎 Fuentes:</span>
+                <span class="chat-sources-label">Fuentes:</span>
                 ${assistantMsg.sources.map(s => `
                   <span class="source-chip" title="${s.sourceFilename}">
-                    ${( { transcript: '📝', presentation: '📊', notes: '📓', bibliography: '📚' }[s.materialType] || '📄' )}
+                    ${materialIcon(s.materialType)}
                     ${s.sourceFilename}
                   </span>
                 `).join('')}
@@ -318,6 +318,30 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
   };
 
   const escapeHtml = (str) => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  const materialIcon = (type) => {
+    const map = {
+      transcript: 'document',
+      presentation: 'presentation',
+      notes: 'notes',
+      bibliography: 'book',
+    };
+    return icon(map[type] || 'document');
+  };
+
+  const icon = (name) => {
+    const icons = {
+      bot: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 3v3"/><path d="M8 12h.01"/><path d="M16 12h.01"/></svg>',
+      alert: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.86 1.82 18a2 2 0 0 0 1.72 3h16.92a2 2 0 0 0 1.72-3L13.7 3.86a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
+      target: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>',
+      document: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>',
+      presentation: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>',
+      notes: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 3h16v18H4z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>',
+      book: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>',
+    };
+
+    return `<span class="ui-icon" aria-hidden="true">${icons[name] || icons.document}</span>`;
+  };
 
   const renderMarkdown = (text) => {
     return text

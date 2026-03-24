@@ -29,7 +29,7 @@ export async function renderTeacherDashboard(container) {
 
   const renderDeadlineRow = (deadline, cls) => `
     <div class="class-list-item" style="align-items:flex-start">
-      <div class="class-list-date">⏰</div>
+      <div class="class-list-date">${icon('clock')}</div>
       <div class="class-list-info">
         <div class="class-list-title">${deadline.title}</div>
         <div class="class-list-topics">${deadline.description || 'Sin descripción'}</div>
@@ -59,15 +59,15 @@ export async function renderTeacherDashboard(container) {
       </div>
     </div>
 
-    <div class="section-title"><h2>📚 Cronograma — ${activeSubjectName}</h2><div class="line"></div></div>
+    <div class="section-title"><h2>${icon('book')} Cronograma — ${activeSubjectName}</h2><div class="line"></div></div>
     <div class="class-list">
       ${(classes || []).map(c => {
         const ready = c.summaryReady;
         const materials = c.materials || [];
         const hasFiles = materials.length > 0 && !ready;
-        const status = ready ? { icon: '✅', label: 'Material completo', badge: 'badge-success' }
-          : hasFiles ? { icon: '⚙️', label: 'Procesando', badge: 'badge-warning' }
-            : { icon: '📭', label: 'Sin material', badge: 'badge-neutral' };
+        const status = ready ? { label: 'Material completo', badge: 'badge-success' }
+          : hasFiles ? { label: 'Procesando', badge: 'badge-warning' }
+            : { label: 'Sin material', badge: 'badge-neutral' };
         return `
           <div class="class-list-item">
             <div class="class-list-date">${c.date ? new Date(c.date + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }) : '---'}</div>
@@ -77,15 +77,15 @@ export async function renderTeacherDashboard(container) {
               ${materials.length > 0 ? `<div class="class-list-files">${materials.length} archivo${materials.length !== 1 ? 's' : ''} cargado${materials.length !== 1 ? 's' : ''}</div>` : ''}
             </div>
             <div class="class-list-actions">
-              <span class="badge ${status.badge}">${status.icon} ${status.label}</span>
-              <a href="#/teacher/upload?class=${c.id}" class="btn btn-secondary btn-sm">📤 Cargar</a>
+              <span class="badge ${status.badge}">${status.label}</span>
+              <a href="#/teacher/upload?class=${c.id}" class="btn btn-secondary btn-sm">Cargar</a>
             </div>
           </div>
         `;
       }).join('')}
     </div>
 
-    <div class="section-title" style="margin-top:var(--space-10)"><h2>⏳ Deadlines por clase</h2><div class="line"></div></div>
+    <div class="section-title" style="margin-top:var(--space-10)"><h2>${icon('clock')} Deadlines por clase</h2><div class="line"></div></div>
     <div class="card" style="margin-bottom:var(--space-8)">
       <div class="grid-2">
         <div>
@@ -163,4 +163,13 @@ export async function renderTeacherDashboard(container) {
   if (deadlines.length > 0) {
     console.debug('[Teacher Dashboard] Deadlines cargados:', deadlines.length);
   }
+}
+
+function icon(name) {
+  const icons = {
+    clock: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v6l4 2"/></svg>',
+    book: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>',
+  };
+
+  return `<span class="ui-icon" aria-hidden="true">${icons[name] || icons.clock}</span>`;
 }
