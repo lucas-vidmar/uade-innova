@@ -696,6 +696,14 @@
     background: var(--color-primary-light);
 }
 
+.cal-deadline-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--color-warning);
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.12);
+}
+
 .calendar-legend {
     display: flex;
     gap: var(--space-5);

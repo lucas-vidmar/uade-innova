@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-24] User Story #56: Academic Deadline Management
+- **Status**: Completed
+- **Functional Change**: Added class-linked deadlines with teacher management UI, student dashboard/calendar visibility, and reminder notifications for the day before and the day of a deadline.
+- **Business Impact**: Improves planning and adherence by ensuring students see important due dates where they already work.
+
 ### [2026-03-24] User Story #55: Interactive Class Timeline
 - **Status**: Completed
 - **Functional Change**: Added transcript-based interactive timeline hit-points with assignment/question icons, jump-to-section behavior, and chat context focus from selected transcript segments.

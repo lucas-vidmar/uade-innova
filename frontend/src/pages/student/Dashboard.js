@@ -4,6 +4,7 @@
 import { api } from '../../services/api.js';
 import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
+import { toast } from '../../components/Toast.js';
 
 function renderSearchResult(result, classesById) {
   const materialIcon = { transcript: '📝', bibliography: '📚' }[result.materialType] || '📄';
@@ -53,10 +54,11 @@ export async function renderStudentDashboard(container) {
   }
 
   // Fetch mock data (classes, tasks, chat history)
-  const [classes, tasks, chatHistory] = await Promise.all([
+  const [classes, tasks, chatHistory, deadlines] = await Promise.all([
     api.getClasses(activeSubjectId),
     api.getTasks(user.id),
     api.getChatHistory(activeSubjectId),
+    api.getDeadlines(activeSubjectId),
   ]);
 
   // Priority logic for student tasks
@@ -80,6 +82,12 @@ export async function renderStudentDashboard(container) {
 
   const activeSubjectName = user.subjects?.find(s => s.id === activeSubjectId)?.name || 'Materia Desconocida';
   const classesById = new Map(classes.map(c => [c.id, c]));
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const reminderItems = await api.getDeadlineReminders(activeSubjectId, todayIso);
+  if (Array.isArray(reminderItems) && reminderItems.length > 0) {
+    toast('warning', 'Deadline próximo', `Tenés ${reminderItems.length} deadline${reminderItems.length !== 1 ? 's' : ''} para hoy o mañana.`);
+  }
 
   // Academic standing logic (more detailed for US#48)
   const standingUrgency = avgGrade >= 7 ? 'success' : avgGrade >= 4 ? 'warning' : 'error';
@@ -151,6 +159,31 @@ export async function renderStudentDashboard(container) {
         <span class="quick-action-label">Calendario</span>
         <span class="quick-action-arrow">→</span>
       </a>
+    </div>
+
+    <div class="card global-search-card" style="margin-top:0;margin-bottom:var(--space-8)">
+      <div class="card-header">
+        <span class="card-title">📌 Deadlines activos</span>
+        <a href="#/student/calendar" class="btn btn-ghost btn-sm">Ver calendario</a>
+      </div>
+      <div class="class-list">
+        ${deadlines.length > 0 ? deadlines.slice(0, 3).map(deadline => {
+          const relatedClass = classesById.get(deadline.classId);
+          return `
+            <div class="class-list-item">
+              <div class="class-list-date">⏰</div>
+              <div class="class-list-info">
+                <div class="class-list-title">${deadline.title}</div>
+                <div class="class-list-topics">${deadline.description || 'Sin descripción'}</div>
+                <div class="class-list-files">${relatedClass?.title || deadline.classId} · Vence ${new Date(deadline.dueDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}</div>
+              </div>
+              <div class="class-list-actions">
+                <span class="badge ${deadline.notifyOnDayBefore ? 'badge-warning' : 'badge-neutral'}">${deadline.notifyOnDayBefore ? 'Recordatorio +1 día' : 'Recordatorio día de'}</span>
+              </div>
+            </div>
+          `;
+        }).join('') : '<div class="empty-state" style="padding:18px 0"><p>No hay deadlines configurados.</p></div>'}
+      </div>
     </div>
 
     <!-- Main grid -->

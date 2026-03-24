@@ -14,9 +14,18 @@ export async function renderStudentCalendar(container) {
 
   const user = auth.getUser();
   const activeSubjectId = auth.getActiveSubjectId();
-  const classes = await api.getClasses(activeSubjectId);
+  const [classes, deadlines] = await Promise.all([
+    api.getClasses(activeSubjectId),
+    api.getDeadlines(activeSubjectId),
+  ]);
   const classMap = {};
   classes.forEach(c => { classMap[c.date] = c; });
+  const deadlineMap = {};
+  deadlines.forEach(d => {
+    const key = String(d.dueDate).slice(0, 10);
+    if (!deadlineMap[key]) deadlineMap[key] = [];
+    deadlineMap[key].push(d);
+  });
 
   let currentDate = new Date(2026, 2, 1); // March 2026
 
@@ -41,11 +50,13 @@ export async function renderStudentCalendar(container) {
       const day = i + 1;
       const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       const cls = classMap[dateStr];
+      const dayDeadlines = deadlineMap[dateStr] || [];
       const isToday = dateStr === new Date().toISOString().split('T')[0];
       return `
               <div class="cal-cell ${cls ? 'has-class' : ''} ${isToday ? 'today' : ''}" data-date="${dateStr}" data-has-class="${!!cls}">
                 <span class="cal-day-num">${day}</span>
                 ${cls ? `<span class="cal-class-dot" title="${cls.title}"></span>` : ''}
+                ${dayDeadlines.length > 0 ? `<span class="cal-deadline-dot" title="${dayDeadlines.map(d => d.title).join(' · ')}"></span>` : ''}
               </div>
             `;
     }).join('')}
@@ -53,6 +64,7 @@ export async function renderStudentCalendar(container) {
 
         <div class="calendar-legend">
           <span class="cal-legend-item"><span class="cal-class-dot"></span> Clase programada</span>
+          <span class="cal-legend-item"><span class="cal-deadline-dot"></span> Deadline</span>
           <span class="cal-legend-item today-legend">Hoy</span>
         </div>
       </div>
@@ -108,6 +120,21 @@ export async function renderStudentCalendar(container) {
           💬 Preguntar sobre esta clase
         </a>
       </div>
+
+      ${deadlines.filter(d => d.classId === cls.id).length > 0 ? `
+        <div class="section-title" style="margin-top:var(--space-8)"><h2>Deadlines</h2><div class="line"></div></div>
+        <div style="display:flex;flex-direction:column;gap:var(--space-3)">
+          ${deadlines.filter(d => d.classId === cls.id).map(d => `
+            <div class="class-list-item" style="padding:var(--space-3) var(--space-4)">
+              <div class="class-list-info">
+                <div class="class-list-title">${d.title}</div>
+                <div class="class-list-files">Vence ${new Date(d.dueDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}</div>
+              </div>
+              <span class="badge badge-warning">${d.notifyOnDayBefore ? 'Aviso previo' : 'Aviso el día'}</span>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
     `;
 
     overlay.appendChild(panel);

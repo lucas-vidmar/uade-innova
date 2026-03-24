@@ -107,6 +107,20 @@ const MOCK_TEACHER_ANALYTICS = {
     ],
 };
 
+const MOCK_DEADLINES = [
+    {
+        id: 'deadline-001',
+        title: 'Final Project',
+        description: 'Entrega final del proyecto integrador.',
+        subjectId: 'arq-software-2026',
+        classId: 'class-14',
+        dueDate: '2026-04-30',
+        notifyOnDayBefore: true,
+        notifyOnDayOf: true,
+        createdAt: '2026-03-24T10:00:00Z',
+    },
+];
+
 const MOCK_GLOBAL_SEARCH_RESULTS = [
     {
         materialId: 'm-01',
@@ -145,6 +159,55 @@ export const api = {
     async getClasses(subjectId) {
         if (USE_MOCK) { await delay(); return MOCK_CLASSES.filter(c => c.subjectId === subjectId); }
         const res = await fetch(`${BASE_URL}/classes?subjectId=${subjectId}`);
+        return res.json();
+    },
+
+    async getDeadlines(subjectId) {
+        if (USE_MOCK) {
+            await delay(350);
+            return MOCK_DEADLINES.filter(item => item.subjectId === subjectId);
+        }
+
+        const res = await fetch(`${BASE_URL}/deadlines?subjectId=${subjectId}`);
+        if (!res.ok) return [];
+        return res.json();
+    },
+
+    async saveDeadline(payload) {
+        if (USE_MOCK) {
+            return {
+                ...payload,
+                id: payload.id || `deadline-${Date.now()}`,
+                createdAt: payload.createdAt || new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+            };
+        }
+
+        const res = await fetch(`${BASE_URL}/deadlines`, {
+            method: payload.id ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+            throw new Error(`Error ${res.status}: No se pudo guardar el deadline`);
+        }
+
+        return res.json();
+    },
+
+    async getDeadlineReminders(subjectId, today) {
+        if (USE_MOCK) {
+            const target = today || new Date().toISOString().slice(0, 10);
+            const dayBefore = target === '2026-04-29';
+            const dayOf = target === '2026-04-30';
+            return MOCK_DEADLINES.filter(d => d.subjectId === subjectId && ((dayBefore && d.notifyOnDayBefore) || (dayOf && d.notifyOnDayOf)));
+        }
+
+        const params = new URLSearchParams({ subjectId });
+        if (today) params.set('today', today);
+        const res = await fetch(`${BASE_URL}/deadline-reminders?${params.toString()}`);
+        if (!res.ok) return [];
         return res.json();
     },
 
