@@ -107,6 +107,36 @@ const MOCK_TEACHER_ANALYTICS = {
     ],
 };
 
+const MOCK_GLOBAL_SEARCH_RESULTS = [
+    {
+        materialId: 'm-01',
+        classIds: ['class-01'],
+        materialType: 'transcript',
+        sourceFilename: 'clase1_transcripcion.txt',
+        chunkIndex: 0,
+        snippet: 'En la arquitectura de software, las decisiones de diseno impactan en escalabilidad y mantenibilidad.',
+        score: 0.91,
+    },
+    {
+        materialId: 'm-08',
+        classIds: ['class-03'],
+        materialType: 'bibliography',
+        sourceFilename: 'clean-architecture-cap1.pdf',
+        chunkIndex: 2,
+        snippet: 'La arquitectura hexagonal propone separar el dominio de los detalles de infraestructura.',
+        score: 0.87,
+    },
+    {
+        materialId: 'm-04',
+        classIds: ['class-02'],
+        materialType: 'transcript',
+        sourceFilename: 'clase2_transcripcion.vtt',
+        chunkIndex: 4,
+        snippet: 'Comparacion de estilos de arquitectura: monolitica, capas y microservicios.',
+        score: 0.82,
+    },
+];
+
 /* ── Helpers ─────────────────────────────────────────────── */
 function delay(ms = 600) { return new Promise(r => setTimeout(r, ms)); }
 
@@ -115,6 +145,29 @@ export const api = {
     async getClasses(subjectId) {
         if (USE_MOCK) { await delay(); return MOCK_CLASSES.filter(c => c.subjectId === subjectId); }
         const res = await fetch(`${BASE_URL}/classes?subjectId=${subjectId}`);
+        return res.json();
+    },
+
+    async globalSearch({ query, subjectId }) {
+        if (USE_MOCK) {
+            await delay(450);
+            const needle = String(query || '').toLowerCase();
+            const results = MOCK_GLOBAL_SEARCH_RESULTS.filter(item =>
+                item.snippet.toLowerCase().includes(needle) || item.sourceFilename.toLowerCase().includes(needle)
+            );
+            return { query, subjectId, total: results.length, results };
+        }
+
+        const res = await fetch(`${BASE_URL}/global-search`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query, subjectId }),
+        });
+
+        if (!res.ok) {
+            throw new Error(`Error ${res.status}: No se pudo realizar la búsqueda global`);
+        }
+
         return res.json();
     },
 

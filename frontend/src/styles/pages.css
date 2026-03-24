@@ -445,6 +445,110 @@
     font-weight: 700;
 }
 
+/* ── Global Search (US #54) ──────────────────────────────── */
+.global-search-card {
+    margin-bottom: var(--space-6);
+}
+
+.global-search-controls {
+    display: flex;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+}
+
+.global-search-controls .form-input {
+    flex: 1;
+}
+
+.global-search-hint {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    margin-bottom: var(--space-4);
+}
+
+.global-search-results-header {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    margin-bottom: var(--space-3);
+}
+
+.global-search-results-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+}
+
+.global-search-result-item {
+    display: block;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-2);
+    padding: var(--space-4);
+    text-decoration: none;
+    color: inherit;
+    transition: all var(--transition);
+}
+
+.global-search-result-item:hover {
+    border-color: var(--color-primary);
+    background: var(--color-surface-3);
+    transform: translateY(-1px);
+}
+
+.global-search-result-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-2);
+}
+
+.global-search-material-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--font-size-xs);
+    color: var(--color-primary-light);
+    background: rgba(0, 64, 92, 0.14);
+    border: 1px solid rgba(0, 64, 92, 0.25);
+    border-radius: var(--radius-full);
+    padding: 3px 10px;
+    font-weight: 600;
+}
+
+.global-search-score {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+}
+
+.global-search-filename {
+    font-size: var(--font-size-sm);
+    font-weight: 700;
+    color: var(--color-text-primary);
+    margin-bottom: var(--space-2);
+}
+
+.global-search-snippet {
+    margin: 0 0 var(--space-3);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    line-height: 1.55;
+}
+
+.global-search-result-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+}
+
+.global-search-open {
+    color: var(--color-primary-light);
+    font-weight: 700;
+}
+
 /* ── Calendar ────────────────────────────────────────────── */
 .calendar-wrapper {
     max-width: 860px;
@@ -1142,6 +1246,10 @@
     }
 
     .quick-actions {
+        flex-direction: column;
+    }
+
+    .global-search-controls {
         flex-direction: column;
     }
 }

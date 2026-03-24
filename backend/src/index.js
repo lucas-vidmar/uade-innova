@@ -9,6 +9,7 @@ import './functions/hello.js';
 import './functions/classes-api.js';
 import './functions/ingest-material.js';
 import './functions/rag-query.js';
+import './functions/global-search.js';
 import './functions/get-tasks.js';
 import './functions/admin-api.js';
 import './functions/chat-api.js';

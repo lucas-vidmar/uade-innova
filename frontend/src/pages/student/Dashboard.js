@@ -5,6 +5,42 @@ import { api } from '../../services/api.js';
 import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
 
+function renderSearchResult(result, classesById) {
+  const materialIcon = { transcript: '📝', bibliography: '📚' }[result.materialType] || '📄';
+  const classNames = (result.classIds || [])
+    .map(classId => classesById.get(classId)?.title || classId)
+    .map(label => label.split('—')[0]?.trim() || label)
+    .slice(0, 2)
+    .join(' · ');
+
+  const targetClassId = (result.classIds || [])[0];
+  const targetHref = targetClassId ? `#/student/class/${targetClassId}` : '#/student/chat';
+
+  return `
+    <a href="${targetHref}" class="global-search-result-item" data-search-result="true">
+      <div class="global-search-result-header">
+        <span class="global-search-material-pill">${materialIcon} ${result.materialType === 'bibliography' ? 'Bibliografía' : 'Transcripción'}</span>
+        <span class="global-search-score">Relevancia ${(result.score * 100).toFixed(0)}%</span>
+      </div>
+      <div class="global-search-filename">${result.sourceFilename || 'Fuente sin nombre'}</div>
+      <p class="global-search-snippet">${result.snippet || 'Sin vista previa disponible.'}</p>
+      <div class="global-search-result-footer">
+        <span>${classNames || 'Materia completa'}</span>
+        <span class="global-search-open">Abrir →</span>
+      </div>
+    </a>
+  `;
+}
+
+function escapeHtml(value = '') {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 export async function renderStudentDashboard(container) {
   renderHeader('Inicio');
   container.innerHTML = `<div class="page-loading animate-pulse" style="padding:40px;text-align:center;color:var(--color-text-secondary)">Cargando dashboard...</div>`;
@@ -43,6 +79,7 @@ export async function renderStudentDashboard(container) {
     : 0;
 
   const activeSubjectName = user.subjects?.find(s => s.id === activeSubjectId)?.name || 'Materia Desconocida';
+  const classesById = new Map(classes.map(c => [c.id, c]));
 
   // Academic standing logic (more detailed for US#48)
   const standingUrgency = avgGrade >= 7 ? 'success' : avgGrade >= 4 ? 'warning' : 'error';
@@ -69,6 +106,30 @@ export async function renderStudentDashboard(container) {
             <span class="badge badge-${standingUrgency}">${avgGrade.toFixed(1)}</span>
           </div>
           <div class="hero-stat-label">${standingLabel}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card global-search-card" id="global-search-card">
+      <div class="card-header">
+        <span class="card-title">🔎 Búsqueda Global de Conocimiento</span>
+        <span class="badge badge-info">${activeSubjectName}</span>
+      </div>
+      <div class="global-search-controls">
+        <input
+          type="search"
+          id="global-search-input"
+          class="form-input"
+          placeholder="Buscá conceptos en transcripciones y bibliografías (ej: Architecture)"
+          autocomplete="off"
+        />
+        <button class="btn btn-primary" id="global-search-button">Buscar</button>
+      </div>
+      <div class="global-search-hint">La búsqueda usa el índice completo de la materia activa y prioriza coincidencias semánticas + keyword.</div>
+      <div class="global-search-results" id="global-search-results">
+        <div class="empty-state" style="padding:20px 0">
+          <span class="empty-state-icon">📚</span>
+          <p>Ingresá un término para explorar conocimiento en todas las clases.</p>
         </div>
       </div>
     </div>
@@ -165,4 +226,59 @@ export async function renderStudentDashboard(container) {
       </div>
     </div>
   `;
+
+  const searchInput = container.querySelector('#global-search-input');
+  const searchButton = container.querySelector('#global-search-button');
+  const resultsContainer = container.querySelector('#global-search-results');
+
+  const setSearchingState = (isSearching) => {
+    if (!searchButton || !searchInput) return;
+    searchButton.disabled = isSearching;
+    searchInput.disabled = isSearching;
+    searchButton.innerHTML = isSearching ? '<span class="spinner"></span>' : 'Buscar';
+  };
+
+  const runGlobalSearch = async () => {
+    const query = searchInput?.value?.trim();
+    if (!query || !resultsContainer) return;
+
+    setSearchingState(true);
+    resultsContainer.innerHTML = `<div class="page-loading animate-pulse" style="padding:24px;text-align:center;color:var(--color-text-secondary)">Buscando en todo el índice de la materia...</div>`;
+
+    try {
+      const searchResponse = await api.globalSearch({ query, subjectId: activeSubjectId });
+      const results = Array.isArray(searchResponse.results) ? searchResponse.results : [];
+
+      if (!results.length) {
+        resultsContainer.innerHTML = `
+          <div class="empty-state" style="padding:24px 0">
+            <span class="empty-state-icon">🕵️</span>
+            <p>No encontramos coincidencias para "${escapeHtml(query)}" en esta materia.</p>
+          </div>
+        `;
+        return;
+      }
+
+      resultsContainer.innerHTML = `
+        <div class="global-search-results-header">
+          <strong>${results.length}</strong> resultados para <strong>"${escapeHtml(query)}"</strong>
+        </div>
+        <div class="global-search-results-grid">
+          ${results.map(result => renderSearchResult(result, classesById)).join('')}
+        </div>
+      `;
+    } catch (err) {
+      resultsContainer.innerHTML = `<div class="card" style="padding:20px;text-align:center;color:var(--color-error)">${err.message || 'No se pudo realizar la búsqueda global.'}</div>`;
+    } finally {
+      setSearchingState(false);
+    }
+  };
+
+  searchButton?.addEventListener('click', runGlobalSearch);
+  searchInput?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      runGlobalSearch();
+    }
+  });
 }

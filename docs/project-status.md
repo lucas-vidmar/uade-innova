@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-24] User Story #54: Global Search for Knowledge
+- **Status**: Completed
+- **Functional Change**: Added a global subject-level search feature that retrieves ranked matches from transcripts and bibliography materials and surfaces them directly in the student dashboard.
+- **Business Impact**: Reduces study friction by helping students find key concepts across all classes without navigating each class separately.
+
 ### [2026-03-23] User Story #45: Context-Aware Follow-ups
 - **Status**: Completed
 - **Functional Change**: Enabled conversation-aware query rewriting using recent chat turns so the RAG engine can interpret short follow-up questions without requiring students to restate the full context.
