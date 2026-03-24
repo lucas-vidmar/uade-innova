@@ -5,7 +5,11 @@ import assert from 'node:assert';
 const parserMocks = {
     parseFile: mock.fn(async () => 'mocked text'),
     chunkText: mock.fn(() => ['chunk 1', 'chunk 2']),
-    cleanText: mock.fn((text) => text)
+    cleanText: mock.fn((text) => text),
+    extractTranscriptTimeline: mock.fn(() => ({
+        sections: [{ id: 'sec-001', startSecond: 0, endSecond: 60, timestampLabel: '00:00:00', text: 'mock section' }],
+        markers: [{ id: 'mk-001', sectionId: 'sec-001', startSecond: 0, endSecond: 60, iconType: 'question', label: 'mock marker' }],
+    }))
 };
 
 const openaiMocks = {
@@ -31,7 +35,8 @@ const pineconeMocks = {
 };
 
 const storageMocks = {
-    saveJson: mock.fn(async () => true)
+    saveJson: mock.fn(async () => true),
+    loadJson: mock.fn(async () => null),
 };
 
 mock.module('./parser.js', { namedExports: parserMocks });

@@ -6,6 +6,15 @@ import { api } from '../../services/api.js';
 import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
 
+function escapeHtml(value = '') {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 export async function renderClassDetail(container) {
     // Get classId from hash (e.g. #/student/class/class-01)
     const hash = window.location.hash || '';
@@ -22,10 +31,11 @@ export async function renderClassDetail(container) {
 
     try {
         const activeSubjectId = auth.getActiveSubjectId();
-        const [classes, summaryData, mapData] = await Promise.all([
+        const [classes, summaryData, mapData, timelineData] = await Promise.all([
             api.getClasses(activeSubjectId),
             api.getClassSummary(classId),
-            api.getClassMap(classId)
+            api.getClassMap(classId),
+            api.getClassTimeline(classId),
         ]);
 
         const classInfo = classes.find(c => c.id === classId);
@@ -77,6 +87,47 @@ export async function renderClassDetail(container) {
                 </div>
             </div>
 
+            <div class="card" style="margin-top:var(--space-6)">
+                <div class="card-header">
+                    <span class="card-title">⏱️ Timeline de Transcripción</span>
+                </div>
+                ${(timelineData?.markers || []).length > 0 ? `
+                    <div class="timeline-track" id="transcript-timeline-markers">
+                        ${(timelineData.markers || []).map(marker => `
+                            <button class="timeline-hit" data-section-id="${marker.sectionId}" data-focus-label="${escapeHtml(marker.label || '')}" title="${escapeHtml(marker.label || '')}">
+                                <span class="timeline-hit-icon">${marker.iconType === 'assignment' ? '📌' : '❓'}</span>
+                                <span class="timeline-hit-time">${Math.floor(marker.startSecond || 0)}s</span>
+                            </button>
+                        `).join('')}
+                    </div>
+                    <div style="margin-top:var(--space-4)">
+                        <a id="timeline-open-chat" class="btn btn-primary btn-sm" href="#/student/chat?classId=${classId}" aria-disabled="true">Consultar este hit-point en el chat</a>
+                    </div>
+                ` : '<div style="color:var(--color-text-secondary)">Todavía no hay hit-points generados para la transcripción.</div>'}
+            </div>
+
+            <div class="card" style="margin-top:var(--space-6)">
+                <div class="card-header">
+                    <span class="card-title">📜 Transcripción Navegable</span>
+                </div>
+                <div class="transcript-sections" id="transcript-sections-list">
+                    ${(timelineData?.sections || []).length > 0 ? (timelineData.sections || []).map(section => `
+                        <article class="transcript-section" id="transcript-section-${section.id}" data-section-id="${section.id}">
+                            <div class="transcript-section-head">
+                                <span class="badge badge-neutral">${escapeHtml(section.timestampLabel || 'Bloque')}</span>
+                                <a
+                                    href="#/student/chat?classId=${classId}&transcriptSection=${encodeURIComponent(section.id)}&focusLabel=${encodeURIComponent(section.text?.slice(0, 64) || 'Seccion de transcripcion')}"
+                                    class="btn btn-ghost btn-sm"
+                                >
+                                    Abrir en chat
+                                </a>
+                            </div>
+                            <p class="transcript-section-text">${escapeHtml(section.text || '')}</p>
+                        </article>
+                    `).join('') : '<div style="color:var(--color-text-secondary)">No hay secciones de transcripción disponibles.</div>'}
+                </div>
+            </div>
+
             <!-- Materials List -->
             <div class="section-title" style="margin-top:var(--space-10);display:flex;align-items:center;gap:var(--space-4);margin-bottom:var(--space-6)">
                 <h2 class="h3">📚 Materiales de Referencia</h2>
@@ -97,7 +148,7 @@ export async function renderClassDetail(container) {
             </div>
             
             <div class="fab-container" style="position:fixed;bottom:32px;right:32px;z-index:var(--z-fab)">
-                <a href="#/student/chat?classId=${classId}" class="btn btn-primary btn-lg fab" style="box-shadow:var(--shadow-lg);padding:16px 24px;border-radius:var(--radius-full);text-decoration:none;font-weight:bold;display:flex;align-items:center;gap:12px">
+                <a id="class-chat-fab" href="#/student/chat?classId=${classId}" class="btn btn-primary btn-lg fab" style="box-shadow:var(--shadow-lg);padding:16px 24px;border-radius:var(--radius-full);text-decoration:none;font-weight:bold;display:flex;align-items:center;gap:12px">
                     <span>💬</span> Consultar esta clase
                 </a>
             </div>
@@ -114,6 +165,33 @@ export async function renderClassDetail(container) {
                 console.error('Mermaid render error:', err);
             }
         }
+
+        container.querySelectorAll('.timeline-hit').forEach((hit) => {
+            hit.addEventListener('click', () => {
+                const sectionId = hit.getAttribute('data-section-id');
+                const focusLabel = hit.getAttribute('data-focus-label') || 'Seccion de transcripcion';
+                if (!sectionId) return;
+
+                const target = container.querySelector(`#transcript-section-${CSS.escape(sectionId)}`);
+                if (!target) return;
+
+                container.querySelectorAll('.transcript-section.active').forEach(el => el.classList.remove('active'));
+                target.classList.add('active');
+                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+                const chatLink = container.querySelector('#timeline-open-chat');
+                if (chatLink) {
+                    chatLink.setAttribute('href', `#/student/chat?classId=${classId}&transcriptSection=${encodeURIComponent(sectionId)}&focusLabel=${encodeURIComponent(focusLabel)}`);
+                    chatLink.setAttribute('aria-disabled', 'false');
+                    chatLink.textContent = 'Consultar este hit-point en el chat';
+                }
+
+                const fabLink = container.querySelector('#class-chat-fab');
+                if (fabLink) {
+                    fabLink.setAttribute('href', `#/student/chat?classId=${classId}&transcriptSection=${encodeURIComponent(sectionId)}&focusLabel=${encodeURIComponent(focusLabel)}`);
+                }
+            });
+        });
 
     } catch (err) {
         console.error('Error rendering class detail:', err);

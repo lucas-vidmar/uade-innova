@@ -2,10 +2,10 @@
  * services/pipeline.js — Orquestador del pipeline de RAG
  * Procesa un material (buffer + metadata) y lo indexa en Pinecone.
  */
-import { parseFile, chunkText, cleanText } from './parser.js';
+import { parseFile, chunkText, cleanText, extractTranscriptTimeline } from './parser.js';
 import { generateEmbeddingsBatch, generateClassSummary, generateClassMap } from './openai.js';
 import { upsertChunks, getIndexStats } from './pinecone.js';
-import { saveJson } from './storage.js';
+import { saveJson, loadJson } from './storage.js';
 import { trackIngestionInteraction } from './telemetry.js';
 
 const CONTAINER_PROCESSED = 'processed';
@@ -20,6 +20,12 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
     let totalTokens = 0;
 
     try {
+        let extractedTimeline = null;
+        if (materialType === 'transcript') {
+            extractedTimeline = extractTranscriptTimeline(fileBuffer, fileContentType, fileName);
+            context.log(`[Pipeline] Timeline detectada: ${extractedTimeline.markers.length} hit-points, ${extractedTimeline.sections.length} secciones`);
+        }
+
         // 1. Extraer texto según tipo de archivo
         context.log(`[Pipeline] Parseando archivo: ${fileName} (${fileContentType})`);
         const text = await parseFile(fileBuffer, fileContentType, fileName);
@@ -126,6 +132,45 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
         };
         await saveJson(CONTAINER_PROCESSED, `${materialId}.json`, materialState);
         context.log(`[Pipeline] Estado guardado: processed/${materialId}.json (ready)`);
+
+        if (materialType === 'transcript' && extractedTimeline) {
+            for (const classId of classIds) {
+                const timelineBlob = `${classId}.json`;
+                const existingTimeline = await loadJson('class-timelines', timelineBlob) || {
+                    classId,
+                    subjectId,
+                    markers: [],
+                    sections: [],
+                };
+
+                const sections = extractedTimeline.sections.map(section => ({
+                    ...section,
+                    id: `${materialId}-${section.id}`,
+                    materialId,
+                    sourceFilename: fileName,
+                }));
+
+                const markers = extractedTimeline.markers.map(marker => ({
+                    ...marker,
+                    id: `${materialId}-${marker.id}`,
+                    sectionId: `${materialId}-${marker.sectionId}`,
+                    materialId,
+                    sourceFilename: fileName,
+                }));
+
+                const mergedSections = [...(existingTimeline.sections || []).filter(s => s.materialId !== materialId), ...sections];
+                const mergedMarkers = [...(existingTimeline.markers || []).filter(m => m.materialId !== materialId), ...markers];
+
+                await saveJson('class-timelines', timelineBlob, {
+                    classId,
+                    subjectId,
+                    sections: mergedSections,
+                    markers: mergedMarkers,
+                    updatedAt: new Date().toISOString(),
+                    updatedBy: 'pipeline',
+                });
+            }
+        }
 
         // ── 7. Emitir telemetría de éxito (Issue #69) ──────────────
         trackIngestionInteraction({

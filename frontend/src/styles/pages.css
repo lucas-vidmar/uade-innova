@@ -549,6 +549,73 @@
     font-weight: 700;
 }
 
+/* ── Transcript Timeline (US #55) ───────────────────────── */
+.timeline-track {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.timeline-hit {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-full);
+    background: var(--color-surface-2);
+    color: var(--color-text-primary);
+    padding: 6px 10px;
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.timeline-hit:hover {
+    border-color: var(--color-primary);
+    background: var(--color-surface-3);
+}
+
+.timeline-hit-icon {
+    font-size: 14px;
+}
+
+.timeline-hit-time {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+}
+
+.transcript-sections {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+
+.transcript-section {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-4);
+    background: var(--color-surface-2);
+    transition: all var(--transition);
+}
+
+.transcript-section.active {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px rgba(0, 64, 92, 0.2);
+}
+
+.transcript-section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-2);
+}
+
+.transcript-section-text {
+    margin: 0;
+    color: var(--color-text-secondary);
+    line-height: 1.6;
+}
+
 /* ── Calendar ────────────────────────────────────────────── */
 .calendar-wrapper {
     max-width: 860px;

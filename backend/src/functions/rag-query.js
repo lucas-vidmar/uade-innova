@@ -15,6 +15,28 @@ const MIN_HISTORY_TURNS = 3;
 const MAX_HISTORY_TURNS = 5;
 const DEFAULT_HISTORY_TURNS = 4;
 
+function tokenize(text = '') {
+    return String(text)
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/gi, ' ')
+        .split(/\s+/)
+        .filter(token => token.length > 3);
+}
+
+function filterMatchesByTranscriptFocus(matches, transcriptFocus) {
+    if (!transcriptFocus || !transcriptFocus.label) return matches;
+
+    const keywords = tokenize(transcriptFocus.label).slice(0, 6);
+    if (!keywords.length) return matches;
+
+    const narrowed = matches.filter(match => {
+        const text = String(match.metadata?.text || '').toLowerCase();
+        return keywords.some(keyword => text.includes(keyword));
+    });
+
+    return narrowed.length > 0 ? narrowed : matches;
+}
+
 function sanitizeTurn(turn) {
     if (!turn || typeof turn !== 'object') return null;
     const role = turn.role === 'assistant' ? 'assistant' : turn.role === 'user' ? 'user' : null;
@@ -83,7 +105,7 @@ app.http('rag-query', {
             return { status: 400, body: JSON.stringify({ error: 'Body JSON inválido' }) };
         }
 
-        const { question, classIds, subjectId, stream = false, conversationHistory, historyWindowSize } = body;
+        const { question, classIds, subjectId, stream = false, conversationHistory, historyWindowSize, transcriptFocus } = body;
 
         if (!question || !subjectId) {
             return {
@@ -131,6 +153,8 @@ app.http('rag-query', {
             return { status: 500, body: JSON.stringify({ error: `Error buscando en la base de conocimiento: ${err.message}` }) };
         }
 
+        matches = filterMatchesByTranscriptFocus(matches, transcriptFocus);
+
         if (matches.length === 0) {
             return {
                 status: 200,
@@ -147,6 +171,10 @@ app.http('rag-query', {
             .map((m, i) => `[Fuente ${i + 1} - Archivo: ${m.metadata?.sourceFilename || 'Desconocido'}]\n${m.metadata?.text || ''}`)
             .join('\n\n---\n\n');
 
+        const focusClause = transcriptFocus?.label
+            ? `\n\n### FOCO DE TRANSCRIPCION SELECCIONADO POR EL ALUMNO:\n${transcriptFocus.label}\nUsa este foco para priorizar la respuesta sobre esa seccion de la clase.`
+            : '';
+
         const { id: promptId, content: systemPromptBase } = getShadowPrompt();
         // Log telemetry explicit event inside standard console output for App Insights Analytics mapping
         context.log(`[A/B Test] Interaction initialized using prompt version: ${promptId}`);
@@ -154,7 +182,7 @@ app.http('rag-query', {
         const messages = [
             {
                 role: 'system',
-                content: `${systemPromptBase}
+                content: `${systemPromptBase}${focusClause}
 
 ### CONTEXTO DE LOS MATERIALES:
 ${contextText}
@@ -225,6 +253,7 @@ ${contextText}
                             userId: request.user?.id || 'anonymous',
                             subjectId,
                             classIds,
+                            transcriptFocus,
                             question,
                             rewrittenQuestion,
                             answer: fullAnswer,
@@ -317,6 +346,7 @@ ${contextText}
             userId: request.user?.id || 'anonymous',
             subjectId,
             classIds,
+            transcriptFocus,
             question,
             rewrittenQuestion,
             answer,

@@ -137,6 +137,105 @@ export function cleanTranscript(text) {
         .replace(/position:\d+%/g, '');
 }
 
+/**
+ * Extrae secciones temporales y hit-points desde una transcripción VTT/TXT.
+ * Para VTT usa timestamps reales; para TXT genera secciones por párrafo.
+ * @param {Buffer} buffer
+ * @param {string} mimeType
+ * @param {string} filename
+ * @returns {{sections: Array<object>, markers: Array<object>}}
+ */
+export function extractTranscriptTimeline(buffer, mimeType = '', filename = '') {
+    const ext = filename.split('.').pop()?.toLowerCase() || '';
+    const rawText = buffer.toString('utf-8');
+    const isVtt = mimeType === 'text/vtt' || ext === 'vtt';
+
+    if (isVtt) {
+        const cueRegex = /(\d{2}:\d{2}:\d{2}\.\d{3})\s+-->\s+(\d{2}:\d{2}:\d{2}\.\d{3})([^\n]*\n)((?:.+(?:\n|$))+?)(?=\n\d{2}:\d{2}:\d{2}\.\d{3}\s+-->|$)/g;
+        const sections = [];
+        let match;
+        let index = 0;
+
+        while ((match = cueRegex.exec(rawText)) !== null) {
+            const start = timestampToSeconds(match[1]);
+            const end = timestampToSeconds(match[2]);
+            const text = cleanText(
+                (match[4] || '')
+                    .replace(/<[^>]+>/g, ' ')
+                    .replace(/\n+/g, ' ')
+            );
+
+            if (!text) continue;
+
+            sections.push({
+                id: `sec-${String(index + 1).padStart(3, '0')}`,
+                startSecond: start,
+                endSecond: end,
+                timestampLabel: formatSeconds(start),
+                text,
+            });
+            index += 1;
+        }
+
+        const markers = sections
+            .filter((section, idx) => idx % 6 === 0)
+            .slice(0, 12)
+            .map((section, idx) => ({
+                id: `mk-${String(idx + 1).padStart(3, '0')}`,
+                sectionId: section.id,
+                startSecond: section.startSecond,
+                endSecond: section.endSecond,
+                iconType: idx % 2 === 0 ? 'question' : 'assignment',
+                label: section.text.slice(0, 72),
+                source: 'auto',
+            }));
+
+        return { sections, markers };
+    }
+
+    const paragraphSections = cleanText(rawText)
+        .split(/\n\n+/)
+        .map((paragraph) => paragraph.trim())
+        .filter((paragraph) => paragraph.length > 0)
+        .slice(0, 40)
+        .map((text, idx) => ({
+            id: `sec-${String(idx + 1).padStart(3, '0')}`,
+            startSecond: idx * 60,
+            endSecond: idx * 60 + 59,
+            timestampLabel: `Bloque ${idx + 1}`,
+            text,
+        }));
+
+    const markers = paragraphSections
+        .filter((section, idx) => idx % 4 === 0)
+        .slice(0, 10)
+        .map((section, idx) => ({
+            id: `mk-${String(idx + 1).padStart(3, '0')}`,
+            sectionId: section.id,
+            startSecond: section.startSecond,
+            endSecond: section.endSecond,
+            iconType: idx % 2 === 0 ? 'question' : 'assignment',
+            label: section.text.slice(0, 72),
+            source: 'auto',
+        }));
+
+    return { sections: paragraphSections, markers };
+}
+
+function timestampToSeconds(value) {
+    const [hh, mm, ssMs] = value.split(':');
+    const [ss, ms] = ssMs.split('.');
+    return Number(hh) * 3600 + Number(mm) * 60 + Number(ss) + Number(ms) / 1000;
+}
+
+function formatSeconds(seconds) {
+    const whole = Math.floor(seconds);
+    const hh = String(Math.floor(whole / 3600)).padStart(2, '0');
+    const mm = String(Math.floor((whole % 3600) / 60)).padStart(2, '0');
+    const ss = String(whole % 60).padStart(2, '0');
+    return `${hh}:${mm}:${ss}`;
+}
+
 // ─── Helpers privados ────────────────────────────────────────────
 
 /**

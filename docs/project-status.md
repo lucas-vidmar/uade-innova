@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-24] User Story #55: Interactive Class Timeline
+- **Status**: Completed
+- **Functional Change**: Added transcript-based interactive timeline hit-points with assignment/question icons, jump-to-section behavior, and chat context focus from selected transcript segments.
+- **Business Impact**: Students can navigate class knowledge faster and ask better targeted questions without re-reading full transcripts.
+
 ### [2026-03-24] User Story #54: Global Search for Knowledge
 - **Status**: Completed
 - **Functional Change**: Added a global subject-level search feature that retrieves ranked matches from transcripts and bibliography materials and surfaces them directly in the student dashboard.

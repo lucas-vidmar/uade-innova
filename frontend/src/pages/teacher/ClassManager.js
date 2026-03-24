@@ -58,6 +58,7 @@ export async function renderClassManager(container) {
                                             <th>Fecha</th>
                                             <th>Materiales</th>
                                             <th>Resumen IA</th>
+                                            <th>Timeline</th>
                                             <th style="width:100px;text-align:right">Acciones</th>
                                         </tr>
                                     </thead>
@@ -82,6 +83,9 @@ export async function renderClassManager(container) {
                                                             ${c.summaryReady ? '✅ Ver Resumen' : '✍️ Revisar'}
                                                         </button>
                                                     ` : '<span style="color:var(--color-text-muted); font-size:0.8rem">Sin material</span>'}
+                                                </td>
+                                                <td>
+                                                    <button class="btn btn-sm btn-ghost btn-edit-timeline" data-idx="${i}">🧭 Editar</button>
                                                 </td>
                                                 <td style="text-align:right">
                                                     <button class="btn btn-icon btn-ghost btn-delete-class" data-idx="${i}" title="Eliminar Clase">
@@ -131,6 +135,82 @@ export async function renderClassManager(container) {
                             render();
                         }
                     });
+                });
+            });
+
+            container.querySelectorAll('.btn-edit-timeline').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    const idx = parseInt(e.currentTarget.getAttribute('data-idx'));
+                    const classItem = classes[idx];
+                    const timeline = await api.getClassTimeline(classItem.id);
+                    const markers = Array.isArray(timeline.markers) ? [...timeline.markers] : [];
+                    const sections = Array.isArray(timeline.sections) ? [...timeline.sections] : [];
+                    const action = prompt('Timeline: escribí add, edit o remove', 'add');
+                    if (!action) return;
+
+                    if (action === 'add') {
+                        const defaultSection = sections[0] || null;
+                        const label = prompt('Etiqueta del hit-point:', defaultSection?.text?.slice(0, 40) || 'Nuevo punto');
+                        if (!label) return;
+                        const secondRaw = prompt('Segundo de inicio:', String(defaultSection?.startSecond || 0));
+                        const startSecond = Number(secondRaw);
+                        if (Number.isNaN(startSecond)) return;
+                        const iconType = confirm('Aceptar = question (❓), Cancelar = assignment (📌)') ? 'question' : 'assignment';
+
+                        const sectionId = defaultSection?.id || `manual-sec-${Date.now()}`;
+                        if (!defaultSection) {
+                            sections.push({
+                                id: sectionId,
+                                startSecond,
+                                endSecond: startSecond + 45,
+                                timestampLabel: `Manual ${Math.floor(startSecond)}s`,
+                                text: label,
+                                sourceFilename: 'manual',
+                            });
+                        }
+
+                        markers.push({
+                            id: `manual-mk-${Date.now()}`,
+                            sectionId,
+                            startSecond,
+                            endSecond: startSecond + 45,
+                            iconType,
+                            label,
+                            source: 'teacher',
+                        });
+                    } else if (action === 'edit') {
+                        if (markers.length === 0) {
+                            toast('warning', 'Sin hit-points', 'No hay marcadores para editar en esta clase.');
+                            return;
+                        }
+                        const marker = markers[0];
+                        const label = prompt('Nueva etiqueta del primer hit-point:', marker.label || '');
+                        if (!label) return;
+                        const secondRaw = prompt('Nuevo segundo de inicio:', String(marker.startSecond || 0));
+                        const startSecond = Number(secondRaw);
+                        if (Number.isNaN(startSecond)) return;
+                        marker.label = label;
+                        marker.startSecond = startSecond;
+                        marker.endSecond = startSecond + 45;
+                    } else if (action === 'remove') {
+                        if (markers.length === 0) {
+                            toast('warning', 'Sin hit-points', 'No hay marcadores para eliminar en esta clase.');
+                            return;
+                        }
+                        markers.pop();
+                    } else {
+                        toast('info', 'Acción ignorada', 'Usá add, edit o remove.');
+                        return;
+                    }
+
+                    await api.saveClassTimeline(classItem.id, {
+                        classId: classItem.id,
+                        subjectId,
+                        sections,
+                        markers,
+                    });
+
+                    toast('success', 'Timeline guardada', 'Se agregó un hit-point a la transcripción.');
                 });
             });
 

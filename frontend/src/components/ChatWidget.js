@@ -6,11 +6,12 @@ import { auth } from '../services/auth.js';
 
 const FOLLOW_UP_HISTORY_WINDOW_SIZE = 4;
 
-export function createChatWidget({ classes = [], subjectId = '', initialMessages = [], highlightMessageId = null }) {
+export function createChatWidget({ classes = [], subjectId = '', initialMessages = [], highlightMessageId = null, transcriptFocus: initialTranscriptFocus = null }) {
   const user = auth.getUser();
   let selectedClassIds = classes.slice(0, 2).map(c => c.id);
   let messages = [...initialMessages];
   let isLoading = false;
+  let transcriptFocus = initialTranscriptFocus;
 
   const container = document.createElement('div');
   container.className = 'chat-container';
@@ -33,6 +34,7 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
         ${selectedClassIds.length > 0 ? `
           <div class="chat-context-info">
             <span class="badge badge-primary">${selectedClassIds.length} clase${selectedClassIds.length !== 1 ? 's' : ''} seleccionada${selectedClassIds.length !== 1 ? 's' : ''}</span>
+            ${transcriptFocus ? `<span class="badge badge-info" id="chat-transcript-focus">🎯 ${escapeHtml(transcriptFocus.label || 'Sección de transcripción')}</span>` : ''}
           </div>
         ` : `<div class="chat-context-warn">⚠️ Seleccioná al menos una clase</div>`}
         <button class="btn btn-sm btn-ghost" id="chat-clear" title="Limpiar conversación" style="margin-left:auto; height: 28px; padding: 0 8px;">
@@ -230,6 +232,7 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
         subjectId,
         conversationHistory,
         historyWindowSize: FOLLOW_UP_HISTORY_WINDOW_SIZE,
+        transcriptFocus,
       }, (type, data) => {
         const msgEl = getMsgEl();
         if (!msgEl) return;

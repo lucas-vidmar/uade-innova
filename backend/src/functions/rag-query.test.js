@@ -246,3 +246,32 @@ test('rag-query should keep original question when history is not provided', asy
     assert.strictEqual(openaiMocks.chatCompletion.mock.callCount(), 1, 'Only the final RAG completion should run');
     assert.strictEqual(openaiMocks.generateEmbedding.mock.calls[0].arguments[0], '¿Que es DDD?');
 });
+
+test('rag-query should include transcript focus in system prompt when provided', async () => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+
+    const mockContext = {
+        log: mock.fn(),
+        error: mock.fn(),
+    };
+
+    const mockRequest = {
+        json: async () => ({
+            question: 'Explicame este tramo',
+            subjectId: 'materia1',
+            classIds: ['class1'],
+            transcriptFocus: {
+                sectionId: 'sec-002',
+                label: 'pregunta sobre atributos de calidad',
+            },
+        }),
+        user: { id: 'test-user' },
+    };
+
+    await capturedHandler(mockRequest, mockContext);
+
+    const messages = openaiMocks.chatCompletion.mock.calls.at(-1).arguments[0];
+    const systemPrompt = messages.find(m => m.role === 'system').content;
+    assert.ok(systemPrompt.includes('FOCO DE TRANSCRIPCION'), 'Should include transcript focus block');
+    assert.ok(systemPrompt.includes('atributos de calidad'), 'Should include selected focus label');
+});

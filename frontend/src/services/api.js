@@ -202,7 +202,7 @@ export const api = {
         return res.json();
     },
 
-    async ragQuery({ question, classIds, subjectId, conversationHistory = [], historyWindowSize = 4 }) {
+    async ragQuery({ question, classIds, subjectId, conversationHistory = [], historyWindowSize = 4, transcriptFocus = null }) {
         if (USE_MOCK) {
             await delay(1200);
             const q = question.toLowerCase();
@@ -215,7 +215,7 @@ export const api = {
         const res = await fetch(`${BASE_URL}/rag-query`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question, classIds, subjectId, stream: false, conversationHistory, historyWindowSize }),
+            body: JSON.stringify({ question, classIds, subjectId, stream: false, conversationHistory, historyWindowSize, transcriptFocus }),
         });
         
         if (res.status === 429) {
@@ -234,7 +234,7 @@ export const api = {
      * @param {Object} params - { question, classIds, subjectId }
      * @param {Function} onEvent - Callback para cada evento del stream: (type, data) => void
      */
-    async ragQueryStream({ question, classIds, subjectId, conversationHistory = [], historyWindowSize = 4 }, onEvent) {
+    async ragQueryStream({ question, classIds, subjectId, conversationHistory = [], historyWindowSize = 4, transcriptFocus = null }, onEvent) {
         if (USE_MOCK) {
             // Simular streaming para mocks
             await delay(400);
@@ -258,7 +258,7 @@ export const api = {
         const response = await fetch(`${BASE_URL}/rag-query`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question, classIds, subjectId, stream: true, conversationHistory, historyWindowSize }),
+            body: JSON.stringify({ question, classIds, subjectId, stream: true, conversationHistory, historyWindowSize, transcriptFocus }),
         });
 
         if (response.status === 429) {
@@ -396,6 +396,39 @@ export const api = {
         }
         const res = await fetch(`${BASE_URL}/class-map/${classId}`);
         if (!res.ok) return null;
+        return res.json();
+    },
+
+    async getClassTimeline(classId) {
+        if (USE_MOCK) {
+            await delay(400);
+            return {
+                classId,
+                sections: [
+                    { id: 'm-01-sec-001', startSecond: 0, endSecond: 60, timestampLabel: '00:00:00', text: 'Introduccion a arquitectura de software.' },
+                    { id: 'm-01-sec-002', startSecond: 60, endSecond: 120, timestampLabel: '00:01:00', text: 'Pregunta sobre atributos de calidad.' },
+                ],
+                markers: [
+                    { id: 'm-01-mk-001', sectionId: 'm-01-sec-001', startSecond: 0, endSecond: 60, iconType: 'question', label: 'Introduccion y contexto' },
+                    { id: 'm-01-mk-002', sectionId: 'm-01-sec-002', startSecond: 60, endSecond: 120, iconType: 'assignment', label: 'Ejercicio de atributos' },
+                ],
+            };
+        }
+        const res = await fetch(`${BASE_URL}/class-timeline/${classId}`);
+        if (!res.ok) return { classId, sections: [], markers: [] };
+        return res.json();
+    },
+
+    async saveClassTimeline(classId, payload) {
+        if (USE_MOCK) return payload;
+        const res = await fetch(`${BASE_URL}/class-timeline/${classId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+            throw new Error(`Error ${res.status}: No se pudo guardar la linea de tiempo`);
+        }
         return res.json();
     },
 
