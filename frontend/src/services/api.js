@@ -149,7 +149,7 @@ export const api = {
         return res.json();
     },
 
-    async ragQuery({ question, classIds, subjectId }) {
+    async ragQuery({ question, classIds, subjectId, conversationHistory = [], historyWindowSize = 4 }) {
         if (USE_MOCK) {
             await delay(1200);
             const q = question.toLowerCase();
@@ -162,7 +162,7 @@ export const api = {
         const res = await fetch(`${BASE_URL}/rag-query`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question, classIds, subjectId, stream: false }),
+            body: JSON.stringify({ question, classIds, subjectId, stream: false, conversationHistory, historyWindowSize }),
         });
         
         if (res.status === 429) {
@@ -181,7 +181,7 @@ export const api = {
      * @param {Object} params - { question, classIds, subjectId }
      * @param {Function} onEvent - Callback para cada evento del stream: (type, data) => void
      */
-    async ragQueryStream({ question, classIds, subjectId }, onEvent) {
+    async ragQueryStream({ question, classIds, subjectId, conversationHistory = [], historyWindowSize = 4 }, onEvent) {
         if (USE_MOCK) {
             // Simular streaming para mocks
             await delay(400);
@@ -205,7 +205,7 @@ export const api = {
         const response = await fetch(`${BASE_URL}/rag-query`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question, classIds, subjectId, stream: true }),
+            body: JSON.stringify({ question, classIds, subjectId, stream: true, conversationHistory, historyWindowSize }),
         });
 
         if (response.status === 429) {

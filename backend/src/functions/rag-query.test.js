@@ -173,3 +173,76 @@ test('rag-query should use correct refusal string when Pinecone returns empty', 
     assert.strictEqual(body.answer, 'No encontré información sobre eso en los materiales seleccionados.');
     assert.strictEqual(openaiMocks.chatCompletion.mock.callCount(), 0, 'Should not call OpenAI if no matches found');
 });
+
+test('rag-query should rewrite follow-up questions using recent history', async () => {
+    openaiMocks.generateEmbedding.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.resetCalls();
+
+    openaiMocks.chatCompletion.mock.mockImplementation(async (messages) => {
+        const systemContent = messages?.[0]?.content || '';
+        if (systemContent.includes('Reescribe la ultima pregunta del estudiante')) {
+            return {
+                content: '¿Por que es importante la arquitectura hexagonal?',
+                usage: { prompt_tokens: 8, completion_tokens: 6, total_tokens: 14 }
+            };
+        }
+
+        return {
+            content: 'Es importante porque separa la logica de negocio de la infraestructura.',
+            usage: { prompt_tokens: 20, completion_tokens: 12, total_tokens: 32 }
+        };
+    });
+
+    const mockContext = {
+        log: mock.fn(),
+        error: mock.fn()
+    };
+
+    const mockRequest = {
+        json: async () => ({
+            question: '¿Por que es eso importante?',
+            subjectId: 'materia1',
+            classIds: ['class1'],
+            historyWindowSize: 4,
+            conversationHistory: [
+                { role: 'user', content: '¿Que es la arquitectura hexagonal?' },
+                { role: 'assistant', content: 'Es un enfoque basado en puertos y adaptadores.' },
+                { role: 'user', content: '¿Para que sirve?' },
+                { role: 'assistant', content: 'Sirve para desacoplar el dominio de detalles tecnicos.' }
+            ]
+        }),
+        user: { id: 'test-user' }
+    };
+
+    await capturedHandler(mockRequest, mockContext);
+
+    assert.strictEqual(openaiMocks.generateEmbedding.mock.calls.at(-1).arguments[0], '¿Por que es importante la arquitectura hexagonal?');
+
+    const ragMessages = openaiMocks.chatCompletion.mock.calls.at(-1).arguments[0];
+    const ragUserMessage = ragMessages.find(m => m.role === 'user');
+    assert.strictEqual(ragUserMessage.content, '¿Por que es importante la arquitectura hexagonal?');
+});
+
+test('rag-query should keep original question when history is not provided', async () => {
+    openaiMocks.generateEmbedding.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.resetCalls();
+
+    const mockContext = {
+        log: mock.fn(),
+        error: mock.fn()
+    };
+
+    const mockRequest = {
+        json: async () => ({
+            question: '¿Que es DDD?',
+            subjectId: 'materia1',
+            classIds: ['class1']
+        }),
+        user: { id: 'test-user' }
+    };
+
+    await capturedHandler(mockRequest, mockContext);
+
+    assert.strictEqual(openaiMocks.chatCompletion.mock.callCount(), 1, 'Only the final RAG completion should run');
+    assert.strictEqual(openaiMocks.generateEmbedding.mock.calls[0].arguments[0], '¿Que es DDD?');
+});

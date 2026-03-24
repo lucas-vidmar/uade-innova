@@ -94,7 +94,7 @@ export async function generateEmbedding(text) {
  * @param {boolean} stream
  * @returns {Promise<{content: string, usage: object} | AsyncIterable<object>>}
  */
-export async function chatCompletion(messages, stream = false) {
+export async function chatCompletion(messages, stream = false, overrides = {}) {
     const client = getClient();
     const options = {
         model: process.env.AZURE_OPENAI_CHAT_DEPLOYMENT,
@@ -102,6 +102,7 @@ export async function chatCompletion(messages, stream = false) {
         temperature: 0.3,
         max_tokens: 1500,
         stream,
+        ...overrides,
     };
 
     if (stream) {

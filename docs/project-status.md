@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-03-23] User Story #45: Context-Aware Follow-ups
+- **Status**: Completed
+- **Functional Change**: Enabled conversation-aware query rewriting using recent chat turns so the RAG engine can interpret short follow-up questions without requiring students to restate the full context.
+- **Business Impact**: Improves chat continuity and learning flow by making the tutor interaction feel more natural and reducing repetitive prompts.
+
 ### [2026-03-23] User Story #43: Persistent Sidebar State
 - **Status**: Completed
 - **Functional Change**: Replaced `sessionStorage` with `localStorage` for the `sidebar_mini` state in `Sidebar.js`.

@@ -117,3 +117,48 @@ test('rag-query should stream SSE when stream=true', async (t) => {
     assert.ok(fullOutput.includes('"content":"1"'), 'Should contain second chunk');
     assert.ok(fullOutput.includes('"answer":"Part 1"'), 'Should contain final answer in done event');
 });
+
+test('rag-query stream should rewrite follow-up question before retrieval', async () => {
+    openaiMocks.generateEmbedding.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.resetCalls();
+
+    openaiMocks.chatCompletion.mock.mockImplementation(async (messages, stream) => {
+        const systemContent = messages?.[0]?.content || '';
+        if (!stream && systemContent.includes('Reescribe la ultima pregunta del estudiante')) {
+            return {
+                content: '¿Por que es importante la arquitectura hexagonal?',
+                usage: { prompt_tokens: 5, completion_tokens: 5, total_tokens: 10 }
+            };
+        }
+        if (!stream) return { content: 'sync', usage: { total_tokens: 10 } };
+        return (async function* () {
+            yield { choices: [{ delta: { content: 'Ok' } }] };
+            yield { usage: { prompt_tokens: 4, completion_tokens: 3, total_tokens: 7 } };
+        })();
+    });
+
+    const mockContext = {
+        log: mock.fn(),
+        error: mock.fn()
+    };
+
+    const mockRequest = {
+        json: async () => ({
+            question: '¿Por que es eso importante?',
+            subjectId: 'materia1',
+            classIds: ['class1'],
+            stream: true,
+            conversationHistory: [
+                { role: 'user', content: '¿Que es la arquitectura hexagonal?' },
+                { role: 'assistant', content: 'Un estilo basado en puertos y adaptadores.' },
+                { role: 'user', content: '¿Para que sirve?' }
+            ]
+        }),
+        user: { id: 'test-user' },
+        headers: { get: () => 'test-header' }
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(openaiMocks.generateEmbedding.mock.calls.at(-1).arguments[0], '¿Por que es importante la arquitectura hexagonal?');
+});

@@ -11,6 +11,58 @@ import { trackRAGInteraction } from '../services/telemetry.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { v4 as uuidv4 } from 'uuid';
 const MAX_RAG_CHUNKS = 4;
+const MIN_HISTORY_TURNS = 3;
+const MAX_HISTORY_TURNS = 5;
+const DEFAULT_HISTORY_TURNS = 4;
+
+function sanitizeTurn(turn) {
+    if (!turn || typeof turn !== 'object') return null;
+    const role = turn.role === 'assistant' ? 'assistant' : turn.role === 'user' ? 'user' : null;
+    const content = typeof turn.content === 'string' ? turn.content.trim() : '';
+    if (!role || !content) return null;
+    return { role, content };
+}
+
+function normalizeConversationHistory(rawHistory, requestedWindowSize) {
+    if (!Array.isArray(rawHistory) || rawHistory.length === 0) return [];
+    const parsedWindow = Number.isInteger(requestedWindowSize) ? requestedWindowSize : DEFAULT_HISTORY_TURNS;
+    const boundedWindow = Math.max(MIN_HISTORY_TURNS, Math.min(MAX_HISTORY_TURNS, parsedWindow));
+    return rawHistory
+        .map(sanitizeTurn)
+        .filter(Boolean)
+        .slice(-boundedWindow);
+}
+
+async function rewriteQuestionWithHistory(question, conversationHistory, context) {
+    if (!conversationHistory.length) return question;
+
+    const rewriteSystemPrompt = `Reescribe la ultima pregunta del estudiante para que sea autonoma y clara.
+Debes conservar fielmente el significado original sin agregar informacion nueva.
+Devuelve unicamente la pregunta reescrita en espanol, sin comillas ni explicaciones.`;
+
+    const historyText = conversationHistory
+        .map((turn, index) => `${index + 1}. ${turn.role === 'assistant' ? 'Asistente' : 'Estudiante'}: ${turn.content}`)
+        .join('\n');
+
+    const rewriteMessages = [
+        { role: 'system', content: rewriteSystemPrompt },
+        {
+            role: 'user',
+            content: `Historial reciente:\n${historyText}\n\nPregunta actual: ${question}`,
+        },
+    ];
+
+    try {
+        const rewritten = await chatCompletion(rewriteMessages, false, { temperature: 0, max_tokens: 120 });
+        const rewrittenQuestion = rewritten?.content?.trim();
+        if (!rewrittenQuestion) return question;
+        context.log(`[RAG] Follow-up rewrite aplicado: "${question}" -> "${rewrittenQuestion}"`);
+        return rewrittenQuestion;
+    } catch (err) {
+        context.error('[RAG] Error reescribiendo follow-up. Se usa pregunta original:', err);
+        return question;
+    }
+}
 
 app.http('rag-query', {
     methods: ['POST'],
@@ -31,7 +83,7 @@ app.http('rag-query', {
             return { status: 400, body: JSON.stringify({ error: 'Body JSON inválido' }) };
         }
 
-        const { question, classIds, subjectId, stream = false } = body;
+        const { question, classIds, subjectId, stream = false, conversationHistory, historyWindowSize } = body;
 
         if (!question || !subjectId) {
             return {
@@ -40,13 +92,16 @@ app.http('rag-query', {
             };
         }
 
-        context.log(`Pregunta: "${question}" | Materia: ${subjectId} | Clases: ${classIds?.join(',')}`);
+        const recentConversationHistory = normalizeConversationHistory(conversationHistory, historyWindowSize);
+        const rewrittenQuestion = await rewriteQuestionWithHistory(question, recentConversationHistory, context);
+
+        context.log(`Pregunta: "${question}" | Reescrita: "${rewrittenQuestion}" | Materia: ${subjectId} | Clases: ${classIds?.join(',')}`);
 
         // ── 2. Embedding de la pregunta ───────────────────────────
         let questionEmbedding;
         let embeddingUsage;
         try {
-            const embeddingResult = await generateEmbedding(question);
+            const embeddingResult = await generateEmbedding(rewrittenQuestion);
             questionEmbedding = embeddingResult.embedding;
             embeddingUsage = embeddingResult.usage;
         } catch (err) {
@@ -108,7 +163,7 @@ ${contextText}
             },
             {
                 role: 'user',
-                content: question,
+                content: rewrittenQuestion,
             },
         ];
 
@@ -171,6 +226,7 @@ ${contextText}
                             subjectId,
                             classIds,
                             question,
+                            rewrittenQuestion,
                             answer: fullAnswer,
                             sources,
                             promptVersion: promptId,
@@ -262,6 +318,7 @@ ${contextText}
             subjectId,
             classIds,
             question,
+            rewrittenQuestion,
             answer,
             sources,
             promptVersion: promptId,

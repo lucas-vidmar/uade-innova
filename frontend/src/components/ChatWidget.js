@@ -4,6 +4,8 @@
 import { api } from '../services/api.js';
 import { auth } from '../services/auth.js';
 
+const FOLLOW_UP_HISTORY_WINDOW_SIZE = 4;
+
 export function createChatWidget({ classes = [], subjectId = '', initialMessages = [], highlightMessageId = null }) {
   const user = auth.getUser();
   let selectedClassIds = classes.slice(0, 2).map(c => c.id);
@@ -199,6 +201,11 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
     const question = input?.value?.trim();
     if (!question || isLoading || selectedClassIds.length === 0) return;
 
+    const conversationHistory = messages
+      .filter(msg => (msg.role === 'user' || msg.role === 'assistant') && typeof msg.content === 'string' && msg.content.trim().length > 0)
+      .map(msg => ({ role: msg.role, content: msg.content.trim() }))
+      .slice(-FOLLOW_UP_HISTORY_WINDOW_SIZE);
+
     input.value = '';
     messages.push({ role: 'user', content: question });
     isLoading = true;
@@ -217,7 +224,13 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
     const getMsgEl = () => container.querySelector(`#msg-${assistantMsg.id}`);
 
     try {
-      await api.ragQueryStream({ question, classIds: selectedClassIds, subjectId }, (type, data) => {
+      await api.ragQueryStream({
+        question,
+        classIds: selectedClassIds,
+        subjectId,
+        conversationHistory,
+        historyWindowSize: FOLLOW_UP_HISTORY_WINDOW_SIZE,
+      }, (type, data) => {
         const msgEl = getMsgEl();
         if (!msgEl) return;
 
