@@ -18,14 +18,14 @@ export async function renderTeacherDashboard(container) {
   }
 
   const activeSubjectName = user.subjects?.find(s => s.id === activeSubjectId)?.name || 'Materia';
-  const [classes, deadlines] = await Promise.all([
+  const [classes = [], deadlines = []] = await Promise.all([
     api.getClasses(activeSubjectId),
     api.getDeadlines(activeSubjectId),
   ]);
 
-  const complete = classes.filter(c => c.summaryReady);
-  const processing = classes.filter(c => !c.summaryReady && c.materials.length > 0);
-  const empty = classes.filter(c => c.materials.length === 0);
+  const complete = (classes || []).filter(c => c.summaryReady);
+  const processing = (classes || []).filter(c => !c.summaryReady && (c.materials || []).length > 0);
+  const empty = (classes || []).filter(c => (c.materials || []).length === 0);
 
   const renderDeadlineRow = (deadline, cls) => `
     <div class="class-list-item" style="align-items:flex-start">
@@ -61,19 +61,20 @@ export async function renderTeacherDashboard(container) {
 
     <div class="section-title"><h2>📚 Cronograma — ${activeSubjectName}</h2><div class="line"></div></div>
     <div class="class-list">
-      ${classes.map(c => {
+      ${(classes || []).map(c => {
         const ready = c.summaryReady;
-        const hasFiles = c.materials.length > 0 && !ready;
+        const materials = c.materials || [];
+        const hasFiles = materials.length > 0 && !ready;
         const status = ready ? { icon: '✅', label: 'Material completo', badge: 'badge-success' }
           : hasFiles ? { icon: '⚙️', label: 'Procesando', badge: 'badge-warning' }
             : { icon: '📭', label: 'Sin material', badge: 'badge-neutral' };
         return `
           <div class="class-list-item">
-            <div class="class-list-date">${new Date(c.date + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}</div>
+            <div class="class-list-date">${c.date ? new Date(c.date + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }) : '---'}</div>
             <div class="class-list-info">
-              <div class="class-list-title">${c.title}</div>
-              <div class="class-list-topics">${c.topics.slice(0, 3).join(' · ')}</div>
-              ${c.materials.length > 0 ? `<div class="class-list-files">${c.materials.length} archivo${c.materials.length !== 1 ? 's' : ''} cargado${c.materials.length !== 1 ? 's' : ''}</div>` : ''}
+              <div class="class-list-title">${c.title || 'Clase sin título'}</div>
+              <div class="class-list-topics">${(c.topics || []).slice(0, 3).join(' · ') || 'Sin temas'}</div>
+              ${materials.length > 0 ? `<div class="class-list-files">${materials.length} archivo${materials.length !== 1 ? 's' : ''} cargado${materials.length !== 1 ? 's' : ''}</div>` : ''}
             </div>
             <div class="class-list-actions">
               <span class="badge ${status.badge}">${status.icon} ${status.label}</span>
@@ -95,7 +96,7 @@ export async function renderTeacherDashboard(container) {
           <div class="form-group">
             <label class="form-label">Clase</label>
             <select class="form-select" id="deadline-class">
-              ${classes.map(c => `<option value="${c.id}">${c.title}</option>`).join('')}
+              ${(classes || []).map(c => `<option value="${c.id}">${c.title}</option>`).join('')}
             </select>
           </div>
           <div class="form-group">
@@ -120,10 +121,10 @@ export async function renderTeacherDashboard(container) {
     <div class="card">
       <div class="card-header">
         <span class="card-title">Deadlines activos</span>
-        <span class="badge badge-info">${deadlines.length}</span>
+        <span class="badge badge-info">${(deadlines || []).length}</span>
       </div>
       <div class="class-list">
-        ${deadlines.length > 0 ? deadlines.map(d => renderDeadlineRow(d, classes.find(c => c.id === d.classId))).join('') : '<div class="empty-state" style="padding:24px">Sin deadlines configurados.</div>'}
+        ${(deadlines || []).length > 0 ? deadlines.map(d => renderDeadlineRow(d, (classes || []).find(c => c.id === d.classId))).join('') : '<div class="empty-state" style="padding:24px">Sin deadlines configurados.</div>'}
       </div>
     </div>
   `;

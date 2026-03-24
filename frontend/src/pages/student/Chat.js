@@ -20,7 +20,7 @@ export async function renderStudentChat(container) {
     const transcriptSection = queryParams.get('transcriptSection');
     const transcriptFocusLabel = queryParams.get('focusLabel');
 
-    const [classes, history] = await Promise.all([
+    const [classes = [], history = []] = await Promise.all([
         api.getClasses(activeSubjectId),
         api.getChatHistory(activeSubjectId)
     ]);
@@ -34,7 +34,7 @@ export async function renderStudentChat(container) {
             sectionId: transcriptSection,
             label: transcriptFocusLabel || 'sección seleccionada de la transcripción',
         } : null,
-        initialMessages: history.map(h => ([
+        initialMessages: (history || []).map(h => ([
             { role: 'user', content: h.question },
             { role: 'assistant', content: h.answer, sources: h.sources, id: h.id, feedback: h.feedback }
         ])).flat()

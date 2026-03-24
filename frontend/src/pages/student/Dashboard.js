@@ -54,7 +54,7 @@ export async function renderStudentDashboard(container) {
   }
 
   // Fetch mock data (classes, tasks, chat history)
-  const [classes, tasks, chatHistory, deadlines] = await Promise.all([
+  const [classes = [], tasks = [], chatHistory = [], deadlines = []] = await Promise.all([
     api.getClasses(activeSubjectId),
     api.getTasks(user.id),
     api.getChatHistory(activeSubjectId),
@@ -69,7 +69,7 @@ export async function renderStudentDashboard(container) {
     return proximity + weightFactor;
   };
 
-  const subjectTasks = tasks.filter(t => t.subjectId === activeSubjectId);
+  const subjectTasks = (tasks || []).filter(t => t.subjectId === activeSubjectId);
   const pendingTasks = subjectTasks
     .filter(t => t.status === 'pending')
     .sort((a, b) => calculatePriority(b) - calculatePriority(a))
@@ -77,11 +77,11 @@ export async function renderStudentDashboard(container) {
   
   const completedTasks = subjectTasks.filter(t => t.status === 'completed');
   const avgGrade = completedTasks.length > 0 
-    ? completedTasks.reduce((a, t) => a + (t.grade || 0), 0) / completedTasks.length
+    ? completedTasks.reduce((a, t) => a + (Number(t.grade) || 0), 0) / completedTasks.length
     : 0;
 
   const activeSubjectName = user.subjects?.find(s => s.id === activeSubjectId)?.name || 'Materia Desconocida';
-  const classesById = new Map(classes.map(c => [c.id, c]));
+  const classesById = new Map((classes || []).map(c => [c.id, c]));
 
   const todayIso = new Date().toISOString().slice(0, 10);
   const reminderItems = await api.getDeadlineReminders(activeSubjectId, todayIso);
@@ -102,7 +102,7 @@ export async function renderStudentDashboard(container) {
       </div>
       <div class="student-hero-stats">
         <div class="hero-stat">
-          <div class="hero-stat-value">${classes.filter(c => c.summaryReady).length}</div>
+          <div class="hero-stat-value">${(classes || []).filter(c => c.summaryReady).length}</div>
           <div class="hero-stat-label">Clases disponibles</div>
         </div>
         <div class="hero-stat">
@@ -167,7 +167,7 @@ export async function renderStudentDashboard(container) {
         <a href="#/student/calendar" class="btn btn-ghost btn-sm">Ver calendario</a>
       </div>
       <div class="class-list">
-        ${deadlines.length > 0 ? deadlines.slice(0, 3).map(deadline => {
+        ${(deadlines || []).length > 0 ? deadlines.slice(0, 3).map(deadline => {
           const relatedClass = classesById.get(deadline.classId);
           return `
             <div class="class-list-item">
@@ -202,7 +202,7 @@ export async function renderStudentDashboard(container) {
               return `
                 <div class="task-item">
                   <div class="task-item-info">
-                    <div class="task-item-title">${t.title}</div>
+                    <div class="task-item-title">${escapeHtml(t.title)}</div>
                     <div class="task-item-meta">Vence el ${new Date(t.dueDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}</div>
                   </div>
                   <span class="badge badge-${urgency}">${daysUntil <= 0 ? '¡Hoy!' : `${daysUntil}d`}</span>
@@ -220,11 +220,11 @@ export async function renderStudentDashboard(container) {
           <a href="#/student/chat" class="btn btn-ghost btn-sm">Ir al chat</a>
         </div>
         <div class="card-body">
-          ${chatHistory.length === 0 ? `<div class="empty-state" style="padding:24px"><span class="empty-state-icon">🗨️</span><p>No hay consultas previas.</p></div>` :
+          ${(chatHistory || []).length === 0 ? `<div class="empty-state" style="padding:24px"><span class="empty-state-icon">🗨️</span><p>No hay consultas previas.</p></div>` :
             chatHistory.slice(0, 3).map(chat => `
               <a href="#/student/chat?id=${chat.id}" class="chat-history-item" style="text-decoration:none">
                 <div class="chat-history-info">
-                  <div class="chat-history-q">${chat.question.length > 60 ? chat.question.substring(0, 60) + '...' : chat.question}</div>
+                  <div class="chat-history-q">${escapeHtml(chat.question).length > 60 ? escapeHtml(chat.question).substring(0, 60) + '...' : escapeHtml(chat.question)}</div>
                   <div class="chat-history-date">${new Date(chat.timestamp).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>
                 </div>
                 <span class="chat-history-arrow">→</span>
@@ -241,10 +241,10 @@ export async function renderStudentDashboard(container) {
         </div>
         <div class="card-body">
           <div class="subject-progress">
-            ${classes.slice(0, 4).map(c => `
+            ${(classes || []).slice(0, 4).map(c => `
               <div class="class-progress-row">
                 <div class="class-progress-info">
-                  <div class="class-progress-title">${c.title.split('—')[1]?.trim() || c.title}</div>
+                  <div class="class-progress-title">${(c.title || '').split('—')[1]?.trim() || c.title || 'Clase'}</div>
                   <div class="class-progress-date">${c.date ? new Date(c.date).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }) : 'Sin fecha'}</div>
                 </div>
                 ${c.summaryReady 

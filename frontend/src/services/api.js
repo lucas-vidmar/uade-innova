@@ -158,8 +158,15 @@ function delay(ms = 600) { return new Promise(r => setTimeout(r, ms)); }
 export const api = {
     async getClasses(subjectId) {
         if (USE_MOCK) { await delay(); return MOCK_CLASSES.filter(c => c.subjectId === subjectId); }
-        const res = await fetch(`${BASE_URL}/classes?subjectId=${subjectId}`);
-        return res.json();
+        try {
+            const res = await fetch(`${BASE_URL}/classes?subjectId=${subjectId}`);
+            if (!res.ok) return [];
+            const data = await res.json();
+            return Array.isArray(data) ? data : [];
+        } catch (err) {
+            console.error('[API] getClasses failed:', err);
+            return [];
+        }
     },
 
     async getDeadlines(subjectId) {
@@ -168,9 +175,15 @@ export const api = {
             return MOCK_DEADLINES.filter(item => item.subjectId === subjectId);
         }
 
-        const res = await fetch(`${BASE_URL}/deadlines?subjectId=${subjectId}`);
-        if (!res.ok) return [];
-        return res.json();
+        try {
+            const res = await fetch(`${BASE_URL}/deadlines?subjectId=${subjectId}`);
+            if (!res.ok) return [];
+            const data = await res.json();
+            return Array.isArray(data) ? data : [];
+        } catch (err) {
+            console.error('[API] getDeadlines failed:', err);
+            return [];
+        }
     },
 
     async saveDeadline(payload) {
@@ -204,11 +217,17 @@ export const api = {
             return MOCK_DEADLINES.filter(d => d.subjectId === subjectId && ((dayBefore && d.notifyOnDayBefore) || (dayOf && d.notifyOnDayOf)));
         }
 
-        const params = new URLSearchParams({ subjectId });
-        if (today) params.set('today', today);
-        const res = await fetch(`${BASE_URL}/deadline-reminders?${params.toString()}`);
-        if (!res.ok) return [];
-        return res.json();
+        try {
+            const params = new URLSearchParams({ subjectId });
+            if (today) params.set('today', today);
+            const res = await fetch(`${BASE_URL}/deadline-reminders?${params.toString()}`);
+            if (!res.ok) return [];
+            const data = await res.json();
+            return Array.isArray(data) ? data : [];
+        } catch (err) {
+            console.error('[API] getDeadlineReminders failed:', err);
+            return [];
+        }
     },
 
     async globalSearch({ query, subjectId }) {
@@ -228,10 +247,11 @@ export const api = {
         });
 
         if (!res.ok) {
-            throw new Error(`Error ${res.status}: No se pudo realizar la búsqueda global`);
+            return { query, subjectId, total: 0, results: [] };
         }
 
-        return res.json();
+        const data = await res.json();
+        return data && Array.isArray(data.results) ? data : { query, subjectId, total: 0, results: [] };
     },
 
     async getSubjects() {
@@ -242,8 +262,15 @@ export const api = {
                 { id: 'diseno-sistemas-2026', name: 'Diseño de Sistemas' }
             ];
         }
-        const res = await fetch(`${BASE_URL}/subjects`);
-        return res.json();
+        try {
+            const res = await fetch(`${BASE_URL}/subjects`);
+            if (!res.ok) return [];
+            const data = await res.json();
+            return Array.isArray(data) ? data : [];
+        } catch (err) {
+            console.error('[API] getSubjects failed:', err);
+            return [];
+        }
     },
 
     async saveClasses(subjectId, classesArray) {
@@ -275,21 +302,26 @@ export const api = {
                 sources: [],
             };
         }
-        const res = await fetch(`${BASE_URL}/rag-query`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question, classIds, subjectId, stream: false, conversationHistory, historyWindowSize, transcriptFocus }),
-        });
-        
-        if (res.status === 429) {
-            throw new Error('The AI tutor is resting, please try again in a few minutes');
+        try {
+            const res = await fetch(`${BASE_URL}/rag-query`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ question, classIds, subjectId, stream: false, conversationHistory, historyWindowSize, transcriptFocus }),
+            });
+            
+            if (res.status === 429) {
+                throw new Error('The AI tutor is resting, please try again in a few minutes');
+            }
+            
+            if (!res.ok) {
+                return { answer: 'Lo siento, no pude obtener una respuesta de la IA en este momento.', sources: [] };
+            }
+            
+            return res.json();
+        } catch (err) {
+            console.error('[API] ragQuery failed:', err);
+            return { answer: 'Error de conexión con el servicio de IA.', sources: [] };
         }
-        
-        if (!res.ok) {
-            throw new Error(`Error ${res.status}: No se pudo obtener respuesta de la IA`);
-        }
-        
-        return res.json();
     },
 
     /**
@@ -540,9 +572,15 @@ export const api = {
             await delay(600);
             return [];
         }
-        const res = await fetch(`${BASE_URL}/chat-history?subjectId=${subjectId}`);
-        if (!res.ok) return [];
-        return res.json();
+        try {
+            const res = await fetch(`${BASE_URL}/chat-history?subjectId=${subjectId}`);
+            if (!res.ok) return [];
+            const data = await res.json();
+            return Array.isArray(data) ? data : [];
+        } catch (err) {
+            console.error('[API] getChatHistory failed:', err);
+            return [];
+        }
     },
 
     async sendChatFeedback({ messageId, subjectId, isPositive }) {

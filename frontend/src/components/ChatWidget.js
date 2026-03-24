@@ -8,7 +8,7 @@ const FOLLOW_UP_HISTORY_WINDOW_SIZE = 4;
 
 export function createChatWidget({ classes = [], subjectId = '', initialMessages = [], highlightMessageId = null, transcriptFocus: initialTranscriptFocus = null }) {
   const user = auth.getUser();
-  let selectedClassIds = classes.slice(0, 2).map(c => c.id);
+  let selectedClassIds = (classes || []).slice(0, 2).map(c => c.id);
   let messages = [...initialMessages];
   let isLoading = false;
   let transcriptFocus = initialTranscriptFocus;
@@ -25,9 +25,9 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
           Contexto RAG — seleccioná las clases fuente:
         </div>
         <div class="chat-chips" id="chat-chips">
-          ${classes.map(c => `
+          ${(classes || []).map(c => `
             <span class="chip ${selectedClassIds.includes(c.id) ? 'selected' : ''}" data-class-id="${c.id}">
-              ${c.title.split('—')[0].trim()}
+              ${(c.title || '').split('—')[0].trim() || 'Clase'}
             </span>
           `).join('')}
         </div>
