@@ -45,6 +45,7 @@ graph LR
 - **✔ Inteligencia:** Modelos de OpenAI y Pinecone configurados y operativos (dim: 1536).
 - **✔ Backend/RAG:** Pipeline de ingesta y consulta RAG probado y validado.
 - **✔ Frontend:** Dashboard operativo y conectado al backend.
+- **🌐 URL pública:** https://agreeable-beach-002ff0c0f.6.azurestaticapps.net
 - **🚧 Pendiente:** Habilitación de cuota de "Dynamic VMs" por parte de UADE para despliegue final en la nube (actualmente operativo en modo local).
 
 ## 💻 Desarrollo Local
