@@ -20,7 +20,7 @@ const openaiMocks = {
     })
 };
 
-const pineconeMocks = {
+const vectorStoreMocks = {
     querySimilar: mock.fn(async () => [
         {
             score: 0.9,
@@ -54,7 +54,7 @@ const telemetryMocks = {
 };
 
 mock.module('../services/openai.js', { namedExports: openaiMocks });
-mock.module('../services/pinecone.js', { namedExports: pineconeMocks });
+mock.module('../services/vector-store.js', { namedExports: vectorStoreMocks });
 mock.module('../services/storage.js', { namedExports: storageMocks });
 mock.module('../services/prompts.js', { namedExports: promptsMocks });
 mock.module('../services/auth-utils.js', { namedExports: authUtilsMocks });

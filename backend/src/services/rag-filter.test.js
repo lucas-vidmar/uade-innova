@@ -10,7 +10,7 @@ const openaiMocks = {
     }))
 };
 
-const pineconeMocks = {
+const vectorStoreMocks = {
     querySimilar: mock.fn(async () => [
         {
             score: 0.9,
@@ -41,7 +41,7 @@ const telemetryMocks = {
 
 // Mock dependencies
 mock.module('../services/openai.js', { namedExports: openaiMocks });
-mock.module('../services/pinecone.js', { namedExports: pineconeMocks });
+mock.module('../services/vector-store.js', { namedExports: vectorStoreMocks });
 mock.module('../services/storage.js', { namedExports: storageMocks });
 mock.module('../services/auth-utils.js', { namedExports: authUtilsMocks });
 mock.module('../services/telemetry.js', { namedExports: telemetryMocks });
@@ -64,7 +64,7 @@ mock.module('@azure/functions', {
 await import('../functions/rag-query.js');
 
 test('RAG Filter: should ALWAYS include subjectId: { $eq: subjectId }', async () => {
-    pineconeMocks.querySimilar.mock.resetCalls();
+    vectorStoreMocks.querySimilar.mock.resetCalls();
     const subjectId = 'math-101';
     
     const mockContext = { log: mock.fn(), error: mock.fn() };
@@ -79,12 +79,12 @@ test('RAG Filter: should ALWAYS include subjectId: { $eq: subjectId }', async ()
 
     await capturedHandler(mockRequest, mockContext);
 
-    const filter = pineconeMocks.querySimilar.mock.calls[0].arguments[1];
+    const filter = vectorStoreMocks.querySimilar.mock.calls[0].arguments[1];
     assert.strictEqual(filter.subjectId.$eq, subjectId);
 });
 
 test('RAG Filter: should include $or with classIds and bibliography when classIds provided', async () => {
-    pineconeMocks.querySimilar.mock.resetCalls();
+    vectorStoreMocks.querySimilar.mock.resetCalls();
     const subjectId = 'math-101';
     const classIds = ['class1', 'class2'];
     
@@ -100,7 +100,7 @@ test('RAG Filter: should include $or with classIds and bibliography when classId
 
     await capturedHandler(mockRequest, mockContext);
 
-    const filter = pineconeMocks.querySimilar.mock.calls[0].arguments[1];
+    const filter = vectorStoreMocks.querySimilar.mock.calls[0].arguments[1];
     assert.ok(filter.$or);
     assert.deepStrictEqual(filter.$or, [
         { classIds: { $in: classIds } },
@@ -109,7 +109,7 @@ test('RAG Filter: should include $or with classIds and bibliography when classId
 });
 
 test('RAG Filter: should simplify to ONLY subjectId when classIds is ["all"]', async () => {
-    pineconeMocks.querySimilar.mock.resetCalls();
+    vectorStoreMocks.querySimilar.mock.resetCalls();
     const subjectId = 'math-101';
     
     const mockContext = { log: mock.fn(), error: mock.fn() };
@@ -124,13 +124,13 @@ test('RAG Filter: should simplify to ONLY subjectId when classIds is ["all"]', a
 
     await capturedHandler(mockRequest, mockContext);
 
-    const filter = pineconeMocks.querySimilar.mock.calls[0].arguments[1];
+    const filter = vectorStoreMocks.querySimilar.mock.calls[0].arguments[1];
     assert.strictEqual(filter.subjectId.$eq, subjectId);
     assert.strictEqual(filter.$or, undefined);
 });
 
 test('RAG Filter: should simplify to ONLY subjectId when classIds is empty', async () => {
-    pineconeMocks.querySimilar.mock.resetCalls();
+    vectorStoreMocks.querySimilar.mock.resetCalls();
     const subjectId = 'math-101';
     
     const mockContext = { log: mock.fn(), error: mock.fn() };
@@ -145,13 +145,13 @@ test('RAG Filter: should simplify to ONLY subjectId when classIds is empty', asy
 
     await capturedHandler(mockRequest, mockContext);
 
-    const filter = pineconeMocks.querySimilar.mock.calls[0].arguments[1];
+    const filter = vectorStoreMocks.querySimilar.mock.calls[0].arguments[1];
     assert.strictEqual(filter.subjectId.$eq, subjectId);
     assert.strictEqual(filter.$or, undefined);
 });
 
 test('RAG Filter: should simplify to ONLY subjectId when classIds is null', async () => {
-    pineconeMocks.querySimilar.mock.resetCalls();
+    vectorStoreMocks.querySimilar.mock.resetCalls();
     const subjectId = 'math-101';
     
     const mockContext = { log: mock.fn(), error: mock.fn() };
@@ -166,13 +166,13 @@ test('RAG Filter: should simplify to ONLY subjectId when classIds is null', asyn
 
     await capturedHandler(mockRequest, mockContext);
 
-    const filter = pineconeMocks.querySimilar.mock.calls[0].arguments[1];
+    const filter = vectorStoreMocks.querySimilar.mock.calls[0].arguments[1];
     assert.strictEqual(filter.subjectId.$eq, subjectId);
     assert.strictEqual(filter.$or, undefined);
 });
 
 test('RAG Filter: cross-contamination prevention - ensure subjectId is strictly enforced', async () => {
-    pineconeMocks.querySimilar.mock.resetCalls();
+    vectorStoreMocks.querySimilar.mock.resetCalls();
     const subjectId = 'math-101';
     
     const mockContext = { log: mock.fn(), error: mock.fn() };
@@ -187,7 +187,7 @@ test('RAG Filter: cross-contamination prevention - ensure subjectId is strictly 
 
     await capturedHandler(mockRequest, mockContext);
 
-    const filter = pineconeMocks.querySimilar.mock.calls[0].arguments[1];
+    const filter = vectorStoreMocks.querySimilar.mock.calls[0].arguments[1];
     // Even if classIds are from another subject (which shouldn't happen if frontend is correct),
     // the subjectId filter MUST be present and correct.
     assert.strictEqual(filter.subjectId.$eq, subjectId);

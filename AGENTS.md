@@ -264,10 +264,10 @@ AZURE_OPENAI_ENDPOINT=https://<rs-openai-llm>.openai.azure.com/
 AZURE_OPENAI_CHAT_DEPLOYMENT=gpt-4o-mini
 AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-3-small
 
-# Pinecone
-PINECONE_API_KEY=...
-PINECONE_INDEX_NAME=dashboard-edu-pilot
-PINECONE_ENVIRONMENT=...
+# Azure AI Search
+AZURE_SEARCH_ENDPOINT=https://<search-service>.search.windows.net
+AZURE_SEARCH_INDEX_NAME=dashboard-edu-pilot
+AZURE_SEARCH_API_KEY=...
 
 # Azure Storage
 AZURE_STORAGE_ACCOUNT_NAME=stdashboard{token}

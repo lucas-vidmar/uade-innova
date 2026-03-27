@@ -1,7 +1,7 @@
-import { validateFrontDoorId } from '../services/auth-utils.js';
+import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 /**
  * ingest-material.js — POST /api/ingest-material
- * Pipeline completo de ingesta: parsea archivo → chunks → embeddings → Pinecone
+ * Pipeline completo de ingesta: parsea archivo → chunks → embeddings → vector store
  */
 import { app } from '@azure/functions';
 import busboy from 'busboy';
@@ -9,8 +9,8 @@ import { PassThrough } from 'stream';
 import { v4 as uuidv4 } from 'uuid';
 import { parseFile, chunkText } from '../services/parser.js';
 import { generateEmbedding } from '../services/openai.js';
-import { upsertChunks } from '../services/pinecone.js';
 import { uploadFile, saveJson } from '../services/storage.js';
+import { upsertMaterialState } from '../services/state-store.js';
 
 const CONTAINER_MATERIALS = process.env.AZURE_STORAGE_CONTAINER_MATERIALS || 'class-materials';
 const CONTAINER_PROCESSED = 'processed';
@@ -80,8 +80,16 @@ app.http('ingest-material', {
             status: 'processing',
             blobUrl,
             chunkCount: 0,
+            uploadedAt: new Date().toISOString(),
             processedAt: new Date().toISOString(),
         };
+
+        try {
+            await upsertMaterialState(pendingState, 'Replace');
+        } catch (err) {
+            context.error(`[StateStore] Error persisting processing state for ${materialId}:`, err);
+        }
+
         await saveJson(CONTAINER_PROCESSED, `${materialId}.json`, pendingState);
 
         return {

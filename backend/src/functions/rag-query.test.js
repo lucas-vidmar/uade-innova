@@ -13,7 +13,7 @@ const openaiMocks = {
     }))
 };
 
-const pineconeMocks = {
+const vectorStoreMocks = {
     querySimilar: mock.fn(async () => [
         {
             score: 0.9,
@@ -60,7 +60,7 @@ const telemetryMocks = {
 
 // Mock dependencies
 mock.module('../services/openai.js', { namedExports: openaiMocks });
-mock.module('../services/pinecone.js', { namedExports: pineconeMocks });
+mock.module('../services/vector-store.js', { namedExports: vectorStoreMocks });
 mock.module('../services/storage.js', { namedExports: storageMocks });
 mock.module('../services/prompts.js', { namedExports: promptsMocks });
 mock.module('../services/auth-utils.js', { namedExports: authUtilsMocks });
@@ -151,8 +151,8 @@ test('rag-query should return the refusal message if OpenAI returns it', async (
     assert.strictEqual(body.answer, refusalMessage);
 });
 
-test('rag-query should use correct refusal string when Pinecone returns empty', async (t) => {
-    pineconeMocks.querySimilar.mock.mockImplementationOnce(async () => []);
+test('rag-query should use correct refusal string when vector search returns empty', async (t) => {
+    vectorStoreMocks.querySimilar.mock.mockImplementationOnce(async () => []);
     openaiMocks.chatCompletion.mock.resetCalls();
 
     const mockContext = {

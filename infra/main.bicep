@@ -51,18 +51,14 @@ param embeddingModelVersion string = '1'
 @description('Capacidad del deployment de embeddings en miles de TPM.')
 param embeddingDeploymentCapacity int = 10
 
-// Reservado para cuando UADE otorgue permisos roleAssignments/write
-// #disable-next-line no-unused-params
-// @description('Object ID del usuario que ejecuta azd provision (para permisos KV en el futuro).')
-@description('Pinecone API Key (Plan B)')
-@secure()
-param pineconeApiKey string = ''
-
 @description('Location for the Static Web App. Note: limited region availability.')
 param staticWebAppLocation string = 'eastus2'
 
-@description('Name of the Pinecone index.')
-param pineconeIndexName string = 'dashboard-edu-pilot'
+@description('Name of the Azure AI Search vector index.')
+param vectorIndexName string = 'dashboard-edu-pilot'
+
+@description('Azure AI Search SKU for vector store.')
+param azureSearchSkuName string = 'basic'
 
 @description('Name of the Storage container for class materials.')
 param classMaterialsContainerName string = 'class-materials'
@@ -92,6 +88,7 @@ var appInsightsName = '${abbrs.insightsComponents}dashboard-${resourceToken}'
 var keyVaultName = 'kv-edu-${take(resourceToken, 17)}'
 var identityName = 'id-dashboard-edu-${resourceToken}'
 var frontDoorName = 'afd-dashboard-${resourceToken}'
+var azureSearchName = '${abbrs.searchSearchServices}dashboard-${resourceToken}'
 var workbookName = guid(resourceGroup().id, 'cost-per-interaction-workbook')
 
 // Storage account: max 24 chars, no hyphens
@@ -136,13 +133,24 @@ module storage './modules/storage.bicep' = {
   }
 }
 
+// ─── Module: Azure AI Search (vector store) ──────────────────────
+module aiSearch './modules/aisearch.bicep' = {
+  name: 'aiSearch'
+  params: {
+    location: location
+    name: azureSearchName
+    skuName: azureSearchSkuName
+    indexName: vectorIndexName
+    tags: tags
+  }
+}
+
 // ─── Module: Key Vault ────────────────────────────────────────────
 module keyVault './modules/keyvault.bicep' = {
   name: 'keyVault'
   params: {
     location: location
     name: keyVaultName
-    pineconeApiKey: pineconeApiKey
     tags: tags
   }
 }
@@ -174,9 +182,13 @@ module functions './modules/functions.bicep' = {
     openAiChatDeployment: openAi.outputs.chatDeploymentName
     openAiEmbeddingDeployment: openAi.outputs.embeddingDeploymentName
     classMaterialsStorageAccount: safeStorageName
+    azureSearchEndpoint: aiSearch.outputs.endpoint
+    azureSearchIndexName: aiSearch.outputs.defaultIndexName
+    azureSearchServiceName: aiSearch.outputs.serviceName
     keyVaultUri: keyVault.outputs.keyVaultUri
-    pineconeIndexName: pineconeIndexName
     classMaterialsContainerName: classMaterialsContainerName
+    materialsTableName: storage.outputs.materialsTableName
+    classesTableName: storage.outputs.classesTableName
     storageAccountId: storage.outputs.accountId
     tags: tags
   }
@@ -209,6 +221,7 @@ module workbook './modules/workbook.bicep' = {
   }
 }
 
+/*
 // ─── Module: Azure Front Door (WAF) ───────────────────────────────
 // Proporciona protección OWASP y enrutamiento a los endpoints
 module frontDoor './modules/frontdoor.bicep' = {
@@ -220,7 +233,9 @@ module frontDoor './modules/frontdoor.bicep' = {
     tags: tags
   }
 }
+*/
 
+/*
 // ─── Module: Azure Budget (Issue #71) ─────────────────────────────
 module budget './modules/budget.bicep' = {
   name: 'budget'
@@ -229,7 +244,9 @@ module budget './modules/budget.bicep' = {
     contactEmails: !empty(notificationEmail) ? [ notificationEmail ] : []
   }
 }
+*/
 
+/*
 // ─── Front Door ID Secret in Key Vault ────────────────────────────
 resource fdSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   name: '${keyVaultName}/FRONT-DOOR-ID'
@@ -237,6 +254,7 @@ resource fdSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
     value: frontDoor.outputs.frontDoorId
   }
 }
+*/
 
 // ─── Outputs ────────────────────────────────────────────────────
 output AZURE_OPENAI_ENDPOINT string = openAi.outputs.endpoint
@@ -244,10 +262,12 @@ output AZURE_OPENAI_CHAT_DEPLOYMENT string = openAi.outputs.chatDeploymentName
 output AZURE_OPENAI_EMBEDDING_DEPLOYMENT string = openAi.outputs.embeddingDeploymentName
 output AZURE_STORAGE_ACCOUNT_NAME string = storage.outputs.accountName
 output AZURE_STORAGE_CONTAINER_MATERIALS string = storage.outputs.classMaterialsContainerName
+output AZURE_SEARCH_ENDPOINT string = aiSearch.outputs.endpoint
+output AZURE_SEARCH_INDEX_NAME string = aiSearch.outputs.defaultIndexName
 output AZURE_KEY_VAULT_URI string = keyVault.outputs.keyVaultUri
 output AZURE_FUNCTION_APP_URI string = functions.outputs.functionAppUri
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = appInsights.outputs.connectionString
 output AZURE_STATIC_WEB_APP_URI string = staticWebApp.outputs.staticWebAppUri
-output AZURE_FRONT_DOOR_URI string = frontDoor.outputs.frontDoorUri
+// output AZURE_FRONT_DOOR_URI string = frontDoor.outputs.frontDoorUri
 output AZURE_RESOURCE_GROUP string = resourceGroup().name
 output AZURE_WORKBOOK_ID string = workbook.outputs.workbookId

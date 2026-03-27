@@ -96,7 +96,7 @@ resource funcTableRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
     )
     principalId: identityPrincipalId
     principalType: 'ServicePrincipal'
-    description: 'Allows Function App to read/write persistent User Profiles in Table Storage'
+    description: 'Allows Function App to read/write persistent domain state in Table Storage'
   }
 }
 
@@ -108,7 +108,7 @@ resource funcKeyVaultRole 'Microsoft.Authorization/roleAssignments@2022-04-01' =
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', keyVaultSecretsUserRoleId)
     principalId: identityPrincipalId
     principalType: 'ServicePrincipal'
-    description: 'Allows Function App to read Pinecone API Key from Key Vault'
+    description: 'Allows Function App to read Key Vault secrets if needed'
   }
 }
 
@@ -121,4 +121,3 @@ output principalId string = managedIdentity.properties.principalId
 
 @description('The client ID of the User-Assigned Managed Identity.')
 output clientId string = managedIdentity.properties.clientId
-

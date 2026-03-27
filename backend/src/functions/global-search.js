@@ -4,7 +4,7 @@
  */
 import { app } from '@azure/functions';
 import { generateEmbedding } from '../services/openai.js';
-import { querySimilar } from '../services/pinecone.js';
+import { querySimilar } from '../services/vector-store.js';
 import { validateFrontDoorId } from '../services/auth-utils.js';
 
 const MAX_GLOBAL_RESULTS = 12;

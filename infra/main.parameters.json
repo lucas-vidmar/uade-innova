@@ -35,14 +35,14 @@
         "principalId": {
             "value": "${AZURE_PRINCIPAL_ID}"
         },
-        "pineconeApiKey": {
-            "value": "${PINECONE_API_KEY}"
-        },
         "staticWebAppLocation": {
             "value": "eastus2"
         },
-        "pineconeIndexName": {
+        "vectorIndexName": {
             "value": "dashboard-edu-pilot"
+        },
+        "azureSearchSkuName": {
+            "value": "basic"
         },
         "classMaterialsContainerName": {
             "value": "class-materials"

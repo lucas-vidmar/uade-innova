@@ -1,6 +1,5 @@
 /*
   keyvault.bicep — Azure Key Vault
-  Stores the Pinecone API Key as a secret.
   Access controlled via RBAC (Key Vault Secrets User role).
 */
 
@@ -12,10 +11,6 @@ param name string
 
 @description('Azure AD Tenant ID.')
 param tenantId string = subscription().tenantId
-
-@description('Direct Pinecone API Key (Plan B fallback).')
-@secure()
-param pineconeApiKey string = ''
 
 @description('Tags to apply to the resource.')
 param tags object = {}
@@ -43,21 +38,6 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
       defaultAction: 'Deny'
       bypass: 'AzureServices'
     }
-  }
-}
-
-// ─── Placeholder secret: pinecone-api-key ──────────────────────
-// Value must be set manually or via CI/CD pipeline post-provision.
-// The applications read this via Key Vault reference (@Microsoft.KeyVault(...))
-resource pineconeSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  parent: keyVault
-  name: 'pinecone-api-key'
-  properties: {
-    value: !empty(pineconeApiKey) ? pineconeApiKey : 'PLACEHOLDER-SET-AFTER-PROVISION'
-    attributes: {
-      enabled: true
-    }
-    contentType: 'text/plain'
   }
 }
 

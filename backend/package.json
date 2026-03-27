@@ -10,15 +10,15 @@
         "build": "echo 'No build step needed for JS'",
         "test": "node --experimental-test-module-mocks --test src/**/*.test.js",
         "restore-archive": "node scripts/restore-archive.js",
-        "export-pinecone": "node scripts/export-pinecone.js"
+        "migrate-state-to-tables": "node scripts/migrate-state-to-tables.js"
     },
     "dependencies": {
         "@azure/data-tables": "^13.3.2",
         "@azure/functions": "^4.5.0",
         "@azure/identity": "^4.5.0",
+        "@azure/search-documents": "^12.1.0",
         "@azure/keyvault-secrets": "^4.9.0",
         "@azure/storage-blob": "^12.26.0",
-        "@pinecone-database/pinecone": "^3.0.3",
         "adm-zip": "^0.5.16",
         "applicationinsights": "^3.14.0",
         "busboy": "^1.6.0",

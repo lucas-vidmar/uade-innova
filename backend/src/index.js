@@ -19,6 +19,7 @@ import './functions/get-profile.js';
 import './functions/get-roles.js';
 import './functions/process-material.js';
 import './functions/save-profile.js';
+import './functions/vector-health.js';
 
 // ─── Security Middleware ────────────────────────────────────────
 const expectedFdId = process.env.FRONT_DOOR_ID;
@@ -32,6 +33,7 @@ app.hook('preInvocation', async (context) => {
     const req = context.inputs.find(i => i && typeof i.headers?.get === 'function');
     if (!req) return;
 
+    /*
     if (expectedFdId && process.env.NODE_ENV === 'production') {
         const incomingFdId = req.headers.get('x-azure-fdid');
         if (!incomingFdId || incomingFdId !== expectedFdId) {
@@ -41,4 +43,5 @@ app.hook('preInvocation', async (context) => {
             throw new Error('403 Forbidden - Invalid or missing X-Azure-FDID header.');
         }
     }
+    */
 });

@@ -160,27 +160,24 @@ Functions should use **Managed Identity** to call Azure OpenAI — not the user'
 
 ---
 
-## 4. Evaluate Azure AI Search as Vector Store
+## 4. Migrate to Azure AI Search as Vector Store
 
 ### Current State
 
-The architecture uses **Pinecone** as the vector database:
+The architecture now uses **Azure AI Search** as the vector database:
 - Dimension: 1536 (for `text-embedding-3-small`)
-- Metric: Cosine Similarity
-- API Key stored in Key Vault
+- Metric: Cosine Similarity (HNSW)
+- Authentication: Azure Search API key (with MI fallback in code)
 
 ### Finding
 
-Pinecone introduces a **third-party dependency** that requires:
-- API key management (even if via Key Vault, it's an external secret)
-- Separate billing and vendor relationship
-- Potential compliance review if UADE has strict data residency or vendor policies
+Migration to Azure AI Search removed the external vector-store dependency and consolidated observability/billing in Azure.
 
 ### Recommendation
 
-**Evaluate Azure AI Search** as a replacement for the pilot phase.
+**Migrate to Azure AI Search** as the default vector store for the pilot phase.
 
-| Aspect | Pinecone | Azure AI Search |
+| Aspect | Previous (Pinecone) | Current (Azure AI Search) |
 |--------|----------|-----------------|
 | Cost | ~$70-200/month (Standard) | ~$50-150/month (Basic) |
 | Auth | API Key | Managed Identity (RBAC) |
@@ -189,14 +186,9 @@ Pinecone introduces a **third-party dependency** that requires:
 | Hybrid search | Extra configuration | Built-in |
 | Monitoring | Pinecone dashboard | Application Insights |
 
-**If Azure AI Search is chosen:**
-- Remove Key Vault dependency for Pinecone API Key
-- Use the `Cognitive Services` role assignment (already in identity.bicep)
-- Enable semantic search for better answer quality
-
-**If Pinecone is kept:**
-- Consider moving to Pinecone's Serverless tier to reduce cost
-- Document the data residency implications in the compliance review
+**Implementation decision:**
+- Azure AI Search is now the primary backend for vector retrieval
+- Pinecone runtime settings and export script should be removed from active backlog scope
 
 ---
 
@@ -238,10 +230,10 @@ At that point, consider:
 | 1 | Remove Front Door | High | Low | Cost savings, reduced complexity |
 | 2 | Add Table Storage for state | High | Medium | Enables full CRUD operations |
 | 3 | Enable Easy Auth (Entra ID) | High | Medium | Security and UX |
-| 4 | Evaluate Azure AI Search | Medium | Medium | Reduce external dependencies |
+| 4 | Migrate to Azure AI Search | High | Medium | Reduce external dependencies |
 | 5 | Keep gpt-4o-mini (no change) | Low | None | — |
 
-**Recommended for immediate action:** #1, #2, and #3 are architectural gaps that should be addressed before the pilot goes live. Item #4 requires a discussion with UADE's compliance team about third-party vendor policies.
+**Recommended for immediate action:** #1, #2, #3, and #4 are architectural gaps that should be addressed before the pilot goes live.
 
 ---
 

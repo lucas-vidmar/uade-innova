@@ -1,0 +1,46 @@
+import { test, mock } from 'node:test';
+import assert from 'node:assert';
+
+const vectorStoreMocks = {
+    getIndexStats: mock.fn(async () => ({
+        totalVectorCount: 42,
+        indexFullness: 0,
+        namespaces: {},
+    })),
+};
+
+const authUtilsMocks = {
+    validateFrontDoorId: mock.fn(() => true),
+};
+
+mock.module('../services/vector-store.js', { namedExports: vectorStoreMocks });
+mock.module('../services/auth-utils.js', { namedExports: authUtilsMocks });
+
+let capturedHandler;
+mock.module('@azure/functions', {
+    namedExports: {
+        app: {
+            http: (name, options) => {
+                if (name === 'vector-health') capturedHandler = options.handler;
+            },
+        },
+    },
+});
+
+await import('./vector-health.js');
+
+test('vector-health handler should be registered', () => {
+    assert.strictEqual(typeof capturedHandler, 'function');
+});
+
+test('vector-health should return provider and stats payload', async () => {
+    const response = await capturedHandler(
+        { headers: { get: () => null } },
+        { error: mock.fn() }
+    );
+
+    assert.strictEqual(response.status, 200);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.provider, 'azure-ai-search');
+    assert.strictEqual(body.stats.totalVectorCount, 42);
+});

@@ -1,11 +1,12 @@
 /**
  * services/pipeline.js — Orquestador del pipeline de RAG
- * Procesa un material (buffer + metadata) y lo indexa en Pinecone.
+ * Procesa un material (buffer + metadata) y lo indexa en Azure AI Search.
  */
 import { parseFile, chunkText, cleanText, extractTranscriptTimeline } from './parser.js';
 import { generateEmbeddingsBatch, generateClassSummary, generateClassMap } from './openai.js';
-import { upsertChunks, getIndexStats } from './pinecone.js';
+import { upsertChunks, getIndexStats } from './vector-store.js';
 import { saveJson, loadJson } from './storage.js';
+import { upsertMaterialState } from './state-store.js';
 import { trackIngestionInteraction } from './telemetry.js';
 
 const CONTAINER_PROCESSED = 'processed';
@@ -39,7 +40,7 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
             throw new Error('No se pudo extraer texto significativo del archivo para generar chunks.');
         }
 
-        // 3. Generar embeddings en batches y preparar vectores para Pinecone
+        // 3. Generar embeddings en batches y preparar vectores para Azure AI Search
         const vectors = [];
         for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
             const currentBatch = chunks.slice(i, i + BATCH_SIZE);
@@ -67,16 +68,17 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
             });
         }
 
-        // 4. Indexar en Pinecone
-        context.log(`[Pipeline] Indexando ${vectors.length} vectores en Pinecone index: ${process.env.PINECONE_INDEX_NAME}...`);
+        // 4. Indexar en Azure AI Search
+        const vectorIndexName = process.env.AZURE_SEARCH_INDEX_NAME;
+        context.log(`[Pipeline] Indexando ${vectors.length} vectores en Azure AI Search index: ${vectorIndexName}...`);
         await upsertChunks(vectors);
         context.log(`[Pipeline] Vectores indexados con éxito.`);
 
-        // ── 4b. Log Pinecone index health metrics (Issue #78) ────────
+        // ── 4b. Log vector index health metrics (Issue #78) ──────────
         getIndexStats().then(stats => {
-            context.log(`[Pinecone Health] Index: ${process.env.PINECONE_INDEX_NAME} | totalVectorCount: ${stats.totalVectorCount} | indexFullness: ${(stats.indexFullness * 100).toFixed(2)}%`);
+            context.log(`[Azure Search Health] Index: ${vectorIndexName} | totalVectorCount: ${stats.totalVectorCount} | indexFullness: ${(stats.indexFullness * 100).toFixed(2)}%`);
         }).catch(statsErr => {
-            context.warn(`[Pinecone Health] No se pudo obtener stats del índice: ${statsErr.message}`);
+            context.warn(`[Azure Search Health] No se pudo obtener stats del índice: ${statsErr.message}`);
         });
 
         // 5. Generar resumen y mapa conceptual si es un tipo de material rico en texto
@@ -128,8 +130,16 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
             status: 'ready',
             blobUrl,
             chunkCount: chunks.length,
+            uploadedAt: new Date(startTime).toISOString(),
             processedAt: new Date().toISOString(),
         };
+
+        try {
+            await upsertMaterialState(materialState);
+        } catch (stateErr) {
+            context.error(`[StateStore] No se pudo persistir estado ready para ${materialId}:`, stateErr);
+        }
+
         await saveJson(CONTAINER_PROCESSED, `${materialId}.json`, materialState);
         context.log(`[Pipeline] Estado guardado: processed/${materialId}.json (ready)`);
 
@@ -194,8 +204,10 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
             filename: fileName,
             status: 'error',
             blobUrl,
+            errorMessage: err.message,
             error: err.message,
             stack: err.stack,
+            uploadedAt: new Date(startTime).toISOString(),
             processedAt: new Date().toISOString(),
         };
 
@@ -209,6 +221,12 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
             durationMs: Date.now() - startTime,
             status: 'error'
         }).catch(e => context.error('[Telemetry] Error logging IngestionInteraction failure:', e));
+
+        try {
+            await upsertMaterialState(errorState);
+        } catch (stateErr) {
+            context.error(`[StateStore] No se pudo persistir estado error para ${materialId}:`, stateErr);
+        }
 
         try {
             await saveJson(CONTAINER_PROCESSED, `${materialId}.json`, errorState);

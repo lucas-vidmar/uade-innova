@@ -29,7 +29,7 @@ const openaiMocks = {
     }))
 };
 
-const pineconeMocks = {
+const vectorStoreMocks = {
     upsertChunks: mock.fn(async () => true),
     getIndexStats: mock.fn(async () => ({ totalVectorCount: 5, indexFullness: 0.001, namespaces: {} }))
 };
@@ -39,10 +39,15 @@ const storageMocks = {
     loadJson: mock.fn(async () => null),
 };
 
+const stateStoreMocks = {
+    upsertMaterialState: mock.fn(async () => true),
+};
+
 mock.module('./parser.js', { namedExports: parserMocks });
 mock.module('./openai.js', { namedExports: openaiMocks });
-mock.module('./pinecone.js', { namedExports: pineconeMocks });
+mock.module('./vector-store.js', { namedExports: vectorStoreMocks });
 mock.module('./storage.js', { namedExports: storageMocks });
+mock.module('./state-store.js', { namedExports: stateStoreMocks });
 
 const { runPipeline } = await import('./pipeline.js');
 

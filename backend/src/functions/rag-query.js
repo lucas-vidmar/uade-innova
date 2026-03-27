@@ -1,10 +1,10 @@
 /**
  * rag-query.js — POST /api/rag-query
- * Motor RAG: embedding de la pregunta → similitud Pinecone → chat con contexto
+ * Motor RAG: embedding de la pregunta → similitud vectorial → chat con contexto
  */
 import { app } from '@azure/functions';
 import { generateEmbedding, chatCompletion } from '../services/openai.js';
-import { querySimilar } from '../services/pinecone.js';
+import { querySimilar } from '../services/vector-store.js';
 import { saveJson, saveMetricsToTable } from '../services/storage.js';
 import { getShadowPrompt } from '../services/prompts.js';
 import { trackRAGInteraction } from '../services/telemetry.js';
@@ -119,6 +119,9 @@ app.http('rag-query', {
 
         context.log(`Pregunta: "${question}" | Reescrita: "${rewrittenQuestion}" | Materia: ${subjectId} | Clases: ${classIds?.join(',')}`);
 
+        const principal = parseClientPrincipal(request);
+        const userId = principal?.oid || 'anonymous';
+
         // ── 2. Embedding de la pregunta ───────────────────────────
         let questionEmbedding;
         let embeddingUsage;
@@ -127,11 +130,15 @@ app.http('rag-query', {
             questionEmbedding = embeddingResult.embedding;
             embeddingUsage = embeddingResult.usage;
         } catch (err) {
-            context.error('Error generando embedding:', err);
-            return { status: 500, body: JSON.stringify({ error: `Error procesando la pregunta (embedding): ${err.message}` }) };
+            context.error(`[RAG] Error en OpenAI Embedding (userId: ${userId}):`, err);
+            return {
+                status: 500,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ error: `Servicio de IA (Embedding) no disponible: ${err.message}` }),
+            };
         }
 
-        // ── 3. Filtro Pinecone por subjectId y classIds ───────────
+        // ── 3. Filtro vectorial por subjectId y classIds ──────────
         const filter = {
             subjectId: { $eq: subjectId },
             $or: [
@@ -144,13 +151,17 @@ app.http('rag-query', {
             delete filter.$or;
         }
 
-        // ── 4. Búsqueda de similitud en Pinecone ──────────────────
+        // ── 4. Búsqueda de similitud en Azure AI Search ───────────
         let matches;
         try {
             matches = await querySimilar(questionEmbedding, filter, MAX_RAG_CHUNKS);
         } catch (err) {
-            context.error('Error consultando Pinecone:', err);
-            return { status: 500, body: JSON.stringify({ error: `Error buscando en la base de conocimiento: ${err.message}` }) };
+            context.error(`[RAG] Error en Azure Search Query (userId: ${userId}):`, err);
+            return {
+                status: 500,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ error: `Base de conocimiento no disponible (Azure AI Search): ${err.message}` }),
+            };
         }
 
         matches = filterMatchesByTranscriptFocus(matches, transcriptFocus);
@@ -232,8 +243,6 @@ ${contextText}
 
                         // Calcular duración y métricas al finalizar
                         const durationMs = Date.now() - startTime;
-                        const principal = parseClientPrincipal(request);
-                        const userId = principal?.oid || 'anonymous';
                         const totalInteractionTokens = (embeddingUsage?.total_tokens || 0) + (finalUsage?.total_tokens || 0);
 
                         trackRAGInteraction({
@@ -250,7 +259,7 @@ ${contextText}
                         // Persistir logs
                         const chatLog = {
                             id: interactionId,
-                            userId: request.user?.id || 'anonymous',
+                            userId,
                             subjectId,
                             classIds,
                             transcriptFocus,
@@ -262,14 +271,14 @@ ${contextText}
                             timestamp: new Date().toISOString(),
                         };
                         
-                        const userIdSanitized = (request.user?.id || 'anon').replace(/[^a-zA-Z0-9]/g, '_');
+                        const userIdSanitized = String(userId).replace(/[^a-zA-Z0-9]/g, '_');
                         saveJson('chat-logs', `${userIdSanitized}/${subjectId}/${interactionId}.json`, chatLog)
                             .catch(e => context.error('Error guardando log de chat (stream):', e));
 
                         saveMetricsToTable('SessionMetrics', {
                             partitionKey: subjectId,
                             rowKey: interactionId,
-                            userId: request.user?.id || 'anonymous',
+                            userId,
                             promptTokens: finalUsage?.prompt_tokens || 0,
                             completionTokens: finalUsage?.completion_tokens || 0,
                             totalTokens: totalInteractionTokens,
@@ -307,14 +316,16 @@ ${contextText}
             answer = chatResult.content;
             chatUsage = chatResult.usage;
         } catch (err) {
-            context.error('Error en chat completion:', err);
-            return { status: 500, body: JSON.stringify({ error: `Error generando respuesta (chat): ${err.message}` }) };
+            context.error(`[RAG] Error en Chat Completion (userId: ${userId}):`, err);
+            return {
+                status: 500,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ error: `Servicio de IA (Chat) no disponible: ${err.message}` }),
+            };
         }
 
         // ── 6b. Emit App Insights telemetry (Issue #69) ───────────
         const durationMs = Date.now() - startTime;
-        const principal = parseClientPrincipal(request);
-        const userId = principal?.oid || 'anonymous';
         
         // Accumulate total tokens for this interaction (embedding + chat)
         const totalInteractionTokens = (embeddingUsage?.total_tokens || 0) + (chatUsage?.total_tokens || 0);
@@ -343,7 +354,7 @@ ${contextText}
         const interactionId = uuidv4();
         const chatLog = {
             id: interactionId,
-            userId: request.user?.id || 'anonymous',
+            userId,
             subjectId,
             classIds,
             transcriptFocus,
@@ -358,14 +369,14 @@ ${contextText}
         
         try {
             // Guardamos en un container específico para logs
-            const userIdSanitized = (request.user?.id || 'anon').replace(/[^a-zA-Z0-9]/g, '_');
+            const userIdSanitized = String(userId).replace(/[^a-zA-Z0-9]/g, '_');
             await saveJson('chat-logs', `${userIdSanitized}/${subjectId}/${interactionId}.json`, chatLog);
 
             // Asíncronamente persistimos las métricas RAG en la Table Storage (HU #83)
             saveMetricsToTable('SessionMetrics', {
                 partitionKey: subjectId,
                 rowKey: interactionId,
-                userId: request.user?.id || 'anonymous',
+                userId,
                 promptTokens: chatUsage?.prompt_tokens || 0,
                 completionTokens: chatUsage?.completion_tokens || 0,
                 totalTokens: totalInteractionTokens,

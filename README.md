@@ -13,7 +13,7 @@ El sistema centraliza el conocimiento institucional mediante el procesamiento au
 Para minimizar el CapEx y maximizar la escalabilidad, la arquitectura es enteramente **Serverless**:
 
 - **Generative AI:** Azure OpenAI Service (`gpt-4o-mini` y `text-embedding-3-small`).
-- **Vector Database:** [Pinecone](https://www.pinecone.io/) (Tier Serverless, Cosine Similarity).
+- **Vector Database:** Azure AI Search (vector index, cosine similarity).
 - **Backend:** Azure Functions (**Consumption Plan Y1**) + Node.js 20/TypeScript.
 - **Frontend:** Azure Static Web Apps (**Free Tier**) + React/Vite.
 - **Identity:** Microsoft Entra ID (OIDC / SSO UADE).
@@ -23,7 +23,7 @@ Para minimizar el CapEx y maximizar la escalabilidad, la arquitectura es enteram
 El sistema se basa en un pipeline de 4 capas:
 1. **Ingesta:** Carga manual de materiales (Upload -> Storage).
 2. **Conocimiento:** Extracción de texto, Chunking (512 tokens) y Generación de Embeddings.
-3. **Inferencia (RAG):** Consulta del alumno -> Búsqueda semántica en Pinecone -> Respuesta con fuentes.
+3. **Inferencia (RAG):** Consulta del alumno -> Búsqueda semántica en Azure AI Search -> Respuesta con fuentes.
 4. **Presentación:** Dashboard integrado con autenticación UADE.
 
 ### 📊 Diagrama de Arquitectura
@@ -35,14 +35,14 @@ El siguiente diagrama detalla la integración de los servicios de Azure con las 
 graph LR
     User([Browser / Alumno]) -- HTTPS --> SWA[Azure Static Web App]
     SWA -- REST API --> Func[Azure Function App]
-    Func -- Búsqueda Semántica --> Pinecone[(Pinecone Vector DB)]
+    Func -- Búsqueda Semántica --> Search[(Azure AI Search)]
     Func -- Lectura/Escritura --> Storage[(Azure Storage Account)]
     Func -. Telemetría .-> Monitor[Azure Monitor / Sentinel]
 ```
 
 ## 🚀 Estado Actual y Despliegue
 - **✔ Infraestructura (IaC):** Desplegada exitosamente mediante Bicep y `azd`.
-- **✔ Inteligencia:** Modelos de OpenAI y Pinecone configurados y operativos (dim: 1536).
+- **✔ Inteligencia:** Modelos de OpenAI y Azure AI Search configurados y operativos (dim: 1536).
 - **✔ Backend/RAG:** Pipeline de ingesta y consulta RAG probado y validado.
 - **✔ Frontend:** Dashboard operativo y conectado al backend.
 - **🌐 URL pública:** https://agreeable-beach-002ff0c0f.6.azurestaticapps.net
@@ -50,7 +50,7 @@ graph LR
 
 ## 💻 Desarrollo Local
 1. Clona el repositorio.
-2. Configura las variables en `.env.local` (AZURE_OPENAI_ENDPOINT, PINECONE_API_KEY, etc.).
+2. Configura las variables en `.env.local` (AZURE_OPENAI_ENDPOINT, AZURE_SEARCH_ENDPOINT, AZURE_SEARCH_INDEX_NAME, etc.).
 3. Levanta el backend: `cd backend && func start`.
 4. Levanta el frontend: `cd frontend && npm run dev`.
 

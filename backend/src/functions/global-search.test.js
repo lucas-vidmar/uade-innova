@@ -5,7 +5,7 @@ const openaiMocks = {
     generateEmbedding: mock.fn(async () => ({ embedding: [0.11, 0.22, 0.33] })),
 };
 
-const pineconeMocks = {
+const vectorStoreMocks = {
     querySimilar: mock.fn(async () => [
         {
             score: 0.81,
@@ -37,7 +37,7 @@ const authUtilsMocks = {
 };
 
 mock.module('../services/openai.js', { namedExports: openaiMocks });
-mock.module('../services/pinecone.js', { namedExports: pineconeMocks });
+mock.module('../services/vector-store.js', { namedExports: vectorStoreMocks });
 mock.module('../services/auth-utils.js', { namedExports: authUtilsMocks });
 
 let capturedHandler;
@@ -69,7 +69,7 @@ test('global-search should reject missing required fields', async () => {
 });
 
 test('global-search should query full subject index scoped to transcript+bibliography', async () => {
-    pineconeMocks.querySimilar.mock.resetCalls();
+    vectorStoreMocks.querySimilar.mock.resetCalls();
 
     const response = await capturedHandler(
         { json: async () => ({ query: 'Architecture', subjectId: 'arq-software-2026' }) },
@@ -78,7 +78,7 @@ test('global-search should query full subject index scoped to transcript+bibliog
 
     assert.strictEqual(response.status, 200);
 
-    const filter = pineconeMocks.querySimilar.mock.calls[0].arguments[1];
+    const filter = vectorStoreMocks.querySimilar.mock.calls[0].arguments[1];
     assert.strictEqual(filter.subjectId.$eq, 'arq-software-2026');
     assert.deepStrictEqual(filter.materialType.$in, ['transcript', 'bibliography']);
 

@@ -31,6 +31,15 @@ param openAiEmbeddingDeployment string
 @description('Azure Storage account name for class materials.')
 param classMaterialsStorageAccount string
 
+@description('Azure AI Search endpoint URL.')
+param azureSearchEndpoint string
+
+@description('Azure AI Search index name for vectors.')
+param azureSearchIndexName string
+
+@description('Azure AI Search service name.')
+param azureSearchServiceName string
+
 @description('Key Vault URI.')
 param keyVaultUri string
 
@@ -40,9 +49,6 @@ param storageAccountId string
 @description('Tags to apply to resources.')
 param tags object = {}
 
-@description('Name of the Pinecone index.')
-param pineconeIndexName string = 'dashboard-edu-pilot'
-
 @description('Name of the Storage container for class materials.')
 param classMaterialsContainerName string = 'class-materials'
 
@@ -51,6 +57,12 @@ param userAssignedIdentityId string
 
 @description('Client ID of the User-Assigned Managed Identity.')
 param userAssignedClientId string
+
+@description('Table name for material state entities.')
+param materialsTableName string = 'materials'
+
+@description('Table name for class state entities.')
+param classesTableName string = 'classes'
 
 // ─── Consumption Plan (Y1 — sin VM quota, serverless real) ───────
 resource consumptionPlan 'Microsoft.Web/serverfarms@2023-01-01' = {
@@ -88,16 +100,7 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
       functionAppScaleLimit: 10
       minimumElasticInstanceCount: 0
       use32BitWorkerProcess: false
-      ipSecurityRestrictions: [
-        {
-          ipAddress: 'AzureFrontDoor.Backend'
-          action: 'Allow'
-          tag: 'ServiceTag'
-          priority: 100
-          name: 'Allow Front Door'
-          description: 'Allow traffic only from Azure Front Door Backend'
-        }
-      ]
+      ipSecurityRestrictions: []
       scmIpSecurityRestrictionsUseMain: true
       cors: {
         allowedOrigins: ['*']
@@ -153,17 +156,33 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           value: classMaterialsStorageAccount
         }
         {
+          name: 'AZURE_STORAGE_ACCESS_KEY'
+          value: listKeys(storageAccountId, '2023-01-01').keys[0].value
+        }
+        {
           name: 'AZURE_STORAGE_CONTAINER_MATERIALS'
           value: classMaterialsContainerName
         }
-        // Pinecone
         {
-          name: 'PINECONE_API_KEY'
-          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/pinecone-api-key/)'
+          name: 'AZURE_TABLE_MATERIALS'
+          value: materialsTableName
         }
         {
-          name: 'PINECONE_INDEX_NAME'
-          value: pineconeIndexName
+          name: 'AZURE_TABLE_CLASSES'
+          value: classesTableName
+        }
+        // Azure AI Search
+        {
+          name: 'AZURE_SEARCH_ENDPOINT'
+          value: azureSearchEndpoint
+        }
+        {
+          name: 'AZURE_SEARCH_INDEX_NAME'
+          value: azureSearchIndexName
+        }
+        {
+          name: 'AZURE_SEARCH_API_KEY'
+          value: listAdminKeys(resourceId('Microsoft.Search/searchServices', azureSearchServiceName), '2023-11-01').primaryKey
         }
         {
           name: 'NODE_ENV'
@@ -190,8 +209,8 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
 @description('The name of the Function App.')
 output functionAppName string = functionApp.name
 
-@description('The principal ID of the Function App Managed Identity.')
-output functionAppPrincipalId string = functionApp.identity.principalId
+// @description('The principal ID of the Function App Managed Identity.')
+// output functionAppPrincipalId string = functionApp.identity.principalId
 
 @description('The default hostname of the Function App.')
 output functionAppHostName string = functionApp.properties.defaultHostName
