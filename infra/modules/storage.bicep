@@ -149,6 +149,18 @@ resource sessionMetricsTable 'Microsoft.Storage/storageAccounts/tableServices/ta
   name: 'SessionMetrics'
 }
 
+// ─── Table: materials (domain state store) ─────────────────────
+resource materialsTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-01-01' = {
+  parent: tableService
+  name: 'materials'
+}
+
+// ─── Table: classes (domain state store) ───────────────────────
+resource classesTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-01-01' = {
+  parent: tableService
+  name: 'classes'
+}
+
 // ─── Outputs ───────────────────────────────────────────────────
 @description('The name of the Storage Account.')
 output accountName string = storageAccount.name
@@ -164,3 +176,9 @@ output classMaterialsContainerName string = classMaterialsContainer.name
 
 @description('The name of the processed container.')
 output processedContainerName string = processedContainer.name
+
+@description('The name of the materials table.')
+output materialsTableName string = materialsTable.name
+
+@description('The name of the classes table.')
+output classesTableName string = classesTable.name

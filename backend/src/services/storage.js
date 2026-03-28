@@ -155,10 +155,20 @@ export async function deleteBlob(containerName, blobName) {
 
 // ─── Table Storage Client ──────────────────────────────────────────
 
-function getTableClient(tableName) {
+export function getTableClient(tableName) {
     const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
     const accountKey = process.env.AZURE_STORAGE_ACCESS_KEY;
-    
+    const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
+
+    // Support for Azurite / Local Development
+    if (connectionString === 'UseDevelopmentStorage=true' || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development') {
+        if (connectionString) {
+            return TableClient.fromConnectionString(connectionString, tableName);
+        }
+        // Fallback for some local environments
+        return new TableClient(`http://127.0.0.1:10002/${accountName || 'devstoreaccount1'}`, tableName);
+    }
+
     if (!accountName) {
         throw new Error('AZURE_STORAGE_ACCOUNT_NAME is not defined in environment variables.');
     }
