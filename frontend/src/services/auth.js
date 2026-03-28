@@ -33,6 +33,10 @@ const USERS = {
         role: 'director',
         avatar: 'AB',
         department: 'Ingeniería en Informática',
+        subjects: [
+            { id: 'arq-software-2026', name: 'Arquitecturas de Software (2026-1)' },
+            { id: 'diseno-sistemas-2026', name: 'Diseño de Sistemas (2026-1)' }
+        ],
     },
 };
 
@@ -76,7 +80,7 @@ export const auth = {
     },
 
     getConsentAccepted() {
-        return sessionStorage.getItem('edu_consent_accepted') === 'true';
+        return localStorage.getItem('edu_consent_accepted') === 'true' || sessionStorage.getItem('edu_consent_accepted') === 'true';
     },
 
     async acceptPrivacyPolicy() {
@@ -87,14 +91,18 @@ export const auth = {
             consentAccepted: true
         };
         
+        // Persist locally immediately to handle offline/dev modes
+        localStorage.setItem('edu_consent_accepted', 'true');
+        sessionStorage.setItem('edu_consent_accepted', 'true');
+        window.dispatchEvent(new CustomEvent('auth:consentAccepted'));
+
         try {
             await api.saveProfile(profile);
-            sessionStorage.setItem('edu_consent_accepted', 'true');
-            window.dispatchEvent(new CustomEvent('auth:consentAccepted'));
             return true;
         } catch (err) {
-            console.error('Error saving privacy consent:', err);
-            return false;
+            console.error('Error saving privacy consent to backend:', err);
+            // We return true if in localhost because we've already persisted locally
+            return window.location.hostname === 'localhost';
         }
     },
 
@@ -163,7 +171,9 @@ export const auth = {
                     // Sync profile and consent
                     try {
                         const profile = await api.getProfile();
-                        sessionStorage.setItem('edu_consent_accepted', profile.consentAccepted ? 'true' : 'false');
+                        const accepted = profile.consentAccepted ? 'true' : 'false';
+                        sessionStorage.setItem('edu_consent_accepted', accepted);
+                        localStorage.setItem('edu_consent_accepted', accepted);
                         sessionStorage.setItem('edu_theme', profile.theme);
                         sessionStorage.setItem('edu_lang', profile.language);
                     } catch (err) {

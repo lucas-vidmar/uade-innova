@@ -2,6 +2,7 @@
    PrivacyModal.js — Institutional Data Privacy Modal
    ============================================================ */
 import { auth } from '../services/auth.js';
+import { toast } from './Toast.js';
 
 /**
  * Renders and manages the Privacy Policy modal.
@@ -20,14 +21,14 @@ export function renderPrivacyModal() {
     modalOverlay.style.zIndex = '9999'; // Ensure it's on top of everything
 
     modalOverlay.innerHTML = `
-        <div class="modal-content card animate-in" style="max-width: 600px; width: 90%; max-height: 80vh; display: flex; flex-direction: column;">
-            <div class="modal-header" style="border-bottom: 1px solid var(--color-border); padding-bottom: var(--space-4); margin-bottom: var(--space-4);">
+        <div class="modal-content animate-in">
+            <div class="modal-header">
                 <h2 class="h3" style="margin: 0; display: flex; align-items: center; gap: var(--space-2);">
-                    <span style="font-size: 1.5rem;">⚖️</span> Política de Privacidad de Datos
+                    <span>⚖️</span> Política de Privacidad de Datos
                 </h2>
             </div>
             
-            <div class="modal-body" style="overflow-y: auto; flex: 1; padding-right: var(--space-2);">
+            <div class="modal-body" style="overflow-y: auto; max-height: 60vh;">
                 <p><strong>Bienvenido a UADE Innova.</strong></p>
                 <p>Para continuar utilizando este dashboard educativo inteligente, es necesario que acepte el tratamiento de sus datos académicos conforme a nuestra política institucional.</p>
                 
@@ -45,7 +46,7 @@ export function renderPrivacyModal() {
                 </div>
             </div>
             
-            <div class="modal-footer" style="border-top: 1px solid var(--color-border); padding-top: var(--space-4); margin-top: var(--space-4); display: flex; justify-content: flex-end; gap: var(--space-3);">
+            <div class="modal-footer">
                 <button id="privacy-accept-btn" class="btn btn-primary btn-lg">Aceptar y Continuar</button>
             </div>
         </div>
@@ -60,7 +61,8 @@ export function renderPrivacyModal() {
         acceptBtn.innerHTML = 'Procesando...';
         
         const success = await auth.acceptPrivacyPolicy();
-        if (success) {
+        if (success || window.location.hostname === 'localhost') {
+            if (!success) console.warn('[PrivacyModal] Failed to save consent to API, but continuing in local mode.');
             modalOverlay.classList.replace('animate-in', 'animate-out');
             setTimeout(() => {
                 modalOverlay.remove();
@@ -68,7 +70,7 @@ export function renderPrivacyModal() {
         } else {
             acceptBtn.disabled = false;
             acceptBtn.innerHTML = 'Aceptar y Continuar';
-            alert('Hubo un error al guardar su preferencia. Por favor, reintente.');
+            toast('error', 'Error', 'Hubo un problema al guardar su preferencia. Reintente.');
         }
     });
 
