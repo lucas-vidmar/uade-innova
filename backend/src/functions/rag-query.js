@@ -4,7 +4,7 @@
  */
 import { app } from '@azure/functions';
 import { generateEmbedding, chatCompletion } from '../services/openai.js';
-import { querySimilar } from '../services/pinecone.js';
+import { querySimilar } from '../services/vector-store.js';
 import { saveJson, saveMetricsToTable } from '../services/storage.js';
 import { getShadowPrompt } from '../services/prompts.js';
 import { trackRAGInteraction } from '../services/telemetry.js';

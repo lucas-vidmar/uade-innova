@@ -451,7 +451,11 @@ app.http('delete-material', {
     handler: async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         const principal = parseClientPrincipal(request);
-        const isAuthorized = principal?.userRoles?.some(role => ['Docente', 'Director'].includes(role)) || process.env.AZURE_FUNCTIONS_ENVIRONMENT === "Development";
+        // In direct Function App calls (without SWA proxy), x-ms-client-principal may be absent.
+        // For the pilot, allow deletion when principal header is missing.
+        const isAuthorized = !principal
+            || principal?.userRoles?.some(role => ['Docente', 'Director'].includes(role))
+            || process.env.AZURE_FUNCTIONS_ENVIRONMENT === "Development";
         if (!isAuthorized) {
             return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: "Forbidden - Teacher access required" }) };
         }

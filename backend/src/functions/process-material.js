@@ -3,9 +3,95 @@
  * Se dispara automáticamente al subir archivos a 'class-materials'.
  */
 import { app } from '@azure/functions';
+import { BlobServiceClient, StorageSharedKeyCredential } from '@azure/storage-blob';
 import { runPipeline } from '../services/pipeline.js';
+import { saveJson } from '../services/storage.js';
+import { upsertMaterialState } from '../services/state-store.js';
 
 const CONTAINER_MATERIALS = process.env.AZURE_STORAGE_CONTAINER_MATERIALS || 'class-materials';
+const CONTAINER_PROCESSED = 'processed';
+
+let blobServiceClient = null;
+
+function getBlobServiceClient() {
+    if (blobServiceClient) return blobServiceClient;
+
+    const connectionString = process.env.AzureWebJobsStorage;
+    if (connectionString) {
+        blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
+        return blobServiceClient;
+    }
+
+    const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
+    const accountKey = process.env.AZURE_STORAGE_ACCESS_KEY;
+    if (!accountName || !accountKey) return null;
+
+    const credential = new StorageSharedKeyCredential(accountName, accountKey);
+    blobServiceClient = new BlobServiceClient(`https://${accountName}.blob.core.windows.net`, credential);
+    return blobServiceClient;
+}
+
+function extractMaterialIdFromBlobName(blobName) {
+    if (!blobName) return null;
+    const match = String(blobName).match(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})-/);
+    return match?.[1] || null;
+}
+
+function deriveFilename(metadataFilename, blobName) {
+    if (metadataFilename) return metadataFilename;
+    if (!blobName) return 'unknown-file';
+    const maybeId = extractMaterialIdFromBlobName(blobName);
+    if (maybeId && blobName.startsWith(`${maybeId}-`)) {
+        return blobName.slice(maybeId.length + 1);
+    }
+    return blobName;
+}
+
+async function loadBlobMetadata(blobPath) {
+    const client = getBlobServiceClient();
+    if (!client || !blobPath) return {};
+
+    try {
+        const containerClient = client.getContainerClient(CONTAINER_MATERIALS);
+        const blobClient = containerClient.getBlobClient(blobPath);
+        const props = await blobClient.getProperties();
+        return props.metadata || {};
+    } catch {
+        return {};
+    }
+}
+
+async function persistProcessingError(params, context, message) {
+    const errorState = {
+        materialId: params.materialId,
+        classIds: params.classIds,
+        subjectId: params.subjectId,
+        type: params.materialType,
+        filename: params.fileName,
+        status: 'error',
+        blobUrl: params.blobUrl,
+        errorMessage: message,
+        error: message,
+        uploadedAt: new Date().toISOString(),
+        processedAt: new Date().toISOString(),
+    };
+
+    try {
+        if (params.subjectId && params.materialId) {
+            await upsertMaterialState(errorState);
+        }
+    } catch (stateErr) {
+        context.error('[BlobTrigger] No se pudo persistir estado error en tabla:', stateErr);
+    }
+
+    try {
+        if (params.materialId) {
+            await saveJson(CONTAINER_PROCESSED, `${params.materialId}.json`, errorState);
+        }
+    } catch (blobErr) {
+        context.error('[BlobTrigger] No se pudo persistir estado error en blob:', blobErr);
+    }
+}
 
 app.storageBlob('process-material', {
     path: `${CONTAINER_MATERIALS}/{classId}/{blobName}`,
@@ -14,24 +100,43 @@ app.storageBlob('process-material', {
         const blobPath = context.triggerMetadata.blobTrigger;
         context.log(`[BlobTrigger] Procesando: ${blobPath}`);
 
+        const pathFromTrigger = context.triggerMetadata?.name;
+        const classId = context.bindingData?.classId;
+        const rawBlobName = context.bindingData?.blobName || '';
+        const fullBlobPath = pathFromTrigger || (classId && rawBlobName ? `${classId}/${rawBlobName}` : '');
+
         // 1. Extraer metadatos subidos por ingest-material.js
-        // Azure Functions v4 expone metadatos en triggerMetadata
-        const metadata = context.triggerMetadata.metadata || {};
-        
+        // En algunos entornos el trigger no incluye metadata; hacemos fallback a getProperties().metadata.
+        const triggerMetadata = context.triggerMetadata?.metadata || {};
+        const blobMetadata = await loadBlobMetadata(fullBlobPath);
+        const metadata = {
+            ...blobMetadata,
+            ...triggerMetadata,
+        };
+
+        const materialId = metadata.materialid || extractMaterialIdFromBlobName(rawBlobName) || 'unknown';
+        const subjectId = metadata.subjectid || 'unknown';
+        const classIds = metadata.classids
+            ? metadata.classids.split(',').map((id) => id.trim()).filter(Boolean)
+            : (classId ? [classId] : []);
+        const fileName = deriveFilename(metadata.filename, rawBlobName || context.triggerMetadata?.name);
+
         const params = {
             fileBuffer: blob,
             fileContentType: context.triggerMetadata.contentType,
-            fileName: metadata.filename || context.triggerMetadata.name,
-            classIds: metadata.classids ? metadata.classids.split(',') : [context.bindingData.classId],
-            subjectId: metadata.subjectid || 'unknown',
+            fileName,
+            classIds,
+            subjectId,
             materialType: metadata.materialtype || 'notes',
-            materialId: metadata.materialid || 'unknown',
+            materialId,
             userId: metadata.userid || 'anonymous',
-            blobUrl: context.triggerMetadata.uri
+            blobUrl: context.triggerMetadata.uri || (fullBlobPath ? `https://${process.env.AZURE_STORAGE_ACCOUNT_NAME}.blob.core.windows.net/${CONTAINER_MATERIALS}/${fullBlobPath}` : ''),
         };
 
-        if (params.materialId === 'unknown') {
-            context.warn(`[BlobTrigger] Advertencia: materialId no encontrado para ${blobPath}. Omitiendo pipeline.`);
+        if (params.materialId === 'unknown' || params.subjectId === 'unknown') {
+            const reason = `No se pudieron resolver metadatos críticos para ${blobPath}. materialId=${params.materialId}, subjectId=${params.subjectId}`;
+            context.error(`[BlobTrigger] ${reason}`);
+            await persistProcessingError(params, context, reason);
             return;
         }
 
