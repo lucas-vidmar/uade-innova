@@ -5,6 +5,7 @@ import { api } from '../../services/api.js';
 import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
 import { toast } from '../../components/Toast.js';
+import { showPromptDialog } from '../../components/Dialog.js';
 
 export async function renderTeacherDashboard(container) {
   renderHeader('Mis Cátedras');
@@ -152,7 +153,12 @@ export async function renderTeacherDashboard(container) {
     btn.addEventListener('click', async () => {
       const deadline = deadlines.find(d => d.id === btn.dataset.deadlineId);
       if (!deadline) return;
-      const newTitle = prompt('Título del deadline', deadline.title);
+      const newTitle = await showPromptDialog({
+        title: 'Editar deadline',
+        label: 'Titulo del deadline',
+        initialValue: deadline.title,
+        confirmText: 'Guardar',
+      });
       if (!newTitle) return;
       await api.saveDeadline({ ...deadline, title: newTitle });
       toast('success', 'Deadline actualizado', 'Los cambios se guardaron correctamente.');

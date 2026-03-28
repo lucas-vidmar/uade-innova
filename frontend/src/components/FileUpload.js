@@ -3,6 +3,7 @@
    ============================================================ */
 import { toast } from './Toast.js';
 import { api } from '../services/api.js';
+import { showConfirmDialog } from './Dialog.js';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -96,15 +97,22 @@ export function createFileUpload({ type = 'transcript', onUpload, existingFiles 
           files.splice(idx, 1);
           render();
         } else {
-          if (confirm(`¿Eliminar definitivamente el material "${fileObj.filename}"?`)) {
-            try {
-              await api.deleteMaterial(fileObj.id);
-              files.splice(idx, 1);
-              render();
-              toast('success', 'Eliminado', 'El material fue borrado correctamente.');
-            } catch (e) {
-              toast('error', 'Error', 'No se pudo eliminar el archivo.');
-            }
+          const shouldDelete = await showConfirmDialog({
+            title: 'Eliminar material',
+            message: `Eliminar definitivamente el material "${fileObj.filename}"?`,
+            confirmText: 'Eliminar',
+            cancelText: 'Cancelar',
+            danger: true,
+          });
+          if (!shouldDelete) return;
+
+          try {
+            await api.deleteMaterial(fileObj.id);
+            files.splice(idx, 1);
+            render();
+            toast('success', 'Eliminado', 'El material fue borrado correctamente.');
+          } catch (e) {
+            toast('error', 'Error', 'No se pudo eliminar el archivo.');
           }
         }
       });
