@@ -1,6 +1,4 @@
 import { app } from '@azure/functions';
-import { TableClient } from '@azure/data-tables';
-import { DefaultAzureCredential } from '@azure/identity';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 
 const tableName = "UserProfiles";
@@ -14,11 +12,7 @@ app.http('save-profile', {
         try {
             const principal = parseClientPrincipal(request);
 
-            if (!principal && process.env.AZURE_FUNCTIONS_ENVIRONMENT !== "Development") {
-                return { status: 401, body: "Unauthorized - missing identity" };
-            }
-
-            const userId = principal?.oid || "local-dev-user";
+            const userId = principal?.oid || "pilot-user";
 
             const reqBody = await request.json();
             
@@ -26,13 +20,15 @@ app.http('save-profile', {
             const entity = {
                 partitionKey: "Profiles",
                 rowKey: userId,
+                name: principal?.userDetails || "Local User",
+                email: principal?.userDetails || "local@uade.edu.ar",
                 theme: reqBody.theme || "light",
                 language: reqBody.language || "es",
                 consentAccepted: reqBody.consentAccepted ?? false
             };
 
-            const credential = new DefaultAzureCredential();
-            const tableClient = new TableClient(storageAccountUrl, tableName, credential);
+            const { getTableClient } = await import('../services/storage.js');
+            const tableClient = getTableClient(tableName);
 
             // Upsert the data seamlessly handling initial creation or subsequent updates
             await tableClient.upsertEntity(entity, "Replace");

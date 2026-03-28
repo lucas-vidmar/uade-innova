@@ -1,11 +1,8 @@
 import { app } from '@azure/functions';
-import { TableClient } from '@azure/data-tables';
-import { DefaultAzureCredential } from '@azure/identity';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { trackUserLogin } from '../services/telemetry.js';
 
 const tableName = "UserProfiles";
-const storageAccountUrl = `https://${process.env.AZURE_STORAGE_ACCOUNT_NAME}.table.core.windows.net`;
 
 app.http('get-profile', {
     methods: ['GET'],
@@ -16,11 +13,7 @@ app.http('get-profile', {
             // Use shared auth utility to parse identity
             const principal = parseClientPrincipal(request);
 
-            if (!principal && process.env.AZURE_FUNCTIONS_ENVIRONMENT !== "Development") {
-                return { status: 401, body: "Unauthorized - missing identity" };
-            }
-
-            const userId = principal?.oid || "local-dev-user";
+            const userId = principal?.oid || "pilot-user";
 
             // Emit UserLogin telemetry event for login-frequency analysis (Issue #69)
             if (principal) {
@@ -30,9 +23,8 @@ app.http('get-profile', {
                 }).catch(err => console.error('[Telemetry] Error emitting UserLogin event:', err));
             }
 
-            // Initialize Table SDK with Zero-Trust identity
-            const credential = new DefaultAzureCredential();
-            const tableClient = new TableClient(storageAccountUrl, tableName, credential);
+            const { getTableClient } = await import('../services/storage.js');
+            const tableClient = getTableClient(tableName);
 
             try {
                 // Table Storage uses PartitionKey (broad category) and RowKey (unique ID)
