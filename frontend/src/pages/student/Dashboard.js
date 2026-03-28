@@ -4,6 +4,8 @@
 import { api } from '../../services/api.js';
 import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
+import { renderBottomNav } from '../../components/BottomNav.js';
+import { createChatWidget } from '../../components/ChatWidget.js';
 import { toast } from '../../components/Toast.js';
 
 function renderSearchResult(result, classesById) {
@@ -65,275 +67,202 @@ function icon(name) {
 }
 
 export async function renderStudentDashboard(container) {
-  renderHeader('Inicio');
-  container.innerHTML = `<div class="page-loading animate-pulse" style="padding:40px;text-align:center;color:var(--color-text-secondary)">Cargando dashboard...</div>`;
-
   const user = auth.getUser();
   const activeSubjectId = auth.getActiveSubjectId();
+  
   if (!activeSubjectId) {
     container.innerHTML = `<div class="empty-state">No hay materias vinculadas a tu cuenta.</div>`;
     return;
   }
 
-  // Fetch mock data (classes, tasks, chat history)
-  const [classes = [], tasks = [], chatHistory = [], deadlines = []] = await Promise.all([
-    api.getClasses(activeSubjectId),
-    api.getTasks(user.id),
-    api.getChatHistory(activeSubjectId),
-    api.getDeadlines(activeSubjectId),
-  ]);
-
-  // Priority logic for student tasks
-  const calculatePriority = (t) => {
-    const daysUntil = Math.max(0, Math.ceil((new Date(t.dueDate) - new Date()) / 86400000));
-    const proximity = 10 / (daysUntil + 1);
-    const weightFactor = t.weight / 5;
-    return proximity + weightFactor;
-  };
-
-  const subjectTasks = (tasks || []).filter(t => t.subjectId === activeSubjectId);
-  const pendingTasks = subjectTasks
-    .filter(t => t.status === 'pending')
-    .sort((a, b) => calculatePriority(b) - calculatePriority(a))
-    .slice(0, 3);
+  // 1. Initial Shell Render (Instant)
+  const activeSubjectName = user.subjects?.find(s => s.id === activeSubjectId)?.name || 'Materia';
   
-  const completedTasks = subjectTasks.filter(t => t.status === 'completed');
-  const avgGrade = completedTasks.length > 0 
-    ? completedTasks.reduce((a, t) => a + (Number(t.grade) || 0), 0) / completedTasks.length
-    : 0;
-
-  const activeSubjectName = user.subjects?.find(s => s.id === activeSubjectId)?.name || 'Materia Desconocida';
-  const classesById = new Map((classes || []).map(c => [c.id, c]));
-
-  const todayIso = new Date().toISOString().slice(0, 10);
-  const reminderItems = await api.getDeadlineReminders(activeSubjectId, todayIso);
-  if (Array.isArray(reminderItems) && reminderItems.length > 0) {
-    toast('warning', 'Deadline próximo', `Tenés ${reminderItems.length} deadline${reminderItems.length !== 1 ? 's' : ''} para hoy o mañana.`);
-  }
-
-  // Academic standing logic (more detailed for US#48)
-  const standingUrgency = avgGrade >= 7 ? 'success' : avgGrade >= 4 ? 'warning' : 'error';
-  const standingLabel = avgGrade >= 7 ? 'Buen desempeño' : avgGrade >= 4 ? 'En progreso' : 'Riesgo académico';
-
   container.innerHTML = `
-    <!-- Hero -->
-    <div class="student-hero">
-      <div>
-        <h1 class="student-hero-title">Hola, <span class="gradient-text">${user.name.split(' ')[0]}</span></h1>
-        <p class="student-hero-sub">${activeSubjectName}</p>
-      </div>
-      <div class="student-hero-stats">
-        <div class="hero-stat">
-          <div class="hero-stat-value">${(classes || []).filter(c => c.summaryReady).length}</div>
-          <div class="hero-stat-label">Clases disponibles</div>
-        </div>
-        <div class="hero-stat">
-          <div class="hero-stat-value">${pendingTasks.length}</div>
-          <div class="hero-stat-label">Tareas pendientes</div>
-        </div>
-        <div class="hero-stat">
-          <div class="hero-stat-value">
-            <span class="badge badge-${standingUrgency}">${avgGrade.toFixed(1)}</span>
-          </div>
-          <div class="hero-stat-label">${standingLabel}</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="card global-search-card" id="global-search-card">
-      <div class="card-header">
-        <span class="card-title">${icon('search')} Búsqueda Global de Conocimiento</span>
-        <span class="badge badge-info">${activeSubjectName}</span>
-      </div>
-      <div class="global-search-controls">
-        <input
-          type="search"
-          id="global-search-input"
-          class="form-input"
-          placeholder="Buscá conceptos en transcripciones y bibliografías (ej: Architecture)"
-          autocomplete="off"
-        />
-        <button class="btn btn-primary" id="global-search-button">Buscar</button>
-      </div>
-      <div class="global-search-hint">La búsqueda usa el índice completo de la materia activa y prioriza coincidencias semánticas + keyword.</div>
-      <div class="global-search-results" id="global-search-results">
-        <div class="empty-state" style="padding:20px 0">
-          <span class="empty-state-icon">${icon('book')}</span>
-          <p>Ingresá un término para explorar conocimiento en todas las clases.</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Quick actions -->
-    <div class="quick-actions">
-      <a href="#/student/chat" class="quick-action-card">
-        <span class="quick-action-icon">${icon('chat')}</span>
-        <span class="quick-action-label">Consultar con IA</span>
-        <span class="quick-action-arrow">→</span>
-      </a>
-      <a href="#/student/tasks" class="quick-action-card">
-        <span class="quick-action-icon">${icon('tasks')}</span>
-        <span class="quick-action-label">Ver mis tareas</span>
-        <span class="quick-action-arrow">→</span>
-      </a>
-      <a href="#/student/calendar" class="quick-action-card">
-        <span class="quick-action-icon">${icon('calendar')}</span>
-        <span class="quick-action-label">Calendario</span>
-        <span class="quick-action-arrow">→</span>
-      </a>
-    </div>
-
-    <div class="card global-search-card" style="margin-top:0;margin-bottom:var(--space-8)">
-      <div class="card-header">
-        <span class="card-title">${icon('deadline')} Deadlines activos</span>
-        <a href="#/student/calendar" class="btn btn-ghost btn-sm">Ver calendario</a>
-      </div>
-      <div class="class-list">
-        ${(deadlines || []).length > 0 ? deadlines.slice(0, 3).map(deadline => {
-          const relatedClass = classesById.get(deadline.classId);
-          return `
-            <div class="class-list-item">
-              <div class="class-list-date">${icon('deadline')}</div>
-              <div class="class-list-info">
-                <div class="class-list-title">${deadline.title}</div>
-                <div class="class-list-topics">${deadline.description || 'Sin descripción'}</div>
-                <div class="class-list-files">${relatedClass?.title || deadline.classId} · Vence ${new Date(deadline.dueDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}</div>
-              </div>
-              <div class="class-list-actions">
-                <span class="badge ${deadline.notifyOnDayBefore ? 'badge-warning' : 'badge-neutral'}">${deadline.notifyOnDayBefore ? 'Recordatorio +1 día' : 'Recordatorio día de'}</span>
-              </div>
+    <div class="dashboard-wrapper animate-in bg-bg min-h-screen">
+      <div class="container py-8">
+        
+        <!-- Welcome & Search Section -->
+        <div class="flex flex-col md:flex-row items-center justify-between gap-6 mb-8">
+          <div class="search-container flex-1 max-w-xl">
+            <div class="search-icon-wrapper">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path></svg>
             </div>
-          `;
-        }).join('') : '<div class="empty-state" style="padding:18px 0"><p>No hay deadlines configurados.</p></div>'}
-      </div>
-    </div>
-
-    <!-- Main grid -->
-    <div class="dashboard-grid">
-      <!-- Upcoming tasks -->
-      <div class="card">
-        <div class="card-header">
-          <span class="card-title">${icon('tasks')} Tareas Próximas</span>
-          <a href="#/student/tasks" class="btn btn-ghost btn-sm">Ver todas</a>
-        </div>
-        <div class="card-body">
-          ${pendingTasks.length === 0 ? `<div class="empty-state" style="padding:24px"><span class="empty-state-icon">${icon('activity')}</span><p>¡No tenés tareas pendientes!</p></div>` :
-            pendingTasks.map(t => {
-              const daysUntil = Math.ceil((new Date(t.dueDate) - new Date()) / 86400000);
-              const urgency = daysUntil <= 3 ? 'error' : daysUntil <= 7 ? 'warning' : 'success';
-              return `
-                <div class="task-item">
-                  <div class="task-item-info">
-                    <div class="task-item-title">${escapeHtml(t.title)}</div>
-                    <div class="task-item-meta">Vence el ${new Date(t.dueDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}</div>
-                  </div>
-                  <span class="badge badge-${urgency}">${daysUntil <= 0 ? '¡Hoy!' : `${daysUntil}d`}</span>
-                </div>
-              `;
-            }).join('')
-          }
-        </div>
-      </div>
-
-      <!-- Recent Chats (New section for US#48) -->
-      <div class="card">
-        <div class="card-header">
-          <span class="card-title">${icon('chat')} Consultas Recientes</span>
-          <a href="#/student/chat" class="btn btn-ghost btn-sm">Ir al chat</a>
-        </div>
-        <div class="card-body">
-          ${(chatHistory || []).length === 0 ? `<div class="empty-state" style="padding:24px"><span class="empty-state-icon">${icon('chat')}</span><p>No hay consultas previas.</p></div>` :
-            chatHistory.slice(0, 3).map(chat => `
-              <a href="#/student/chat?id=${chat.id}" class="chat-history-item" style="text-decoration:none">
-                <div class="chat-history-info">
-                  <div class="chat-history-q">${escapeHtml(chat.question).length > 60 ? escapeHtml(chat.question).substring(0, 60) + '...' : escapeHtml(chat.question)}</div>
-                  <div class="chat-history-date">${new Date(chat.timestamp).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>
-                </div>
-                <span class="chat-history-arrow">→</span>
-              </a>
-            `).join('')
-          }
-        </div>
-      </div>
-
-      <!-- Subject progress -->
-      <div class="card">
-        <div class="card-header">
-          <span class="card-title">${icon('book')} Progreso de la Materia</span>
-        </div>
-        <div class="card-body">
-          <div class="subject-progress">
-            ${(classes || []).slice(0, 4).map(c => `
-              <div class="class-progress-row">
-                <div class="class-progress-info">
-                  <div class="class-progress-title">${(c.title || '').split('—')[1]?.trim() || c.title || 'Clase'}</div>
-                  <div class="class-progress-date">${c.date ? new Date(c.date).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }) : 'Sin fecha'}</div>
-                </div>
-                ${c.summaryReady 
-                  ? `<a href="#/student/class/${c.id}" class="badge badge-success" style="text-decoration:none">Listo</a>` 
-                  : (c.materials && c.materials.length > 0) 
-                    ? '<span class="badge badge-warning">Procesando</span>' 
-                    : '<span class="badge badge-neutral">Sin material</span>'}
-              </div>
-            `).join('')}
+            <input 
+              class="search-input" 
+              placeholder="Buscar en ${activeSubjectName}..." 
+              type="text"
+              id="global-search-header"
+            />
           </div>
+
+          <div class="metrics-container flex items-center gap-4" id="dashboard-metrics-container">
+            <div class="metric-card bg-surface border border-border p-4 rounded-xl shadow-sm flex flex-col items-center min-w-[140px] animate-pulse">
+              <span class="h-8 w-8 bg-surface-2 rounded mb-2"></span>
+              <span class="h-3 w-16 bg-surface-2 rounded"></span>
+            </div>
+            <div class="metric-card bg-surface border border-border p-4 rounded-xl shadow-sm flex flex-col items-center min-w-[140px] animate-pulse">
+              <span class="h-8 w-8 bg-surface-2 rounded mb-2"></span>
+              <span class="h-3 w-16 bg-surface-2 rounded"></span>
+            </div>
+            <div class="metric-card bg-surface border border-border p-4 rounded-xl shadow-sm flex flex-col items-center min-w-[140px] animate-pulse">
+              <span class="h-8 w-8 bg-surface-2 rounded mb-2"></span>
+              <span class="h-3 w-16 bg-surface-2 rounded"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="dashboard-layout-grid">
+          <!-- Left Column: Chat Container -->
+          <section class="h-full" id="chat-widget-mount">
+            <div class="flex items-center justify-center h-[500px] border border-border bg-surface-2 rounded-2xl text-text-muted italic animate-pulse">
+              Iniciando asistente IA...
+            </div>
+          </section>
+
+          <!-- Right Column: Sidebar -->
+          <aside class="flex flex-col gap-6">
+            <!-- Tareas Proximas -->
+            <div class="sidebar-section" id="section-tasks">
+              <div class="sidebar-section-header">
+                <div class="sidebar-section-title">
+                  <svg class="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+                  <span>Tareas próximas</span>
+                </div>
+                <a href="#/student/tasks" class="sidebar-section-link">Ver todas</a>
+              </div>
+              <div class="p-4 text-center text-xs text-text-muted italic animate-pulse">Cargando tareas...</div>
+            </div>
+
+            <!-- Clases de la materia -->
+            <div class="sidebar-section" id="section-classes">
+              <div class="sidebar-section-header">
+                <div class="sidebar-section-title">
+                  <svg class="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+                  <span>Clases de la materia</span>
+                </div>
+              </div>
+              <div class="p-4 text-center text-xs text-text-muted italic animate-pulse">Cargando clases...</div>
+            </div>
+          </aside>
         </div>
       </div>
     </div>
   `;
 
-  const searchInput = container.querySelector('#global-search-input');
-  const searchButton = container.querySelector('#global-search-button');
-  const resultsContainer = container.querySelector('#global-search-results');
+  renderHeader(document.getElementById('app-header'), 'Inicio', false);
 
-  const setSearchingState = (isSearching) => {
-    if (!searchButton || !searchInput) return;
-    searchButton.disabled = isSearching;
-    searchInput.disabled = isSearching;
-    searchButton.innerHTML = isSearching ? '<span class="spinner"></span>' : 'Buscar';
-  };
+  // 2. Start fetches in parallel
+  const fetchClassesTask = api.getClasses(activeSubjectId);
+  const fetchTasksTask = api.getTasks(user.id);
+  const fetchHistoryTask = api.getChatHistory(activeSubjectId);
 
-  const runGlobalSearch = async () => {
-    const query = searchInput?.value?.trim();
-    if (!query || !resultsContainer) return;
+  // 3. Update Tasks & Metrics (Depends on tasks)
+  fetchTasksTask.then(tasks => {
+    const sectionTasks = document.getElementById('section-tasks');
+    if (!sectionTasks) return;
 
-    setSearchingState(true);
-    resultsContainer.innerHTML = `<div class="page-loading animate-pulse" style="padding:24px;text-align:center;color:var(--color-text-secondary)">Buscando en todo el índice de la materia...</div>`;
+    const subjectTasks = (tasks || []).filter(t => t.subjectId === activeSubjectId);
+    const pendingTasks = subjectTasks
+      .filter(t => t.status === 'pending')
+      .sort((a, b) => (new Date(a.dueDate) - new Date(b.dueDate)))
+      .slice(0, 3);
+    
+    const completedTasks = subjectTasks.filter(t => t.status === 'completed');
+    const avgGrade = completedTasks.length > 0 
+      ? completedTasks.reduce((a, t) => a + (Number(t.grade) || 0), 0) / completedTasks.length
+      : 0;
+    const riskValue = avgGrade < 4 && completedTasks.length > 0 ? 1 : 0;
 
-    try {
-      const searchResponse = await api.globalSearch({ query, subjectId: activeSubjectId });
-      const results = Array.isArray(searchResponse.results) ? searchResponse.results : [];
-
-      if (!results.length) {
-        resultsContainer.innerHTML = `
-          <div class="empty-state" style="padding:24px 0">
-            <span class="empty-state-icon">${icon('search')}</span>
-            <p>No encontramos coincidencias para "${escapeHtml(query)}" en esta materia.</p>
-          </div>
-        `;
-        return;
-      }
-
-      resultsContainer.innerHTML = `
-        <div class="global-search-results-header">
-          <strong>${results.length}</strong> resultados para <strong>"${escapeHtml(query)}"</strong>
+    // Update Tasks List
+    sectionTasks.innerHTML = `
+      <div class="sidebar-section-header">
+        <div class="sidebar-section-title">
+          <svg class="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+          <span>Tareas próximas</span>
         </div>
-        <div class="global-search-results-grid">
-          ${results.map(result => renderSearchResult(result, classesById)).join('')}
+        <a href="#/student/tasks" class="sidebar-section-link">Ver todas</a>
+      </div>
+      <div class="p-0">
+        <ul class="sidebar-list">
+          ${pendingTasks.length > 0 ? pendingTasks.map(t => `
+            <li class="sidebar-list-item">
+              <p class="sidebar-item-title">${escapeHtml(t.title)}</p>
+              <div class="sidebar-item-meta">
+                <span>${new Date(t.dueDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}</span>
+                <span class="font-bold text-error">Próximo</span>
+              </div>
+            </li>
+          `).join('') : '<li class="p-6 text-center text-xs text-text-muted italic">Sin tareas pendientes</li>'}
+        </ul>
+      </div>
+    `;
+
+    // Update Metrics
+    const metricsContainer = document.getElementById('dashboard-metrics-container');
+    if (metricsContainer) {
+      metricsContainer.innerHTML = `
+        <div class="metric-card bg-surface border border-border p-4 rounded-xl shadow-sm flex flex-col items-center min-w-[140px] transition-all hover:shadow-md hover:-translate-y-1">
+          <span class="text-3xl font-extrabold text-primary">${avgGrade > 0 ? avgGrade.toFixed(1) : '-'}</span>
+          <span class="text-[10px] uppercase font-bold text-text-muted mt-1 tracking-wider">Promedio</span>
+        </div>
+        <div class="metric-card bg-surface border border-border p-4 rounded-xl shadow-sm flex flex-col items-center min-w-[140px] transition-all hover:shadow-md hover:-translate-y-1">
+          <span class="text-3xl font-extrabold ${riskValue > 0 ? 'text-error' : 'text-text-muted'}">${riskValue}</span>
+          <span class="text-[10px] uppercase font-bold text-text-muted mt-1 tracking-wider">Riesgo Académico</span>
+        </div>
+        <div class="metric-card bg-surface border border-border p-4 rounded-xl shadow-sm flex flex-col items-center min-w-[140px] transition-all hover:shadow-md hover:-translate-y-1">
+          <span class="text-3xl font-extrabold text-success">92%</span>
+          <span class="text-[10px] uppercase font-bold text-text-muted mt-1 tracking-wider">Asistencia</span>
         </div>
       `;
-    } catch (err) {
-      resultsContainer.innerHTML = `<div class="card" style="padding:20px;text-align:center;color:var(--color-error)">${err.message || 'No se pudo realizar la búsqueda global.'}</div>`;
-    } finally {
-      setSearchingState(false);
-    }
-  };
-
-  searchButton?.addEventListener('click', runGlobalSearch);
-  searchInput?.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      runGlobalSearch();
     }
   });
+
+  // 4. Update Classes
+  fetchClassesTask.then(classes => {
+    const sectionClasses = document.getElementById('section-classes');
+    if (!sectionClasses) return;
+
+    sectionClasses.innerHTML = `
+      <div class="sidebar-section-header">
+        <div class="sidebar-section-title">
+          <svg class="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+          <span>Clases de la materia</span>
+        </div>
+      </div>
+      <div class="p-0">
+        <ul class="sidebar-list">
+          ${(classes || []).slice(0, 3).map(c => `
+            <li class="sidebar-list-item cursor-pointer hover:bg-surface-2 transition-colors" onclick="location.hash='#/student/class/${c.id}'">
+              <div class="flex justify-between items-start">
+                <p class="sidebar-item-title">${escapeHtml(c.title).split('—')[1] || c.title}</p>
+                ${c.summaryReady ? '<span class="status-badge success">Visto</span>' : ''}
+              </div>
+              <p class="text-[10px] text-text-muted mt-1 leading-tight">${c.topics ? c.topics.join(', ') : 'Sin temas'}</p>
+            </li>
+          `).join('')}
+          ${classes?.length === 0 ? '<li class="p-6 text-center text-xs text-text-muted italic">No hay clases programadas</li>' : ''}
+        </ul>
+      </div>
+    `;
+  });
+
+  // 5. Update Chat Widget
+  Promise.all([fetchClassesTask, fetchHistoryTask]).then(([classes, history]) => {
+    const chatMount = document.getElementById('chat-widget-mount');
+    if (!chatMount) return;
+
+    chatMount.innerHTML = ''; // Clear placeholder
+    const chatWidget = createChatWidget({
+      classes: classes || [],
+      subjectId: activeSubjectId,
+      initialMessages: (history || []).slice(-5).map(c => ([
+        { role: 'user', content: c.question },
+        { role: 'assistant', content: c.answer || '', sources: c.sources || [], id: c.id }
+      ])).flat()
+    });
+    chatMount.appendChild(chatWidget);
+  });
+
+  renderBottomNav();
 }

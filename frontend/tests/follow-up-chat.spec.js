@@ -45,7 +45,7 @@ test('student can ask follow-up question and keep logical flow', async ({ page }
     });
   });
 
-  await page.goto('/#/student/chat');
+  await page.goto('/#/student/dashboard');
 
   const input = page.locator('#chat-input');
   const send = page.locator('#chat-send');

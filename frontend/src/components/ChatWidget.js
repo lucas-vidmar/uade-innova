@@ -3,6 +3,7 @@
    ============================================================ */
 import { api } from '../services/api.js';
 import { auth } from '../services/auth.js';
+import { showConfirmDialog } from './Dialog.js';
 
 const FOLLOW_UP_HISTORY_WINDOW_SIZE = 4;
 
@@ -14,60 +15,51 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
   let transcriptFocus = initialTranscriptFocus;
 
   const container = document.createElement('div');
-  container.className = 'chat-container';
+  container.className = 'chat-container-card'; // Use the new design system class
+  container.style.height = '100%';
 
   const render = () => {
     container.innerHTML = `
       <!-- Class selector -->
-      <div class="chat-filter-bar">
-        <div class="chat-filter-label">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-          Contexto RAG — seleccioná las clases fuente:
-        </div>
-        <div class="chat-chips" id="chat-chips">
+      <div class="chat-sources-bar">
+        <span class="text-[10px] font-bold text-text-muted uppercase tracking-wider">Fuentes de consulta:</span>
+        <div class="flex flex-wrap gap-2" id="chat-chips">
           ${(classes || []).map(c => `
-            <span class="chip ${selectedClassIds.includes(c.id) ? 'selected' : ''}" data-class-id="${c.id}">
+            <button class="source-pill ${selectedClassIds.includes(c.id) ? 'active' : ''}" data-class-id="${c.id}">
               ${(c.title || '').split('—')[0].trim() || 'Clase'}
-            </span>
+            </button>
           `).join('')}
         </div>
-        ${selectedClassIds.length > 0 ? `
-          <div class="chat-context-info">
-            <span class="badge badge-primary">${selectedClassIds.length} clase${selectedClassIds.length !== 1 ? 's' : ''} seleccionada${selectedClassIds.length !== 1 ? 's' : ''}</span>
-            ${transcriptFocus ? `<span class="badge badge-info" id="chat-transcript-focus">${icon('target')} ${escapeHtml(transcriptFocus.label || 'Sección de transcripción')}</span>` : ''}
-          </div>
-        ` : `<div class="chat-context-warn">${icon('alert')} Seleccioná al menos una clase</div>`}
-        <button class="btn btn-sm btn-ghost" id="chat-clear" title="Limpiar conversación" style="margin-left:auto; height: 28px; padding: 0 8px;">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-          Limpiar
+        <button class="ml-auto text-primary hover:bg-surface p-1 rounded-md transition-colors" id="chat-clear" title="Limpiar conversación">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
         </button>
       </div>
 
       <!-- Messages -->
-      <div class="chat-messages" id="chat-messages">
+      <div class="chat-messages-area" id="chat-messages">
         ${messages.length === 0 ? renderWelcome() : messages.map(renderMessage).join('')}
       </div>
 
-      <!-- Input -->
+      <!-- Input Area -->
       <div class="chat-input-area">
         <div class="chat-input-wrapper">
           <textarea
             id="chat-input"
-            class="chat-input form-textarea"
-            placeholder="Preguntá sobre los materiales de clase... (Ej: ¿Qué es la arquitectura hexagonal?)"
-            rows="2"
+            class="chat-input"
+            placeholder="Preguntá sobre los materiales de clase..."
+            rows="1"
             ${isLoading ? 'disabled' : ''}
           ></textarea>
           <button
-            class="btn btn-primary chat-send-btn"
+            class="chat-send-btn ${isLoading || selectedClassIds.length === 0 ? 'disabled' : ''}"
             id="chat-send"
             ${isLoading || selectedClassIds.length === 0 ? 'disabled' : ''}
-            title="Enviar (Enter)"
+            title="Enviar mensaje"
           >
-            ${isLoading ? '<span class="spinner"></span>' : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`}
+            ${isLoading ? '<span class="spinner"></span>' : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" stroke-linecap="round" stroke-linejoin="round"/></svg>`}
           </button>
         </div>
-        <div class="chat-footer-hint">Respuestas basadas exclusivamente en los materiales de clase indexados · <strong>Modo RAG</strong></div>
+        <p class="chat-footer-hint">La IA puede cometer errores. Verificá la información importante.</p>
       </div>
     `;
     bindChatEvents();
@@ -75,13 +67,16 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
   };
 
   const renderWelcome = () => `
-    <div class="chat-welcome">
-      <div class="chat-welcome-icon">${icon('bot')}</div>
-      <h3 class="chat-welcome-title">Hola, ${user.name.split(' ')[0]}!</h3>
-      <p class="chat-welcome-sub">Seleccioná las clases arriba y haceme cualquier pregunta sobre los materiales.</p>
+    <div class="chat-welcome-container">
+      <div class="mb-6 text-primary flex justify-center">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 8V4m0 4 4-4m-4 4L8 4m4 12v4m0-4 4 4m-4-4-4 4M4 12h4m-4 0 4 4m-4-4 4-4m12 0h-4m4 0-4 4m4-4-4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <h3 class="text-2xl font-extrabold text-text-primary mb-2">¡Hola, ${user.name.split(' ')[0]}!</h3>
+      <p class="text-text-secondary text-sm">Soy tu asistente de ${auth.getActiveSubjectId() || 'estudio'}. ¿En qué puedo ayudarte hoy con la cursada de 2026?</p>
+      
       <div class="chat-suggestions">
         ${['¿Qué es la arquitectura hexagonal?', '¿Cuál es la diferencia entre microservicios y monolito?', 'Explicame el patrón SAGA'].map(s => `
-          <button class="suggestion-chip" data-suggestion="${s}">${s}</button>
+          <button class="suggestion-pill" data-suggestion="${s}">${s}</button>
         `).join('')}
       </div>
     </div>
@@ -90,38 +85,38 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
   const renderMessage = (msg) => {
     if (msg.role === 'user') {
       return `
-        <div class="chat-msg chat-msg-user animate-fade">
+        <div class="chat-msg chat-msg-user sent animate-fade">
           <div class="chat-bubble chat-bubble-user">${escapeHtml(msg.content)}</div>
-          <div class="avatar" style="width:30px;height:30px;font-size:11px;flex-shrink:0">${user.avatar}</div>
         </div>
       `;
     }
     return `
-      <div class="chat-msg chat-msg-assistant animate-fade ${msg.id === highlightMessageId ? 'highlight-msg' : ''}" id="msg-${msg.id || ''}">
-        <div class="chat-avatar-bot">${icon('bot')}</div>
-        <div class="chat-msg-body">
-          <div class="chat-bubble chat-bubble-assistant">${renderMarkdown(msg.content)}</div>
-          
-          <div class="chat-msg-footer">
-            ${msg.sources?.length > 0 ? `
-              <div class="chat-sources">
-                <span class="chat-sources-label">Fuentes:</span>
-                ${msg.sources.map(s => `
-                  <span class="source-chip" title="${s.sourceFilename}">
-                    ${materialIcon(s.materialType)}
-                    ${s.sourceFilename}
-                  </span>
-                `).join('')}
-              </div>
-            ` : '<span></span>'}
+      <div class="chat-msg chat-msg-assistant received animate-fade ${msg.id === highlightMessageId ? 'highlight-msg' : ''}" id="msg-${msg.id || ''}">
+        <div class="flex items-start gap-3">
+          <div class="chat-avatar-bot flex-shrink-0 mt-1">${icon('bot')}</div>
+          <div class="chat-msg-body flex-1 overflow-hidden">
+            <div class="chat-bubble chat-bubble-assistant leading-relaxed">${renderMarkdown(msg.content)}</div>
+            
+            <div class="chat-msg-footer mt-3 flex justify-between items-end gap-4">
+              ${msg.sources?.length > 0 ? `
+                <div class="chat-sources flex flex-wrap gap-2">
+                  ${msg.sources.map(s => `
+                    <span class="source-chip bg-surface border border-border px-2 py-1 rounded text-[10px] flex items-center gap-1" title="${s.sourceFilename}">
+                      ${materialIcon(s.materialType)}
+                      <span class="truncate max-w-[120px]">${s.sourceFilename}</span>
+                    </span>
+                  `).join('')}
+                </div>
+              ` : '<span></span>'}
 
-            <div class="chat-feedback-btns" data-message-id="${msg.id || ''}">
-              <button class="feedback-btn ${msg.feedback === 'positive' ? 'active' : ''}" data-type="positive" title="Útil">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.53l-1.6 7A2 2 0 0 1 18.23 21H7a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h4l.5-1c.9-1.8 1.8-3 3.5-3 1.1 0 2 1.1 2 2.5 0 1-.3 1.5-1 2.38Z"/></svg>
-              </button>
-              <button class="feedback-btn ${msg.feedback === 'negative' ? 'active' : ''}" data-type="negative" title="No es útil">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.53l1.6-7A2 2 0 0 1 5.77 3H17a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-4l-.5 1c-.9 1.8-1.8 3-3.5 3-1.1 0-2-1.1-2-2.5 0-1 .3-1.5 1-2.38Z"/></svg>
-              </button>
+              <div class="chat-feedback-btns flex items-center gap-1" data-message-id="${msg.id || ''}">
+                <button class="feedback-btn p-1 rounded hover:bg-surface-3 transition-colors ${msg.feedback === 'positive' ? 'active text-primary' : 'text-text-muted'}" data-type="positive" title="Útil">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.53l-1.6 7A2 2 0 0 1 18.23 21H7a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h4l.5-1c.9-1.8 1.8-3 3.5-3 1.1 0 2 1.1 2 2.5 0 1-.3 1.5-1 2.38Z"/></svg>
+                </button>
+                <button class="feedback-btn p-1 rounded hover:bg-surface-3 transition-colors ${msg.feedback === 'negative' ? 'active text-error' : 'text-text-muted'}" data-type="negative" title="No es útil">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.53l1.6-7A2 2 0 0 1 5.77 3H17a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-4l-.5 1c-.9 1.8-1.8 3-3.5 3-1.1 0-2-1.1-2-2.5 0-1 .3-1.5 1-2.38Z"/></svg>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -130,19 +125,19 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
   };
 
   const renderTyping = () => `
-    <div class="chat-msg chat-msg-assistant" id="typing-indicator">
+    <div class="chat-message received italic flex items-center gap-2" id="typing-indicator">
       <div class="chat-avatar-bot">${icon('bot')}</div>
-      <div class="chat-bubble chat-bubble-assistant">
-        <div class="typing-dots">
-          <span></span><span></span><span></span>
-        </div>
+      <div class="typing-dots flex gap-1">
+        <span class="w-1 h-1 bg-text-muted rounded-full animate-bounce"></span>
+        <span class="w-1 h-1 bg-text-muted rounded-full animate-bounce" style="animation-delay: 0.2s"></span>
+        <span class="w-1 h-1 bg-text-muted rounded-full animate-bounce" style="animation-delay: 0.4s"></span>
       </div>
     </div>
   `;
 
   const bindChatEvents = () => {
     // Class chip toggle
-    container.querySelectorAll('.chip[data-class-id]').forEach(chip => {
+    container.querySelectorAll('[data-class-id]').forEach(chip => {
       chip.addEventListener('click', () => {
         const id = chip.dataset.classId;
         if (selectedClassIds.includes(id)) {
@@ -154,8 +149,8 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
       });
     });
 
-    // Suggestion chips
-    container.querySelectorAll('.suggestion-chip').forEach(btn => {
+    // Suggestion pills
+    container.querySelectorAll('.suggestion-pill').forEach(btn => {
       btn.addEventListener('click', () => {
         const input = container.querySelector('#chat-input');
         if (input) { input.value = btn.dataset.suggestion; sendMessage(); }
@@ -182,8 +177,14 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
     });
 
     // Clear
-    container.querySelector('#chat-clear')?.addEventListener('click', () => {
-      if (confirm('¿Estás seguro de que querés limpiar la conversación actual?')) {
+    container.querySelector('#chat-clear')?.addEventListener('click', async () => {
+      const shouldClear = await showConfirmDialog({
+        title: 'Limpiar conversacion',
+        message: 'Seguro que queres limpiar la conversacion actual?',
+        confirmText: 'Limpiar',
+        cancelText: 'Cancelar',
+      });
+      if (shouldClear) {
         messages = [];
         render();
       }
