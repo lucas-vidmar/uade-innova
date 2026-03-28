@@ -1,35 +1,33 @@
 import { app } from '@azure/functions';
-import { TableClient } from '@azure/data-tables';
-import { DefaultAzureCredential } from '@azure/identity';
+import { getTableClient } from '../services/storage.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 
 const tableName = "UserProfiles";
-const storageAccountUrl = `https://${process.env.AZURE_STORAGE_ACCOUNT_NAME}.table.core.windows.net`;
 
 /**
  * Endpoint for institutional administrators (Directores) to list all users.
  * Restricted via userRoles/groups.
  */
-app.http('admin-get-users', {
+app.http('manage-get-users', {
     methods: ['GET'],
     authLevel: 'anonymous',
-    route: 'admin/users',
+    route: 'manage/users',
     handler: async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         try {
             const principal = parseClientPrincipal(request);
             
             // Security Verification: Must be Director
-            // Note: In SWA, we can also use staticWebApp.config.json for route protection,
-            // but we double-check here for defense-in-depth.
             const isDirector = principal?.userRoles?.includes('Director') || process.env.AZURE_FUNCTIONS_ENVIRONMENT === "Development";
 
             if (!isDirector) {
                 return { status: 403, body: "Forbidden - Administrator access required" };
             }
 
-            const credential = new DefaultAzureCredential();
-            const tableClient = new TableClient(storageAccountUrl, tableName, credential);
+            const tableClient = getTableClient(tableName);
+            
+            // Ensure table exists in local dev or if not yet created in cloud
+            await tableClient.createTable().catch(() => {}); 
 
             const users = [];
             const entities = tableClient.listEntities();
@@ -37,11 +35,11 @@ app.http('admin-get-users', {
             for await (const entity of entities) {
                 users.push({
                     id: entity.rowKey,
+                    name: entity.name || "Usuario Desconocido",
+                    email: entity.email || "No disponible",
                     theme: entity.theme,
                     language: entity.language,
                     consentAccepted: entity.consentAccepted || false,
-                    // Note: TableStorage doesn't store name/email by default in our current schema
-                    // In a real sys, we might join with Entra ID Graph API
                     lastActive: entity.timestamp
                 });
             }
