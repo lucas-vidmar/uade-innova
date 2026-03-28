@@ -2,6 +2,7 @@
    UserManagement.js — Admin View for managing users
    ============================================================ */
 import { api } from '../../services/api.js';
+import { toast } from '../../components/Toast.js';
 
 export async function renderUserManagement(container) {
     container.innerHTML = `
@@ -67,13 +68,19 @@ export async function renderUserManagement(container) {
                                 ${user.lastActive ? new Date(user.lastActive).toLocaleString() : 'N/A'}
                             </td>
                             <td>
-                                <button class="btn btn-secondary btn-sm" onclick="alert('Funcionalidad de edición reservada para Fase 2')">Detalles</button>
+                                <button class="btn btn-secondary btn-sm btn-user-details">Detalles</button>
                             </td>
                         </tr>
                     `).join('')}
                 </tbody>
             </table>
         `;
+
+        tableContainer.querySelectorAll('.btn-user-details').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                toast('info', 'Proximamente', 'La edicion detallada de usuarios llega en Fase 2.');
+            });
+        });
 
     } catch (err) {
         console.error('Error rendering User Management:', err);

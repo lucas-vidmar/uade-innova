@@ -4,7 +4,9 @@
    ============================================================ */
 
 const USE_MOCK = false;
-const BASE_URL = 'https://func-dashboard-ingest-q47bia47kk3na.azurewebsites.net/api';
+const BASE_URL = window.location.hostname === 'localhost'
+    ? 'http://localhost:7071/api'
+    : 'https://func-dashboard-ingest-q47bia47kk3na.azurewebsites.net/api';
 
 /* ── Mock Data ───────────────────────────────────────────── */
 const MOCK_CLASSES = [
@@ -15,6 +17,8 @@ const MOCK_CLASSES = [
         date: '2026-03-05',
         topics: ['Definición de arquitectura', 'Patrones arquitectónicos', 'Atributos de calidad'],
         summaryReady: true,
+        professorIds: ['u-01'],
+        studentIds: ['u-02', 'u-03'],
         materials: [
             { id: 'm-01', classId: 'class-01', type: 'transcript', filename: 'clase1_transcripcion.txt', status: 'ready', uploadedAt: '2026-03-05T10:00:00Z', mimeType: 'text/plain' },
             { id: 'm-02', classId: 'class-01', type: 'presentation', filename: 'clase1_slides.pdf', status: 'ready', uploadedAt: '2026-03-05T10:05:00Z', mimeType: 'application/pdf' },
@@ -154,18 +158,40 @@ const MOCK_GLOBAL_SEARCH_RESULTS = [
 /* ── Helpers ─────────────────────────────────────────────── */
 function delay(ms = 600) { return new Promise(r => setTimeout(r, ms)); }
 
+/**
+ * Fetch with timeout using AbortController
+ */
+async function fetchWithTimeout(resource, options = {}) {
+    const { timeout = 5000 } = options;
+
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
+
+    const response = await fetch(resource, {
+        ...options,
+        signal: controller.signal
+    });
+    clearTimeout(id);
+    return response;
+}
+
 /* ── API Client ──────────────────────────────────────────── */
 export const api = {
     async getClasses(subjectId) {
         if (USE_MOCK) { await delay(); return MOCK_CLASSES.filter(c => c.subjectId === subjectId); }
         try {
-            const res = await fetch(`${BASE_URL}/classes?subjectId=${subjectId}`);
-            if (!res.ok) return [];
+            const res = await fetchWithTimeout(`${BASE_URL}/classes?subjectId=${subjectId}`, { timeout: 4000 });
+            if (!res.ok) return MOCK_CLASSES.filter(c => c.subjectId === subjectId);
             const data = await res.json();
+            if (Array.isArray(data) && data.length > 0) return data;
+            if (window.location.hostname === 'localhost') {
+                return MOCK_CLASSES.filter(c => c.subjectId === subjectId);
+            }
             return Array.isArray(data) ? data : [];
         } catch (err) {
             console.error('[API] getClasses failed:', err);
-            return [];
+            // Fallback to mock if it's a timeout or connection error
+            return MOCK_CLASSES.filter(c => c.subjectId === subjectId);
         }
     },
 
@@ -176,13 +202,13 @@ export const api = {
         }
 
         try {
-            const res = await fetch(`${BASE_URL}/deadlines?subjectId=${subjectId}`);
+            const res = await fetchWithTimeout(`${BASE_URL}/deadlines?subjectId=${subjectId}`, { timeout: 3000 });
             if (!res.ok) return [];
             const data = await res.json();
             return Array.isArray(data) ? data : [];
         } catch (err) {
             console.error('[API] getDeadlines failed:', err);
-            return [];
+            return MOCK_DEADLINES.filter(item => item.subjectId === subjectId);
         }
     },
 
@@ -264,13 +290,79 @@ export const api = {
         }
         try {
             const res = await fetch(`${BASE_URL}/subjects`);
-            if (!res.ok) return [];
+            if (!res.ok) {
+                return [
+                    { id: 'arq-software-2026', name: 'Arquitectura de Software' },
+                    { id: 'diseno-sistemas-2026', name: 'Diseño de Sistemas' }
+                ];
+            }
             const data = await res.json();
+            if (Array.isArray(data) && data.length > 0) return data;
+            if (window.location.hostname === 'localhost') {
+                return [
+                    { id: 'arq-software-2026', name: 'Arquitectura de Software' },
+                    { id: 'diseno-sistemas-2026', name: 'Diseño de Sistemas' }
+                ];
+            }
             return Array.isArray(data) ? data : [];
         } catch (err) {
             console.error('[API] getSubjects failed:', err);
-            return [];
+            return [
+                { id: 'arq-software-2026', name: 'Arquitectura de Software' },
+                { id: 'diseno-sistemas-2026', name: 'Diseño de Sistemas' }
+            ];
         }
+    },
+
+    async saveSubject(subject) {
+        if (USE_MOCK) {
+            await delay(250);
+            return { id: subject.id || `subject-${Date.now()}`, name: subject.name };
+        }
+
+        const method = subject?.id ? 'PUT' : 'POST';
+        const res = await fetch(`${BASE_URL}/subjects`, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(subject),
+        });
+
+        if (!res.ok) {
+            let message = `Error ${res.status}: No se pudo guardar la materia`;
+            try {
+                const err = await res.json();
+                if (err?.error) message = err.error;
+            } catch {
+                // no-op
+            }
+            throw new Error(message);
+        }
+
+        return res.json();
+    },
+
+    async deleteSubject(subjectId) {
+        if (USE_MOCK) {
+            await delay(250);
+            return { success: true };
+        }
+
+        const res = await fetch(`${BASE_URL}/subjects/${encodeURIComponent(subjectId)}`, {
+            method: 'DELETE',
+        });
+
+        if (!res.ok) {
+            let message = `Error ${res.status}: No se pudo eliminar la materia`;
+            try {
+                const err = await res.json();
+                if (err?.error) message = err.error;
+            } catch {
+                // no-op
+            }
+            throw new Error(message);
+        }
+
+        return res.json();
     },
 
     async saveClasses(subjectId, classesArray) {
@@ -308,15 +400,15 @@ export const api = {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ question, classIds, subjectId, stream: false, conversationHistory, historyWindowSize, transcriptFocus }),
             });
-            
+
             if (res.status === 429) {
                 throw new Error('The AI tutor is resting, please try again in a few minutes');
             }
-            
+
             if (!res.ok) {
                 return { answer: 'Lo siento, no pude obtener una respuesta de la IA en este momento.', sources: [] };
             }
-            
+
             return res.json();
         } catch (err) {
             console.error('[API] ragQuery failed:', err);
@@ -329,267 +421,314 @@ export const api = {
      * @param {Object} params - { question, classIds, subjectId }
      * @param {Function} onEvent - Callback para cada evento del stream: (type, data) => void
      */
-    async ragQueryStream({ question, classIds, subjectId, conversationHistory = [], historyWindowSize = 4, transcriptFocus = null }, onEvent) {
-        if (USE_MOCK) {
-            // Simular streaming para mocks
-            await delay(400);
-            onEvent('metadata', { 
-                interactionId: 'mock-id-' + Date.now(), 
-                sources: [
-                    { materialType: 'transcript', sourceFilename: 'clase3_transcript.txt', classId: 'class-03' },
-                    { materialType: 'presentation', sourceFilename: 'clase3_slides.pdf', classId: 'class-03' }
-                ] 
-            });
-            const mockText = "Esta es una respuesta simulada por stream. La arquitectura hexagonal permite desacoplar la lógica de negocio de los detalles técnicos.";
-            const words = mockText.split(' ');
-            for (const word of words) {
-                await delay(50);
-                onEvent('delta', { content: word + ' ' });
+    async ragQueryStream({ question, classIds, subjectId, conversationHistory =[], historyWindowSize = 4, transcriptFocus = null }, onEvent) {
+            if (USE_MOCK) {
+                // Simular streaming para mocks
+                await delay(400);
+                onEvent('metadata', {
+                    interactionId: 'mock-id-' + Date.now(),
+                    sources: [
+                        { materialType: 'transcript', sourceFilename: 'clase3_transcript.txt', classId: 'class-03' },
+                        { materialType: 'presentation', sourceFilename: 'clase3_slides.pdf', classId: 'class-03' }
+                    ]
+                });
+                const mockText = "Esta es una respuesta simulada por stream. La arquitectura hexagonal permite desacoplar la lógica de negocio de los detalles técnicos.";
+                const words = mockText.split(' ');
+                for (const word of words) {
+                    await delay(50);
+                    onEvent('delta', { content: word + ' ' });
+                }
+                onEvent('done', { answer: mockText });
+                return;
             }
-            onEvent('done', { answer: mockText });
-            return;
-        }
 
-        const response = await fetch(`${BASE_URL}/rag-query`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question, classIds, subjectId, stream: true, conversationHistory, historyWindowSize, transcriptFocus }),
-        });
+            const response = await fetch(`${BASE_URL}/rag-query`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ question, classIds, subjectId, stream: true, conversationHistory, historyWindowSize, transcriptFocus }),
+            });
 
-        if (response.status === 429) {
-            throw new Error('The AI tutor is resting, please try again in a few minutes');
-        }
+            if (response.status === 429) {
+                throw new Error('The AI tutor is resting, please try again in a few minutes');
+            }
 
-        if (!response.ok) {
-            throw new Error(`Error ${response.status}: No se pudo iniciar el stream de respuesta`);
-        }
+            if (!response.ok) {
+                let errorMessage = `No se pudo iniciar el stream de respuesta`;
+                try {
+                    const errorData = await response.json();
+                    if (errorData && errorData.error) {
+                        errorMessage = errorData.error;
+                    }
+                } catch (e) {
+                    // Si no es JSON, usamos el statusText o el mensaje por defecto
+                    errorMessage = response.statusText || errorMessage;
+                }
+                throw new Error(`Error ${response.status}: ${errorMessage}`);
+            }
 
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
 
-        try {
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
+            try {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
 
-                buffer += decoder.decode(value, { stream: true });
-                const parts = buffer.split('\n\n');
-                buffer = parts.pop(); // El último puede estar incompleto
+                    buffer += decoder.decode(value, { stream: true });
+                    const parts = buffer.split('\n\n');
+                    buffer = parts.pop(); // El último puede estar incompleto
 
-                for (const part of parts) {
-                    if (!part.trim()) continue;
-                    
-                    const lines = part.split('\n');
-                    let eventType = 'message';
-                    let data = null;
+                    for (const part of parts) {
+                        if (!part.trim()) continue;
 
-                    for (const line of lines) {
-                        if (line.startsWith('event: ')) {
-                            eventType = line.slice(7).trim();
-                        } else if (line.startsWith('data: ')) {
-                            try {
-                                data = JSON.parse(line.slice(6));
-                            } catch (e) {
-                                console.error('Error parseando SSE data:', line);
+                        const lines = part.split('\n');
+                        let eventType = 'message';
+                        let data = null;
+
+                        for (const line of lines) {
+                            if (line.startsWith('event: ')) {
+                                eventType = line.slice(7).trim();
+                            } else if (line.startsWith('data: ')) {
+                                try {
+                                    data = JSON.parse(line.slice(6));
+                                } catch (e) {
+                                    console.error('Error parseando SSE data:', line);
+                                }
                             }
                         }
-                    }
 
-                    if (data) {
-                        onEvent(eventType, data);
+                        if (data) {
+                            onEvent(eventType, data);
+                        }
                     }
                 }
+            } catch (err) {
+                console.error('[API] Stream interrupted:', err);
+                throw err;
             }
-        } catch (err) {
-            console.error('[API] Stream interrupted:', err);
-            throw err;
-        }
-    },
+        },
 
     async ingestMaterial(formData) {
-        if (USE_MOCK) {
-            await delay(800);
-            return { materialId: `m-${Date.now()}`, status: 'processing' };
-        }
-        const res = await fetch(`${BASE_URL}/ingest-material`, { method: 'POST', body: formData });
-        return res.json();
-    },
+            if (USE_MOCK) {
+                await delay(800);
+                return { materialId: `m-${Date.now()}`, status: 'processing' };
+            }
+            const res = await fetch(`${BASE_URL}/ingest-material`, { method: 'POST', body: formData });
+            return res.json();
+        },
 
     async getDirectorStats() {
         if (USE_MOCK) { await delay(500); return MOCK_DIRECTOR_STATS; }
-        const res = await fetch(`${BASE_URL}/director/stats`);
-        return res.json();
+        try {
+            const res = await fetchWithTimeout(`${BASE_URL}/director/stats`, { timeout: 4000 });
+            if (!res.ok) return MOCK_DIRECTOR_STATS;
+            const text = await res.text();
+            if (!text) return MOCK_DIRECTOR_STATS;
+            return JSON.parse(text);
+        } catch (err) {
+            console.error('[API] getDirectorStats failed:', err);
+            return MOCK_DIRECTOR_STATS;
+        }
     },
 
     async getAdminUsers() {
-        if (USE_MOCK) {
-            await delay(400);
-            return [
-                { id: 'alu-001', theme: 'light', language: 'es', consentAccepted: true, lastActive: '2026-03-17T12:00:00Z' },
-                { id: 'doc-001', theme: 'dark', language: 'es', consentAccepted: true, lastActive: '2026-03-17T11:45:00Z' },
-                { id: 'alu-new', theme: 'light', language: 'es', consentAccepted: false, lastActive: '2026-03-17T10:30:00Z' }
-            ];
-        }
-        const res = await fetch(`${BASE_URL}/admin/users`);
-        if (!res.ok) throw new Error('Unauthorized or Server Error');
-        return res.json();
-    },
+            if (USE_MOCK) {
+                await delay(400);
+                return [
+                    { id: 'alu-001', name: 'Valentina Rodríguez', email: 'valentina.rodriguez@uade.edu.ar', role: 'student', theme: 'light', language: 'es', consentAccepted: true, lastActive: '2026-03-17T12:00:00Z' },
+                    { id: 'doc-001', name: 'Dr. Martín Ferreiro', email: 'mferreiro@uade.edu.ar', role: 'teacher', theme: 'dark', language: 'es', consentAccepted: true, lastActive: '2026-03-17T11:45:00Z' },
+                    { id: 'alu-new', name: 'Alumno Nuevo', email: 'nuevo@uade.edu.ar', role: 'student', theme: 'light', language: 'es', consentAccepted: false, lastActive: '2026-03-17T10:30:00Z' }
+                ];
+            }
+            try {
+                const res = await fetchWithTimeout(`${BASE_URL}/manage/users`, { timeout: 4000 });
+                if (!res.ok) {
+                    console.warn(`[API] getAdminUsers returned ${res.status}. Falling back to empty list.`);
+                    return [];
+                }
+                const data = await res.json();
+                return Array.isArray(data) ? data : [];
+            } catch (err) {
+                console.error('[API] getAdminUsers failed:', err);
+                return [];
+            }
+        },
+
+    async saveClass(subjectId, classData) {
+            const classes = await this.getClasses(subjectId);
+            const index = classes.findIndex(c => c.id === classData.id);
+
+            const newClasses = [...classes];
+            if (index >= 0) {
+                newClasses[index] = { ...newClasses[index], ...classData };
+            } else {
+                newClasses.push(classData);
+            }
+
+            return this.saveClasses(subjectId, newClasses);
+        },
+
+    async deleteClass(subjectId, classId) {
+            const classes = await this.getClasses(subjectId);
+            const newClasses = classes.filter(c => c.id !== classId);
+            return this.saveClasses(subjectId, newClasses);
+        },
 
     async getTeacherAnalytics(subjectId) {
-        if (USE_MOCK) { await delay(400); return MOCK_TEACHER_ANALYTICS; }
-        const res = await fetch(`${BASE_URL}/analytics?subjectId=${subjectId}`);
-        return res.json();
-    },
+            if (USE_MOCK) { await delay(400); return MOCK_TEACHER_ANALYTICS; }
+            const res = await fetch(`${BASE_URL}/analytics?subjectId=${subjectId}`);
+            return res.json();
+        },
     
     async getProfile() {
-        if (USE_MOCK) {
-            await delay(300);
-            return { theme: 'light', language: 'es', consentAccepted: false };
-        }
-        const res = await fetch(`${BASE_URL}/get-profile`);
-        return res.json();
-    },
+            if (USE_MOCK) {
+                await delay(300);
+                return { theme: 'light', language: 'es', consentAccepted: false };
+            }
+            const res = await fetch(`${BASE_URL}/get-profile`);
+            return res.json();
+        },
 
     async saveProfile(data) {
-        if (USE_MOCK) return;
-        const res = await fetch(`${BASE_URL}/save-profile`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
-        });
-        return res.json();
-    },
+            if (USE_MOCK) return;
+            const res = await fetch(`${BASE_URL}/save-profile`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            return res.json();
+        },
 
     async getClassSummary(classId) {
-        if (USE_MOCK) {
-            await delay(800);
-            return { classId, summary: "Resumen simulado para la clase " + classId, validated: false };
-        }
-        const res = await fetch(`${BASE_URL}/class-summary/${classId}`);
-        if (!res.ok) return null;
-        return res.json();
-    },
+            if (USE_MOCK) {
+                await delay(800);
+                return { classId, summary: "Resumen simulado para la clase " + classId, validated: false };
+            }
+            const res = await fetch(`${BASE_URL}/class-summary/${classId}`);
+            if (!res.ok) return null;
+            return res.json();
+        },
 
     async saveClassSummary(classId, data) {
-        if (USE_MOCK) return;
-        const res = await fetch(`${BASE_URL}/class-summary/${classId}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
-        });
-        return res.json();
-    },
+            if (USE_MOCK) return;
+            const res = await fetch(`${BASE_URL}/class-summary/${classId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            return res.json();
+        },
 
     async getClassMap(classId) {
-        if (USE_MOCK) {
-            await delay(600);
-            return {
-                classId,
-                mapCode: "graph TD\nA[Arquitectura] --> B[Patrones]\nA --> C[Atributos]\nB --> D[Microservicios]\nB --> E[Monolito]"
-            };
-        }
-        const res = await fetch(`${BASE_URL}/class-map/${classId}`);
-        if (!res.ok) return null;
-        return res.json();
-    },
+            if (USE_MOCK) {
+                await delay(600);
+                return {
+                    classId,
+                    mapCode: "graph TD\nA[Arquitectura] --> B[Patrones]\nA --> C[Atributos]\nB --> D[Microservicios]\nB --> E[Monolito]"
+                };
+            }
+            const res = await fetch(`${BASE_URL}/class-map/${classId}`);
+            if (!res.ok) return null;
+            return res.json();
+        },
 
     async getClassTimeline(classId) {
-        if (USE_MOCK) {
-            await delay(400);
-            return {
-                classId,
-                sections: [
-                    { id: 'm-01-sec-001', startSecond: 0, endSecond: 60, timestampLabel: '00:00:00', text: 'Introduccion a arquitectura de software.' },
-                    { id: 'm-01-sec-002', startSecond: 60, endSecond: 120, timestampLabel: '00:01:00', text: 'Pregunta sobre atributos de calidad.' },
-                ],
-                markers: [
-                    { id: 'm-01-mk-001', sectionId: 'm-01-sec-001', startSecond: 0, endSecond: 60, iconType: 'question', label: 'Introduccion y contexto' },
-                    { id: 'm-01-mk-002', sectionId: 'm-01-sec-002', startSecond: 60, endSecond: 120, iconType: 'assignment', label: 'Ejercicio de atributos' },
-                ],
-            };
-        }
-        const res = await fetch(`${BASE_URL}/class-timeline/${classId}`);
-        if (!res.ok) return { classId, sections: [], markers: [] };
-        return res.json();
-    },
+            if (USE_MOCK) {
+                await delay(400);
+                return {
+                    classId,
+                    sections: [
+                        { id: 'm-01-sec-001', startSecond: 0, endSecond: 60, timestampLabel: '00:00:00', text: 'Introduccion a arquitectura de software.' },
+                        { id: 'm-01-sec-002', startSecond: 60, endSecond: 120, timestampLabel: '00:01:00', text: 'Pregunta sobre atributos de calidad.' },
+                    ],
+                    markers: [
+                        { id: 'm-01-mk-001', sectionId: 'm-01-sec-001', startSecond: 0, endSecond: 60, iconType: 'question', label: 'Introduccion y contexto' },
+                        { id: 'm-01-mk-002', sectionId: 'm-01-sec-002', startSecond: 60, endSecond: 120, iconType: 'assignment', label: 'Ejercicio de atributos' },
+                    ],
+                };
+            }
+            const res = await fetch(`${BASE_URL}/class-timeline/${classId}`);
+            if (!res.ok) return { classId, sections: [], markers: [] };
+            return res.json();
+        },
 
     async saveClassTimeline(classId, payload) {
-        if (USE_MOCK) return payload;
-        const res = await fetch(`${BASE_URL}/class-timeline/${classId}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-        });
-        if (!res.ok) {
-            throw new Error(`Error ${res.status}: No se pudo guardar la linea de tiempo`);
-        }
-        return res.json();
-    },
+            if (USE_MOCK) return payload;
+            const res = await fetch(`${BASE_URL}/class-timeline/${classId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            if (!res.ok) {
+                throw new Error(`Error ${res.status}: No se pudo guardar la linea de tiempo`);
+            }
+            return res.json();
+        },
 
     async saveClassMap(classId, data) {
-        if (USE_MOCK) return;
-        const res = await fetch(`${BASE_URL}/class-map/${classId}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
-        });
-        return res.json();
-    },
+            if (USE_MOCK) return;
+            const res = await fetch(`${BASE_URL}/class-map/${classId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            return res.json();
+        },
 
     // ── Academic SGA Methods (Moved from academic.js) ───────
     async getTasks(studentId) {
-        // Mock data as defined in academic.js
-        const MOCK_TASKS = [
-            { id: 't-01', title: 'TP1: Diagrama de Arquitectura C4', dueDate: '2026-03-28', weight: 25, status: 'pending', classIds: ['class-01', 'class-02'], grade: null, subjectId: 'arq-software-2026' },
-            { id: 't-02', title: 'Quiz Online — Estilos Arquitectónicos', dueDate: '2026-03-20', weight: 10, status: 'completed', classIds: ['class-02'], grade: 8.5, subjectId: 'arq-software-2026' },
-            { id: 't-03', title: 'Parcial 1 — Arquitectura y Patrones', dueDate: '2026-04-16', weight: 35, status: 'pending', classIds: ['class-01', 'class-02', 'class-03', 'class-04'], grade: null, subjectId: 'arq-software-2026' },
-            { id: 't-04', title: 'Lectura: "Clean Architecture" (caps 1-5)', dueDate: '2026-03-19', weight: 5, status: 'completed', classIds: ['class-01'], grade: 10, subjectId: 'arq-software-2026' },
-            { id: 't-05', title: 'Entrega: Documento de Visión', dueDate: '2026-03-24', weight: 15, status: 'pending', classIds: ['class-01'], grade: null, subjectId: 'arq-software-2026' },
-            { id: 't-06', title: 'Repaso: Atributos de Calidad', dueDate: '2026-03-22', weight: 4, status: 'pending', classIds: ['class-01'], grade: null, subjectId: 'arq-software-2026' },
-        ];
-        await delay(400);
-        return MOCK_TASKS;
-    },
+            // Mock data as defined in academic.js
+            const MOCK_TASKS = [
+                { id: 't-01', title: 'TP1: Diagrama de Arquitectura C4', dueDate: '2026-03-28', weight: 25, status: 'pending', classIds: ['class-01', 'class-02'], grade: null, subjectId: 'arq-software-2026' },
+                { id: 't-02', title: 'Quiz Online — Estilos Arquitectónicos', dueDate: '2026-03-20', weight: 10, status: 'completed', classIds: ['class-02'], grade: 8.5, subjectId: 'arq-software-2026' },
+                { id: 't-03', title: 'Parcial 1 — Arquitectura y Patrones', dueDate: '2026-04-16', weight: 35, status: 'pending', classIds: ['class-01', 'class-02', 'class-03', 'class-04'], grade: null, subjectId: 'arq-software-2026' },
+                { id: 't-04', title: 'Lectura: "Clean Architecture" (caps 1-5)', dueDate: '2026-03-19', weight: 5, status: 'completed', classIds: ['class-01'], grade: 10, subjectId: 'arq-software-2026' },
+                { id: 't-05', title: 'Entrega: Documento de Visión', dueDate: '2026-03-24', weight: 15, status: 'pending', classIds: ['class-01'], grade: null, subjectId: 'arq-software-2026' },
+                { id: 't-06', title: 'Repaso: Atributos de Calidad', dueDate: '2026-03-22', weight: 4, status: 'pending', classIds: ['class-01'], grade: null, subjectId: 'arq-software-2026' },
+            ];
+            await delay(400);
+            return MOCK_TASKS;
+        },
 
     async getEarlyAlerts(subjectId) {
-        const MOCK_EARLY_ALERTS = [
-            { id: 'alu-012', name: 'Tomás García', subjectId: 'arq-software-2026', subject: 'Arq. de Software', risk: 'high', attendance: '45%', avgGrade: 4.2 },
-            { id: 'alu-031', name: 'Lucía Martínez', subjectId: 'diseno-sistemas-2026', subject: 'Sistemas Dist.', risk: 'medium', attendance: '62%', avgGrade: 5.1 },
-            { id: 'alu-008', name: 'Nicolás Peralta', subjectId: 'arq-software-2026', subject: 'Arq. de Software', risk: 'medium', attendance: '70%', avgGrade: 5.8 },
-        ];
-        await delay(400);
-        return subjectId ? MOCK_EARLY_ALERTS.filter(a => a.subjectId === subjectId) : MOCK_EARLY_ALERTS;
-    },
+            const MOCK_EARLY_ALERTS = [
+                { id: 'alu-012', name: 'Tomás García', subjectId: 'arq-software-2026', subject: 'Arq. de Software', risk: 'high', attendance: '45%', avgGrade: 4.2 },
+                { id: 'alu-031', name: 'Lucía Martínez', subjectId: 'diseno-sistemas-2026', subject: 'Sistemas Dist.', risk: 'medium', attendance: '62%', avgGrade: 5.1 },
+                { id: 'alu-008', name: 'Nicolás Peralta', subjectId: 'arq-software-2026', subject: 'Arq. de Software', risk: 'medium', attendance: '70%', avgGrade: 5.8 },
+            ];
+            await delay(400);
+            return subjectId ? MOCK_EARLY_ALERTS.filter(a => a.subjectId === subjectId) : MOCK_EARLY_ALERTS;
+        },
 
     async getAttendanceStats(subjectId) {
-        await delay(400);
-        return { average: 78, critical: 3, trend: 'stable' };
-    },
+            await delay(400);
+            return { average: 78, critical: 3, trend: 'stable' };
+        },
 
     async getChatHistory(subjectId) {
-        if (USE_MOCK) {
-            await delay(600);
-            return [];
-        }
-        try {
-            const res = await fetch(`${BASE_URL}/chat-history?subjectId=${subjectId}`);
-            if (!res.ok) return [];
-            const data = await res.json();
-            return Array.isArray(data) ? data : [];
-        } catch (err) {
-            console.error('[API] getChatHistory failed:', err);
-            return [];
-        }
-    },
+            if (USE_MOCK) {
+                await delay(600);
+                return [];
+            }
+            try {
+                const res = await fetchWithTimeout(`${BASE_URL}/chat-history?subjectId=${subjectId}`, { timeout: 4000 });
+                if (!res.ok) return [];
+                const data = await res.json();
+                return Array.isArray(data) ? data : [];
+            } catch (err) {
+                console.error('[API] getChatHistory failed:', err);
+                return []; // Chat history is less critical, can be empty
+            }
+        },
 
     async sendChatFeedback({ messageId, subjectId, isPositive }) {
-        if (USE_MOCK) return { success: true };
-        const res = await fetch(`${BASE_URL}/chat-feedback`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ messageId, subjectId, isPositive })
-        });
-        return res.json();
-    }
-};
+            if (USE_MOCK) return { success: true };
+            const res = await fetch(`${BASE_URL}/chat-feedback`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ messageId, subjectId, isPositive })
+            });
+            return res.json();
+        }
+    };
