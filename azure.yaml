@@ -28,9 +28,8 @@ hooks:
     # Generate .env for Vite build based on azd environment variables
     shell: sh
     run: |
-      echo "VITE_API_BASE_URL=$VITE_API_BASE_URL" > ./frontend/.env
+      echo "VITE_API_BASE_URL=$AZURE_FUNCTION_APP_URI/api" > ./frontend/.env
       echo "VITE_AZURE_OPENAI_ENDPOINT=$AZURE_OPENAI_ENDPOINT" >> ./frontend/.env
       echo "VITE_AZURE_OPENAI_CHAT_DEPLOYMENT=$AZURE_OPENAI_CHAT_DEPLOYMENT" >> ./frontend/.env
       echo "VITE_AZURE_OPENAI_EMBEDDING_DEPLOYMENT=$AZURE_OPENAI_EMBEDDING_DEPLOYMENT" >> ./frontend/.env
       cd frontend && npm install && npm run build
-
