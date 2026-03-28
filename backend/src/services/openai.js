@@ -12,7 +12,7 @@ function getClient() {
     if (!_client) {
         const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
         const apiKey = process.env.AZURE_OPENAI_KEY || process.env.AZURE_OPENAI_API_KEY;
-        
+
         if (!endpoint) {
             throw new Error('AZURE_OPENAI_ENDPOINT is not defined in environment variables.');
         }
@@ -47,7 +47,7 @@ function getClient() {
  */
 export async function generateEmbeddingsBatch(texts) {
     const client = getClient();
-    
+
     // Función de ayuda para reintentar con exponential backoff
     const executeWithRetry = async (fn, retries = 3, delay = 1000) => {
         try {
@@ -64,7 +64,7 @@ export async function generateEmbeddingsBatch(texts) {
         }
     };
 
-    const response = await executeWithRetry(() => 
+    const response = await executeWithRetry(() =>
         client.embeddings.create({
             model: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT,
             input: texts.map(t => t.trim()),
@@ -153,7 +153,7 @@ Resumen académico:`;
     });
 
     const content = response.choices[0].message.content;
-    
+
     return {
         content,
         usage: response.usage,
