@@ -17,6 +17,14 @@ const storageMocks = {
 // Mock dependencies
 mock.module('../services/auth-utils.js', { namedExports: authUtilsMocks });
 mock.module('../services/storage.js', { namedExports: storageMocks });
+mock.module('../services/state-store.js', {
+    namedExports: {
+        listClassesBySubject: mock.fn(async () => []),
+        listMaterialsBySubject: mock.fn(async () => []),
+        replaceClassesForSubject: mock.fn(async () => true),
+        deleteMaterialStateById: mock.fn(async () => true),
+    }
+});
 mock.module('uuid', { namedExports: { v4: () => '1234' } });
 
 // Capture multiple handlers since there are multiple routes
