@@ -15,7 +15,6 @@ themeManager.init();
 const ROUTES = {
     '/student/dashboard': () => import('./pages/student/Dashboard.js').then(m => m.renderStudentDashboard),
     '/student/class': () => import('./pages/student/ClassDetail.js').then(m => m.renderClassDetail),
-    '/student/chat': () => import('./pages/student/Chat.js').then(m => m.renderStudentChat),
     '/student/tasks': () => import('./pages/student/Tasks.js').then(m => m.renderStudentTasks),
     '/student/calendar': () => import('./pages/student/Calendar.js').then(m => m.renderStudentCalendar),
     '/teacher/dashboard': () => import('./pages/teacher/Dashboard.js').then(m => m.renderTeacherDashboard),
@@ -23,6 +22,8 @@ const ROUTES = {
     '/teacher/upload': () => import('./pages/teacher/UploadMaterials.js').then(m => m.renderTeacherUpload),
     '/teacher/analytics': () => import('./pages/teacher/Analytics.js').then(m => m.renderTeacherAnalytics),
     '/director/dashboard': () => import('./pages/director/Dashboard.js').then(m => m.renderDirectorDashboard),
+    '/director/classes': () => import('./pages/director/ClassManagement.js').then(m => m.renderClassManagement),
+    '/director/subjects': () => import('./pages/director/SubjectManagement.js').then(m => m.renderSubjectManagement),
     '/admin/users': () => import('./pages/admin/UserManagement.js').then(m => m.renderUserManagement),
 };
 
@@ -34,7 +35,6 @@ function buildShell() {
     appEl.innerHTML = `
     <div class="app-shell">
       <div class="main-content" id="main-content">
-        <header id="app-header"></header>
         <main class="page-content" id="page-content"></main>
       </div>
     </div>
