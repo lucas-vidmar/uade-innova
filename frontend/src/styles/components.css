@@ -679,3 +679,108 @@
         width: 100%;
     }
 }
+
+/* ── Custom Dropdown (Premium) ─────────────────────────── */
+.custom-dropdown {
+    position: relative;
+    display: inline-block;
+    min-width: 180px;
+}
+
+.custom-dropdown-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: 10px var(--space-4);
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all var(--transition);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--color-text-primary);
+    width: 100%;
+}
+
+.custom-dropdown-trigger:hover {
+    background: var(--color-surface-3);
+    border-color: var(--color-primary-light);
+    box-shadow: var(--shadow-sm);
+}
+
+.custom-dropdown-trigger svg {
+    transition: transform var(--transition);
+    color: var(--color-text-muted);
+}
+
+.custom-dropdown.active .custom-dropdown-trigger svg {
+    transform: rotate(180deg);
+}
+
+.custom-dropdown-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    width: 100%;
+    min-width: 220px;
+    background: color-mix(in srgb, var(--color-surface) 90%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    z-index: 1000;
+    overflow: hidden;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.custom-dropdown.active .custom-dropdown-menu {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.custom-dropdown-option {
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition: all var(--transition);
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+}
+
+.custom-dropdown-option:hover {
+    background: var(--color-accent-glow);
+    color: var(--color-primary);
+}
+
+.custom-dropdown-option.selected {
+    background: var(--color-surface-3);
+    color: var(--color-primary);
+    font-weight: 700;
+}
+
+[data-theme="dark"] .custom-dropdown-menu {
+    background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* ── Header Grid (for Sidebar.js) ─────────────────────── */
+.top-nav-grid {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    width: 100%;
+    gap: var(--space-4);
+}
+
+.top-nav-grid > :last-child {
+    justify-self: end;
+}

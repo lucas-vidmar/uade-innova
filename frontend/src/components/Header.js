@@ -4,79 +4,76 @@
 import { auth } from '../services/auth.js';
 import { themeManager } from '../services/theme.js';
 
-export function renderHeader(title = 'Dashboard') {
-  let header = document.getElementById('app-header');
-  if (!header) {
-    header = document.createElement('header');
-    header.id = 'app-header';
-    document.querySelector('.main-content')?.prepend(header);
+export function renderHeader(containerOrTitle, titleOrStats = 'Dashboard', showMetrics = true) {
+  let container = containerOrTitle;
+  let title = titleOrStats;
+  let stats = null;
+  let actualShowMetrics = showMetrics;
+
+  // Handle backwards compatibility: renderHeader('Title') or renderHeader('Title', stats) or renderHeader('Title', showMetrics)
+  if (typeof containerOrTitle === 'string') {
+    container = document.getElementById('app-header');
+    title = containerOrTitle;
+    
+    if (typeof titleOrStats === 'object' && titleOrStats !== null) {
+      stats = titleOrStats;
+    } else if (typeof titleOrStats === 'boolean') {
+      actualShowMetrics = titleOrStats;
+    }
   }
 
+  if (!container) {
+    console.warn('[Header] No container found for renderHeader');
+    return;
+  }
   const user = auth.getUser();
-  const isLoggedIn = auth.isLoggedIn();
   const activeSubjectId = auth.getActiveSubjectId();
-  const isDirector = user.role === 'director';
-  const theme = themeManager.getTheme();
-  const roleLabel = { student: 'Alumno', teacher: 'Docente', director: 'Director' }[user.role] || 'Alumno';
-  const career = user.role === 'director' ? 'Direccion Academica' : 'Ingenieria en Informatica';
-  const legajo = user.id || '000000';
+  const subjects = user.subjects || [];
+  const currentSubject = subjects.find(s => s.id === activeSubjectId) || subjects[0] || { name: 'Materia' };
 
-  header.innerHTML = `
-    <div class="header-left">
-      <h1 class="header-title" id="page-main-title">${title}</h1>
-      ${!isDirector && user.subjects && user.subjects.length > 0 ? `
-        <div class="header-subject-wrap">
-          <select id="header-subject-select" class="form-select form-select-sm header-subject-select">
-            ${user.subjects.map(s => `<option value="${s.id}" ${s.id === activeSubjectId ? 'selected' : ''}>${s.name}</option>`).join('')}
-          </select>
+  container.innerHTML = `
+    <div class="header-container flex justify-between items-center w-full px-6 py-4 bg-surface-2 border-b border-border">
+      <div>
+        <h1 class="h3 mb-0">${title}</h1>
+        <p class="text-xs text-text-muted">Bienvenido, ${user.name}</p>
+      </div>
+
+      ${showMetrics ? `
+      <div class="metrics-container hidden lg:flex items-center gap-6">
+        <div class="metric-card bg-surface border border-border p-3 rounded-md flex flex-col items-center min-w-[100px]">
+          <span class="text-lg font-bold text-primary">8.5</span>
+          <span class="text-[10px] uppercase font-bold text-text-muted">Promedio</span>
         </div>
+        <div class="metric-card bg-surface border border-border p-3 rounded-md flex flex-col items-center min-w-[100px]">
+          <span class="text-lg font-bold text-error">2</span>
+          <span class="text-[10px] uppercase font-bold text-text-muted">Riesgo</span>
+        </div>
+        <div class="metric-card bg-surface border border-border p-3 rounded-md flex flex-col items-center min-w-[100px]">
+          <span class="text-lg font-bold text-success">92%</span>
+          <span class="text-[10px] uppercase font-bold text-text-muted">Asistencia</span>
+        </div>
+      </div>
       ` : ''}
-    </div>
 
-    <div class="header-right">
-      <button class="btn btn-icon btn-ghost" id="theme-toggle" title="Cambiar tema" aria-label="Cambiar tema">
-        ${theme === 'dark'
-      ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"/></svg>`
-      : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`
-    }
-      </button>
-
-      <button class="profile-trigger" id="profile-trigger" aria-label="Abrir perfil" aria-expanded="false">
-        <span class="avatar">${user.avatar}</span>
-      </button>
-
-      <div class="profile-panel" id="profile-panel" hidden>
-        ${isLoggedIn ? `
-          <div class="profile-panel-section">
-            <div class="profile-panel-name">${user.name}</div>
-            <div class="profile-panel-role">${roleLabel}</div>
+      <div class="flex items-center gap-4">
+        <div class="custom-dropdown" id="header-subject-dropdown">
+          <button class="custom-dropdown-trigger" id="dropdown-trigger">
+            <span>${currentSubject.name}</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div class="custom-dropdown-menu">
+            ${subjects.map(s => `
+              <div class="custom-dropdown-option ${s.id === activeSubjectId ? 'selected' : ''}" data-value="${s.id}">
+                ${s.name}
+              </div>
+            `).join('')}
           </div>
-          <div class="profile-panel-section profile-data-grid">
-            <div><span class="profile-label">Nombre</span><span class="profile-value">${user.name}</span></div>
-            <div><span class="profile-label">Carrera</span><span class="profile-value">${career}</span></div>
-            <div><span class="profile-label">Legajo</span><span class="profile-value">${legajo}</span></div>
-            <div><span class="profile-label">Email</span><span class="profile-value">usuario@uade.edu.ar</span></div>
-          </div>
-          <div class="profile-panel-section">
-            <button class="btn btn-secondary profile-logout-btn" id="profile-logout">Cerrar sesion</button>
-          </div>
-        ` : `
-          <div class="profile-panel-section">
-            <div class="profile-panel-name">Sesion cerrada</div>
-            <div class="profile-panel-role">Elegi un perfil para continuar</div>
-          </div>
-          <div class="profile-panel-section profile-role-switcher" id="profile-role-switcher">
-            <button class="role-btn" data-role="student">Alumno</button>
-            <button class="role-btn" data-role="teacher">Docente</button>
-            <button class="role-btn" data-role="director">Director</button>
-          </div>
-        `}
+        </div>
       </div>
     </div>
   `;
 
-  document.getElementById('theme-toggle')?.addEventListener('click', () => themeManager.toggle());
-
+  // Clean up previous theme listener if it exists
   if (renderHeader._themeListener) {
     window.removeEventListener('themeChanged', renderHeader._themeListener);
   }
@@ -90,54 +87,33 @@ export function renderHeader(title = 'Dashboard') {
   };
   window.addEventListener('themeChanged', renderHeader._themeListener);
 
-  document.getElementById('header-subject-select')?.addEventListener('change', e => {
-    auth.setActiveSubjectId(e.target.value);
-    window.location.reload();
-  });
-
-  const profileTrigger = document.getElementById('profile-trigger');
-  const profilePanel = document.getElementById('profile-panel');
-  const closePanel = () => {
-    if (!profilePanel || !profileTrigger) return;
-    profilePanel.hidden = true;
-    profileTrigger.setAttribute('aria-expanded', 'false');
-  };
-
-  profileTrigger?.addEventListener('click', (event) => {
-    event.stopPropagation();
-    const nextState = profilePanel.hidden;
-    profilePanel.hidden = !nextState;
-    profileTrigger.setAttribute('aria-expanded', String(nextState));
-  });
-
-  profilePanel?.addEventListener('click', (event) => event.stopPropagation());
-
-  if (renderHeader._outsideClickListener) {
-    document.removeEventListener('click', renderHeader._outsideClickListener);
-  }
-  renderHeader._outsideClickListener = () => closePanel();
-  document.addEventListener('click', renderHeader._outsideClickListener);
-
-  if (renderHeader._escapeListener) {
-    document.removeEventListener('keydown', renderHeader._escapeListener);
-  }
-  renderHeader._escapeListener = (event) => {
-    if (event.key === 'Escape') closePanel();
-  };
-  document.addEventListener('keydown', renderHeader._escapeListener);
-
-  document.getElementById('profile-logout')?.addEventListener('click', () => {
-    auth.mockLogout();
-    closePanel();
-    renderHeader(title);
-  });
-
-  document.querySelectorAll('#profile-role-switcher .role-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const role = btn.dataset.role;
-      auth.mockLoginAs(role);
-      closePanel();
-      window.location.hash = `#/${role}/dashboard`;
+  const dropdown = document.getElementById('header-subject-dropdown');
+  const trigger = document.getElementById('dropdown-trigger');
+  
+  if (dropdown && trigger) {
+    trigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dropdown.classList.toggle('active');
     });
-  });
+
+    dropdown.querySelectorAll('.custom-dropdown-option').forEach(option => {
+      option.addEventListener('click', () => {
+        const val = option.getAttribute('data-value');
+        auth.setActiveSubjectId(val);
+        window.location.reload();
+      });
+    });
+
+    // Close on click outside
+    const closeDropdown = (e) => {
+      if (!dropdown.contains(e.target)) {
+        dropdown.classList.remove('active');
+      }
+    };
+    
+    document.addEventListener('click', closeDropdown);
+    
+    // Cleanup if title changes (though renderHeader usually re-renders everything)
+    dropdown._cleanup = () => document.removeEventListener('click', closeDropdown);
+  }
 }
