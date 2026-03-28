@@ -240,7 +240,10 @@ export function renderSidebar() {
 
 function shouldShowSubjectContextBar(role, path, subjectCount) {
   if (!subjectCount) return false;
-  if (role === 'director' || role === 'admin') return false;
+
+  if (role === 'director' || role === 'admin') {
+    return path === '/director/classes';
+  }
 
   const blockedRoutes = new Set(['/admin/users']);
   return !blockedRoutes.has(path);

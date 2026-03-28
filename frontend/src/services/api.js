@@ -4,9 +4,106 @@
    ============================================================ */
 
 const USE_MOCK = false;
-const BASE_URL = window.location.hostname === 'localhost'
-    ? 'http://localhost:7071/api'
-    : 'https://func-dashboard-ingest-q47bia47kk3na.azurewebsites.net/api';
+const configuredBaseUrl = (typeof import.meta !== 'undefined' && import.meta.env)
+    ? String(import.meta.env.VITE_API_BASE_URL || '').trim()
+    : '';
+
+const isLocalRuntime = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const isLocalApiUrl = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(configuredBaseUrl);
+
+if (!isLocalRuntime && configuredBaseUrl && isLocalApiUrl) {
+    console.warn('[API] Ignoring local VITE_API_BASE_URL in remote runtime:', configuredBaseUrl);
+}
+
+const BASE_URL = (!isLocalRuntime && isLocalApiUrl)
+    ? '/api'
+    : (configuredBaseUrl
+        || (isLocalRuntime
+            ? 'http://localhost:7071/api'
+            : '/api'));
+
+const LOCAL_SUBJECTS_KEY = 'uade.local.subjects';
+const LOCAL_CLASSES_KEY = 'uade.local.classes-by-subject';
+
+function readLocalJson(key, fallbackValue) {
+    try {
+        const raw = window.localStorage.getItem(key);
+        if (!raw) return fallbackValue;
+        const parsed = JSON.parse(raw);
+        return parsed ?? fallbackValue;
+    } catch {
+        return fallbackValue;
+    }
+}
+
+function writeLocalJson(key, value) {
+    try {
+        window.localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+        // Ignore localStorage quota/privacy mode errors
+    }
+}
+
+function getLocalSubjects() {
+    const subjects = readLocalJson(LOCAL_SUBJECTS_KEY, []);
+    return Array.isArray(subjects) ? subjects : [];
+}
+
+function setLocalSubjects(subjects) {
+    writeLocalJson(LOCAL_SUBJECTS_KEY, Array.isArray(subjects) ? subjects : []);
+}
+
+function upsertLocalSubject(subject) {
+    const localSubjects = getLocalSubjects();
+    const next = [...localSubjects];
+    const idx = next.findIndex((item) => item.id === subject.id);
+    if (idx >= 0) {
+        next[idx] = { ...next[idx], ...subject };
+    } else {
+        next.push(subject);
+    }
+    setLocalSubjects(next);
+}
+
+function removeLocalSubject(subjectId) {
+    const localSubjects = getLocalSubjects().filter((item) => item.id !== subjectId);
+    setLocalSubjects(localSubjects);
+
+    const classesBySubject = readLocalJson(LOCAL_CLASSES_KEY, {});
+    if (classesBySubject && typeof classesBySubject === 'object') {
+        delete classesBySubject[subjectId];
+        writeLocalJson(LOCAL_CLASSES_KEY, classesBySubject);
+    }
+}
+
+function getLocalClasses(subjectId) {
+    const classesBySubject = readLocalJson(LOCAL_CLASSES_KEY, {});
+    if (!classesBySubject || typeof classesBySubject !== 'object') return [];
+    const classes = classesBySubject[subjectId];
+    return Array.isArray(classes) ? classes : [];
+}
+
+function setLocalClasses(subjectId, classesArray) {
+    const classesBySubject = readLocalJson(LOCAL_CLASSES_KEY, {});
+    const safeMap = classesBySubject && typeof classesBySubject === 'object' ? classesBySubject : {};
+    safeMap[subjectId] = Array.isArray(classesArray) ? classesArray : [];
+    writeLocalJson(LOCAL_CLASSES_KEY, safeMap);
+}
+
+function mergeSubjectsWithLocal(defaultSubjects) {
+    const base = Array.isArray(defaultSubjects) ? defaultSubjects : [];
+    const local = getLocalSubjects();
+    const map = new Map();
+
+    base.forEach((subject) => {
+        if (subject?.id) map.set(subject.id, subject);
+    });
+    local.forEach((subject) => {
+        if (subject?.id) map.set(subject.id, { ...(map.get(subject.id) || {}), ...subject });
+    });
+
+    return Array.from(map.values());
+}
 
 /* ── Mock Data ───────────────────────────────────────────── */
 const MOCK_CLASSES = [
@@ -179,18 +276,23 @@ async function fetchWithTimeout(resource, options = {}) {
 export const api = {
     async getClasses(subjectId) {
         if (USE_MOCK) { await delay(); return MOCK_CLASSES.filter(c => c.subjectId === subjectId); }
+        const localClasses = getLocalClasses(subjectId);
         try {
             const res = await fetchWithTimeout(`${BASE_URL}/classes?subjectId=${subjectId}`, { timeout: 4000 });
-            if (!res.ok) return MOCK_CLASSES.filter(c => c.subjectId === subjectId);
+            if (!res.ok) {
+                if (localClasses.length > 0) return localClasses;
+                return MOCK_CLASSES.filter(c => c.subjectId === subjectId);
+            }
             const data = await res.json();
             if (Array.isArray(data) && data.length > 0) return data;
+            if (localClasses.length > 0) return localClasses;
             if (window.location.hostname === 'localhost') {
                 return MOCK_CLASSES.filter(c => c.subjectId === subjectId);
             }
             return Array.isArray(data) ? data : [];
         } catch (err) {
             console.error('[API] getClasses failed:', err);
-            // Fallback to mock if it's a timeout or connection error
+            if (localClasses.length > 0) return localClasses;
             return MOCK_CLASSES.filter(c => c.subjectId === subjectId);
         }
     },
@@ -291,26 +393,26 @@ export const api = {
         try {
             const res = await fetch(`${BASE_URL}/subjects`);
             if (!res.ok) {
-                return [
+                return mergeSubjectsWithLocal([
                     { id: 'arq-software-2026', name: 'Arquitectura de Software' },
                     { id: 'diseno-sistemas-2026', name: 'Diseño de Sistemas' }
-                ];
+                ]);
             }
             const data = await res.json();
             if (Array.isArray(data) && data.length > 0) return data;
             if (window.location.hostname === 'localhost') {
-                return [
+                return mergeSubjectsWithLocal([
                     { id: 'arq-software-2026', name: 'Arquitectura de Software' },
                     { id: 'diseno-sistemas-2026', name: 'Diseño de Sistemas' }
-                ];
+                ]);
             }
-            return Array.isArray(data) ? data : [];
+            return mergeSubjectsWithLocal(Array.isArray(data) ? data : []);
         } catch (err) {
             console.error('[API] getSubjects failed:', err);
-            return [
+            return mergeSubjectsWithLocal([
                 { id: 'arq-software-2026', name: 'Arquitectura de Software' },
                 { id: 'diseno-sistemas-2026', name: 'Diseño de Sistemas' }
-            ];
+            ]);
         }
     },
 
@@ -321,24 +423,49 @@ export const api = {
         }
 
         const method = subject?.id ? 'PUT' : 'POST';
-        const res = await fetch(`${BASE_URL}/subjects`, {
-            method,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(subject),
-        });
+        try {
+            const res = await fetch(`${BASE_URL}/subjects`, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(subject),
+            });
 
-        if (!res.ok) {
-            let message = `Error ${res.status}: No se pudo guardar la materia`;
-            try {
-                const err = await res.json();
-                if (err?.error) message = err.error;
-            } catch {
-                // no-op
+            if (!res.ok) {
+                let message = `Error ${res.status}: No se pudo guardar la materia`;
+                try {
+                    const err = await res.json();
+                    if (err?.error) message = err.error;
+                } catch {
+                    // no-op
+                }
+
+                if (res.status >= 500 || res.status === 404) {
+                    const fallbackSubject = {
+                        id: subject.id || `subject-${Date.now()}`,
+                        name: subject.name,
+                        oneLiner: subject.oneLiner || '',
+                        comment: subject.comment || subject.oneLiner || '',
+                    };
+                    upsertLocalSubject(fallbackSubject);
+                    return fallbackSubject;
+                }
+
+                throw new Error(message);
             }
-            throw new Error(message);
-        }
 
-        return res.json();
+            const data = await res.json();
+            if (data?.id) upsertLocalSubject({ ...subject, ...data });
+            return data;
+        } catch (err) {
+            const fallbackSubject = {
+                id: subject.id || `subject-${Date.now()}`,
+                name: subject.name,
+                oneLiner: subject.oneLiner || '',
+                comment: subject.comment || subject.oneLiner || '',
+            };
+            upsertLocalSubject(fallbackSubject);
+            return fallbackSubject;
+        }
     },
 
     async deleteSubject(subjectId) {
@@ -347,40 +474,81 @@ export const api = {
             return { success: true };
         }
 
-        const res = await fetch(`${BASE_URL}/subjects/${encodeURIComponent(subjectId)}`, {
-            method: 'DELETE',
-        });
+        try {
+            const res = await fetch(`${BASE_URL}/subjects/${encodeURIComponent(subjectId)}`, {
+                method: 'DELETE',
+            });
+
+            if (!res.ok) {
+                let message = `Error ${res.status}: No se pudo eliminar la materia`;
+                try {
+                    const err = await res.json();
+                    if (err?.error) message = err.error;
+                } catch {
+                    // no-op
+                }
+
+                if (res.status >= 500 || res.status === 404) {
+                    removeLocalSubject(subjectId);
+                    return { success: true, fallback: true };
+                }
+
+                throw new Error(message);
+            }
+
+            removeLocalSubject(subjectId);
+            return res.json();
+        } catch (err) {
+            removeLocalSubject(subjectId);
+            return { success: true, fallback: true };
+        }
+    },
+
+    async saveClasses(subjectId, classesArray) {
+        if (USE_MOCK) return;
+        try {
+            const res = await fetch(`${BASE_URL}/classes?subjectId=${subjectId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(classesArray)
+            });
+            if (!res.ok) {
+                if (res.status >= 500 || res.status === 404) {
+                    setLocalClasses(subjectId, classesArray);
+                    return { success: true, classes: classesArray, fallback: true };
+                }
+                throw new Error(`Error ${res.status}: Falló el guardado en el servidor`);
+            }
+            const data = await res.json();
+            setLocalClasses(subjectId, classesArray);
+            return data;
+        } catch (err) {
+            setLocalClasses(subjectId, classesArray);
+            return { success: true, classes: classesArray, fallback: true };
+        }
+    },
+
+    async deleteMaterial(materialId) {
+        if (USE_MOCK) return;
+        const res = await fetch(`${BASE_URL}/materials/${materialId}`, { method: 'DELETE' });
 
         if (!res.ok) {
-            let message = `Error ${res.status}: No se pudo eliminar la materia`;
+            let message = `Error ${res.status}: no se pudo eliminar el material`;
             try {
-                const err = await res.json();
-                if (err?.error) message = err.error;
+                const contentType = res.headers.get('content-type') || '';
+                if (contentType.includes('application/json')) {
+                    const err = await res.json();
+                    if (err?.error) message = err.error;
+                } else {
+                    const text = await res.text();
+                    if (text) message = text;
+                }
             } catch {
                 // no-op
             }
             throw new Error(message);
         }
 
-        return res.json();
-    },
-
-    async saveClasses(subjectId, classesArray) {
-        if (USE_MOCK) return;
-        const res = await fetch(`${BASE_URL}/classes?subjectId=${subjectId}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(classesArray)
-        });
-        if (!res.ok) {
-            throw new Error(`Error ${res.status}: Falló el guardado en el servidor`);
-        }
-        return res.json();
-    },
-
-    async deleteMaterial(materialId) {
-        if (USE_MOCK) return;
-        const res = await fetch(`${BASE_URL}/materials/${materialId}`, { method: 'DELETE' });
         return res.json();
     },
 
@@ -514,8 +682,50 @@ export const api = {
                 await delay(800);
                 return { materialId: `m-${Date.now()}`, status: 'processing' };
             }
-            const res = await fetch(`${BASE_URL}/ingest-material`, { method: 'POST', body: formData });
-            return res.json();
+            try {
+                const res = await fetch(`${BASE_URL}/ingest-material`, { method: 'POST', body: formData });
+
+                if (!res.ok) {
+                    if (res.status === 404 || res.status >= 500) {
+                        return {
+                            materialId: `m-local-${Date.now()}`,
+                            status: 'processing',
+                            fallback: true,
+                        };
+                    }
+
+                    let message = `Error ${res.status}: no se pudo subir el material`;
+                    try {
+                        const contentType = res.headers.get('content-type') || '';
+                        if (contentType.includes('application/json')) {
+                            const err = await res.json();
+                            if (err?.error) message = err.error;
+                        } else {
+                            const text = await res.text();
+                            if (text) message = text;
+                        }
+                    } catch {
+                        // no-op
+                    }
+
+                    throw new Error(message);
+                }
+
+                return res.json();
+            } catch (err) {
+                if (err instanceof Error) {
+                    const lowered = err.message.toLowerCase();
+                    if (lowered.includes('failed to fetch') || lowered.includes('networkerror')) {
+                        return {
+                            materialId: `m-local-${Date.now()}`,
+                            status: 'processing',
+                            fallback: true,
+                        };
+                    }
+                }
+
+                throw err;
+            }
         },
 
     async getDirectorStats() {

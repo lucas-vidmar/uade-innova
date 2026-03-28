@@ -172,7 +172,8 @@ export function createFileUpload({ type = 'transcript', onUpload, existingFiles 
         fileObj.status = 'error';
         fileObj._progress = 0;
         render();
-        toast('error', 'Error al procesar', `Hubo un problema subiendo "${file.name}".`);
+        const details = error instanceof Error && error.message ? ` (${error.message})` : '';
+        toast('error', 'Error al procesar', `Hubo un problema subiendo "${file.name}"${details}.`);
       }
     }
   };

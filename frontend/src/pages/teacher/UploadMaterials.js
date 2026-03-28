@@ -159,6 +159,10 @@ export async function renderTeacherUpload(container) {
           const response = await api.ingestMaterial(formData);
           updateProgress(100);
 
+          if (response?.fallback) {
+            toast('warning', 'Modo local activo', `"${rawFile.name}" quedó en estado local de procesamiento. El backend de ingesta no está disponible en este entorno.`);
+          }
+
           // Update frontend state for all selected classes
           selectedClassIds.forEach(cid => {
             const cls = classes.find(c => c.id === cid);

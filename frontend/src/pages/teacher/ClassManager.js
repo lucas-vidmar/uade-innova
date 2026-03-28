@@ -50,6 +50,10 @@ export async function renderClassManager(container) {
                             <span class="empty-icon">📚</span>
                             <h3>No hay clases creadas</h3>
                             <p>Creá tu primera clase para empezar a subir materiales.</p>
+                            <button id="btn-add-class" class="btn btn-primary" style="margin-top:12px;">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                                Nueva Clase
+                            </button>
                         </div>
                     ` : `
                         <section class="subject-directory-shell">

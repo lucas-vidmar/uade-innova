@@ -3,6 +3,8 @@
    ============================================================ */
 import { api } from './api.js';
 
+const LOCAL_SUBJECTS_KEY = 'uade.local.subjects';
+
 const USERS = {
     student: {
         id: 'alu-001',
@@ -43,7 +45,11 @@ const USERS = {
 export const auth = {
     getUser() {
         const role = sessionStorage.getItem('edu_role') || 'student';
-        return USERS[role] || USERS.student;
+        const baseUser = USERS[role] || USERS.student;
+        return {
+            ...baseUser,
+            subjects: mergeSubjectsWithLocal(baseUser.subjects || []),
+        };
     },
 
     setRole(role) {
@@ -51,7 +57,7 @@ export const auth = {
             sessionStorage.setItem('edu_role', role);
 
             // Default active subject for UI
-            const user = USERS[role];
+            const user = this.getUser();
             if (user.subjects && user.subjects.length > 0) {
                 sessionStorage.setItem('edu_active_subject', user.subjects[0].id);
             }
@@ -198,3 +204,26 @@ export const auth = {
         return false;
     }
 };
+
+function mergeSubjectsWithLocal(baseSubjects) {
+    const base = Array.isArray(baseSubjects) ? baseSubjects : [];
+    let local = [];
+
+    try {
+        const raw = localStorage.getItem(LOCAL_SUBJECTS_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        local = Array.isArray(parsed) ? parsed : [];
+    } catch {
+        local = [];
+    }
+
+    const byId = new Map();
+    base.forEach((subject) => {
+        if (subject?.id) byId.set(subject.id, subject);
+    });
+    local.forEach((subject) => {
+        if (subject?.id) byId.set(subject.id, { ...(byId.get(subject.id) || {}), ...subject });
+    });
+
+    return Array.from(byId.values());
+}
