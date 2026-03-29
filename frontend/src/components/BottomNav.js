@@ -4,6 +4,10 @@
 import { auth } from '../services/auth.js';
 
 export function renderBottomNav() {
+  if (document.getElementById('mobile-bottom-nav')) {
+    return;
+  }
+
   const user = auth.getUser();
   const currentHash = window.location.hash || `#/${user.role}/dashboard`;
 

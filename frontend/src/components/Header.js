@@ -22,10 +22,7 @@ export function renderHeader(containerOrTitle, titleOrStats = 'Dashboard', showM
     }
   }
 
-  if (!container) {
-    console.warn('[Header] No container found for renderHeader');
-    return;
-  }
+  if (!container) return;
   const user = auth.getUser();
   const activeSubjectId = auth.getActiveSubjectId();
   const subjects = user.subjects || [];

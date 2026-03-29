@@ -92,31 +92,28 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
     }
     return `
       <div class="chat-msg chat-msg-assistant received animate-fade ${msg.id === highlightMessageId ? 'highlight-msg' : ''}" id="msg-${msg.id || ''}">
-        <div class="flex items-start gap-3">
-          <div class="chat-avatar-bot flex-shrink-0 mt-1">${icon('bot')}</div>
-          <div class="chat-msg-body flex-1 overflow-hidden">
-            <div class="chat-bubble chat-bubble-assistant leading-relaxed">${renderMarkdown(msg.content)}</div>
-            
-            <div class="chat-msg-footer mt-3 flex justify-between items-end gap-4">
-              ${msg.sources?.length > 0 ? `
-                <div class="chat-sources flex flex-wrap gap-2">
-                  ${msg.sources.map(s => `
-                    <span class="source-chip bg-surface border border-border px-2 py-1 rounded text-[10px] flex items-center gap-1" title="${s.sourceFilename}">
-                      ${materialIcon(s.materialType)}
-                      <span class="truncate max-w-[120px]">${s.sourceFilename}</span>
-                    </span>
-                  `).join('')}
-                </div>
-              ` : '<span></span>'}
-
-              <div class="chat-feedback-btns flex items-center gap-1" data-message-id="${msg.id || ''}">
-                <button class="feedback-btn p-1 rounded hover:bg-surface-3 transition-colors ${msg.feedback === 'positive' ? 'active text-primary' : 'text-text-muted'}" data-type="positive" title="Útil">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.53l-1.6 7A2 2 0 0 1 18.23 21H7a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h4l.5-1c.9-1.8 1.8-3 3.5-3 1.1 0 2 1.1 2 2.5 0 1-.3 1.5-1 2.38Z"/></svg>
-                </button>
-                <button class="feedback-btn p-1 rounded hover:bg-surface-3 transition-colors ${msg.feedback === 'negative' ? 'active text-error' : 'text-text-muted'}" data-type="negative" title="No es útil">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.53l1.6-7A2 2 0 0 1 5.77 3H17a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-4l-.5 1c-.9 1.8-1.8 3-3.5 3-1.1 0-2-1.1-2-2.5 0-1 .3-1.5 1-2.38Z"/></svg>
-                </button>
+        <div class="chat-msg-body flex-1 overflow-hidden">
+          <div class="chat-bubble chat-bubble-assistant leading-relaxed">${renderMarkdown(msg.content)}</div>
+          
+          <div class="chat-msg-footer mt-3 flex justify-between items-end gap-4">
+            ${msg.sources?.length > 0 ? `
+              <div class="chat-sources flex flex-wrap gap-2">
+                ${msg.sources.map(s => `
+                  <span class="source-chip bg-surface border border-border px-2 py-1 rounded text-[10px] flex items-center gap-1" title="${s.sourceFilename}">
+                    ${materialIcon(s.materialType)}
+                    <span class="truncate max-w-[120px]">${s.sourceFilename}</span>
+                  </span>
+                `).join('')}
               </div>
+            ` : '<span></span>'}
+
+            <div class="chat-feedback-btns flex items-center gap-1" data-message-id="${msg.id || ''}">
+              <button class="feedback-btn p-1 rounded hover:bg-surface-3 transition-colors ${msg.feedback === 'positive' ? 'active text-primary' : 'text-text-muted'}" data-type="positive" title="Útil">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.53l-1.6 7A2 2 0 0 1 18.23 21H7a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h4l.5-1c.9-1.8 1.8-3 3.5-3 1.1 0 2 1.1 2 2.5 0 1-.3 1.5-1 2.38Z"/></svg>
+              </button>
+              <button class="feedback-btn p-1 rounded hover:bg-surface-3 transition-colors ${msg.feedback === 'negative' ? 'active text-error' : 'text-text-muted'}" data-type="negative" title="No es útil">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.53l1.6-7A2 2 0 0 1 5.77 3H17a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-4l-.5 1c-.9 1.8-1.8 3-3.5 3-1.1 0-2-1.1-2-2.5 0-1 .3-1.5 1-2.38Z"/></svg>
+              </button>
             </div>
           </div>
         </div>
@@ -125,8 +122,7 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
   };
 
   const renderTyping = () => `
-    <div class="chat-message received italic flex items-center gap-2" id="typing-indicator">
-      <div class="chat-avatar-bot">${icon('bot')}</div>
+    <div class="chat-msg chat-msg-assistant received italic flex items-center gap-2" id="typing-indicator">
       <div class="typing-dots flex gap-1">
         <span class="w-1 h-1 bg-text-muted rounded-full animate-bounce"></span>
         <span class="w-1 h-1 bg-text-muted rounded-full animate-bounce" style="animation-delay: 0.2s"></span>

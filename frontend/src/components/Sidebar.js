@@ -1,5 +1,5 @@
 /* ============================================================
-   Sidebar — Role-aware collapsible navigation
+   Sidebar — Role-aware navigation shell (Desktop + Mobile)
    ============================================================ */
 import { auth } from '../services/auth.js';
 
@@ -28,11 +28,13 @@ export function renderSidebar() {
   const currentHash = window.location.hash || `#/${user.role}/dashboard`;
   const currentPath = currentHash.replace(/^#/, '').split('?')[0] || `/${user.role}/dashboard`;
   const normalizedPath = currentPath.startsWith('/student/class/') ? '/student/class' : currentPath;
+
   const activeSubjectId = auth.getActiveSubjectId();
   const subjects = user.subjects || [];
   const activeSubject = subjects.find(s => s.id === activeSubjectId) || subjects[0] || { name: 'Materia' };
-  const displaySubjectName = activeSubject.name.includes('(2026-1)') ? activeSubject.name : `${activeSubject.name} (2026-1)`;
-  const showSubjectContextBar = shouldShowSubjectContextBar(user.role, normalizedPath, subjects.length);
+  const displaySubjectName = activeSubject.name.includes('(2026-1)')
+    ? activeSubject.name
+    : `${activeSubject.name} (2026-1)`;
 
   const appEl = document.getElementById('app');
   const existingNav = document.getElementById('top-nav');
@@ -40,33 +42,52 @@ export function renderSidebar() {
   const existingSubjectBar = document.getElementById('subject-context-bar');
   if (existingSubjectBar) existingSubjectBar.remove();
 
-  document.body.classList.toggle('has-subject-context', showSubjectContextBar);
+  document.body.classList.remove('has-subject-context');
 
-  const topNav = document.createElement('header');
+  const topNav = document.createElement('div');
   topNav.id = 'top-nav';
-  topNav.className = 'top-nav';
+  topNav.className = 'top-nav-shell';
   topNav.innerHTML = `
-    <div class="top-nav-inner top-nav-grid w-full px-6 py-3 bg-surface border-b border-border sticky top-0 z-50">
-      <div class="flex items-center gap-8">
-        <a href="#/${user.role}/dashboard" class="flex items-center gap-2" aria-label="Ir al inicio">
-          <span class="font-bold text-lg text-primary" style="letter-spacing:-0.02em">UADE Innova</span>
-        </a>
-        
-        <nav class="top-nav-links hidden md:flex items-center gap-6" aria-label="Navegación principal">
-          ${items.map(item => `
-            <a href="${item.path}" class="nav-link ${currentHash === item.path ? 'active' : ''}" id="nav-${item.id}-desktop">
-              <span class="nav-link-text">${item.label}</span>
+    <aside class="left-nav-rail" aria-label="Navegación principal">
+      <a href="#/${user.role}/dashboard" class="left-nav-brand" aria-label="Ir al inicio">
+        <span class="left-nav-brand-mark">UI</span>
+        <span class="left-nav-brand-text">UADE Innova</span>
+      </a>
+
+      <nav class="left-nav-links">
+        ${items.map(item => {
+          const itemPath = item.path.replace(/^#/, '');
+          const isActive = itemPath === normalizedPath || (normalizedPath === '/student/class' && itemPath === '/student/dashboard');
+          return `
+            <a href="${item.path}" class="left-nav-link ${isActive ? 'active' : ''}" id="nav-${item.id}-desktop">
+              ${getIcon(item.icon)}
+              <span class="left-nav-label">${item.label}</span>
             </a>
-          `).join('')}
-        </nav>
+          `;
+        }).join('')}
+      </nav>
+    </aside>
+
+    <header class="top-utility-bar">
+      <div class="top-utility-center">
+        <div class="custom-dropdown subject-context-dropdown" id="global-course-dropdown">
+          <button class="custom-dropdown-trigger subject-context-trigger" id="global-course-btn" aria-label="Seleccionar materia activa">
+            <span>${displaySubjectName}</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div class="custom-dropdown-menu">
+            ${subjects.map(s => `
+              <div class="custom-dropdown-option ${s.id === activeSubjectId ? 'selected' : ''}" data-value="${s.id}">
+                ${s.name} ${s.name.includes('(2026-1)') ? '' : '(2026-1)'}
+              </div>
+            `).join('')}
+          </div>
+        </div>
       </div>
-      <div class="flex items-center gap-4">
+
+      <div class="top-utility-actions">
         <button class="btn btn-ghost p-2 text-text-secondary hover:text-primary transition-colors flex items-center justify-center" id="theme-toggle-nav" aria-label="Cambiar tema">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
-        </button>
-        
-        <button class="top-nav-menu-btn md:hidden p-2" id="mobile-menu-btn" title="Menu">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
         </button>
 
         <div class="flex items-center gap-2 cursor-pointer p-1.5 rounded-lg hover:bg-surface-2 active:bg-surface-2 transition-all relative border border-transparent hover:border-border" id="profile-trigger-nav">
@@ -74,13 +95,12 @@ export function renderSidebar() {
             ${user.avatar || user.name.substring(0, 2).toUpperCase()}
           </div>
 
-          <!-- Profile Panel -->
           <div class="profile-panel shadow-xl border border-border bg-surface rounded-xl overflow-hidden" id="profile-panel-nav" hidden>
             <div class="profile-panel-section">
               <div class="profile-panel-name">${user.name}</div>
               <div class="profile-panel-role">${user.role === 'student' ? 'Alumno' : (user.role === 'teacher' ? 'Docente' : 'Director')}</div>
             </div>
-            
+
             <div class="profile-panel-section">
               <div class="profile-data-grid">
                 <div>
@@ -112,81 +132,30 @@ export function renderSidebar() {
           </div>
         </div>
       </div>
-    </div>
+    </header>
 
-    <nav class="top-nav-mobile" id="top-nav-mobile" aria-label="Menu móvil">
-      ${items.map(item => `
-        <a href="${item.path}" class="nav-link-mobile ${currentHash === item.path ? 'active' : ''}" id="nav-${item.id}-mobile">
-          <span>${item.label}</span>
-        </a>
-      `).join('')}
+    <nav class="mobile-bottom-nav" id="mobile-bottom-nav" aria-label="Menu móvil">
+      ${items.map(item => {
+        const itemPath = item.path.replace(/^#/, '');
+        const isActive = itemPath === normalizedPath || (normalizedPath === '/student/class' && itemPath === '/student/dashboard');
+        return `
+          <a href="${item.path}" class="mobile-bottom-link ${isActive ? 'active' : ''}" id="nav-${item.id}-mobile">
+            ${getIcon(item.icon)}
+            <span>${item.label}</span>
+          </a>
+        `;
+      }).join('')}
     </nav>
   `;
 
-  let overlay = document.querySelector('.top-nav-overlay');
-  if (!overlay) {
-    overlay = document.createElement('div');
-    overlay.className = 'top-nav-overlay';
-    document.body.appendChild(overlay);
-  }
-
   appEl.prepend(topNav);
 
-  if (showSubjectContextBar) {
-    const subjectBar = document.createElement('div');
-    subjectBar.id = 'subject-context-bar';
-    subjectBar.className = 'subject-context-bar';
-    subjectBar.innerHTML = `
-      <div class="subject-context-inner">
-        <div class="subject-context-copy">Materia activa</div>
-        <div class="custom-dropdown subject-context-dropdown" id="global-course-dropdown">
-          <button class="custom-dropdown-trigger subject-context-trigger" id="global-course-btn" aria-label="Seleccionar materia activa">
-            <span>${displaySubjectName}</span>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-          </button>
-          <div class="custom-dropdown-menu">
-            ${subjects.map(s => `
-              <div class="custom-dropdown-option ${s.id === activeSubjectId ? 'selected' : ''}" data-value="${s.id}">
-                ${s.name} ${s.name.includes('(2026-1)') ? '' : '(2026-1)'}
-              </div>
-            `).join('')}
-          </div>
-        </div>
-      </div>
-    `;
-    appEl.prepend(subjectBar);
-  }
-
-  // Re-attach listeners
   document.getElementById('theme-toggle-nav')?.addEventListener('click', () => {
     import('../services/theme.js').then(m => m.themeManager.toggle());
   });
 
-  overlay.onclick = () => {
-    document.body.classList.remove('top-nav-mobile-open');
-    const trigger = document.getElementById('mobile-menu-btn');
-    trigger?.setAttribute('aria-expanded', 'false');
-  };
-
-  topNav.querySelectorAll('.top-nav-mobile .nav-link-mobile').forEach(item => {
-    item.addEventListener('click', () => {
-      if (window.innerWidth <= 768) {
-        document.body.classList.remove('top-nav-mobile-open');
-        const trigger = document.getElementById('mobile-menu-btn');
-        trigger?.setAttribute('aria-expanded', 'false');
-      }
-    });
-  });
-
-  document.getElementById('mobile-menu-btn')?.addEventListener('click', () => {
-    const isOpen = document.body.classList.toggle('top-nav-mobile-open');
-    const trigger = document.getElementById('mobile-menu-btn');
-    trigger?.setAttribute('aria-expanded', String(isOpen));
-  });
-
   const courseDropdown = document.getElementById('global-course-dropdown');
   const courseTrigger = document.getElementById('global-course-btn');
-  
   if (courseDropdown && courseTrigger) {
     courseTrigger.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -201,7 +170,6 @@ export function renderSidebar() {
       });
     });
 
-    // Close on click outside
     document.addEventListener('click', (e) => {
       if (!courseDropdown.contains(e.target)) {
         courseDropdown.classList.remove('active');
@@ -211,7 +179,7 @@ export function renderSidebar() {
 
   const profileTrigger = document.getElementById('profile-trigger-nav');
   const profilePanel = document.getElementById('profile-panel-nav');
-  
+
   profileTrigger?.addEventListener('click', (e) => {
     e.stopPropagation();
     profilePanel?.toggleAttribute('hidden');
@@ -236,17 +204,6 @@ export function renderSidebar() {
       window.location.reload();
     });
   });
-}
-
-function shouldShowSubjectContextBar(role, path, subjectCount) {
-  if (!subjectCount) return false;
-
-  if (role === 'director' || role === 'admin') {
-    return path === '/director/classes';
-  }
-
-  const blockedRoutes = new Set(['/admin/users']);
-  return !blockedRoutes.has(path);
 }
 
 function getIcon(icon) {
