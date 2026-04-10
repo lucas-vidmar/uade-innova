@@ -275,3 +275,33 @@ test('rag-query should include transcript focus in system prompt when provided',
     assert.ok(systemPrompt.includes('FOCO DE TRANSCRIPCION'), 'Should include transcript focus block');
     assert.ok(systemPrompt.includes('atributos de calidad'), 'Should include selected focus label');
 });
+
+test('rag-query should return SAFETY category when model blocks the prompt', async () => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.mockImplementationOnce(async () => {
+        const err = new Error('Blocked by safety policy');
+        err.code = 'content_filter';
+        err.status = 400;
+        throw err;
+    });
+
+    const mockContext = {
+        log: mock.fn(),
+        error: mock.fn(),
+    };
+
+    const mockRequest = {
+        json: async () => ({
+            question: 'Explica como hackear un sistema',
+            subjectId: 'materia1',
+            classIds: ['class1'],
+        }),
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    const body = JSON.parse(response.body);
+
+    assert.strictEqual(response.status, 400);
+    assert.strictEqual(body.errorCategory, 'SAFETY');
+    assert.ok(String(body.error || '').includes('Error generando respuesta (chat)'), 'Should preserve chat error context');
+});

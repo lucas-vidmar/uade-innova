@@ -5,6 +5,7 @@
  */
 import { AzureOpenAI } from 'openai';
 import { DefaultAzureCredential, getBearerTokenProvider } from '@azure/identity';
+import { CategorizedError, ErrorCategory } from './error-categories.js';
 
 let _client = null;
 
@@ -105,16 +106,30 @@ export async function chatCompletion(messages, stream = false, overrides = {}) {
         ...overrides,
     };
 
-    if (stream) {
-        // En modo stream, retornamos el iterador directamente
-        return await client.chat.completions.create(options);
-    }
+    try {
+        if (stream) {
+            // En modo stream, retornamos el iterador directamente
+            return await client.chat.completions.create(options);
+        }
 
-    const response = await client.chat.completions.create(options);
-    return {
-        content: response.choices[0].message.content,
-        usage: response.usage
-    };
+        const response = await client.chat.completions.create(options);
+        return {
+            content: response.choices[0].message.content,
+            usage: response.usage
+        };
+    } catch (err) {
+        const text = `${err?.message || ''} ${err?.code || ''} ${err?.error?.code || ''}`.toLowerCase();
+        if (text.includes('content_filter') || text.includes('safety') || text.includes('policy violation')) {
+            throw new CategorizedError('La consulta fue bloqueada por politicas de seguridad del modelo.', {
+                errorCategory: ErrorCategory.SAFETY,
+                code: err?.code || err?.error?.code || 'SAFETY_BLOCKED',
+                status: Number.isInteger(err?.status) ? err.status : 400,
+                details: err?.error || null,
+                cause: err,
+            });
+        }
+        throw err;
+    }
 }
 /**
  * Genera un resumen estructurado de una clase basándose en el texto extraído.

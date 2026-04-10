@@ -22,6 +22,30 @@ const BASE_URL = (!isLocalRuntime && isLocalApiUrl)
             ? 'http://localhost:7071/api'
             : '/api'));
 
+const CORRELATION_HEADER = 'x-correlation-id';
+
+function nextCorrelationId() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+    }
+    return `corr-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function withCorrelationHeaders(headers = {}) {
+    const normalized = new Headers(headers || {});
+    if (!normalized.has(CORRELATION_HEADER)) {
+        normalized.set(CORRELATION_HEADER, nextCorrelationId());
+    }
+    return normalized;
+}
+
+async function apiFetch(resource, options = {}) {
+    return fetch(resource, {
+        ...options,
+        headers: withCorrelationHeaders(options.headers),
+    });
+}
+
 const LOCAL_SUBJECTS_KEY = 'uade.local.subjects';
 const LOCAL_CLASSES_KEY = 'uade.local.classes-by-subject';
 
@@ -323,7 +347,7 @@ async function fetchWithTimeout(resource, options = {}) {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);
 
-    const response = await fetch(resource, {
+    const response = await apiFetch(resource, {
         ...options,
         signal: controller.signal
     });
@@ -403,7 +427,7 @@ export const api = {
             };
         }
 
-        const res = await fetch(`${BASE_URL}/deadlines`, {
+        const res = await apiFetch(`${BASE_URL}/deadlines`, {
             method: payload.id ? 'PUT' : 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
@@ -427,7 +451,7 @@ export const api = {
         try {
             const params = new URLSearchParams({ subjectId });
             if (today) params.set('today', today);
-            const res = await fetch(`${BASE_URL}/deadline-reminders?${params.toString()}`);
+            const res = await apiFetch(`${BASE_URL}/deadline-reminders?${params.toString()}`);
             if (!res.ok) return [];
             const data = await res.json();
             return Array.isArray(data) ? data : [];
@@ -447,7 +471,7 @@ export const api = {
             return { query, subjectId, total: results.length, results };
         }
 
-        const res = await fetch(`${BASE_URL}/global-search`, {
+        const res = await apiFetch(`${BASE_URL}/global-search`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ query, subjectId }),
@@ -504,7 +528,7 @@ export const api = {
             ];
         }
         try {
-            const res = await fetch(`${BASE_URL}/subjects`);
+            const res = await apiFetch(`${BASE_URL}/subjects`);
             if (!res.ok) {
                 return mergeSubjectsWithLocal([
                     { id: 'arq-software-2026', name: 'Arquitectura de Software' },
@@ -537,7 +561,7 @@ export const api = {
 
         const method = subject?.id ? 'PUT' : 'POST';
         try {
-            const res = await fetch(`${BASE_URL}/subjects`, {
+            const res = await apiFetch(`${BASE_URL}/subjects`, {
                 method,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(subject),
@@ -588,7 +612,7 @@ export const api = {
         }
 
         try {
-            const res = await fetch(`${BASE_URL}/subjects/${encodeURIComponent(subjectId)}`, {
+            const res = await apiFetch(`${BASE_URL}/subjects/${encodeURIComponent(subjectId)}`, {
                 method: 'DELETE',
             });
 
@@ -620,7 +644,7 @@ export const api = {
     async saveClasses(subjectId, classesArray) {
         if (USE_MOCK) return;
         try {
-            const res = await fetch(`${BASE_URL}/classes?subjectId=${subjectId}`, {
+            const res = await apiFetch(`${BASE_URL}/classes?subjectId=${subjectId}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(classesArray)
@@ -643,7 +667,7 @@ export const api = {
 
     async deleteMaterial(materialId) {
         if (USE_MOCK) return;
-        const res = await fetch(`${BASE_URL}/materials/${materialId}`, { method: 'DELETE' });
+        const res = await apiFetch(`${BASE_URL}/materials/${materialId}`, { method: 'DELETE' });
 
         if (!res.ok) {
             let message = `Error ${res.status}: no se pudo eliminar el material`;
@@ -676,7 +700,7 @@ export const api = {
             };
         }
         try {
-            const res = await fetch(`${BASE_URL}/rag-query`, {
+            const res = await apiFetch(`${BASE_URL}/rag-query`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ question, classIds, subjectId, stream: false, conversationHistory, historyWindowSize, transcriptFocus }),
@@ -723,28 +747,36 @@ export const api = {
                 return;
             }
 
-            const response = await fetch(`${BASE_URL}/rag-query`, {
+            const response = await apiFetch(`${BASE_URL}/rag-query`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ question, classIds, subjectId, stream: true, conversationHistory, historyWindowSize, transcriptFocus }),
             });
 
             if (response.status === 429) {
-                throw new Error('The AI tutor is resting, please try again in a few minutes');
+                const rateLimitError = new Error('The AI tutor is resting, please try again in a few minutes');
+                rateLimitError.errorCategory = 'LLM';
+                throw rateLimitError;
             }
 
             if (!response.ok) {
                 let errorMessage = `No se pudo iniciar el stream de respuesta`;
+                let errorCategory = null;
                 try {
                     const errorData = await response.json();
                     if (errorData && errorData.error) {
                         errorMessage = errorData.error;
                     }
+                    if (errorData && errorData.errorCategory) {
+                        errorCategory = errorData.errorCategory;
+                    }
                 } catch (e) {
                     // Si no es JSON, usamos el statusText o el mensaje por defecto
                     errorMessage = response.statusText || errorMessage;
                 }
-                throw new Error(`Error ${response.status}: ${errorMessage}`);
+                const apiError = new Error(`Error ${response.status}: ${errorMessage}`);
+                if (errorCategory) apiError.errorCategory = errorCategory;
+                throw apiError;
             }
 
             const reader = response.body.getReader();
@@ -796,7 +828,7 @@ export const api = {
                 return { materialId: `m-${Date.now()}`, status: 'processing' };
             }
             try {
-                const res = await fetch(`${BASE_URL}/ingest-material`, { method: 'POST', body: formData });
+                const res = await apiFetch(`${BASE_URL}/ingest-material`, { method: 'POST', body: formData });
 
                 if (!res.ok) {
                     if (res.status === 404 || res.status >= 500) {
@@ -900,7 +932,7 @@ export const api = {
 
     async getTeacherAnalytics(subjectId) {
             if (USE_MOCK) { await delay(400); return MOCK_TEACHER_ANALYTICS; }
-            const res = await fetch(`${BASE_URL}/analytics?subjectId=${subjectId}`);
+            const res = await apiFetch(`${BASE_URL}/analytics?subjectId=${subjectId}`);
             return res.json();
         },
     
@@ -909,13 +941,13 @@ export const api = {
                 await delay(300);
                 return { theme: 'light', language: 'es', consentAccepted: false };
             }
-            const res = await fetch(`${BASE_URL}/get-profile`);
+            const res = await apiFetch(`${BASE_URL}/get-profile`);
             return res.json();
         },
 
     async saveProfile(data) {
             if (USE_MOCK) return;
-            const res = await fetch(`${BASE_URL}/save-profile`, {
+            const res = await apiFetch(`${BASE_URL}/save-profile`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
@@ -928,14 +960,14 @@ export const api = {
                 await delay(800);
                 return { classId, summary: "Resumen simulado para la clase " + classId, validated: false };
             }
-            const res = await fetch(`${BASE_URL}/class-summary/${classId}`);
+            const res = await apiFetch(`${BASE_URL}/class-summary/${classId}`);
             if (!res.ok) return null;
             return res.json();
         },
 
     async saveClassSummary(classId, data) {
             if (USE_MOCK) return;
-            const res = await fetch(`${BASE_URL}/class-summary/${classId}`, {
+            const res = await apiFetch(`${BASE_URL}/class-summary/${classId}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
@@ -955,7 +987,7 @@ export const api = {
                     mapCode: "graph TD\nA[Arquitectura] --> B[Patrones]\nA --> C[Atributos]\nB --> D[Microservicios]\nB --> E[Monolito]"
                 };
             }
-            const res = await fetch(`${BASE_URL}/class-map/${classId}`);
+            const res = await apiFetch(`${BASE_URL}/class-map/${classId}`);
             if (!res.ok) return null;
             return res.json();
         },
@@ -975,14 +1007,14 @@ export const api = {
                     ],
                 };
             }
-            const res = await fetch(`${BASE_URL}/class-timeline/${classId}`);
+            const res = await apiFetch(`${BASE_URL}/class-timeline/${classId}`);
             if (!res.ok) return { classId, sections: [], markers: [] };
             return res.json();
         },
 
     async saveClassTimeline(classId, payload) {
             if (USE_MOCK) return payload;
-            const res = await fetch(`${BASE_URL}/class-timeline/${classId}`, {
+            const res = await apiFetch(`${BASE_URL}/class-timeline/${classId}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
@@ -995,7 +1027,7 @@ export const api = {
 
     async saveClassMap(classId, data) {
             if (USE_MOCK) return;
-            const res = await fetch(`${BASE_URL}/class-map/${classId}`, {
+            const res = await apiFetch(`${BASE_URL}/class-map/${classId}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
@@ -1051,7 +1083,7 @@ export const api = {
 
     async sendChatFeedback({ messageId, subjectId, isPositive }) {
             if (USE_MOCK) return { success: true };
-            const res = await fetch(`${BASE_URL}/chat-feedback`, {
+            const res = await apiFetch(`${BASE_URL}/chat-feedback`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ messageId, subjectId, isPositive })

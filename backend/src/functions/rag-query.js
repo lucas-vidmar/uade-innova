@@ -9,6 +9,7 @@ import { saveJson, saveMetricsToTable } from '../services/storage.js';
 import { getShadowPrompt } from '../services/prompts.js';
 import { trackRAGInteraction } from '../services/telemetry.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
+import { normalizeCategorizedError, ErrorCategory } from '../services/error-categories.js';
 import { v4 as uuidv4 } from 'uuid';
 const MAX_RAG_CHUNKS = 4;
 const MIN_HISTORY_TURNS = 3;
@@ -127,8 +128,15 @@ app.http('rag-query', {
             questionEmbedding = embeddingResult.embedding;
             embeddingUsage = embeddingResult.usage;
         } catch (err) {
-            context.error('Error generando embedding:', err);
-            return { status: 500, body: JSON.stringify({ error: `Error procesando la pregunta (embedding): ${err.message}` }) };
+            const categorizedError = normalizeCategorizedError(err, ErrorCategory.LLM);
+            context.error('Error generando embedding:', categorizedError);
+            return {
+                status: categorizedError.status,
+                body: JSON.stringify({
+                    error: `Error procesando la pregunta (embedding): ${categorizedError.message}`,
+                    errorCategory: categorizedError.errorCategory,
+                })
+            };
         }
 
         // ── 3. Filtro Pinecone por subjectId y classIds ───────────
@@ -149,8 +157,15 @@ app.http('rag-query', {
         try {
             matches = await querySimilar(questionEmbedding, filter, MAX_RAG_CHUNKS);
         } catch (err) {
-            context.error('Error consultando Pinecone:', err);
-            return { status: 500, body: JSON.stringify({ error: `Error buscando en la base de conocimiento: ${err.message}` }) };
+            const categorizedError = normalizeCategorizedError(err, ErrorCategory.RETRIEVAL_FAILURE);
+            context.error('Error consultando Pinecone:', categorizedError);
+            return {
+                status: categorizedError.status,
+                body: JSON.stringify({
+                    error: `Error buscando en la base de conocimiento: ${categorizedError.message}`,
+                    errorCategory: categorizedError.errorCategory,
+                })
+            };
         }
 
         matches = filterMatchesByTranscriptFocus(matches, transcriptFocus);
@@ -281,8 +296,9 @@ ${contextText}
                         controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ usage: finalUsage, answer: fullAnswer })}\n\n`));
                         controller.close();
                     } catch (err) {
-                        context.error('Error durante el stream:', err);
-                        controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ error: err.message })}\n\n`));
+                        const categorizedError = normalizeCategorizedError(err, ErrorCategory.LLM);
+                        context.error('Error durante el stream:', categorizedError);
+                        controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ error: categorizedError.message, errorCategory: categorizedError.errorCategory })}\n\n`));
                         controller.close();
                     }
                 }
@@ -307,8 +323,15 @@ ${contextText}
             answer = chatResult.content;
             chatUsage = chatResult.usage;
         } catch (err) {
-            context.error('Error en chat completion:', err);
-            return { status: 500, body: JSON.stringify({ error: `Error generando respuesta (chat): ${err.message}` }) };
+            const categorizedError = normalizeCategorizedError(err, ErrorCategory.LLM);
+            context.error('Error en chat completion:', categorizedError);
+            return {
+                status: categorizedError.status,
+                body: JSON.stringify({
+                    error: `Error generando respuesta (chat): ${categorizedError.message}`,
+                    errorCategory: categorizedError.errorCategory,
+                })
+            };
         }
 
         // ── 6b. Emit App Insights telemetry (Issue #69) ───────────

@@ -8,6 +8,7 @@ import {
     SearchIndexClient,
 } from '@azure/search-documents';
 import { DefaultAzureCredential } from '@azure/identity';
+import { CategorizedError, ErrorCategory } from './error-categories.js';
 
 const VECTOR_DIMENSIONS = Number.parseInt(process.env.AZURE_SEARCH_VECTOR_DIMENSIONS || '1536', 10);
 const BATCH_SIZE = 100;
@@ -239,7 +240,13 @@ export async function querySimilar(embedding, filter, topK = 5) {
         return matches;
     } catch (err) {
         console.error('[Azure Search] Error en querySimilar:', err);
-        throw new Error(`Error consultando la base vectorial: ${err.message}`);
+        throw new CategorizedError(`Error consultando la base vectorial: ${err.message}`, {
+            errorCategory: ErrorCategory.RETRIEVAL_FAILURE,
+            code: err?.code || 'RETRIEVAL_QUERY_FAILED',
+            status: Number.isInteger(err?.status) ? err.status : 500,
+            details: err?.details || null,
+            cause: err,
+        });
     }
 }
 

@@ -269,7 +269,11 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
         }
       });
     } catch (err) {
-      assistantMsg.content = err.message || 'Error de conexión con el servidor. Por favor intentá nuevamente.';
+      const category = err?.errorCategory || 'LLM';
+      const categoryMessage = category === 'SAFETY'
+        ? 'Categoria: SAFETY (contenido bloqueado por seguridad).'
+        : `Categoria: ${category}.`;
+      assistantMsg.content = `${err.message || 'Error de conexión con el servidor. Por favor intentá nuevamente.'}\n\n${categoryMessage}`;
       assistantMsg.streaming = false;
       render();
     } finally {

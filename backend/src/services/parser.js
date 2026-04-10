@@ -6,6 +6,7 @@ import mammoth from 'mammoth';
 import pdfParse from 'pdf-parse';
 import AdmZip from 'adm-zip';
 import { getEncoding } from 'js-tiktoken';
+import { CategorizedError, ErrorCategory } from './error-categories.js';
 
 // Usar el encoding estándar de OpenAI (GPT-4)
 const encoder = getEncoding('cl100k_base');
@@ -64,7 +65,13 @@ export async function parseFile(buffer, mimeType, filename = '') {
             rawText = result.text;
         } catch (err) {
             console.error(`[Parser] Error parseando PDF ${filename}:`, err);
-            throw new Error(`Error al procesar el PDF: ${err.message}. Asegúrese de que no esté protegido por contraseña.`);
+            throw new CategorizedError(`Error al procesar el PDF: ${err.message}. Asegúrese de que no esté protegido por contraseña.`, {
+                errorCategory: ErrorCategory.PARSING,
+                code: err?.code || 'PDF_PARSE_ERROR',
+                status: 400,
+                details: { filename, mimeType },
+                cause: err,
+            });
         }
     }
     // PPTX — extracción básica desde XML interno
@@ -74,7 +81,12 @@ export async function parseFile(buffer, mimeType, filename = '') {
     ) {
         rawText = extractPptxText(buffer);
     } else {
-        throw new Error(`Tipo de archivo no soportado: ${mimeType || ext}`);
+        throw new CategorizedError(`Tipo de archivo no soportado: ${mimeType || ext}`, {
+            errorCategory: ErrorCategory.PARSING,
+            code: 'UNSUPPORTED_FILE_TYPE',
+            status: 400,
+            details: { mimeType, ext, filename },
+        });
     }
 
     return cleanText(rawText);
@@ -273,6 +285,11 @@ function extractPptxText(buffer) {
 
         return cleanText(texts.filter(Boolean).join('\n\n'));
     } catch (err) {
-        throw new Error(`Error parseando PPTX: ${err.message}`);
+        throw new CategorizedError(`Error parseando PPTX: ${err.message}`, {
+            errorCategory: ErrorCategory.PARSING,
+            code: err?.code || 'PPTX_PARSE_ERROR',
+            status: 400,
+            cause: err,
+        });
     }
 }
