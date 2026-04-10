@@ -2,6 +2,7 @@
    Sidebar — Role-aware navigation shell (Desktop + Mobile)
    ============================================================ */
 import { auth } from '../services/auth.js';
+import { api } from '../services/api.js';
 
 const NAV = {
   student: [
@@ -23,6 +24,11 @@ const NAV = {
 };
 
 export function renderSidebar() {
+  if (typeof renderSidebar._notificationCleanup === 'function') {
+    renderSidebar._notificationCleanup();
+    renderSidebar._notificationCleanup = null;
+  }
+
   const user = auth.getUser();
   const items = NAV[user.role] || NAV.student;
   const currentHash = window.location.hash || `#/${user.role}/dashboard`;
@@ -89,6 +95,27 @@ export function renderSidebar() {
         <button class="btn btn-ghost p-2 text-text-secondary hover:text-primary transition-colors flex items-center justify-center" id="theme-toggle-nav" aria-label="Cambiar tema">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
         </button>
+
+        ${user.role === 'student' ? `
+          <div class="notification-center" id="notification-center">
+            <button class="notification-bell-btn" id="notification-bell-btn" aria-label="Abrir centro de notificaciones" aria-expanded="false" aria-controls="notification-dropdown">
+              ${getIcon('bell')}
+              <span class="notification-badge" id="notification-badge" hidden>0</span>
+            </button>
+            <div class="notification-dropdown" id="notification-dropdown" hidden>
+              <div class="notification-dropdown-head">
+                <h3>Notificaciones</h3>
+                <button class="notification-mark-read" id="notification-mark-read">Marcar todas leídas</button>
+              </div>
+              <div class="notification-list" id="notification-list">
+                <div class="notification-empty">Cargando notificaciones...</div>
+              </div>
+              <div class="notification-dropdown-foot">
+                <button class="notification-simulate" id="notification-simulate">Simular notificación</button>
+              </div>
+            </div>
+          </div>
+        ` : ''}
 
         <div class="flex items-center gap-2 cursor-pointer p-1.5 rounded-lg hover:bg-surface-2 active:bg-surface-2 transition-all relative border border-transparent hover:border-border" id="profile-trigger-nav">
           <div class="profile-initials-badge">
@@ -204,6 +231,162 @@ export function renderSidebar() {
       window.location.reload();
     });
   });
+
+  if (user.role === 'student') {
+    initializeNotificationCenter({ userId: user.id, subjectId: activeSubjectId });
+  }
+}
+
+async function initializeNotificationCenter({ userId, subjectId }) {
+  const center = document.getElementById('notification-center');
+  const bellButton = document.getElementById('notification-bell-btn');
+  const badge = document.getElementById('notification-badge');
+  const dropdown = document.getElementById('notification-dropdown');
+  const listEl = document.getElementById('notification-list');
+  const markReadBtn = document.getElementById('notification-mark-read');
+  const simulateBtn = document.getElementById('notification-simulate');
+
+  if (!center || !bellButton || !badge || !dropdown || !listEl) return;
+
+  let notifications = [];
+
+  const render = () => {
+    const unreadCount = notifications.filter((item) => item.unread).length;
+    badge.textContent = String(unreadCount);
+    badge.hidden = unreadCount === 0;
+
+    if (notifications.length === 0) {
+      listEl.innerHTML = '<div class="notification-empty">No hay notificaciones nuevas.</div>';
+      return;
+    }
+
+    listEl.innerHTML = notifications
+      .map((item) => {
+        const icon = item.type === 'grade' ? '📝' : item.type === 'summary' ? '📘' : '📂';
+        const typeLabel = item.type === 'grade' ? 'Nota' : item.type === 'summary' ? 'Resumen' : 'Material';
+        return `
+          <button class="notification-item ${item.unread ? 'unread' : ''}" data-notification-id="${item.id}" data-target-hash="${item.targetHash || '#/student/dashboard'}">
+            <div class="notification-item-top">
+              <span class="notification-type">${icon} ${typeLabel}</span>
+              <span class="notification-time">${formatNotificationDate(item.createdAt)}</span>
+            </div>
+            <div class="notification-title">${escapeHtml(item.title)}</div>
+            <div class="notification-message">${escapeHtml(item.message)}</div>
+          </button>
+        `;
+      })
+      .join('');
+  };
+
+  const setOpen = (open) => {
+    dropdown.hidden = !open;
+    bellButton.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+
+  const onBellClick = (e) => {
+    e.stopPropagation();
+    setOpen(dropdown.hidden);
+  };
+
+  const onOutsideClick = (e) => {
+    if (!center.contains(e.target)) {
+      setOpen(false);
+    }
+  };
+
+  const onMarkAllRead = (e) => {
+    e.stopPropagation();
+    notifications = notifications.map((item) => ({ ...item, unread: false }));
+    render();
+  };
+
+  const onSimulate = (e) => {
+    e.stopPropagation();
+    notifications = [
+      {
+        id: `notif-sim-${Date.now()}`,
+        type: 'material',
+        title: 'Nuevo material disponible',
+        message: 'Se agregó un nuevo recurso para tu clase activa.',
+        createdAt: new Date().toISOString(),
+        unread: true,
+        targetHash: '#/student/dashboard',
+      },
+      ...notifications,
+    ];
+    render();
+  };
+
+  const onListClick = (e) => {
+    const item = e.target.closest('[data-notification-id]');
+    if (!item) return;
+    const id = item.getAttribute('data-notification-id');
+    notifications = notifications.map((notif) => (notif.id === id ? { ...notif, unread: false } : notif));
+    render();
+    setOpen(false);
+
+    const targetHash = item.getAttribute('data-target-hash');
+    if (targetHash) window.location.hash = targetHash;
+  };
+
+  const onExternalTrigger = (event) => {
+    const detail = event?.detail || {};
+    notifications = [
+      {
+        id: detail.id || `notif-ext-${Date.now()}`,
+        type: ['grade', 'summary', 'material'].includes(detail.type) ? detail.type : 'material',
+        title: String(detail.title || 'Nueva notificación'),
+        message: String(detail.message || 'Se actualizó información académica.'),
+        createdAt: detail.createdAt || new Date().toISOString(),
+        unread: true,
+        targetHash: detail.targetHash || '#/student/dashboard',
+      },
+      ...notifications,
+    ];
+    render();
+  };
+
+  bellButton.addEventListener('click', onBellClick);
+  document.addEventListener('click', onOutsideClick);
+  listEl.addEventListener('click', onListClick);
+  markReadBtn?.addEventListener('click', onMarkAllRead);
+  simulateBtn?.addEventListener('click', onSimulate);
+  window.addEventListener('student:trigger-notification', onExternalTrigger);
+
+  renderSidebar._notificationCleanup = () => {
+    bellButton.removeEventListener('click', onBellClick);
+    document.removeEventListener('click', onOutsideClick);
+    listEl.removeEventListener('click', onListClick);
+    markReadBtn?.removeEventListener('click', onMarkAllRead);
+    simulateBtn?.removeEventListener('click', onSimulate);
+    window.removeEventListener('student:trigger-notification', onExternalTrigger);
+  };
+
+  notifications = await api.getNotifications({ userId, subjectId, limit: 8 });
+  render();
+}
+
+function formatNotificationDate(value) {
+  if (!value) return 'recién';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'recién';
+
+  const diffMs = Date.now() - date.getTime();
+  const diffMin = Math.round(diffMs / 60000);
+  if (diffMin < 1) return 'ahora';
+  if (diffMin < 60) return `hace ${diffMin} min`;
+  const diffHours = Math.round(diffMin / 60);
+  if (diffHours < 24) return `hace ${diffHours} h`;
+  return date.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' });
+}
+
+function escapeHtml(value = '') {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function getIcon(icon) {
@@ -216,6 +399,7 @@ function getIcon(icon) {
     upload: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5-5 5 5"/><path d="M12 5v12"/></svg>',
     chart: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14v4"/><path d="M12 10v8"/><path d="M17 6v12"/></svg>',
     settings: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0A1.65 1.65 0 0 0 9.91 3.1V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+    bell: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 17h5l-1.4-1.4a2 2 0 0 1-.6-1.4V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5"/><path d="M9 17a3 3 0 0 0 6 0"/></svg>',
   };
 
   return icons[icon] || icons.home;

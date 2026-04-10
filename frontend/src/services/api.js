@@ -222,6 +222,65 @@ const MOCK_DEADLINES = [
     },
 ];
 
+const MOCK_NOTIFICATIONS = [
+    {
+        id: 'notif-grade-001',
+        type: 'grade',
+        title: 'Nueva nota publicada',
+        message: 'Quiz Online — Estilos Arquitectónicos: 8.5',
+        createdAt: '2026-03-20T11:10:00Z',
+        unread: true,
+        targetHash: '#/student/tasks',
+        subjectId: 'arq-software-2026',
+    },
+    {
+        id: 'notif-summary-001',
+        type: 'summary',
+        title: 'Resumen validado por docente',
+        message: 'Clase 2 — Estilos Arquitectónicos ya tiene resumen validado.',
+        createdAt: '2026-03-18T09:00:00Z',
+        unread: true,
+        targetHash: '#/student/dashboard',
+        subjectId: 'arq-software-2026',
+    },
+    {
+        id: 'notif-material-001',
+        type: 'material',
+        title: 'Nuevo material disponible',
+        message: 'Se cargó clase2_estilos.pptx en Clase 2.',
+        createdAt: '2026-03-17T18:45:00Z',
+        unread: false,
+        targetHash: '#/student/class/class-02',
+        subjectId: 'arq-software-2026',
+    },
+];
+
+function normalizeNotification(item = {}, idx = 0) {
+    const fallbackId = item.id || `notif-${Date.now()}-${idx}`;
+    const type = ['grade', 'summary', 'material'].includes(item.type) ? item.type : 'material';
+    return {
+        id: fallbackId,
+        type,
+        title: String(item.title || 'Nueva notificación'),
+        message: String(item.message || 'Tienes una actualización académica.'),
+        createdAt: item.createdAt || new Date().toISOString(),
+        unread: item.unread !== false,
+        targetHash: item.targetHash || '#/student/dashboard',
+        subjectId: item.subjectId || null,
+    };
+}
+
+function buildFallbackNotifications(subjectId, limit = 10) {
+    const safeLimit = Math.min(Math.max(Number(limit) || 10, 1), 50);
+    const scoped = MOCK_NOTIFICATIONS
+        .filter((item) => !subjectId || item.subjectId === subjectId)
+        .map((item, idx) => normalizeNotification(item, idx));
+
+    return scoped
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        .slice(0, safeLimit);
+}
+
 const MOCK_GLOBAL_SEARCH_RESULTS = [
     {
         materialId: 'm-01',
@@ -380,6 +439,40 @@ export const api = {
 
         const data = await res.json();
         return data && Array.isArray(data.results) ? data : { query, subjectId, total: 0, results: [] };
+    },
+
+    async getNotifications({ userId, subjectId, limit = 10 } = {}) {
+        if (USE_MOCK) {
+            await delay(250);
+            return buildFallbackNotifications(subjectId, limit);
+        }
+
+        try {
+            const params = new URLSearchParams();
+            if (userId) params.set('userId', userId);
+            if (subjectId) params.set('subjectId', subjectId);
+            if (limit) params.set('limit', String(limit));
+
+            const query = params.toString();
+            const res = await fetchWithTimeout(`${BASE_URL}/notifications${query ? `?${query}` : ''}`, { timeout: 3500 });
+
+            if (!res.ok) {
+                return buildFallbackNotifications(subjectId, limit);
+            }
+
+            const data = await res.json();
+            if (!Array.isArray(data)) {
+                return buildFallbackNotifications(subjectId, limit);
+            }
+
+            return data
+                .map((item, idx) => normalizeNotification(item, idx))
+                .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+                .slice(0, Math.min(Math.max(Number(limit) || 10, 1), 50));
+        } catch (err) {
+            console.error('[API] getNotifications failed:', err);
+            return buildFallbackNotifications(subjectId, limit);
+        }
     },
 
     async getSubjects() {
