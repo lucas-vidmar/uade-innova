@@ -1,0 +1,209 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "UADE Dashboard - SGA Integration API",
+    "version": "1.0.0",
+    "description": "Contrato OpenAPI para integración del Dashboard Educativo con datos académicos del SGA (tareas, alertas tempranas y asistencia)."
+  },
+  "servers": [
+    {
+      "url": "/api",
+      "description": "Azure Functions API base"
+    }
+  ],
+  "tags": [
+    {
+      "name": "SGA",
+      "description": "Endpoints de lectura para datos académicos institucionales"
+    }
+  ],
+  "paths": {
+    "/sga/tasks": {
+      "get": {
+        "tags": ["SGA"],
+        "summary": "Lista tareas académicas del alumno",
+        "operationId": "getSgaTasks",
+        "parameters": [
+          {
+            "name": "studentId",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1 },
+            "description": "Legajo/identificador del alumno"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Listado de tareas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/SgaTask" }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Parámetros inválidos",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "403": {
+            "description": "Acceso bloqueado por control de perímetro",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sga/early-alerts": {
+      "get": {
+        "tags": ["SGA"],
+        "summary": "Lista alertas tempranas académicas",
+        "operationId": "getSgaEarlyAlerts",
+        "parameters": [
+          {
+            "name": "subjectId",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "Filtro opcional por materia"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Listado de alertas tempranas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/SgaEarlyAlert" }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Acceso bloqueado por control de perímetro",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sga/attendance": {
+      "get": {
+        "tags": ["SGA"],
+        "summary": "Obtiene métricas de asistencia por materia",
+        "operationId": "getSgaAttendance",
+        "parameters": [
+          {
+            "name": "subjectId",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1 },
+            "description": "Identificador de materia"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Snapshot de asistencia",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SgaAttendanceStats" }
+              }
+            }
+          },
+          "400": {
+            "description": "Parámetros inválidos",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "403": {
+            "description": "Rol insuficiente (Docente/Director requerido)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "SgaTask": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "studentId", "title", "dueDate", "weight", "status", "classIds", "grade", "subjectId"],
+        "properties": {
+          "id": { "type": "string" },
+          "studentId": { "type": "string" },
+          "title": { "type": "string" },
+          "dueDate": { "type": "string", "format": "date" },
+          "weight": { "type": "number", "minimum": 0, "maximum": 100 },
+          "status": { "type": "string", "enum": ["pending", "completed"] },
+          "classIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "grade": {
+            "anyOf": [
+              { "type": "number", "minimum": 0, "maximum": 10 },
+              { "type": "null" }
+            ]
+          },
+          "subjectId": { "type": "string" }
+        }
+      },
+      "SgaEarlyAlert": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "studentId", "name", "subjectId", "subject", "risk", "attendance", "avgGrade"],
+        "properties": {
+          "id": { "type": "string" },
+          "studentId": { "type": "string" },
+          "name": { "type": "string" },
+          "subjectId": { "type": "string" },
+          "subject": { "type": "string" },
+          "risk": { "type": "string", "enum": ["low", "medium", "high"] },
+          "attendance": { "type": "string", "pattern": "^[0-9]{1,3}%$" },
+          "avgGrade": { "type": "number", "minimum": 0, "maximum": 10 }
+        }
+      },
+      "SgaAttendanceStats": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["average", "critical", "trend", "subjectId", "updatedAt"],
+        "properties": {
+          "average": { "type": "number", "minimum": 0, "maximum": 100 },
+          "critical": { "type": "integer", "minimum": 0 },
+          "trend": { "type": "string", "enum": ["up", "down", "stable"] },
+          "subjectId": { "type": "string" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["error"],
+        "properties": {
+          "error": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -15,6 +15,7 @@ import './functions/save-profile.js';
 import './functions/vector-health.js';
 import './functions/global-search.js';
 import './functions/notifications.js';
+import './functions/sga-api.js';
 import './functions/ingest-material.js';
 import './functions/process-material.js';
 import './functions/rag-query.js';

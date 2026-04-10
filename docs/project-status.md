@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-04-10] User Story #26: SGA API Schema Mapping
+- **Status**: Completed
+- **Functional Change**: Added a contract-first OpenAPI schema (`docs/sga-openapi.json`) and implemented SGA-aligned backend endpoints (`/api/sga/tasks`, `/api/sga/early-alerts`, `/api/sga/attendance`) with frontend consumption and schema-conformance tests.
+- **Business Impact**: Reduces integration risk with institutional systems by formalizing academic data contracts and validating payload consistency before real SGA cutover.
+
 ### [2026-04-10] User Story #72: Anomalous Usage Alerts
 - **Status**: Completed
 - **Functional Change**: Added IaC provisioning for an Azure Monitor scheduled query alert over App Insights (`customEvents` / `RAGInteraction`) that aggregates `totalTokens` by user in a 24h window and emails Operations when usage exceeds 1,000,000 tokens.

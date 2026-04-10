@@ -1037,32 +1037,65 @@ export const api = {
 
     // ── Academic SGA Methods (Moved from academic.js) ───────
     async getTasks(studentId) {
-            // Mock data as defined in academic.js
-            const MOCK_TASKS = [
-                { id: 't-01', title: 'TP1: Diagrama de Arquitectura C4', dueDate: '2026-03-28', weight: 25, status: 'pending', classIds: ['class-01', 'class-02'], grade: null, subjectId: 'arq-software-2026' },
-                { id: 't-02', title: 'Quiz Online — Estilos Arquitectónicos', dueDate: '2026-03-20', weight: 10, status: 'completed', classIds: ['class-02'], grade: 8.5, subjectId: 'arq-software-2026' },
-                { id: 't-03', title: 'Parcial 1 — Arquitectura y Patrones', dueDate: '2026-04-16', weight: 35, status: 'pending', classIds: ['class-01', 'class-02', 'class-03', 'class-04'], grade: null, subjectId: 'arq-software-2026' },
-                { id: 't-04', title: 'Lectura: "Clean Architecture" (caps 1-5)', dueDate: '2026-03-19', weight: 5, status: 'completed', classIds: ['class-01'], grade: 10, subjectId: 'arq-software-2026' },
-                { id: 't-05', title: 'Entrega: Documento de Visión', dueDate: '2026-03-24', weight: 15, status: 'pending', classIds: ['class-01'], grade: null, subjectId: 'arq-software-2026' },
-                { id: 't-06', title: 'Repaso: Atributos de Calidad', dueDate: '2026-03-22', weight: 4, status: 'pending', classIds: ['class-01'], grade: null, subjectId: 'arq-software-2026' },
-            ];
-            await delay(400);
-            return MOCK_TASKS;
+            if (USE_MOCK) {
+                const MOCK_TASKS = [
+                    { id: 't-01', studentId, title: 'TP1: Diagrama de Arquitectura C4', dueDate: '2026-03-28', weight: 25, status: 'pending', classIds: ['class-01', 'class-02'], grade: null, subjectId: 'arq-software-2026' },
+                    { id: 't-02', studentId, title: 'Quiz Online — Estilos Arquitectónicos', dueDate: '2026-03-20', weight: 10, status: 'completed', classIds: ['class-02'], grade: 8.5, subjectId: 'arq-software-2026' },
+                    { id: 't-03', studentId, title: 'Parcial 1 — Arquitectura y Patrones', dueDate: '2026-04-16', weight: 35, status: 'pending', classIds: ['class-01', 'class-02', 'class-03', 'class-04'], grade: null, subjectId: 'arq-software-2026' },
+                    { id: 't-04', studentId, title: 'Lectura: "Clean Architecture" (caps 1-5)', dueDate: '2026-03-19', weight: 5, status: 'completed', classIds: ['class-01'], grade: 10, subjectId: 'arq-software-2026' },
+                ];
+                await delay(400);
+                return MOCK_TASKS;
+            }
+
+            try {
+                const res = await fetchWithTimeout(`${BASE_URL}/sga/tasks?studentId=${encodeURIComponent(studentId)}`, { timeout: 4000 });
+                if (!res.ok) return [];
+                const data = await res.json();
+                return Array.isArray(data) ? data : [];
+            } catch (err) {
+                console.error('[API] getTasks failed:', err);
+                return [];
+            }
         },
 
     async getEarlyAlerts(subjectId) {
-            const MOCK_EARLY_ALERTS = [
-                { id: 'alu-012', name: 'Tomás García', subjectId: 'arq-software-2026', subject: 'Arq. de Software', risk: 'high', attendance: '45%', avgGrade: 4.2 },
-                { id: 'alu-031', name: 'Lucía Martínez', subjectId: 'diseno-sistemas-2026', subject: 'Sistemas Dist.', risk: 'medium', attendance: '62%', avgGrade: 5.1 },
-                { id: 'alu-008', name: 'Nicolás Peralta', subjectId: 'arq-software-2026', subject: 'Arq. de Software', risk: 'medium', attendance: '70%', avgGrade: 5.8 },
-            ];
-            await delay(400);
-            return subjectId ? MOCK_EARLY_ALERTS.filter(a => a.subjectId === subjectId) : MOCK_EARLY_ALERTS;
+            if (USE_MOCK) {
+                const MOCK_EARLY_ALERTS = [
+                    { id: 'alu-012', studentId: 'alu-012', name: 'Tomás García', subjectId: 'arq-software-2026', subject: 'Arq. de Software', risk: 'high', attendance: '45%', avgGrade: 4.2 },
+                    { id: 'alu-031', studentId: 'alu-031', name: 'Lucía Martínez', subjectId: 'diseno-sistemas-2026', subject: 'Sistemas Dist.', risk: 'medium', attendance: '62%', avgGrade: 5.1 },
+                    { id: 'alu-008', studentId: 'alu-008', name: 'Nicolás Peralta', subjectId: 'arq-software-2026', subject: 'Arq. de Software', risk: 'medium', attendance: '70%', avgGrade: 5.8 },
+                ];
+                await delay(400);
+                return subjectId ? MOCK_EARLY_ALERTS.filter(a => a.subjectId === subjectId) : MOCK_EARLY_ALERTS;
+            }
+
+            try {
+                const query = subjectId ? `?subjectId=${encodeURIComponent(subjectId)}` : '';
+                const res = await fetchWithTimeout(`${BASE_URL}/sga/early-alerts${query}`, { timeout: 4000 });
+                if (!res.ok) return [];
+                const data = await res.json();
+                return Array.isArray(data) ? data : [];
+            } catch (err) {
+                console.error('[API] getEarlyAlerts failed:', err);
+                return [];
+            }
         },
 
     async getAttendanceStats(subjectId) {
-            await delay(400);
-            return { average: 78, critical: 3, trend: 'stable' };
+            if (USE_MOCK) {
+                await delay(400);
+                return { average: 78, critical: 3, trend: 'stable', subjectId, updatedAt: new Date().toISOString() };
+            }
+
+            try {
+                const res = await fetchWithTimeout(`${BASE_URL}/sga/attendance?subjectId=${encodeURIComponent(subjectId)}`, { timeout: 4000 });
+                if (!res.ok) return { average: 0, critical: 0, trend: 'stable', subjectId, updatedAt: new Date().toISOString() };
+                return await res.json();
+            } catch (err) {
+                console.error('[API] getAttendanceStats failed:', err);
+                return { average: 0, critical: 0, trend: 'stable', subjectId, updatedAt: new Date().toISOString() };
+            }
         },
 
     async getChatHistory(subjectId) {
