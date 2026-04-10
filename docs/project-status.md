@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-04-10] User Story #72: Anomalous Usage Alerts
+- **Status**: Completed
+- **Functional Change**: Added IaC provisioning for an Azure Monitor scheduled query alert over App Insights (`customEvents` / `RAGInteraction`) that aggregates `totalTokens` by user in a 24h window and emails Operations when usage exceeds 1,000,000 tokens.
+- **Business Impact**: Gives administrators early visibility into abusive or anomalous token consumption patterns, helping enforce FinOps controls and reducing unexpected AI spend.
+
 ### [2026-04-10] User Story #59: AI Podcast Generation (TTS)
 - **Status**: Completed
 - **Functional Change**: Integrated Azure OpenAI TTS (`tts-1`) into the platform to automatically generate audio study guides ("Podcasts") from class summaries. Implemented a cached generation pipeline in the backend and a premium audio player in the student's class detail view.

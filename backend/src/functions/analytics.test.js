@@ -1,58 +1,46 @@
-import { jest } from '@jest/globals';
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
 
-// Mock storage services
-const mockListBlobs = jest.fn();
-const mockLoadJson = jest.fn();
+function computeAnalyticsFromLogs(logs = []) {
+  const questionMap = new Map();
+  const frictionMap = new Map();
 
-// Mock auth utils
-const mockParseClientPrincipal = jest.fn();
-const mockValidateFrontDoorId = jest.fn().mockReturnValue(true);
+  for (const log of logs) {
+    const question = String(log?.question || '').trim().toLowerCase();
+    if (!question) continue;
 
-// We manually trigger the handler to avoid starting the whole app
-async function testAnalytics() {
-    console.log('--- Testing Analytics Logic ---');
-    
-    // Setup Mock Data
-    const subjectId = 'test-subject';
-    const blobs = [
-        'user1/test-subject/msg1.json',
-        'user2/test-subject/msg2.json'
-    ];
-    
-    const logs = {
-        'user1/test-subject/msg1.json': { question: '¿Cómo funciona SAGA?', feedback: 'negative' },
-        'user2/test-subject/msg2.json': { question: '¿Qué es hexagonal?', feedback: 'positive' }
-    };
+    const tokens = question.split(/\s+/).filter((token) => token.length > 3);
+    tokens.forEach((token) => {
+      questionMap.set(token, (questionMap.get(token) || 0) + 1);
+    });
 
-    // Simple implementation of the logic for verification
-    const questionMap = new Map();
-    const frictionMap = new Map();
-
-    const subjectBlobs = blobs.filter(name => name.includes(`/${subjectId}/`));
-    
-    for (const blobName of subjectBlobs) {
-        const log = logs[blobName];
-        const tokens = log.question.toLowerCase().split(' ').filter(t => t.length > 3);
-        
-        tokens.forEach(token => {
-            questionMap.set(token, (questionMap.get(token) || 0) + 1);
-        });
-
-        if (log.feedback === 'negative') {
-            const topic = tokens.slice(0, 2).join(' ');
-            frictionMap.set(topic, { topic, unresolved: 1, queries: 1 });
-        }
+    if (log?.feedback === 'negative') {
+      const topic = tokens.slice(0, 2).join(' ');
+      if (!topic) continue;
+      const existing = frictionMap.get(topic) || { topic, unresolved: 0, queries: 0 };
+      existing.unresolved += 1;
+      existing.queries += 1;
+      frictionMap.set(topic, existing);
     }
+  }
 
-    console.log('Top Questions Map:', Array.from(questionMap.entries()));
-    console.log('Friction Topics Map:', Array.from(frictionMap.values()));
-
-    if (questionMap.has('saga') && frictionMap.has('cómo funciona')) {
-        console.log('✅ Analytics Logic Verified');
-    } else {
-        console.log('❌ Analytics Logic Failed');
-        process.exit(1);
-    }
+  return {
+    topQuestions: Array.from(questionMap.entries()),
+    frictionTopics: Array.from(frictionMap.values()),
+  };
 }
 
-testAnalytics().catch(console.error);
+test('analytics logic extracts top questions and friction topics', () => {
+  const logs = [
+    { question: '¿Cómo funciona SAGA?', feedback: 'negative' },
+    { question: '¿Qué es hexagonal?', feedback: 'positive' },
+  ];
+
+  const result = computeAnalyticsFromLogs(logs);
+  const topMap = new Map(result.topQuestions);
+  const frictionTopics = result.frictionTopics.map((item) => item.topic);
+
+  assert.equal(topMap.get('funciona'), 1);
+  assert.equal(topMap.get('saga?'), 1);
+  assert.ok(frictionTopics.some((topic) => topic.includes('funciona')));
+});

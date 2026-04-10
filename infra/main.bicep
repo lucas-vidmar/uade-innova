@@ -90,6 +90,8 @@ var identityName = 'id-dashboard-edu-${resourceToken}'
 var frontDoorName = 'afd-dashboard-${resourceToken}'
 var azureSearchName = '${abbrs.searchSearchServices}dashboard-${resourceToken}'
 var workbookName = guid(resourceGroup().id, 'cost-per-interaction-workbook')
+var anomalousUsageAlertName = 'alert-anomalous-token-usage-${take(resourceToken, 8)}'
+var anomalousUsageActionGroupName = 'ag-token-usage-${take(resourceToken, 8)}'
 
 // Storage account: max 24 chars, no hyphens
 var safeStorageName = take(replace(storageAccountName, '-', ''), 24)
@@ -218,6 +220,19 @@ module workbook './modules/workbook.bicep' = {
     location: location
     workbookName: workbookName
     appInsightsId: appInsights.outputs.logAnalyticsWorkspaceId
+    tags: tags
+  }
+}
+
+// ─── Module: Anomalous Usage Alert (Issue #72) ───────────────────
+module anomalousUsageAlert './modules/anomalous-usage-alert.bicep' = if (!empty(notificationEmail)) {
+  name: 'anomalousUsageAlert'
+  params: {
+    location: location
+    workspaceId: appInsights.outputs.logAnalyticsWorkspaceId
+    notificationEmail: notificationEmail
+    scheduledQueryRuleName: anomalousUsageAlertName
+    actionGroupName: anomalousUsageActionGroupName
     tags: tags
   }
 }

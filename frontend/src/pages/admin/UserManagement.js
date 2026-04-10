@@ -11,6 +11,17 @@ export async function renderUserManagement(container) {
             <p class="text-secondary">Visualización y auditoría de perfiles registrados en la institución.</p>
         </div>
 
+        <div class="card animate-in" id="anomalous-usage-alert-card">
+            <h3 style="margin-bottom: var(--space-2);">🚨 Alerta de uso anómalo de tokens</h3>
+            <p class="text-secondary" style="margin-bottom: var(--space-2);">
+                Operaciones recibe un email automático desde Azure Monitor cuando un usuario supera
+                <strong>1.000.000 tokens en 24 horas</strong>.
+            </p>
+            <p class="text-secondary" style="font-size: 0.85rem; margin: 0;">
+                Regla: <code>customEvents | where name == "RAGInteraction" | summarize sum(totalTokens) by userId</code>
+            </p>
+        </div>
+
         <div class="card animate-in">
             <div id="users-table-container">
                 <div class="loading-state">
