@@ -23,6 +23,7 @@ mock.module('../services/state-store.js', {
         listMaterialsBySubject: mock.fn(async () => []),
         replaceClassesForSubject: mock.fn(async () => true),
         deleteMaterialStateById: mock.fn(async () => true),
+        getMaterialState: mock.fn(async () => null),
     }
 });
 mock.module('uuid', { namedExports: { v4: () => '1234' } });

@@ -133,6 +133,20 @@ export async function listMaterialsByClass(subjectId, classId) {
   return materials.filter((item) => item.classIds.includes(classId));
 }
 
+export async function getMaterialState(subjectId, materialId) {
+  if (!subjectId || !materialId) return null;
+
+  await ensureTable(MATERIALS_TABLE);
+  const client = getTableClient(MATERIALS_TABLE);
+
+  try {
+    const entity = await client.getEntity(subjectId, materialId);
+    return fromMaterialEntity(entity);
+  } catch {
+    return null;
+  }
+}
+
 export async function deleteMaterialState(subjectId, materialId) {
   if (!subjectId || !materialId) return false;
 

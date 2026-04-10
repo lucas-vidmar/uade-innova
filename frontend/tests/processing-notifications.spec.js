@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test('teacher sees global toast when processing finishes after navigation', async ({ page }) => {
+  let materialStatusCallCount = 0;
   let classesCallCount = 0;
 
   await page.addInitScript(() => {
@@ -10,6 +11,24 @@ test('teacher sees global toast when processing finishes after navigation', asyn
     localStorage.setItem('edu_consent_accepted', 'true');
     localStorage.removeItem('uade.processing.tracked-jobs');
     window.__UADE_PROCESSING_POLL_MS = 250;
+  });
+
+  await page.route('**/api/material-status/**', async route => {
+    materialStatusCallCount += 1;
+    const status = materialStatusCallCount < 2 ? 'processing' : 'ready';
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 'material-001',
+        materialId: 'material-001',
+        subjectId: 'arq-software-2026',
+        classIds: ['class-14'],
+        filename: 'clase14.txt',
+        status,
+      }),
+    });
   });
 
   await page.route('**/api/classes?**', async route => {
@@ -66,4 +85,6 @@ test('teacher sees global toast when processing finishes after navigation', asyn
 
   await expect(page.locator('#toast-container .toast.success')).toContainText('Procesamiento completado', { timeout: 7000 });
   await expect(page.locator('#toast-container .toast.success')).toContainText('clase14.txt');
+  expect(materialStatusCallCount).toBeGreaterThan(0);
+  expect(classesCallCount).toBeLessThanOrEqual(2);
 });

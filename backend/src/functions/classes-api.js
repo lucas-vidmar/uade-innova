@@ -2,7 +2,7 @@ import { app } from '@azure/functions';
 import { loadJson, saveJson, listBlobs, deleteBlob } from '../services/storage.js';
 import { v4 as uuidv4 } from 'uuid';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
-import { listClassesBySubject, listMaterialsBySubject, replaceClassesForSubject, deleteMaterialStateById } from '../services/state-store.js';
+import { listClassesBySubject, listMaterialsBySubject, replaceClassesForSubject, deleteMaterialStateById, getMaterialState } from '../services/state-store.js';
 
 const CONTAINER_CLASSES = process.env.AZURE_STORAGE_CONTAINER_CLASSES || 'classes-config';
 const CONTAINER_PROCESSED = 'processed';
@@ -259,6 +259,75 @@ app.http('get-classes', {
             return { status: 500, body: JSON.stringify({ error: 'Error interno' }) };
         }
     }
+});
+
+// ── GET /api/material-status/{materialId} ──────────────────────────
+// Devuelve el estado puntual de un material por subjectId + materialId
+app.http('get-material-status', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'material-status/{materialId}',
+    handler: async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+
+        const materialId = request.params.materialId;
+        const subjectId = request.query.get('subjectId');
+
+        if (!materialId) {
+            return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Falta materialId' }) };
+        }
+
+        if (!subjectId || subjectId === 'undefined') {
+            return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Falta subjectId' }) };
+        }
+
+        try {
+            let material = null;
+
+            try {
+                material = await getMaterialState(subjectId, materialId);
+            } catch (tableErr) {
+                context.error(`[StateStore] Error leyendo material ${materialId} para ${subjectId}:`, tableErr);
+            }
+
+            if (!material) {
+                const legacy = await loadJson(CONTAINER_PROCESSED, `${materialId}.json`);
+                if (legacy && legacy.subjectId === subjectId) {
+                    material = {
+                        id: legacy.materialId || legacy.id,
+                        materialId: legacy.materialId || legacy.id,
+                        subjectId: legacy.subjectId,
+                        classIds: normalizeStringArray(legacy.classIds || legacy.classId),
+                        type: legacy.type,
+                        filename: legacy.filename,
+                        status: legacy.status,
+                        blobUrl: legacy.blobUrl,
+                        uploadedAt: legacy.uploadedAt,
+                        processedAt: legacy.processedAt,
+                        errorMessage: legacy.errorMessage,
+                        chunkCount: legacy.chunkCount,
+                    };
+                }
+            }
+
+            if (!material) {
+                return {
+                    status: 404,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ error: 'Material no encontrado' }),
+                };
+            }
+
+            return {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(material),
+            };
+        } catch (err) {
+            context.error(err);
+            return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Error interno' }) };
+        }
+    },
 });
 
 // ── POST /api/classes ──────────────────────────────────────────────

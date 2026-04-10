@@ -333,6 +333,26 @@ async function fetchWithTimeout(resource, options = {}) {
 
 /* ── API Client ──────────────────────────────────────────── */
 export const api = {
+    async getMaterialStatus(subjectId, materialId) {
+        if (!subjectId || !materialId) return null;
+
+        try {
+            const res = await fetchWithTimeout(
+                `${BASE_URL}/material-status/${encodeURIComponent(materialId)}?subjectId=${encodeURIComponent(subjectId)}`,
+                { timeout: 3500 }
+            );
+
+            if (res.status === 404) return null;
+            if (!res.ok) throw new Error(`Error ${res.status}: material-status`);
+
+            const data = await res.json();
+            return data && typeof data === 'object' ? data : null;
+        } catch (err) {
+            console.error('[API] getMaterialStatus failed:', err);
+            throw err;
+        }
+    },
+
     async getClasses(subjectId) {
         if (USE_MOCK) { await delay(); return MOCK_CLASSES.filter(c => c.subjectId === subjectId); }
         const localClasses = getLocalClasses(subjectId);

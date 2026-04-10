@@ -84,37 +84,46 @@ async function pollStatuses() {
     isPolling = true;
 
     try {
-        const subjectIds = Array.from(new Set(trackedJobs.map((job) => job.subjectId).filter(Boolean)));
-        const classesBySubject = new Map();
-
-        for (const subjectId of subjectIds) {
-            try {
-                const classes = await api.getClasses(subjectId);
-                classesBySubject.set(subjectId, Array.isArray(classes) ? classes : []);
-            } catch (err) {
-                console.error('[ProcessingNotifications] poll getClasses failed:', err);
-                classesBySubject.set(subjectId, []);
-            }
-        }
-
         const pending = [];
 
-        trackedJobs.forEach((job) => {
-            const classes = classesBySubject.get(job.subjectId) || [];
-            const terminal = resolveTerminalStatusForJob(job, classes);
+        for (const job of trackedJobs) {
+            let terminal = null;
+            let shouldFallbackToClasses = false;
+
+            try {
+                const statusResult = await api.getMaterialStatus(job.subjectId, job.materialId);
+                const status = statusResult?.status;
+                if (status === 'ready' || status === 'error') {
+                    terminal = status;
+                } else if (status !== 'processing') {
+                    shouldFallbackToClasses = true;
+                }
+            } catch (statusErr) {
+                console.error('[ProcessingNotifications] poll getMaterialStatus failed, fallback to classes:', statusErr);
+                shouldFallbackToClasses = true;
+            }
+
+            if (!terminal && shouldFallbackToClasses) {
+                try {
+                    const classes = await api.getClasses(job.subjectId);
+                    terminal = resolveTerminalStatusForJob(job, Array.isArray(classes) ? classes : []);
+                } catch (err) {
+                    console.error('[ProcessingNotifications] poll getClasses failed:', err);
+                }
+            }
 
             if (!terminal) {
                 pending.push(job);
-                return;
+                continue;
             }
 
             if (terminal === 'ready') {
                 toast('success', 'Procesamiento completado', `"${job.filename}" ya está listo para usar.`);
-                return;
+                continue;
             }
 
             toast('error', 'Procesamiento con error', `"${job.filename}" terminó con errores. Revisá el material e intentá nuevamente.`);
-        });
+        }
 
         trackedJobs = pending;
         persistTrackedJobs();
