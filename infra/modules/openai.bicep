@@ -33,6 +33,9 @@ param embeddingModelVersion string = '1'
 @description('Capacity (K TPM) for the embedding deployment.')
 param embeddingDeploymentCapacity int = 10
 
+@description('Name of the TTS model to deploy.')
+param ttsModelName string = 'tts-1'
+
 // ─── Azure OpenAI Account ───────────────────────────────────────
 resource openAiAccount 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
   name: name
@@ -85,6 +88,24 @@ resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2
   }
 }
 
+// ─── tts-1 Deployment ──────────────────────────────────────────
+resource ttsDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-05-01' = {
+  parent: openAiAccount
+  name: ttsModelName
+  dependsOn: [embeddingDeployment]
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: ttsModelName
+      version: '1'
+    }
+  }
+  sku: {
+    name: 'Standard'
+    capacity: 1 // TTS typically uses capacity 1 for standard tier
+  }
+}
+
 // ─── Outputs ───────────────────────────────────────────────────
 @description('The Azure OpenAI service endpoint URL.')
 output endpoint string = openAiAccount.properties.endpoint
@@ -100,3 +121,6 @@ output chatDeploymentName string = gptDeployment.name
 
 @description('The deployment name for the embedding model.')
 output embeddingDeploymentName string = embeddingDeployment.name
+
+@description('The deployment name for the TTS model.')
+output ttsDeploymentName string = ttsDeployment.name

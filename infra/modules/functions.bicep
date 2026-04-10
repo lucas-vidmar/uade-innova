@@ -28,6 +28,9 @@ param openAiChatDeployment string
 @description('Azure OpenAI embedding model deployment name.')
 param openAiEmbeddingDeployment string
 
+@description('Azure OpenAI TTS model deployment name.')
+param openAiTtsDeployment string
+
 @description('Azure Storage account name for class materials.')
 param classMaterialsStorageAccount string
 
@@ -149,6 +152,10 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         {
           name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT'
           value: openAiEmbeddingDeployment
+        }
+        {
+          name: 'AZURE_OPENAI_TTS_DEPLOYMENT'
+          value: openAiTtsDeployment
         }
         // Storage
         {

@@ -9,6 +9,16 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-04-10] User Story #59: AI Podcast Generation (TTS)
+- **Status**: Completed
+- **Functional Change**: Integrated Azure OpenAI TTS (`tts-1`) into the platform to automatically generate audio study guides ("Podcasts") from class summaries. Implemented a cached generation pipeline in the backend and a premium audio player in the student's class detail view.
+- **Business Impact**: Provides a significant "WOW" factor and enhances inclusivity and productivity by allowing students to review lecture content through audio while commuting or performing other tasks.
+
+### [2026-04-10] User Story #57: Teacher Analytics API
+- **Status**: Completed
+- **Functional Change**: Implemented a backend endpoint that aggregates chat logs to provide insights into the most frequent student questions and identify "friction topics" where students are receiving unsatisfactory answers or providing negative feedback.
+- **Business Impact**: Empowers teachers with actionable pedagogical data to refine class content and prioritize difficult concepts, improving the overall learning efficacy of the pilot.
+
 ### [2026-03-24] User Story #56: Academic Deadline Management
 - **Status**: Completed
 - **Functional Change**: Added class-linked deadlines with teacher management UI, student dashboard/calendar visibility, and reminder notifications for the day before and the day of a deadline.

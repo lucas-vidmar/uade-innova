@@ -201,3 +201,21 @@ Código Mermaid:`;
         generatedAt: new Date().toISOString(),
     };
 }
+
+/**
+ * Genera un archivo de audio (MP3) a partir de un texto dado.
+ * @param {string} text - Texto a convertir a voz.
+ * @param {string} voice - Voz a utilizar (alloy, echo, fabled, onyx, nova, shimmer).
+ * @returns {Promise<Buffer>} - Buffer con el contenido del audio.
+ */
+export async function generateClassAudio(text, voice = 'nova') {
+    const client = getClient();
+    const response = await client.audio.speech.create({
+        model: process.env.AZURE_OPENAI_TTS_DEPLOYMENT || 'tts-1',
+        voice: voice,
+        input: text.substring(0, 4000), // OpenAI TTS limit is 4096 characters per request
+    });
+
+    const arrayBuffer = await response.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+}

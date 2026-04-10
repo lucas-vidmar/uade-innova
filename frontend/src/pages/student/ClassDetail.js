@@ -85,6 +85,30 @@ export async function renderClassDetail(container) {
                         </div>
                     ` : ''}
                 </div>
+
+                <!-- AI Podcast Section -->
+                <div class="card premium-vibe" style="background: linear-gradient(135deg, var(--color-surface) 0%, var(--color-bg-alt) 100%);">
+                    <div class="card-header">
+                        <span class="card-title">🎧 Podcast de Estudio (IA)</span>
+                        <span class="badge badge-info">Beta</span>
+                    </div>
+                    <div class="podcast-container" style="padding:var(--space-8); display:flex; flex-direction:column; align-items:center; gap:var(--space-6);">
+                        <div class="podcast-visual" style="width:64px; height:64px; border-radius:50%; background:var(--color-primary); display:flex; align-items:center; justify-content:center; box-shadow:0 0 20px var(--color-primary-alpha);">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                        </div>
+                        <div style="text-align:center">
+                            <h4 style="margin:0; font-size:var(--text-lg); font-weight:700;">Resumen Audio-Guía</h4>
+                            <p style="margin:var(--space-1) 0 0 0; font-size:var(--text-xs); color:var(--color-text-secondary);">Generado automáticamente con voz Nova</p>
+                        </div>
+                        <audio controls style="width:100%; height:40px; border-radius:var(--radius-full);">
+                            <source src="${api.getClassAudioUrl(classId)}" type="audio/mpeg">
+                            Tu navegador no soporta el elemento de audio.
+                        </audio>
+                        <div style="font-size:var(--text-xs); color:var(--color-text-secondary); font-style:italic;">
+                            Escucha los conceptos clave mientras te trasladas.
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="card" style="margin-top:var(--space-6)">

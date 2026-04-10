@@ -181,6 +181,7 @@ module functions './modules/functions.bicep' = {
     openAiEndpoint: openAi.outputs.endpoint
     openAiChatDeployment: openAi.outputs.chatDeploymentName
     openAiEmbeddingDeployment: openAi.outputs.embeddingDeploymentName
+    openAiTtsDeployment: openAi.outputs.ttsDeploymentName
     classMaterialsStorageAccount: safeStorageName
     azureSearchEndpoint: aiSearch.outputs.endpoint
     azureSearchIndexName: aiSearch.outputs.defaultIndexName
@@ -260,6 +261,7 @@ resource fdSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
 output AZURE_OPENAI_ENDPOINT string = openAi.outputs.endpoint
 output AZURE_OPENAI_CHAT_DEPLOYMENT string = openAi.outputs.chatDeploymentName
 output AZURE_OPENAI_EMBEDDING_DEPLOYMENT string = openAi.outputs.embeddingDeploymentName
+output AZURE_OPENAI_TTS_DEPLOYMENT string = openAi.outputs.ttsDeploymentName
 output AZURE_STORAGE_ACCOUNT_NAME string = storage.outputs.accountName
 output AZURE_STORAGE_CONTAINER_MATERIALS string = storage.outputs.classMaterialsContainerName
 output AZURE_SEARCH_ENDPOINT string = aiSearch.outputs.endpoint

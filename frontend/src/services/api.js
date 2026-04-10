@@ -830,6 +830,10 @@ export const api = {
             return res.json();
         },
 
+    getClassAudioUrl(classId) {
+            return `${BASE_URL}/class-audio/${classId}`;
+        },
+
     async getClassMap(classId) {
             if (USE_MOCK) {
                 await delay(600);
