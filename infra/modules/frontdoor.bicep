@@ -163,6 +163,32 @@ resource wafPolicy 'Microsoft.Network/FrontDoorWebApplicationFirewallPolicies@20
       mode: 'Prevention' // Blocks malicious requests (SQLi/XSS)
       requestBodyCheck: 'Enabled'
     }
+    customRules: {
+      rules: [
+        {
+          name: 'rate-limit-api-10rpm'
+          enabledState: 'Enabled'
+          priority: 100
+          ruleType: 'RateLimitRule'
+          rateLimitThreshold: 10
+          rateLimitDurationInMinutes: 1
+          action: 'Block'
+          matchConditions: [
+            {
+              matchVariable: 'RequestUri'
+              operator: 'BeginsWith'
+              negateCondition: false
+              matchValue: [
+                '/api/'
+              ]
+              transforms: [
+                'Lowercase'
+              ]
+            }
+          ]
+        }
+      ]
+    }
     managedRules: {
       managedRuleSets: [
         {

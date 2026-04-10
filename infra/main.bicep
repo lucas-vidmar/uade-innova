@@ -237,7 +237,6 @@ module anomalousUsageAlert './modules/anomalous-usage-alert.bicep' = if (!empty(
   }
 }
 
-/*
 // ─── Module: Azure Front Door (WAF) ───────────────────────────────
 // Proporciona protección OWASP y enrutamiento a los endpoints
 module frontDoor './modules/frontdoor.bicep' = {
@@ -249,7 +248,6 @@ module frontDoor './modules/frontdoor.bicep' = {
     tags: tags
   }
 }
-*/
 
 /*
 // ─── Module: Azure Budget (Issue #71) ─────────────────────────────
@@ -262,7 +260,6 @@ module budget './modules/budget.bicep' = {
 }
 */
 
-/*
 // ─── Front Door ID Secret in Key Vault ────────────────────────────
 resource fdSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   name: '${keyVaultName}/FRONT-DOOR-ID'
@@ -270,7 +267,6 @@ resource fdSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
     value: frontDoor.outputs.frontDoorId
   }
 }
-*/
 
 // ─── Outputs ────────────────────────────────────────────────────
 output AZURE_OPENAI_ENDPOINT string = openAi.outputs.endpoint
@@ -285,6 +281,6 @@ output AZURE_KEY_VAULT_URI string = keyVault.outputs.keyVaultUri
 output AZURE_FUNCTION_APP_URI string = functions.outputs.functionAppUri
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = appInsights.outputs.connectionString
 output AZURE_STATIC_WEB_APP_URI string = staticWebApp.outputs.staticWebAppUri
-// output AZURE_FRONT_DOOR_URI string = frontDoor.outputs.frontDoorUri
+output AZURE_FRONT_DOOR_URI string = frontDoor.outputs.frontDoorUri
 output AZURE_RESOURCE_GROUP string = resourceGroup().name
 output AZURE_WORKBOOK_ID string = workbook.outputs.workbookId
