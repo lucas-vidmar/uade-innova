@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
 
+test.use({ channel: 'chrome' });
+
 test('teacher sees global toast when processing finishes after navigation', async ({ page }) => {
   let materialStatusCallCount = 0;
   let classesCallCount = 0;
@@ -87,4 +89,42 @@ test('teacher sees global toast when processing finishes after navigation', asyn
   await expect(page.locator('#toast-container .toast.success')).toContainText('clase14.txt');
   expect(materialStatusCallCount).toBeGreaterThan(0);
   expect(classesCallCount).toBeLessThanOrEqual(2);
+});
+
+test('notification polling ignores invalid persisted jobs and still resolves valid one', async ({ page }) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem('edu_role', 'teacher');
+    sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
+    sessionStorage.setItem('edu_consent_accepted', 'true');
+    localStorage.setItem('edu_consent_accepted', 'true');
+    window.__UADE_PROCESSING_POLL_MS = 250;
+
+    localStorage.setItem(
+      'uade.processing.tracked-jobs',
+      JSON.stringify([
+        { materialId: '', subjectId: 'arq-software-2026', filename: 'invalid.txt' },
+        { materialId: 'material-002', subjectId: 'arq-software-2026', filename: 'clase15.txt', classIds: ['class-15', 'class-15'] },
+      ])
+    );
+  });
+
+  await page.route('**/api/material-status/**', async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 'material-002',
+        materialId: 'material-002',
+        subjectId: 'arq-software-2026',
+        classIds: ['class-15'],
+        filename: 'clase15.txt',
+        status: 'ready',
+      }),
+    });
+  });
+
+  await page.goto('/#/teacher/dashboard');
+
+  await expect(page.locator('#toast-container .toast.success')).toContainText('Procesamiento completado', { timeout: 7000 });
+  await expect(page.locator('#toast-container .toast.success')).toContainText('clase15.txt');
 });

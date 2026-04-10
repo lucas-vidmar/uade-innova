@@ -39,6 +39,42 @@ function normalizeClassIds(classIds) {
     return Array.from(unique);
 }
 
+function normalizeTrackedJob(job) {
+    if (!job || typeof job !== 'object') return null;
+
+    const materialId = typeof job.materialId === 'string' ? job.materialId.trim() : '';
+    const subjectId = typeof job.subjectId === 'string' ? job.subjectId.trim() : '';
+
+    if (!materialId || !subjectId) return null;
+
+    const filename = typeof job.filename === 'string' && job.filename.trim()
+        ? job.filename.trim()
+        : 'Material';
+
+    return {
+        materialId,
+        subjectId,
+        classIds: normalizeClassIds(job.classIds),
+        filename,
+        trackedAt: typeof job.trackedAt === 'string' && job.trackedAt.trim()
+            ? job.trackedAt
+            : new Date().toISOString(),
+    };
+}
+
+function normalizeTrackedJobs(jobs) {
+    if (!Array.isArray(jobs)) return [];
+
+    const dedupe = new Map();
+    jobs.forEach((job) => {
+        const normalized = normalizeTrackedJob(job);
+        if (!normalized) return;
+        dedupe.set(`${normalized.subjectId}::${normalized.materialId}`, normalized);
+    });
+
+    return Array.from(dedupe.values());
+}
+
 function ensurePolling() {
     if (timerId) return;
     timerId = setInterval(() => {
@@ -135,7 +171,7 @@ async function pollStatuses() {
 
 export const processingNotifications = {
     init() {
-        trackedJobs = loadTrackedJobs();
+        trackedJobs = normalizeTrackedJobs(loadTrackedJobs());
 
         const activeSubjectId = auth.getActiveSubjectId();
         if (activeSubjectId) {
@@ -150,17 +186,12 @@ export const processingNotifications = {
     },
 
     trackJob({ materialId, subjectId, classIds = [], filename = 'Material' }) {
-        if (!materialId || !subjectId) return;
+        const normalized = normalizeTrackedJob({ materialId, subjectId, classIds, filename });
+        if (!normalized) return;
 
-        trackedJobs = trackedJobs.filter((job) => job.materialId !== materialId || job.subjectId !== subjectId);
+        trackedJobs = trackedJobs.filter((job) => job.materialId !== normalized.materialId || job.subjectId !== normalized.subjectId);
 
-        trackedJobs.push({
-            materialId,
-            subjectId,
-            classIds: normalizeClassIds(classIds),
-            filename,
-            trackedAt: new Date().toISOString(),
-        });
+        trackedJobs.push(normalized);
 
         persistTrackedJobs();
         ensurePolling();
