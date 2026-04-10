@@ -330,3 +330,90 @@ test('rag-query should return SAFETY category when model blocks the prompt', asy
     assert.strictEqual(body.errorCategory, 'SAFETY');
     assert.ok(String(body.error || '').includes('Error generando respuesta (chat)'), 'Should preserve chat error context');
 });
+
+test('rag-query should request extra retrieval candidates for hybrid ranking', async () => {
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+
+    const mockContext = {
+        log: mock.fn(),
+        error: mock.fn(),
+    };
+
+    const mockRequest = {
+        json: async () => ({
+            question: '¿Que dice la bibliografia sobre hexagonal?',
+            subjectId: 'materia1',
+            classIds: ['class1'],
+        }),
+        user: { id: 'test-user' },
+    };
+
+    await capturedHandler(mockRequest, mockContext);
+
+    assert.strictEqual(vectorStoreMocks.querySimilar.mock.calls[0].arguments[2], 10);
+});
+
+test('rag-query should build mixed context and prioritize teacher notes over bibliography', async () => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    vectorStoreMocks.querySimilar.mock.mockImplementationOnce(async () => [
+        {
+            id: 'biblio-1',
+            score: 0.89,
+            metadata: {
+                sourceFilename: 'bibliografia.pdf',
+                text: 'Definicion academica en bibliografia.',
+                materialType: 'bibliography',
+                classIds: ['class1'],
+                chunkIndex: 2,
+            },
+        },
+        {
+            id: 'notes-1',
+            score: 0.82,
+            metadata: {
+                sourceFilename: 'notas-docente.docx',
+                text: 'Nota del docente con prioridad conceptual.',
+                materialType: 'notes',
+                classIds: ['class1'],
+                chunkIndex: 1,
+            },
+        },
+        {
+            id: 'transcript-1',
+            score: 0.93,
+            metadata: {
+                sourceFilename: 'transcript.txt',
+                text: 'Transcripcion complementaria.',
+                materialType: 'transcript',
+                classIds: ['class1'],
+                chunkIndex: 5,
+            },
+        },
+    ]);
+
+    const mockContext = {
+        log: mock.fn(),
+        error: mock.fn(),
+    };
+
+    const mockRequest = {
+        json: async () => ({
+            question: 'Explicame hexagonal con notas y bibliografia',
+            subjectId: 'materia1',
+            classIds: ['class1'],
+        }),
+        user: { id: 'test-user' },
+    };
+
+    await capturedHandler(mockRequest, mockContext);
+
+    const messages = openaiMocks.chatCompletion.mock.calls.at(-1).arguments[0];
+    const systemPrompt = messages.find(m => m.role === 'system').content;
+
+    assert.ok(systemPrompt.includes('notas-docente.docx'), 'Context should include teacher notes chunk');
+    assert.ok(systemPrompt.includes('bibliografia.pdf'), 'Context should include bibliography chunk');
+    assert.ok(
+        systemPrompt.indexOf('notas-docente.docx') < systemPrompt.indexOf('bibliografia.pdf'),
+        'Teacher notes should appear before bibliography due to weighting',
+    );
+});

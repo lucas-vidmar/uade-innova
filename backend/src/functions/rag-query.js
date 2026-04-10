@@ -13,9 +13,17 @@ import { normalizeCategorizedError, ErrorCategory } from '../services/error-cate
 import { resolveCorrelationId, buildDependencyHeaders, withCorrelationResponseHeaders } from '../services/correlation.js';
 import { v4 as uuidv4 } from 'uuid';
 const MAX_RAG_CHUNKS = 4;
+const RETRIEVAL_CANDIDATES = 10;
 const MIN_HISTORY_TURNS = 3;
 const MAX_HISTORY_TURNS = 5;
 const DEFAULT_HISTORY_TURNS = 4;
+
+const MATERIAL_TYPE_WEIGHT = {
+    notes: 1.35,
+    bibliography: 1.1,
+    transcript: 1,
+    presentation: 0.95,
+};
 
 function tokenize(text = '') {
     return String(text)
@@ -55,6 +63,59 @@ function normalizeConversationHistory(rawHistory, requestedWindowSize) {
         .map(sanitizeTurn)
         .filter(Boolean)
         .slice(-boundedWindow);
+}
+
+function getMaterialWeight(materialType) {
+    return MATERIAL_TYPE_WEIGHT[materialType] || 1;
+}
+
+function rankMatches(matches = []) {
+    return [...matches]
+        .map(match => {
+            const materialType = match?.metadata?.materialType;
+            const baseScore = Number(match?.score || 0);
+            const weightedScore = baseScore * getMaterialWeight(materialType);
+            return {
+                ...match,
+                weightedScore,
+            };
+        })
+        .sort((a, b) => b.weightedScore - a.weightedScore);
+}
+
+function buildHybridContext(matches = [], maxChunks = MAX_RAG_CHUNKS) {
+    const ranked = rankMatches(matches);
+    if (ranked.length <= maxChunks) return ranked;
+
+    const selected = [];
+    const selectedIds = new Set();
+    const getMatchKey = (match, index) => match?.id || `${match?.metadata?.sourceFilename || 'unknown'}:${match?.metadata?.chunkIndex ?? index}`;
+
+    const pickFirstByType = (type) => {
+        const candidateIndex = ranked.findIndex((match, index) => {
+            const key = getMatchKey(match, index);
+            return match?.metadata?.materialType === type && !selectedIds.has(key);
+        });
+        const candidate = candidateIndex >= 0 ? ranked[candidateIndex] : null;
+        if (!candidate) return;
+        const candidateKey = getMatchKey(candidate, candidateIndex);
+        selected.push(candidate);
+        selectedIds.add(candidateKey);
+    };
+
+    // Garantiza mezcla de fuentes priorizando apuntes del docente.
+    pickFirstByType('notes');
+    pickFirstByType('bibliography');
+
+    for (const [index, match] of ranked.entries()) {
+        if (selected.length >= maxChunks) break;
+        const key = getMatchKey(match, index);
+        if (selectedIds.has(key)) continue;
+        selected.push(match);
+        selectedIds.add(key);
+    }
+
+    return selected.slice(0, maxChunks);
 }
 
 async function rewriteQuestionWithHistory(question, conversationHistory, context) {
@@ -167,7 +228,7 @@ app.http('rag-query', {
         // ── 4. Búsqueda de similitud en Pinecone ──────────────────
         let matches;
         try {
-            matches = await querySimilar(questionEmbedding, filter, MAX_RAG_CHUNKS);
+            matches = await querySimilar(questionEmbedding, filter, RETRIEVAL_CANDIDATES);
         } catch (err) {
             const categorizedError = normalizeCategorizedError(err, ErrorCategory.RETRIEVAL_FAILURE);
             context.error('Error consultando Pinecone:', categorizedError);
@@ -178,6 +239,7 @@ app.http('rag-query', {
         }
 
         matches = filterMatchesByTranscriptFocus(matches, transcriptFocus);
+        matches = buildHybridContext(matches, MAX_RAG_CHUNKS);
 
         if (matches.length === 0) {
             return jsonResponse(200, {

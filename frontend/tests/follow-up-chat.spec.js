@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
 
+test.use({ browserName: 'chromium' });
+
 test('student can ask follow-up question and keep logical flow', async ({ page }) => {
   const capturedRequests = [];
 
