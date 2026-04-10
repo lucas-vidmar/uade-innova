@@ -10,6 +10,7 @@ import { getShadowPrompt } from '../services/prompts.js';
 import { trackRAGInteraction } from '../services/telemetry.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { normalizeCategorizedError, ErrorCategory } from '../services/error-categories.js';
+import { resolveCorrelationId, buildDependencyHeaders, withCorrelationResponseHeaders } from '../services/correlation.js';
 import { v4 as uuidv4 } from 'uuid';
 const MAX_RAG_CHUNKS = 4;
 const MIN_HISTORY_TURNS = 3;
@@ -76,7 +77,11 @@ Devuelve unicamente la pregunta reescrita en espanol, sin comillas ni explicacio
     ];
 
     try {
-        const rewritten = await chatCompletion(rewriteMessages, false, { temperature: 0, max_tokens: 120 });
+        const rewritten = await chatCompletion(rewriteMessages, false, {
+            temperature: 0,
+            max_tokens: 120,
+            headers: context?.openAiHeaders,
+        });
         const rewrittenQuestion = rewritten?.content?.trim();
         if (!rewrittenQuestion) return question;
         context.log(`[RAG] Follow-up rewrite aplicado: "${question}" -> "${rewrittenQuestion}"`);
@@ -87,13 +92,26 @@ Devuelve unicamente la pregunta reescrita en espanol, sin comillas ni explicacio
     }
 }
 
+function jsonResponse(status, payload, correlationId) {
+    return {
+        status,
+        headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify(payload),
+    };
+}
+
 app.http('rag-query', {
     methods: ['POST'],
     authLevel: 'anonymous',
     route: 'rag-query',
     handler: async (request, context) => {
-        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+        const correlationId = resolveCorrelationId(request);
+        const openAiHeaders = buildDependencyHeaders(correlationId);
+        context.openAiHeaders = openAiHeaders;
+
+        if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' }, correlationId);
         context.log('rag-query triggered');
+        context.log(`[Trace] Correlation-ID: ${correlationId}`);
 
         // Capture start time for end-to-end latency measurement (Issue #69)
         const startTime = Date.now();
@@ -103,16 +121,13 @@ app.http('rag-query', {
         try {
             body = await request.json();
         } catch {
-            return { status: 400, body: JSON.stringify({ error: 'Body JSON inválido' }) };
+            return jsonResponse(400, { error: 'Body JSON inválido' }, correlationId);
         }
 
         const { question, classIds, subjectId, stream = false, conversationHistory, historyWindowSize, transcriptFocus } = body;
 
         if (!question || !subjectId) {
-            return {
-                status: 400,
-                body: JSON.stringify({ error: 'Faltan campos requeridos: question, subjectId' }),
-            };
+            return jsonResponse(400, { error: 'Faltan campos requeridos: question, subjectId' }, correlationId);
         }
 
         const recentConversationHistory = normalizeConversationHistory(conversationHistory, historyWindowSize);
@@ -124,19 +139,16 @@ app.http('rag-query', {
         let questionEmbedding;
         let embeddingUsage;
         try {
-            const embeddingResult = await generateEmbedding(rewrittenQuestion);
+            const embeddingResult = await generateEmbedding(rewrittenQuestion, { headers: openAiHeaders });
             questionEmbedding = embeddingResult.embedding;
             embeddingUsage = embeddingResult.usage;
         } catch (err) {
             const categorizedError = normalizeCategorizedError(err, ErrorCategory.LLM);
             context.error('Error generando embedding:', categorizedError);
-            return {
-                status: categorizedError.status,
-                body: JSON.stringify({
-                    error: `Error procesando la pregunta (embedding): ${categorizedError.message}`,
-                    errorCategory: categorizedError.errorCategory,
-                })
-            };
+            return jsonResponse(categorizedError.status, {
+                error: `Error procesando la pregunta (embedding): ${categorizedError.message}`,
+                errorCategory: categorizedError.errorCategory,
+            }, correlationId);
         }
 
         // ── 3. Filtro Pinecone por subjectId y classIds ───────────
@@ -159,26 +171,19 @@ app.http('rag-query', {
         } catch (err) {
             const categorizedError = normalizeCategorizedError(err, ErrorCategory.RETRIEVAL_FAILURE);
             context.error('Error consultando Pinecone:', categorizedError);
-            return {
-                status: categorizedError.status,
-                body: JSON.stringify({
-                    error: `Error buscando en la base de conocimiento: ${categorizedError.message}`,
-                    errorCategory: categorizedError.errorCategory,
-                })
-            };
+            return jsonResponse(categorizedError.status, {
+                error: `Error buscando en la base de conocimiento: ${categorizedError.message}`,
+                errorCategory: categorizedError.errorCategory,
+            }, correlationId);
         }
 
         matches = filterMatchesByTranscriptFocus(matches, transcriptFocus);
 
         if (matches.length === 0) {
-            return {
-                status: 200,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    answer: 'No encontré información sobre eso en los materiales seleccionados.',
-                    sources: [],
-                }),
-            };
+            return jsonResponse(200, {
+                answer: 'No encontré información sobre eso en los materiales seleccionados.',
+                sources: [],
+            }, correlationId);
         }
 
         // ── 5. Construir prompt RAG ───────────────────────────────
@@ -233,7 +238,7 @@ ${contextText}
                     let finalUsage = null;
 
                     try {
-                        const stream = await chatCompletion(messages, true);
+                        const stream = await chatCompletion(messages, true, { headers: openAiHeaders });
                         for await (const chunk of stream) {
                             const delta = chunk.choices?.[0]?.delta?.content || '';
                             if (delta) {
@@ -309,7 +314,8 @@ ${contextText}
                 headers: {
                     'Content-Type': 'text/event-stream',
                     'Cache-Control': 'no-cache',
-                    'Connection': 'keep-alive'
+                    'Connection': 'keep-alive',
+                    ...withCorrelationResponseHeaders(correlationId),
                 },
                 body: responseStream
             };
@@ -319,19 +325,16 @@ ${contextText}
         let answer;
         let chatUsage;
         try {
-            const chatResult = await chatCompletion(messages);
+            const chatResult = await chatCompletion(messages, false, { headers: openAiHeaders });
             answer = chatResult.content;
             chatUsage = chatResult.usage;
         } catch (err) {
             const categorizedError = normalizeCategorizedError(err, ErrorCategory.LLM);
             context.error('Error en chat completion:', categorizedError);
-            return {
-                status: categorizedError.status,
-                body: JSON.stringify({
-                    error: `Error generando respuesta (chat): ${categorizedError.message}`,
-                    errorCategory: categorizedError.errorCategory,
-                })
-            };
+            return jsonResponse(categorizedError.status, {
+                error: `Error generando respuesta (chat): ${categorizedError.message}`,
+                errorCategory: categorizedError.errorCategory,
+            }, correlationId);
         }
 
         // ── 6b. Emit App Insights telemetry (Issue #69) ───────────
@@ -399,10 +402,6 @@ ${contextText}
             context.error('Error guardando log de chat:', logErr);
         }
 
-        return {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: interactionId, answer, sources }),
-        };
+        return jsonResponse(200, { id: interactionId, answer, sources }, correlationId);
     },
 });

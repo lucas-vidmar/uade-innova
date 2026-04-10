@@ -87,3 +87,21 @@ test('global-search should query full subject index scoped to transcript+bibliog
     assert.strictEqual(body.results.length, 2);
     assert.ok(body.results[0].score >= body.results[1].score, 'Results should be sorted by boosted score');
 });
+
+test('global-search should propagate correlation header to embedding call and response', async () => {
+    openaiMocks.generateEmbedding.mock.resetCalls();
+
+    const response = await capturedHandler(
+        {
+            json: async () => ({ query: 'Architecture', subjectId: 'arq-software-2026' }),
+            headers: {
+                get: (name) => (name === 'x-correlation-id' ? 'corr-gs-123' : null),
+            },
+        },
+        { error: mock.fn() }
+    );
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(response.headers['x-correlation-id'], 'corr-gs-123');
+    assert.strictEqual(openaiMocks.generateEmbedding.mock.calls[0].arguments[1].headers['x-correlation-id'], 'corr-gs-123');
+});

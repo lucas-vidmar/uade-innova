@@ -11,6 +11,7 @@ import { parseFile, chunkText } from '../services/parser.js';
 import { generateEmbedding } from '../services/openai.js';
 import { uploadFile, saveJson } from '../services/storage.js';
 import { upsertMaterialState } from '../services/state-store.js';
+import { resolveCorrelationId, withCorrelationResponseHeaders } from '../services/correlation.js';
 
 const CONTAINER_MATERIALS = process.env.AZURE_STORAGE_CONTAINER_MATERIALS || 'class-materials';
 const CONTAINER_PROCESSED = 'processed';
@@ -20,8 +21,17 @@ app.http('ingest-material', {
     authLevel: 'anonymous',
     route: 'ingest-material',
     handler: async (request, context) => {
-        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+        const correlationId = resolveCorrelationId(request);
+
+        if (!validateFrontDoorId(request)) {
+            return {
+                status: 403,
+                headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' })
+            };
+        }
         context.log('ingest-material triggered');
+        context.log(`[Trace] Correlation-ID: ${correlationId}`);
 
         // ── 1. Parsear multipart/form-data ─────────────────────────
         let fileBuffer, fileContentType, fileName, classIds, subjectId, materialType;
@@ -30,12 +40,17 @@ app.http('ingest-material', {
             ({ fileBuffer, fileContentType, fileName, classIds, subjectId, materialType } =
                 await parseMultipart(request));
         } catch (err) {
-            return { status: 400, body: JSON.stringify({ error: err.message }) };
+            return {
+                status: 400,
+                headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ error: err.message })
+            };
         }
 
         if (!classIds || classIds.length === 0 || !subjectId || !materialType) {
             return {
                 status: 400,
+                headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
                 body: JSON.stringify({ error: 'Faltan campos requeridos: classIds, subjectId, materialType' }),
             };
         }
@@ -55,7 +70,8 @@ app.http('ingest-material', {
             subjectId,
             materialType,
             fileName: fileName,
-            userId: userId
+            userId: userId,
+            correlationId,
         };
 
         let blobUrl;
@@ -64,7 +80,11 @@ app.http('ingest-material', {
             context.log(`Archivo subido con metadatos: ${blobUrl}`);
         } catch (err) {
             context.error('Error subiendo a Storage:', err);
-            return { status: 500, body: JSON.stringify({ error: 'Error subiendo archivo a Storage' }) };
+            return {
+                status: 500,
+                headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ error: 'Error subiendo archivo a Storage' })
+            };
         }
 
         // Responder inmediatamente con 202 (pipeline será disparado por el BlobTrigger)
@@ -94,7 +114,7 @@ app.http('ingest-material', {
 
         return {
             status: 202,
-            headers: { 'Content-Type': 'application/json' },
+            headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
             body: JSON.stringify(responsePayload),
         };
     },

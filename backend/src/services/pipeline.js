@@ -8,6 +8,7 @@ import { upsertChunks, getIndexStats } from './vector-store.js';
 import { saveJson, loadJson } from './storage.js';
 import { upsertMaterialState } from './state-store.js';
 import { trackIngestionInteraction } from './telemetry.js';
+import { buildDependencyHeaders } from './correlation.js';
 
 const CONTAINER_PROCESSED = 'processed';
 const CONTAINER_SUMMARIES = 'class-summaries';
@@ -16,9 +17,10 @@ const BATCH_SIZE = 20;
 /**
  * Ejecuta el pipeline completo de procesamiento de un archivo con telemetría.
  */
-export async function runPipeline({ fileBuffer, fileContentType, fileName, classIds, subjectId, materialType, materialId, userId, blobUrl }, context) {
+export async function runPipeline({ fileBuffer, fileContentType, fileName, classIds, subjectId, materialType, materialId, userId, blobUrl, correlationId }, context) {
     const startTime = Date.now();
     let totalTokens = 0;
+    const openAiHeaders = buildDependencyHeaders(correlationId);
 
     try {
         let extractedTimeline = null;
@@ -46,7 +48,7 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
             const currentBatch = chunks.slice(i, i + BATCH_SIZE);
             context.log(`[Pipeline] Vectorizando batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(chunks.length / BATCH_SIZE)} (${currentBatch.length} chunks)...`);
             
-            const { embeddings, usage } = await generateEmbeddingsBatch(currentBatch);
+            const { embeddings, usage } = await generateEmbeddingsBatch(currentBatch, { headers: openAiHeaders });
             totalTokens += (usage?.total_tokens || 0);
 
             embeddings.forEach((embedding, index) => {
@@ -87,8 +89,8 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
             try {
                 // Ejecutamos en paralelo para optimizar tiempo
                 const [summaryResult, mapResult] = await Promise.all([
-                    generateClassSummary(text),
-                    generateClassMap(text)
+                    generateClassSummary(text, '', { headers: openAiHeaders }),
+                    generateClassMap(text, { headers: openAiHeaders })
                 ]);
 
                 totalTokens += (summaryResult.usage?.total_tokens || 0);

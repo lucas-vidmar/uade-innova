@@ -3,6 +3,18 @@
    ============================================================ */
 import { api } from './api.js';
 
+const CORRELATION_HEADER = 'x-correlation-id';
+
+function correlationHeaders() {
+    const headers = new Headers();
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        headers.set(CORRELATION_HEADER, crypto.randomUUID());
+    } else {
+        headers.set(CORRELATION_HEADER, `corr-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+    }
+    return headers;
+}
+
 const LOCAL_SUBJECTS_KEY = 'uade.local.subjects';
 
 const USERS = {
@@ -139,7 +151,7 @@ export const auth = {
 
     async initAuth() {
         try {
-            const response = await fetch('/.auth/me');
+            const response = await fetch('/.auth/me', { headers: correlationHeaders() });
             if (response.ok) {
                 const payload = await response.json();
                 const clientPrincipal = payload.clientPrincipal;

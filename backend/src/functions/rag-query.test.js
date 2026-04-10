@@ -276,6 +276,31 @@ test('rag-query should include transcript focus in system prompt when provided',
     assert.ok(systemPrompt.includes('atributos de calidad'), 'Should include selected focus label');
 });
 
+test('rag-query should propagate correlation header to OpenAI and response', async () => {
+    openaiMocks.generateEmbedding.mock.resetCalls();
+
+    const mockContext = {
+        log: mock.fn(),
+        error: mock.fn(),
+    };
+
+    const mockRequest = {
+        json: async () => ({
+            question: '¿Que es hexagonal?',
+            subjectId: 'materia1',
+            classIds: ['class1'],
+        }),
+        headers: {
+            get: (name) => (name === 'x-correlation-id' ? 'corr-test-001' : null),
+        },
+        user: { id: 'test-user' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    assert.strictEqual(response.headers['x-correlation-id'], 'corr-test-001');
+    assert.strictEqual(openaiMocks.generateEmbedding.mock.calls[0].arguments[1].headers['x-correlation-id'], 'corr-test-001');
+});
+
 test('rag-query should return SAFETY category when model blocks the prompt', async () => {
     openaiMocks.chatCompletion.mock.resetCalls();
     openaiMocks.chatCompletion.mock.mockImplementationOnce(async () => {

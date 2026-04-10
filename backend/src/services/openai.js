@@ -46,7 +46,7 @@ function getClient() {
  * @param {string[]} texts
  * @returns {Promise<number[][]>}
  */
-export async function generateEmbeddingsBatch(texts) {
+export async function generateEmbeddingsBatch(texts, options = {}) {
     const client = getClient();
 
     // Función de ayuda para reintentar con exponential backoff
@@ -66,10 +66,15 @@ export async function generateEmbeddingsBatch(texts) {
     };
 
     const response = await executeWithRetry(() =>
-        client.embeddings.create({
-            model: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT,
-            input: texts.map(t => t.trim()),
-        })
+        client.embeddings.create(
+            {
+                model: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT,
+                input: texts.map(t => t.trim()),
+            },
+            {
+                headers: options.headers,
+            }
+        )
     );
 
     return {
@@ -83,8 +88,8 @@ export async function generateEmbeddingsBatch(texts) {
  * @param {string} text
  * @returns {Promise<number[]>}
  */
-export async function generateEmbedding(text) {
-    const { embeddings, usage } = await generateEmbeddingsBatch([text]);
+export async function generateEmbedding(text, options = {}) {
+    const { embeddings, usage } = await generateEmbeddingsBatch([text], options);
     return { embedding: embeddings[0], usage };
 }
 
@@ -97,22 +102,27 @@ export async function generateEmbedding(text) {
  */
 export async function chatCompletion(messages, stream = false, overrides = {}) {
     const client = getClient();
+    const { headers, ...modelOverrides } = overrides || {};
     const options = {
         model: process.env.AZURE_OPENAI_CHAT_DEPLOYMENT,
         messages,
         temperature: 0.3,
         max_tokens: 1500,
         stream,
-        ...overrides,
+        ...modelOverrides,
+    };
+
+    const requestOptions = {
+        headers,
     };
 
     try {
         if (stream) {
             // En modo stream, retornamos el iterador directamente
-            return await client.chat.completions.create(options);
+            return await client.chat.completions.create(options, requestOptions);
         }
 
-        const response = await client.chat.completions.create(options);
+        const response = await client.chat.completions.create(options, requestOptions);
         return {
             content: response.choices[0].message.content,
             usage: response.usage
@@ -137,7 +147,7 @@ export async function chatCompletion(messages, stream = false, overrides = {}) {
  * @param {string} subjectName - Nombre de la materia para contexto.
  * @returns {Promise<Object>} - Objeto con el resumen estructurado.
  */
-export async function generateClassSummary(text, subjectName = "") {
+export async function generateClassSummary(text, subjectName = "", options = {}) {
     const client = getClient();
     const prompt = `
 Eres un asistente académico experto en la Universidad Argentina de la Empresa (UADE). 
@@ -157,15 +167,20 @@ ${text.substring(0, 15000)} // Limitar para evitar exceder ventana de contexto d
 
 Resumen académico:`;
 
-    const response = await client.chat.completions.create({
-        model: process.env.AZURE_OPENAI_CHAT_DEPLOYMENT, // gpt-4o-mini
-        messages: [
-            { role: "system", content: "Generas resúmenes académicos estructurados y profesionales." },
-            { role: "user", content: prompt }
-        ],
-        temperature: 0.5,
-        max_tokens: 2000,
-    });
+    const response = await client.chat.completions.create(
+        {
+            model: process.env.AZURE_OPENAI_CHAT_DEPLOYMENT, // gpt-4o-mini
+            messages: [
+                { role: "system", content: "Generas resúmenes académicos estructurados y profesionales." },
+                { role: "user", content: prompt }
+            ],
+            temperature: 0.5,
+            max_tokens: 2000,
+        },
+        {
+            headers: options.headers,
+        }
+    );
 
     const content = response.choices[0].message.content;
 
@@ -182,7 +197,7 @@ Resumen académico:`;
  * @param {string} text - Texto de la clase.
  * @returns {Promise<Object>} - Objeto con el código Mermaid y metadatos.
  */
-export async function generateClassMap(text) {
+export async function generateClassMap(text, options = {}) {
     const client = getClient();
     const prompt = `
 Eres un experto en diseño instruccional y pedagogía visual.
@@ -200,15 +215,20 @@ ${text.substring(0, 10000)}
 
 Código Mermaid:`;
 
-    const response = await client.chat.completions.create({
-        model: process.env.AZURE_OPENAI_CHAT_DEPLOYMENT,
-        messages: [
-            { role: "system", content: "Generas diagramas Mermaid.js precisos y pedagógicos." },
-            { role: "user", content: prompt }
-        ],
-        temperature: 0.4,
-        max_tokens: 1500,
-    });
+    const response = await client.chat.completions.create(
+        {
+            model: process.env.AZURE_OPENAI_CHAT_DEPLOYMENT,
+            messages: [
+                { role: "system", content: "Generas diagramas Mermaid.js precisos y pedagógicos." },
+                { role: "user", content: prompt }
+            ],
+            temperature: 0.4,
+            max_tokens: 1500,
+        },
+        {
+            headers: options.headers,
+        }
+    );
 
     return {
         code: response.choices[0].message.content.replace(/```mermaid\n?|```/g, '').trim(),
@@ -223,13 +243,18 @@ Código Mermaid:`;
  * @param {string} voice - Voz a utilizar (alloy, echo, fabled, onyx, nova, shimmer).
  * @returns {Promise<Buffer>} - Buffer con el contenido del audio.
  */
-export async function generateClassAudio(text, voice = 'nova') {
+export async function generateClassAudio(text, voice = 'nova', options = {}) {
     const client = getClient();
-    const response = await client.audio.speech.create({
-        model: process.env.AZURE_OPENAI_TTS_DEPLOYMENT || 'tts-1',
-        voice: voice,
-        input: text.substring(0, 4000), // OpenAI TTS limit is 4096 characters per request
-    });
+    const response = await client.audio.speech.create(
+        {
+            model: process.env.AZURE_OPENAI_TTS_DEPLOYMENT || 'tts-1',
+            voice: voice,
+            input: text.substring(0, 4000), // OpenAI TTS limit is 4096 characters per request
+        },
+        {
+            headers: options.headers,
+        }
+    );
 
     const arrayBuffer = await response.arrayBuffer();
     return Buffer.from(arrayBuffer);

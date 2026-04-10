@@ -6,6 +6,7 @@ import { app } from '@azure/functions';
 import { generateEmbedding } from '../services/openai.js';
 import { querySimilar } from '../services/vector-store.js';
 import { validateFrontDoorId } from '../services/auth-utils.js';
+import { resolveCorrelationId, buildDependencyHeaders, withCorrelationResponseHeaders } from '../services/correlation.js';
 
 const MAX_GLOBAL_RESULTS = 12;
 
@@ -42,15 +43,26 @@ app.http('global-search', {
     authLevel: 'anonymous',
     route: 'global-search',
     handler: async (request, context) => {
+        const correlationId = resolveCorrelationId(request);
+        const openAiHeaders = buildDependencyHeaders(correlationId);
+
         if (!validateFrontDoorId(request)) {
-            return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+            return {
+                status: 403,
+                headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }),
+            };
         }
 
         let body;
         try {
             body = await request.json();
         } catch {
-            return { status: 400, body: JSON.stringify({ error: 'Body JSON inválido' }) };
+            return {
+                status: 400,
+                headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ error: 'Body JSON inválido' }),
+            };
         }
 
         const query = typeof body.query === 'string' ? body.query.trim() : '';
@@ -59,13 +71,13 @@ app.http('global-search', {
         if (!query || !subjectId) {
             return {
                 status: 400,
-                headers: { 'Content-Type': 'application/json' },
+                headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
                 body: JSON.stringify({ error: 'Faltan campos requeridos: query, subjectId' }),
             };
         }
 
         try {
-            const { embedding } = await generateEmbedding(query);
+            const { embedding } = await generateEmbedding(query, { headers: openAiHeaders });
             const filter = {
                 subjectId: { $eq: subjectId },
                 materialType: { $in: ['transcript', 'bibliography'] },
@@ -94,7 +106,7 @@ app.http('global-search', {
 
             return {
                 status: 200,
-                headers: { 'Content-Type': 'application/json' },
+                headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
                 body: JSON.stringify({
                     query,
                     subjectId,
@@ -106,7 +118,7 @@ app.http('global-search', {
             context.error('Error en global-search:', err);
             return {
                 status: 500,
-                headers: { 'Content-Type': 'application/json' },
+                headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
                 body: JSON.stringify({ error: `Error buscando en índice global: ${err.message}` }),
             };
         }

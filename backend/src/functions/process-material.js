@@ -7,6 +7,7 @@ import { BlobServiceClient, StorageSharedKeyCredential } from '@azure/storage-bl
 import { runPipeline } from '../services/pipeline.js';
 import { saveJson } from '../services/storage.js';
 import { upsertMaterialState } from '../services/state-store.js';
+import { generateCorrelationId } from '../services/correlation.js';
 
 const CONTAINER_MATERIALS = process.env.AZURE_STORAGE_CONTAINER_MATERIALS || 'class-materials';
 const CONTAINER_PROCESSED = 'processed';
@@ -130,8 +131,11 @@ app.storageBlob('process-material', {
             materialType: metadata.materialtype || 'notes',
             materialId,
             userId: metadata.userid || 'anonymous',
+            correlationId: metadata.correlationid || generateCorrelationId(),
             blobUrl: context.triggerMetadata.uri || (fullBlobPath ? `https://${process.env.AZURE_STORAGE_ACCOUNT_NAME}.blob.core.windows.net/${CONTAINER_MATERIALS}/${fullBlobPath}` : ''),
         };
+
+        context.log(`[Trace] Correlation-ID: ${params.correlationId}`);
 
         if (params.materialId === 'unknown' || params.subjectId === 'unknown') {
             const reason = `No se pudieron resolver metadatos críticos para ${blobPath}. materialId=${params.materialId}, subjectId=${params.subjectId}`;
