@@ -6,6 +6,7 @@ import { auth } from '../../services/auth.js';
 import { createFileUpload } from '../../components/FileUpload.js';
 import { renderHeader } from '../../components/Header.js';
 import { toast } from '../../components/Toast.js';
+import { processingNotifications } from '../../services/processing-notifications.js';
 
 const MATERIAL_TABS = [
   { type: 'transcript', icon: '📝', label: 'Transcripción' },
@@ -171,7 +172,7 @@ export async function renderTeacherUpload(container) {
               const existingIdx = cls.materials.findIndex(m => m.id === response.materialId);
               const materialData = {
                 ...fileObj,
-                status: 'ready',
+                status: response?.status || 'processing',
                 id: response.materialId || `m-new-${Date.now()}`,
                 classIds: [...selectedClassIds],
                 uploadedAt: new Date().toISOString()
@@ -184,6 +185,15 @@ export async function renderTeacherUpload(container) {
               }
             }
           });
+
+          if (response?.materialId && (response?.status || 'processing') === 'processing') {
+            processingNotifications.trackJob({
+              materialId: response.materialId,
+              subjectId: activeSubjectId,
+              classIds: [...selectedClassIds],
+              filename: rawFile.name,
+            });
+          }
         } catch (error) {
           throw error; // Let FileUpload catch and show error toast
         }
