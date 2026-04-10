@@ -8,9 +8,10 @@ export async function renderDirectorDashboard(container) {
     renderHeader('Panel Directivo');
     container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando datos directivos...</div>`;
 
-    const [data = {}, earlyAlerts = []] = await Promise.all([
+    const [data = {}, earlyAlerts = [], powerBiMetrics = null] = await Promise.all([
         api.getDirectorStats(),
-        api.getEarlyAlerts()
+        api.getEarlyAlerts(),
+        api.getDirectorPowerBiMetrics(14)
     ]);
     
     // Inject early alerts into the data object for compatibility with the existing template
@@ -42,6 +43,36 @@ export async function renderDirectorDashboard(container) {
           <div class="progress-fill" style="--progress-value:${data.adoptionRate || 0}%"></div>
         </div>
       </div>
+    </div>
+
+    <div class="card" id="powerbi-card" style="margin-bottom:var(--space-8)">
+      <div class="card-header">
+        <span class="card-title">${icon('chart')} Power BI — DAU y Consumo de Tokens</span>
+        <span class="badge badge-info">${(powerBiMetrics?.source?.mode || 'continuous-export-db').replace('-', ' ')}</span>
+      </div>
+      <p style="margin:0 0 var(--space-4);color:var(--color-text-secondary)">
+        Fuente: ${powerBiMetrics?.source?.storage || 'Azure Table Storage'} · Tabla ${powerBiMetrics?.source?.table || 'SessionMetrics'} · Ventana ${powerBiMetrics?.windowDays || 14} días
+      </p>
+      <div class="table-wrap">
+        <table class="data-table" id="powerbi-metrics-table">
+          <thead>
+            <tr><th>Fecha</th><th>DAU</th><th>Tokens</th><th>Interacciones RAG</th></tr>
+          </thead>
+          <tbody>
+            ${(Array.isArray(powerBiMetrics?.daily) && powerBiMetrics.daily.length > 0)
+                ? powerBiMetrics.daily.map((item) => `
+                    <tr>
+                      <td>${item.date}</td>
+                      <td><strong>${item.dau}</strong></td>
+                      <td>${Number(item.totalTokens || 0).toLocaleString('es-AR')}</td>
+                      <td>${item.ragInteractions}</td>
+                    </tr>
+                  `).join('')
+                : '<tr><td colspan="4" style="text-align:center;padding:20px">Sin datos para exportar a Power BI.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+      <small style="display:block;margin-top:var(--space-3);color:var(--color-text-secondary)">Última actualización: ${powerBiMetrics?.updatedAt || 'n/a'}</small>
     </div>
 
     <div class="grid-2">
@@ -102,6 +133,7 @@ function icon(name) {
     const icons = {
         alert: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.86 1.82 18a2 2 0 0 0 1.72 3h16.92a2 2 0 0 0 1.72-3L13.7 3.86a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
         book: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>',
+        chart: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><rect x="7" y="10" width="3" height="6"/><rect x="12" y="7" width="3" height="9"/><rect x="17" y="5" width="3" height="11"/></svg>',
     };
 
     return `<span class="ui-icon" aria-hidden="true">${icons[name] || icons.alert}</span>`;

@@ -11,7 +11,10 @@ const storageMocks = {
     loadJson: mock.fn(async () => ({})),
     saveJson: mock.fn(async () => true),
     deleteBlob: mock.fn(async () => true),
-    listBlobs: mock.fn(async () => [])
+    listBlobs: mock.fn(async () => []),
+    getTableClient: mock.fn(() => ({
+        listEntities: async function* () { }
+    }))
 };
 
 // Mock dependencies
@@ -125,4 +128,55 @@ test('classes-api save-classes should require authorization', async (t) => {
     assert.strictEqual(response.status, 403);
 
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+});
+
+test('classes-api get-director-powerbi-metrics should require Director role', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = { query: new Map() };
+
+    const response = await handlers['get-director-powerbi-metrics'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 403);
+
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+});
+
+test('classes-api get-director-powerbi-metrics returns aggregated daily metrics', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+
+    const now = new Date();
+    const todayIso = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 11, 0, 0)).toISOString();
+    const yesterdayDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1, 10, 0, 0));
+    const yesterdayIso = yesterdayDate.toISOString();
+    const yesterdayIso2 = new Date(yesterdayDate.getTime() + 60 * 60 * 1000).toISOString();
+    const anonTodayIso = new Date(new Date(todayIso).getTime() + 60 * 60 * 1000).toISOString();
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: async function* () {
+            yield { userId: 'alu-001', totalTokens: 100, timestamp: yesterdayIso };
+            yield { userId: 'alu-001', totalTokens: 200, timestamp: yesterdayIso2 };
+            yield { userId: 'alu-002', totalTokens: 300, timestamp: todayIso };
+            yield { userId: 'anonymous', totalTokens: 999, timestamp: anonTodayIso };
+        },
+    }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = { query: new Map([['days', '2']]) };
+
+    const response = await handlers['get-director-powerbi-metrics'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    const payload = JSON.parse(response.body);
+    assert.strictEqual(payload.source.table, 'SessionMetrics');
+    assert.strictEqual(payload.windowDays, 2);
+    assert.ok(Array.isArray(payload.daily));
+    assert.strictEqual(payload.daily.length, 2);
+
+    const today = payload.daily[1];
+    assert.strictEqual(today.totalTokens, 1299);
+    assert.strictEqual(today.ragInteractions, 2);
+    assert.strictEqual(today.dau, 1);
 });

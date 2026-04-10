@@ -1,5 +1,5 @@
 import { app } from '@azure/functions';
-import { loadJson, saveJson, listBlobs, deleteBlob } from '../services/storage.js';
+import { loadJson, saveJson, listBlobs, deleteBlob, getTableClient } from '../services/storage.js';
 import { v4 as uuidv4 } from 'uuid';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { listClassesBySubject, listMaterialsBySubject, replaceClassesForSubject, deleteMaterialStateById, getMaterialState } from '../services/state-store.js';
@@ -12,6 +12,107 @@ const DEFAULT_SUBJECTS = [
     { id: 'arq-software-2026', name: 'Arquitectura de Software', group: 'GRP-ARQ-SOFT-2026' },
     { id: 'diseno-sistemas-2026', name: 'Diseño de Sistemas', group: 'GRP-DIS-SIST-2026' }
 ];
+
+const SESSION_METRICS_TABLE = 'SessionMetrics';
+const POWERBI_DEFAULT_DAYS = 14;
+
+function toIsoDate(value) {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toISOString().slice(0, 10);
+}
+
+function createDailyBucket(date) {
+    return {
+        date,
+        dau: 0,
+        totalTokens: 0,
+        ragInteractions: 0,
+        _users: new Set(),
+    };
+}
+
+async function loadSessionMetricsRows(context) {
+    try {
+        const tableClient = getTableClient(SESSION_METRICS_TABLE);
+        const rows = [];
+        for await (const entity of tableClient.listEntities()) {
+            rows.push(entity);
+        }
+        return rows;
+    } catch (err) {
+        context.log.warn(`[PowerBI] Could not read ${SESSION_METRICS_TABLE}: ${err.message}`);
+        return [];
+    }
+}
+
+async function computeDirectorMetrics(context, requestedDays = POWERBI_DEFAULT_DAYS) {
+    const days = Math.min(Math.max(Number(requestedDays) || POWERBI_DEFAULT_DAYS, 1), 90);
+    const rows = await loadSessionMetricsRows(context);
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+
+    const start = new Date(today);
+    start.setUTCDate(today.getUTCDate() - (days - 1));
+
+    const buckets = new Map();
+    const uniqueUsersWindow = new Set();
+    for (let i = 0; i < days; i++) {
+        const date = new Date(start);
+        date.setUTCDate(start.getUTCDate() + i);
+        const iso = toIsoDate(date);
+        buckets.set(iso, createDailyBucket(iso));
+    }
+
+    for (const row of rows) {
+        const iso = toIsoDate(row?.timestamp);
+        if (!iso || !buckets.has(iso)) continue;
+
+        const bucket = buckets.get(iso);
+        const totalTokens = Number(row?.totalTokens || 0);
+        const userId = String(row?.userId || '').trim();
+
+        bucket.totalTokens += Number.isFinite(totalTokens) ? totalTokens : 0;
+        bucket.ragInteractions += 1;
+        if (userId && userId !== 'anonymous') {
+            bucket._users.add(userId);
+            uniqueUsersWindow.add(userId);
+        }
+    }
+
+    const daily = Array.from(buckets.values()).map((bucket) => ({
+        date: bucket.date,
+        dau: bucket._users.size,
+        totalTokens: bucket.totalTokens,
+        ragInteractions: bucket.ragInteractions,
+    }));
+
+    const latest = daily[daily.length - 1] || { dau: 0, totalTokens: 0, ragInteractions: 0 };
+    const previous = daily[daily.length - 2] || { dau: 0, totalTokens: 0, ragInteractions: 0 };
+
+    const dauDelta = previous.dau > 0
+        ? Math.round(((latest.dau - previous.dau) / previous.dau) * 100)
+        : (latest.dau > 0 ? 100 : 0);
+    const ragDelta = previous.ragInteractions > 0
+        ? Math.round(((latest.ragInteractions - previous.ragInteractions) / previous.ragInteractions) * 100)
+        : (latest.ragInteractions > 0 ? 100 : 0);
+
+    return {
+        updatedAt: new Date().toISOString(),
+        windowDays: days,
+        daily,
+        totals: {
+            totalTokens: daily.reduce((sum, item) => sum + item.totalTokens, 0),
+            ragInteractions: daily.reduce((sum, item) => sum + item.ragInteractions, 0),
+            uniqueActiveUsers: uniqueUsersWindow.size,
+        },
+        latest,
+        deltas: {
+            dau: `${dauDelta >= 0 ? '+' : ''}${dauDelta}%`,
+            ragInteractions: `${ragDelta >= 0 ? '+' : ''}${ragDelta}%`,
+        },
+    };
+}
 
 function normalizeStringArray(value) {
     if (Array.isArray(value)) return value.filter(Boolean).map(String);
@@ -489,12 +590,13 @@ app.http('get-director-stats', {
     handler: async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         context.log('get-director-stats triggered');
+        const metrics = await computeDirectorMetrics(context, POWERBI_DEFAULT_DAYS);
         const MOCK_STATS = {
-            dau: 52,
-            dauDelta: '+8%',
+            dau: metrics.latest.dau,
+            dauDelta: metrics.deltas.dau,
             classesProcessed: 14,
-            ragInteractions: 734,
-            ragDelta: '+23%',
+            ragInteractions: metrics.latest.ragInteractions,
+            ragDelta: metrics.deltas.ragInteractions,
             adoptionRate: 68,
             subjectAdoption: [
                 { name: 'Arq. de Software', rate: 82 },
@@ -502,11 +604,53 @@ app.http('get-director-stats', {
                 { name: 'Ing. de Software I', rate: 63 },
                 { name: 'Sistemas Distribuidos', rate: 44 },
             ],
+            powerBiSource: {
+                mode: 'continuous-export-db',
+                storage: 'Azure Table Storage',
+                table: SESSION_METRICS_TABLE,
+                windowDays: metrics.windowDays,
+                updatedAt: metrics.updatedAt,
+            },
         };
         return { 
             status: 200, 
             headers: { 'Content-Type': 'application/json' }, 
             body: JSON.stringify(MOCK_STATS) 
+        };
+    }
+});
+
+// ── GET /api/director/powerbi-metrics ─────────────────────────────
+// Exposición de métricas DAU + tokens para Power BI (Issue #75)
+app.http('get-director-powerbi-metrics', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'director/powerbi-metrics',
+    handler: async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+
+        const principal = parseClientPrincipal(request);
+        const isAuthorized = principal?.userRoles?.some(role => ['Director'].includes(role)) || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
+        if (!isAuthorized) {
+            return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Director access required' }) };
+        }
+
+        const days = request.query.get('days') || POWERBI_DEFAULT_DAYS;
+        const metrics = await computeDirectorMetrics(context, days);
+        return {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                source: {
+                    mode: 'continuous-export-db',
+                    storage: 'Azure Table Storage',
+                    table: SESSION_METRICS_TABLE,
+                    integrationHint: 'Power BI can connect directly to exported DB metrics via this endpoint or Azure Table connector.',
+                },
+                updatedAt: metrics.updatedAt,
+                windowDays: metrics.windowDays,
+                daily: metrics.daily,
+            }),
         };
     }
 });
