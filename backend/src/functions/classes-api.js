@@ -589,6 +589,12 @@ app.http('get-director-stats', {
     route: 'director/stats',
     handler: async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+        const principal = parseClientPrincipal(request);
+        const isAuthorized = principal?.userRoles?.some(role => ['Director'].includes(role)) || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
+        if (!isAuthorized) {
+            return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Director access required' }) };
+        }
+
         context.log('get-director-stats triggered');
         const metrics = await computeDirectorMetrics(context, POWERBI_DEFAULT_DAYS);
         const MOCK_STATS = {
@@ -604,6 +610,16 @@ app.http('get-director-stats', {
                 { name: 'Ing. de Software I', rate: 63 },
                 { name: 'Sistemas Distribuidos', rate: 44 },
             ],
+            earlyAlertSummary: {
+                totalStudentsAtRisk: 3,
+                highRiskCount: 1,
+                mediumRiskCount: 2,
+                lowAttendanceCount: 2,
+                lowGradeCount: 2,
+                attendanceBelow60Count: 1,
+                attendance60To75Count: 2,
+                attendanceAbove75Count: 0,
+            },
             powerBiSource: {
                 mode: 'continuous-export-db',
                 storage: 'Azure Table Storage',

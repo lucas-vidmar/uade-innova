@@ -130,6 +130,40 @@ test('classes-api save-classes should require authorization', async (t) => {
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
 });
 
+test('classes-api get-director-stats should require Director role', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = { query: new Map() };
+
+    const response = await handlers['get-director-stats'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 403);
+
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+});
+
+test('classes-api get-director-stats returns aggregate summary without student identifiers', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = { query: new Map() };
+
+    const response = await handlers['get-director-stats'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    const payload = JSON.parse(response.body);
+    assert.ok(payload.earlyAlertSummary);
+    assert.strictEqual(typeof payload.earlyAlertSummary.totalStudentsAtRisk, 'number');
+    assert.strictEqual(typeof payload.earlyAlertSummary.highRiskCount, 'number');
+    assert.strictEqual(typeof payload.earlyAlertSummary.mediumRiskCount, 'number');
+
+    assert.strictEqual(payload.name, undefined);
+    assert.strictEqual(payload.studentId, undefined);
+    assert.strictEqual(payload.subject, undefined);
+});
+
 test('classes-api get-director-powerbi-metrics should require Director role', async () => {
     authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'] }));
     const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
