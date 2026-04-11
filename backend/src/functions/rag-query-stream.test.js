@@ -74,6 +74,8 @@ mock.module('@azure/functions', {
 await import('./rag-query.js');
 
 test('rag-query should stream SSE when stream=true', async (t) => {
+    telemetryMocks.trackRAGInteraction.mock.resetCalls();
+
     const mockContext = {
         log: mock.fn(),
         error: mock.fn()
@@ -116,6 +118,12 @@ test('rag-query should stream SSE when stream=true', async (t) => {
     assert.ok(fullOutput.includes('"content":"Part "'), 'Should contain first chunk');
     assert.ok(fullOutput.includes('"content":"1"'), 'Should contain second chunk');
     assert.ok(fullOutput.includes('"answer":"Part 1"'), 'Should contain final answer in done event');
+
+    assert.ok(telemetryMocks.trackRAGInteraction.mock.callCount() >= 1, 'Should emit RAG telemetry in stream mode');
+    const telemetryPayload = telemetryMocks.trackRAGInteraction.mock.calls.at(-1).arguments[0];
+    assert.strictEqual(typeof telemetryPayload.ttftMs, 'number', 'Should include numeric ttftMs');
+    assert.ok(telemetryPayload.ttftMs >= 0, 'ttftMs should be non-negative');
+    assert.ok(Boolean(telemetryPayload.firstTokenAt), 'Should include firstTokenAt timestamp');
 });
 
 test('rag-query stream should rewrite follow-up question before retrieval', async () => {

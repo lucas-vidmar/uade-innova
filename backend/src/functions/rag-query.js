@@ -298,12 +298,19 @@ ${contextText}
 
                     let fullAnswer = '';
                     let finalUsage = null;
+                    let firstTokenAt = null;
+                    let ttftMs = null;
 
                     try {
                         const stream = await chatCompletion(messages, true, { headers: openAiHeaders });
                         for await (const chunk of stream) {
                             const delta = chunk.choices?.[0]?.delta?.content || '';
                             if (delta) {
+                                if (!firstTokenAt) {
+                                    firstTokenAt = new Date().toISOString();
+                                    ttftMs = Date.now() - startTime;
+                                    context.log(`[Telemetry] TTFT captured: ${ttftMs}ms | interactionId=${interactionId}`);
+                                }
                                 fullAnswer += delta;
                                 controller.enqueue(encoder.encode(`event: delta\ndata: ${JSON.stringify({ content: delta })}\n\n`));
                             }
@@ -325,8 +332,10 @@ ${contextText}
                             completionTokens: finalUsage?.completion_tokens || 0,
                             totalTokens: totalInteractionTokens,
                             durationMs,
+                            ttftMs,
                             promptVersion: promptId,
                             interactionId,
+                            firstTokenAt,
                         }).catch(err => context.error('[Telemetry] Error emitting RAGInteraction event from stream:', err));
 
                         // Persistir logs

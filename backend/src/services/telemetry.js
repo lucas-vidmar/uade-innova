@@ -53,8 +53,10 @@ async function getClient() {
  * @param {number} params.completionTokens  - Tokens consumed in the completion
  * @param {number} params.totalTokens       - Total tokens (prompt + completion)
  * @param {number} params.durationMs        - Wall-clock latency of the full RAG pipeline (ms)
+ * @param {number} [params.ttftMs]          - Time to first token in stream mode (ms)
  * @param {string} params.promptVersion     - A/B prompt version ID (Issue #80)
  * @param {string} [params.interactionId]   - Unique ID for this chat turn
+ * @param {string} [params.firstTokenAt]    - ISO timestamp when first SSE token was emitted
  */
 export async function trackRAGInteraction({
     userId,
@@ -63,8 +65,10 @@ export async function trackRAGInteraction({
     completionTokens,
     totalTokens,
     durationMs,
+    ttftMs,
     promptVersion,
     interactionId,
+    firstTokenAt,
 }) {
     const client = await getClient();
     if (!client) return;
@@ -76,12 +80,59 @@ export async function trackRAGInteraction({
             subjectId,
             promptVersion: promptVersion || 'default',
             interactionId: interactionId || 'unknown',
+            firstTokenAt: firstTokenAt || null,
         },
         measurements: {
             promptTokens: promptTokens || 0,
             completionTokens: completionTokens || 0,
             totalTokens: totalTokens || 0,
             durationMs: durationMs || 0,
+            ttftMs: Number.isFinite(ttftMs) ? ttftMs : 0,
+        },
+    });
+}
+
+/**
+ * Tracks Azure AI Search vector-query dependency latency in App Insights.
+ *
+ * @param {object} params
+ * @param {string} [params.provider]     - Vector provider name (default: azure-ai-search)
+ * @param {string} [params.index]        - Vector index identifier
+ * @param {string} [params.indexName]    - Alias for index
+ * @param {string} [params.target]       - Dependency target endpoint
+ * @param {string} [params.operation]    - Operation name
+ * @param {number} params.durationMs     - Dependency latency in milliseconds
+ * @param {boolean} [params.success]     - Whether dependency call succeeded
+ * @param {string|number} [params.resultCode] - Result code / status code
+ */
+export async function trackVectorSearchDependency({
+    provider = 'azure-ai-search',
+    index,
+    indexName,
+    target,
+    operation = 'vector.search',
+    durationMs,
+    success = true,
+    resultCode,
+}) {
+    const client = await getClient();
+    if (!client) return;
+
+    const resolvedIndex = index || indexName || process.env.AZURE_SEARCH_INDEX_NAME || 'unknown-index';
+    const resolvedTarget = target || process.env.AZURE_SEARCH_ENDPOINT || 'azure-ai-search';
+
+    client.trackDependency({
+        target: resolvedTarget,
+        name: operation,
+        data: `indexes/${resolvedIndex}/docs/search`,
+        duration: Math.max(0, Number(durationMs) || 0),
+        success: Boolean(success),
+        resultCode: String(resultCode ?? (success ? 200 : 500)),
+        dependencyTypeName: 'Azure AI Search',
+        properties: {
+            provider,
+            index: resolvedIndex,
+            indexName: resolvedIndex,
         },
     });
 }
