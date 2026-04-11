@@ -9,6 +9,7 @@ import {
 } from '@azure/search-documents';
 import { DefaultAzureCredential } from '@azure/identity';
 import { CategorizedError, ErrorCategory } from './error-categories.js';
+import { trackVectorSearchDependency } from './telemetry.js';
 
 const VECTOR_DIMENSIONS = Number.parseInt(process.env.AZURE_SEARCH_VECTOR_DIMENSIONS || '1536', 10);
 const BATCH_SIZE = 100;
@@ -188,6 +189,19 @@ export async function upsertChunks(vectors) {
 }
 
 export async function querySimilar(embedding, filter, topK = 5) {
+    return querySimilarWithTelemetry(embedding, filter, topK);
+}
+
+export async function querySimilarWithTelemetry(embedding, filter, topK = 5, deps = {}) {
+    const dependencyTracker = typeof deps.trackDependency === 'function'
+        ? deps.trackDependency
+        : trackVectorSearchDependency;
+
+    const startedAt = Date.now();
+    const provider = 'azure-ai-search';
+    const indexName = getIndexName();
+    const target = getSearchEndpoint() || 'azure-ai-search';
+
     try {
         const { searchClient } = await ensureClients();
         const filterExpression = buildFilter(filter);
@@ -237,8 +251,30 @@ export async function querySimilar(embedding, filter, topK = 5) {
             });
         }
 
+        await dependencyTracker({
+            provider,
+            index: indexName,
+            indexName,
+            target,
+            operation: 'vector.search',
+            durationMs: Date.now() - startedAt,
+            success: true,
+            resultCode: 200,
+        });
+
         return matches;
     } catch (err) {
+        await dependencyTracker({
+            provider,
+            index: indexName,
+            indexName,
+            target,
+            operation: 'vector.search',
+            durationMs: Date.now() - startedAt,
+            success: false,
+            resultCode: err?.status || err?.code || 500,
+        });
+
         console.error('[Azure Search] Error en querySimilar:', err);
         throw new CategorizedError(`Error consultando la base vectorial: ${err.message}`, {
             errorCategory: ErrorCategory.RETRIEVAL_FAILURE,
