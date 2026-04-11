@@ -1,5 +1,6 @@
 import { app } from '@azure/functions';
 import { validateFrontDoorId } from '../services/auth-utils.js';
+import { listNotificationsBySubject } from '../services/notification-store.js';
 
 const MOCK_NOTIFICATIONS = [
     {
@@ -61,7 +62,16 @@ function normalizeNotification(item = {}, idx = 0) {
         unread: item.unread !== false,
         targetHash: item.targetHash || '#/student/dashboard',
         subjectId: item.subjectId || null,
+        recipientUserIds: Array.isArray(item.recipientUserIds) ? item.recipientUserIds : [],
+        origin: item.origin || 'seed',
     };
+}
+
+function canReceiveNotification(item, userId) {
+    if (!userId) return true;
+    const recipients = Array.isArray(item?.recipientUserIds) ? item.recipientUserIds : [];
+    if (recipients.length === 0) return true;
+    return recipients.includes(userId);
 }
 
 app.http('get-notifications', {
@@ -73,16 +83,27 @@ app.http('get-notifications', {
             return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         }
 
+        const userId = request.query.get('userId') || null;
         const subjectId = request.query.get('subjectId') || null;
         const limit = normalizeLimit(request.query.get('limit'));
 
-        const data = MOCK_NOTIFICATIONS
+        let persisted = [];
+        if (subjectId) {
+            try {
+                persisted = await listNotificationsBySubject(subjectId);
+            } catch (err) {
+                context.error(`[notifications] error loading persisted notifications for ${subjectId}: ${err.message}`);
+            }
+        }
+
+        const data = [...persisted, ...MOCK_NOTIFICATIONS]
             .filter((item) => !subjectId || item.subjectId === subjectId)
+            .filter((item) => canReceiveNotification(item, userId))
             .map((item, idx) => normalizeNotification(item, idx))
             .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
             .slice(0, limit);
 
-        context.log(`[notifications] returning ${data.length} records (subjectId=${subjectId || 'all'})`);
+        context.log(`[notifications] returning ${data.length} records (subjectId=${subjectId || 'all'}, userId=${userId || 'anonymous'})`);
 
         return {
             status: 200,

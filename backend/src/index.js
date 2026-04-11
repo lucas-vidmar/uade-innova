@@ -19,3 +19,4 @@ import './functions/sga-api.js';
 import './functions/ingest-material.js';
 import './functions/process-material.js';
 import './functions/rag-query.js';
+import './functions/post-class-summary-dispatcher.js';
