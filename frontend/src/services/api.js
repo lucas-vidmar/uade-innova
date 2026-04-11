@@ -975,6 +975,33 @@ export const api = {
         }
     },
 
+    async getVectorHealth() {
+        if (USE_MOCK) {
+            await delay(250);
+            return {
+                provider: 'azure-ai-search',
+                indexName: 'dashboard-edu-pilot',
+                stats: {
+                    totalVectorCount: 0,
+                    indexFullness: 0,
+                    namespaces: {},
+                },
+                timestamp: new Date().toISOString(),
+            };
+        }
+
+        try {
+            const res = await fetchWithTimeout(`${BASE_URL}/vector-health`, { timeout: 3500 });
+            if (!res.ok) return null;
+            const data = await res.json();
+            if (!data || typeof data !== 'object') return null;
+            return data;
+        } catch (err) {
+            console.error('[API] getVectorHealth failed:', err);
+            return null;
+        }
+    },
+
     async getAdminUsers() {
             if (USE_MOCK) {
                 await delay(400);

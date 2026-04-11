@@ -77,11 +77,13 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
         context.log(`[Pipeline] Vectores indexados con éxito.`);
 
         // ── 4b. Log vector index health metrics (Issue #78) ──────────
-        getIndexStats().then(stats => {
-            context.log(`[Azure Search Health] Index: ${vectorIndexName} | totalVectorCount: ${stats.totalVectorCount} | indexFullness: ${(stats.indexFullness * 100).toFixed(2)}%`);
-        }).catch(statsErr => {
-            context.warn(`[Azure Search Health] No se pudo obtener stats del índice: ${statsErr.message}`);
-        });
+        try {
+            const stats = await getIndexStats();
+            context.log(`[Azure Search Health] Index: ${vectorIndexName || 'n/a'} | totalVectorCount: ${stats.totalVectorCount} | indexFullness: ${(stats.indexFullness * 100).toFixed(2)}%`);
+        } catch (statsErr) {
+            const warn = typeof context.warn === 'function' ? context.warn.bind(context) : context.log.bind(context);
+            warn(`[Azure Search Health] No se pudo obtener stats del índice: ${statsErr.message}`);
+        }
 
         // 5. Generar resumen y mapa conceptual si es un tipo de material rico en texto
         if (materialType === 'transcript' || materialType === 'notes') {

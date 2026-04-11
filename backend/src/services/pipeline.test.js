@@ -57,6 +57,7 @@ test('runPipeline should not crash when materialType is transcript and correctly
     
     const mockContext = {
         log: mock.fn(),
+        warn: mock.fn(),
         error: mock.fn()
     };
     
@@ -80,4 +81,41 @@ test('runPipeline should not crash when materialType is transcript and correctly
 
     // Validate generateClassMap was called exactly once
     assert.strictEqual(openaiMocks.generateClassMap.mock.callCount(), 1);
+
+    const healthLogEmitted = mockContext.log.mock.calls.some((call) =>
+        call.arguments?.[0]?.includes('[Azure Search Health]')
+    );
+    assert.strictEqual(healthLogEmitted, true, 'Should emit index health log after successful upsert');
+});
+
+test('runPipeline should continue when index health stats retrieval fails', async () => {
+    vectorStoreMocks.getIndexStats.mock.mockImplementationOnce(async () => {
+        throw new Error('stats unavailable');
+    });
+
+    const mockContext = {
+        log: mock.fn(),
+        warn: mock.fn(),
+        error: mock.fn()
+    };
+
+    await runPipeline({
+        fileBuffer: Buffer.from('test'),
+        fileContentType: 'text/plain',
+        fileName: 'test.txt',
+        classIds: ['class1'],
+        subjectId: 'subj1',
+        materialType: 'notes',
+        materialId: 'mat2',
+        blobUrl: 'http://test'
+    }, mockContext);
+
+    const warnCalls = mockContext.warn.mock.calls;
+    const warningLogged = warnCalls.some((call) =>
+        call.arguments?.[0]?.includes('No se pudo obtener stats del índice')
+    );
+    assert.strictEqual(warningLogged, true, 'Should warn when index stats cannot be retrieved');
+
+    const errorCalls = mockContext.error.mock.calls;
+    assert.strictEqual(errorCalls.length, 0, 'Stats failures should not break pipeline execution');
 });

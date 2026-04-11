@@ -34,6 +34,8 @@ test('vector-health handler should be registered', () => {
 });
 
 test('vector-health should return provider and stats payload', async () => {
+    process.env.AZURE_SEARCH_INDEX_NAME = 'dashboard-edu-pilot';
+
     const response = await capturedHandler(
         { headers: { get: () => null } },
         { error: mock.fn() }
@@ -42,5 +44,19 @@ test('vector-health should return provider and stats payload', async () => {
     assert.strictEqual(response.status, 200);
     const body = JSON.parse(response.body);
     assert.strictEqual(body.provider, 'azure-ai-search');
+    assert.strictEqual(body.indexName, 'dashboard-edu-pilot');
     assert.strictEqual(body.stats.totalVectorCount, 42);
+});
+
+test('vector-health should reject when Front Door validation fails', async () => {
+    authUtilsMocks.validateFrontDoorId.mock.mockImplementationOnce(() => false);
+
+    const response = await capturedHandler(
+        { headers: { get: () => null } },
+        { error: mock.fn() }
+    );
+
+    assert.strictEqual(response.status, 403);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.error, 'Forbidden - Invalid Front Door ID');
 });
