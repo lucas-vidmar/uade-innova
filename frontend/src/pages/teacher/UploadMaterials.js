@@ -26,6 +26,45 @@ export async function renderTeacherUpload(container) {
   // By default, select the first valid class or nothing
   let selectedClassIds = classes.length > 0 ? [classes[0].id] : [];
   let activeTab = 'transcript';
+  const activeSubjectIdSafe = activeSubjectId;
+
+  const unsubscribeProcessing = processingNotifications.subscribe((event) => {
+    if (!event || event.type !== 'material-status-terminal') return;
+    if (event.subjectId !== activeSubjectIdSafe) return;
+
+    const nextStatus = event.terminal === 'ready' ? 'ready' : 'error';
+    const targetClasses = Array.isArray(event.classIds) && event.classIds.length > 0
+      ? event.classIds
+      : classes.map((cls) => cls.id);
+
+    let didMutate = false;
+
+    targetClasses.forEach((classId) => {
+      const cls = classes.find((item) => item.id === classId);
+      if (!cls || !Array.isArray(cls.materials)) return;
+
+      cls.materials = cls.materials.map((material) => {
+        if ((material.id || material.materialId) !== event.materialId) return material;
+        didMutate = true;
+        return {
+          ...material,
+          status: nextStatus,
+          processedAt: new Date().toISOString(),
+        };
+      });
+    });
+
+    if (didMutate) {
+      render();
+    }
+  });
+
+  const teardown = () => {
+    unsubscribeProcessing();
+    window.removeEventListener('hashchange', teardown);
+  };
+
+  window.addEventListener('hashchange', teardown, { once: true });
 
   const render = () => {
     // Info preview for the FIRST selected class just as visual feedback
@@ -185,6 +224,8 @@ export async function renderTeacherUpload(container) {
               }
             }
           });
+
+          render();
 
           if (response?.materialId && (response?.status || 'processing') === 'processing') {
             processingNotifications.trackJob({

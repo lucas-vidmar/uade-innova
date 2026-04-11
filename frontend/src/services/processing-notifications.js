@@ -13,6 +13,7 @@ const POLL_INTERVAL_MS = Number(globalThis?.__UADE_PROCESSING_POLL_MS) > 0
 let trackedJobs = loadTrackedJobs();
 let timerId = null;
 let isPolling = false;
+const listeners = new Set();
 
 function loadTrackedJobs() {
     try {
@@ -90,6 +91,16 @@ function stopPollingIfIdle() {
     }
 }
 
+function notifyListeners(event) {
+    listeners.forEach((listener) => {
+        try {
+            listener(event);
+        } catch (err) {
+            console.error('[ProcessingNotifications] listener failed:', err);
+        }
+    });
+}
+
 function resolveTerminalStatusForJob(job, classes) {
     const classesList = Array.isArray(classes) ? classes : [];
     const matchingMaterials = [];
@@ -155,10 +166,26 @@ async function pollStatuses() {
 
             if (terminal === 'ready') {
                 toast('success', 'Procesamiento completado', `"${job.filename}" ya está listo para usar.`);
+                notifyListeners({
+                    type: 'material-status-terminal',
+                    terminal: 'ready',
+                    materialId: job.materialId,
+                    subjectId: job.subjectId,
+                    classIds: [...job.classIds],
+                    filename: job.filename,
+                });
                 continue;
             }
 
             toast('error', 'Procesamiento con error', `"${job.filename}" terminó con errores. Revisá el material e intentá nuevamente.`);
+            notifyListeners({
+                type: 'material-status-terminal',
+                terminal: 'error',
+                materialId: job.materialId,
+                subjectId: job.subjectId,
+                classIds: [...job.classIds],
+                filename: job.filename,
+            });
         }
 
         trackedJobs = pending;
@@ -196,5 +223,16 @@ export const processingNotifications = {
         persistTrackedJobs();
         ensurePolling();
         pollStatuses();
+    },
+
+    subscribe(listener) {
+        if (typeof listener !== 'function') {
+            return () => { };
+        }
+
+        listeners.add(listener);
+        return () => {
+            listeners.delete(listener);
+        };
     },
 };

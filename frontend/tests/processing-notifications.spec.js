@@ -128,3 +128,73 @@ test('notification polling ignores invalid persisted jobs and still resolves val
   await expect(page.locator('#toast-container .toast.success')).toContainText('Procesamiento completado', { timeout: 7000 });
   await expect(page.locator('#toast-container .toast.success')).toContainText('clase15.txt');
 });
+
+test('upload status badge transitions from Procesando to Listo without refresh', async ({ page }) => {
+  let materialStatusCallCount = 0;
+
+  await page.addInitScript(() => {
+    sessionStorage.setItem('edu_role', 'teacher');
+    sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
+    sessionStorage.setItem('edu_consent_accepted', 'true');
+    localStorage.setItem('edu_consent_accepted', 'true');
+    localStorage.removeItem('uade.processing.tracked-jobs');
+    window.__UADE_PROCESSING_POLL_MS = 250;
+  });
+
+  await page.route('**/api/classes?**', async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          id: 'class-20',
+          subjectId: 'arq-software-2026',
+          title: 'Clase 20 — Cierre',
+          date: '2026-05-10',
+          topics: [],
+          summaryReady: false,
+          materials: [],
+        },
+      ]),
+    });
+  });
+
+  await page.route('**/api/ingest-material', async route => {
+    await route.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: JSON.stringify({ materialId: 'material-020', status: 'processing' }),
+    });
+  });
+
+  await page.route('**/api/material-status/**', async route => {
+    materialStatusCallCount += 1;
+    const status = materialStatusCallCount < 2 ? 'processing' : 'ready';
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 'material-020',
+        materialId: 'material-020',
+        subjectId: 'arq-software-2026',
+        classIds: ['class-20'],
+        filename: 'clase20.txt',
+        status,
+      }),
+    });
+  });
+
+  await page.goto('/#/teacher/upload');
+
+  await page.locator('#file-input-transcript').setInputFiles({
+    name: 'clase20.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('contenido de prueba para estado'),
+  });
+
+  const statusBadge = page.locator('#file-list-transcript .badge').first();
+  await expect(statusBadge).toContainText('Procesando');
+  await expect(statusBadge).toContainText('Listo', { timeout: 7000 });
+  expect(materialStatusCallCount).toBeGreaterThan(0);
+});
