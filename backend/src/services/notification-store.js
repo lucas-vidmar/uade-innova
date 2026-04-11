@@ -8,7 +8,7 @@ function normalizeRecipientUserIds(value) {
 }
 
 function normalizeNotification(item = {}, idx = 0) {
-  const type = ['grade', 'summary', 'material'].includes(item.type) ? item.type : 'material';
+  const type = ['grade', 'summary', 'material', 'deadline'].includes(item.type) ? item.type : 'material';
   return {
     id: String(item.id || `notif-${Date.now()}-${idx}`),
     type,

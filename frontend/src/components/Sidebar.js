@@ -262,8 +262,20 @@ async function initializeNotificationCenter({ userId, subjectId }) {
 
     listEl.innerHTML = notifications
       .map((item) => {
-        const icon = item.type === 'grade' ? '📝' : item.type === 'summary' ? '📘' : '📂';
-        const typeLabel = item.type === 'grade' ? 'Nota' : item.type === 'summary' ? 'Resumen' : 'Material';
+        const icon = item.type === 'grade'
+          ? '📝'
+          : item.type === 'summary'
+            ? '📘'
+            : item.type === 'deadline'
+              ? '⏰'
+              : '📂';
+        const typeLabel = item.type === 'grade'
+          ? 'Nota'
+          : item.type === 'summary'
+            ? 'Resumen'
+            : item.type === 'deadline'
+              ? 'Deadline'
+              : 'Material';
         return `
           <button class="notification-item ${item.unread ? 'unread' : ''}" data-notification-id="${item.id}" data-target-hash="${item.targetHash || '#/student/dashboard'}">
             <div class="notification-item-top">
@@ -334,7 +346,7 @@ async function initializeNotificationCenter({ userId, subjectId }) {
     notifications = [
       {
         id: detail.id || `notif-ext-${Date.now()}`,
-        type: ['grade', 'summary', 'material'].includes(detail.type) ? detail.type : 'material',
+        type: ['grade', 'summary', 'material', 'deadline'].includes(detail.type) ? detail.type : 'material',
         title: String(detail.title || 'Nueva notificación'),
         message: String(detail.message || 'Se actualizó información académica.'),
         createdAt: detail.createdAt || new Date().toISOString(),

@@ -9,6 +9,16 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-04-10] User Story #66: Early Warning Pedagogical Alarms
+- **Status**: Completed
+- **Functional Change**: Implemented deterministic risk-flag computation for early alerts, extended `/api/sga/early-alerts` with `interventionFlag` and `interventionOnly=true`, and added a Director-facing "Lista de Intervención (At Risk)" view powered by backend filtering.
+- **Business Impact**: Enables faster pedagogical intervention by surfacing students at immediate disengagement risk in a dedicated actionable list.
+
+### [2026-04-10] User Story #64: Deadline Proximity Alerts
+- **Status**: Completed
+- **Functional Change**: Added an automated timer-based backend dispatcher that evaluates deadlines and emits deduplicated student notifications at 48h and 24h before due time, plus frontend notification-center support for the new deadline alert type.
+- **Business Impact**: Improves student planning discipline and reduces missed submissions through proactive, time-based reminders.
+
 ### [2026-04-10] User Story #62: AI Accuracy & Satisfaction Feedback
 - **Status**: Completed
 - **Functional Change**: Added student-side AI response feedback controls with explicit issue reporting and introduced teacher-facing quality alerts showing reported chat issues by subject.

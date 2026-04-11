@@ -336,7 +336,7 @@ const MOCK_NOTIFICATIONS = [
 
 function normalizeNotification(item = {}, idx = 0) {
     const fallbackId = item.id || `notif-${Date.now()}-${idx}`;
-    const type = ['grade', 'summary', 'material'].includes(item.type) ? item.type : 'material';
+    const type = ['grade', 'summary', 'material', 'deadline'].includes(item.type) ? item.type : 'material';
     return {
         id: fallbackId,
         type,
@@ -942,6 +942,39 @@ export const api = {
         }
     },
 
+    async getDirectorPowerBiMetrics(days = 14) {
+        if (USE_MOCK) {
+            await delay(400);
+            return {
+                source: { mode: 'mock', storage: 'local', table: 'SessionMetrics' },
+                updatedAt: new Date().toISOString(),
+                windowDays: days,
+                daily: [],
+            };
+        }
+
+        try {
+            const res = await fetchWithTimeout(`${BASE_URL}/director/powerbi-metrics?days=${encodeURIComponent(days)}`, { timeout: 4000 });
+            if (!res.ok) {
+                return {
+                    source: { mode: 'fallback', storage: 'Azure Table Storage', table: 'SessionMetrics' },
+                    updatedAt: null,
+                    windowDays: days,
+                    daily: [],
+                };
+            }
+            return await res.json();
+        } catch (err) {
+            console.error('[API] getDirectorPowerBiMetrics failed:', err);
+            return {
+                source: { mode: 'fallback', storage: 'Azure Table Storage', table: 'SessionMetrics' },
+                updatedAt: null,
+                windowDays: days,
+                daily: [],
+            };
+        }
+    },
+
     async getAdminUsers() {
             if (USE_MOCK) {
                 await delay(400);
@@ -1133,23 +1166,56 @@ export const api = {
             }
         },
 
-    async getEarlyAlerts(subjectId) {
+    async getEarlyAlerts(subjectId, options = {}) {
+            const resolvedSubjectId = typeof subjectId === 'string' ? subjectId : (subjectId && typeof subjectId === 'object' ? subjectId.subjectId : undefined);
+            const interventionOnly = typeof subjectId === 'object' && subjectId !== null
+                ? Boolean(subjectId.interventionOnly)
+                : Boolean(options.interventionOnly);
+
+            const normalizeRisk = (value) => (['low', 'medium', 'high'].includes(value) ? value : 'medium');
+            const normalizeInterventionFlag = (value, risk) => {
+                if (['stable', 'watchlist', 'at_risk'].includes(value)) return value;
+                if (risk === 'high') return 'at_risk';
+                if (risk === 'medium') return 'watchlist';
+                return 'stable';
+            };
+
+            const normalizeEarlyAlert = (item = {}) => {
+                const risk = normalizeRisk(item.risk);
+                return {
+                    id: String(item.id || ''),
+                    studentId: String(item.studentId || ''),
+                    name: String(item.name || 'Alumno sin nombre'),
+                    subjectId: String(item.subjectId || ''),
+                    subject: String(item.subject || 'Materia no informada'),
+                    risk,
+                    interventionFlag: normalizeInterventionFlag(item.interventionFlag, risk),
+                    attendance: String(item.attendance || '0%'),
+                    avgGrade: typeof item.avgGrade === 'number' ? item.avgGrade : 0,
+                };
+            };
+
             if (USE_MOCK) {
                 const MOCK_EARLY_ALERTS = [
-                    { id: 'alu-012', studentId: 'alu-012', name: 'Tomás García', subjectId: 'arq-software-2026', subject: 'Arq. de Software', risk: 'high', attendance: '45%', avgGrade: 4.2 },
-                    { id: 'alu-031', studentId: 'alu-031', name: 'Lucía Martínez', subjectId: 'diseno-sistemas-2026', subject: 'Sistemas Dist.', risk: 'medium', attendance: '62%', avgGrade: 5.1 },
-                    { id: 'alu-008', studentId: 'alu-008', name: 'Nicolás Peralta', subjectId: 'arq-software-2026', subject: 'Arq. de Software', risk: 'medium', attendance: '70%', avgGrade: 5.8 },
+                    { id: 'alu-012', studentId: 'alu-012', name: 'Tomás García', subjectId: 'arq-software-2026', subject: 'Arq. de Software', risk: 'high', interventionFlag: 'at_risk', attendance: '45%', avgGrade: 4.2 },
+                    { id: 'alu-031', studentId: 'alu-031', name: 'Lucía Martínez', subjectId: 'diseno-sistemas-2026', subject: 'Sistemas Dist.', risk: 'medium', interventionFlag: 'watchlist', attendance: '62%', avgGrade: 5.1 },
+                    { id: 'alu-008', studentId: 'alu-008', name: 'Nicolás Peralta', subjectId: 'arq-software-2026', subject: 'Arq. de Software', risk: 'medium', interventionFlag: 'watchlist', attendance: '70%', avgGrade: 5.8 },
                 ];
                 await delay(400);
-                return subjectId ? MOCK_EARLY_ALERTS.filter(a => a.subjectId === subjectId) : MOCK_EARLY_ALERTS;
+                const bySubject = resolvedSubjectId ? MOCK_EARLY_ALERTS.filter(a => a.subjectId === resolvedSubjectId) : MOCK_EARLY_ALERTS;
+                const filtered = interventionOnly ? bySubject.filter((a) => a.interventionFlag === 'at_risk') : bySubject;
+                return filtered.map(normalizeEarlyAlert);
             }
 
             try {
-                const query = subjectId ? `?subjectId=${encodeURIComponent(subjectId)}` : '';
+                const params = new URLSearchParams();
+                if (resolvedSubjectId) params.set('subjectId', resolvedSubjectId);
+                if (interventionOnly) params.set('interventionOnly', 'true');
+                const query = params.toString() ? `?${params.toString()}` : '';
                 const res = await fetchWithTimeout(`${BASE_URL}/sga/early-alerts${query}`, { timeout: 4000 });
                 if (!res.ok) return [];
                 const data = await res.json();
-                return Array.isArray(data) ? data : [];
+                return Array.isArray(data) ? data.map(normalizeEarlyAlert) : [];
             } catch (err) {
                 console.error('[API] getEarlyAlerts failed:', err);
                 return [];
