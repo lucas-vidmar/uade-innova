@@ -59,3 +59,6 @@ output name string = appInsights.name
 
 @description('The resource ID of the Log Analytics Workspace.')
 output logAnalyticsWorkspaceId string = logAnalyticsWorkspace.id
+
+@description('The resource ID of Application Insights component.')
+output appInsightsId string = appInsights.id

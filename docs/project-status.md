@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-04-11] User Story #79: Cost-per-Interaction Dashboard
+- **Status**: Completed
+- **Functional Change**: Completed Director-facing cost analytics by enforcing pricing formulas ($0.15/1M input, $0.60/1M output) across workbook and API summaries, and added daily cost-per-interaction visibility in the dashboard.
+- **Business Impact**: Gives leadership direct and auditable visibility into AI unit economics, improving FinOps control and faster budget response.
+
 ### [2026-04-10] User Story #77: Vector Search Performance Metrics
 - **Status**: Completed
 - **Functional Change**: Added dedicated Application Insights dependency telemetry for Azure AI Search vector retrieval, including provider/index metadata, and wrapped retrieval calls with an injectable latency tracker to separate retrieval timing from LLM timing.

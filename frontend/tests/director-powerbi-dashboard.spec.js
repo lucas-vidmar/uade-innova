@@ -1,7 +1,8 @@
 import { test, expect } from '@playwright/test';
 
-test('director can review DAU and token metrics for Power BI', async ({ page, browserName }) => {
-  test.skip(browserName !== 'chromium', 'This usability check must run on Chrome/Chromium.');
+test.use({ channel: 'chrome' });
+
+test('director can review DAU, token and cost metrics for Power BI', async ({ page }) => {
 
   await page.addInitScript(() => {
     sessionStorage.setItem('edu_role', 'director');
@@ -47,11 +48,25 @@ test('director can review DAU and token metrics for Power BI', async ({ page, br
           storage: 'Azure Table Storage',
           table: 'SessionMetrics',
         },
+        pricing: {
+          inputPerMillionTokensUsd: 0.15,
+          outputPerMillionTokensUsd: 0.60,
+          inputPerTokenUsd: 0.00000015,
+          outputPerTokenUsd: 0.0000006,
+        },
+        summary: {
+          totalPromptTokens: 145000,
+          totalCompletionTokens: 51000,
+          totalTokens: 196000,
+          totalInteractions: 334,
+          totalCostUsd: 0.05265,
+          avgCostPerInteractionUsd: 0.00015763,
+        },
         updatedAt: '2026-04-10T12:00:00.000Z',
         windowDays: 14,
         daily: [
-          { date: '2026-04-09', dau: 49, totalTokens: 73300, ragInteractions: 163 },
-          { date: '2026-04-10', dau: 52, totalTokens: 78100, ragInteractions: 171 },
+          { date: '2026-04-09', dau: 49, promptTokens: 72000, completionTokens: 29000, totalTokens: 101000, totalCost: 0.0282, avgCostPerInteraction: 0.000173, ragInteractions: 163 },
+          { date: '2026-04-10', dau: 52, promptTokens: 73000, completionTokens: 22000, totalTokens: 95000, totalCost: 0.02445, avgCostPerInteraction: 0.000143, ragInteractions: 171 },
         ],
       }),
     });
@@ -59,10 +74,17 @@ test('director can review DAU and token metrics for Power BI', async ({ page, br
 
   await page.goto('/#/director/dashboard');
 
-  await expect(page.locator('#powerbi-card')).toContainText('Power BI — DAU y Consumo de Tokens');
+  await expect(page.locator('#powerbi-card')).toContainText('Power BI — DAU, Tokens y Costo por Interacción');
   await expect(page.locator('#powerbi-metrics-table')).toBeVisible();
   await expect(page.locator('#powerbi-card')).toContainText('SessionMetrics');
-  await expect(page.locator('#powerbi-metrics-table')).toContainText('78.100');
+  await expect(page.locator('#powerbi-card')).toContainText('$0.15/1M');
+  await expect(page.locator('#powerbi-card')).toContainText('$0.60/1M');
+  await expect(page.locator('#cost-total-kpi')).toContainText('$0.0527');
+  await expect(page.locator('#cost-avg-kpi')).toContainText('$0.000158');
+  await expect(page.locator('#powerbi-metrics-table')).toContainText('73.000');
+  await expect(page.locator('#powerbi-metrics-table')).toContainText('22.000');
+  await expect(page.locator('#powerbi-metrics-table')).toContainText('$0.0244');
+  await expect(page.locator('#powerbi-metrics-table')).toContainText('$0.000143');
   await expect(page.locator('#powerbi-metrics-table tbody tr')).toHaveCount(2);
   await expect(page.locator('#director-alerts-aggregate-table')).toBeVisible();
   await expect(page.locator('#director-alerts-aggregate-table')).toContainText('Riesgo alto');

@@ -190,10 +190,10 @@ test('classes-api get-director-powerbi-metrics returns aggregated daily metrics'
 
     storageMocks.getTableClient.mock.mockImplementation(() => ({
         listEntities: async function* () {
-            yield { userId: 'alu-001', totalTokens: 100, timestamp: yesterdayIso };
-            yield { userId: 'alu-001', totalTokens: 200, timestamp: yesterdayIso2 };
-            yield { userId: 'alu-002', totalTokens: 300, timestamp: todayIso };
-            yield { userId: 'anonymous', totalTokens: 999, timestamp: anonTodayIso };
+            yield { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, timestamp: yesterdayIso };
+            yield { userId: 'alu-001', promptTokens: 120, completionTokens: 80, totalTokens: 200, timestamp: yesterdayIso2 };
+            yield { userId: 'alu-002', promptTokens: 200, completionTokens: 100, totalTokens: 300, timestamp: todayIso };
+            yield { userId: 'anonymous', promptTokens: 500, completionTokens: 499, totalTokens: 999, timestamp: anonTodayIso };
         },
     }));
 
@@ -206,11 +206,24 @@ test('classes-api get-director-powerbi-metrics returns aggregated daily metrics'
     const payload = JSON.parse(response.body);
     assert.strictEqual(payload.source.table, 'SessionMetrics');
     assert.strictEqual(payload.windowDays, 2);
+    assert.strictEqual(payload.pricing.inputPerMillionTokensUsd, 0.15);
+    assert.strictEqual(payload.pricing.outputPerMillionTokensUsd, 0.60);
     assert.ok(Array.isArray(payload.daily));
     assert.strictEqual(payload.daily.length, 2);
 
     const today = payload.daily[1];
+    assert.strictEqual(today.promptTokens, 700);
+    assert.strictEqual(today.completionTokens, 599);
     assert.strictEqual(today.totalTokens, 1299);
+    assert.strictEqual(today.totalCost, 0.000464);
+    assert.strictEqual(today.avgCostPerInteraction, 0.0002322);
     assert.strictEqual(today.ragInteractions, 2);
     assert.strictEqual(today.dau, 1);
+
+    assert.strictEqual(payload.summary.totalPromptTokens, 920);
+    assert.strictEqual(payload.summary.totalCompletionTokens, 729);
+    assert.strictEqual(payload.summary.totalTokens, 1649);
+    assert.strictEqual(payload.summary.totalInteractions, 4);
+    assert.strictEqual(payload.summary.totalCostUsd, 0.000575);
+    assert.strictEqual(payload.summary.avgCostPerInteractionUsd, 0.00014375);
 });

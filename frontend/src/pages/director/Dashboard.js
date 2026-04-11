@@ -27,6 +27,20 @@ export async function renderDirectorDashboard(container) {
     const earlyAlertSummary = { ...defaultEarlyAlertSummary, ...(data.earlyAlertSummary || {}) };
     const subjectAdoption = data.subjectAdoption || [];
     const maxRate = subjectAdoption.length > 0 ? Math.max(...subjectAdoption.map(s => s.rate)) : 0;
+    const powerBiPricing = powerBiMetrics?.pricing || {
+        inputPerMillionTokensUsd: 0.15,
+        outputPerMillionTokensUsd: 0.60,
+        inputPerTokenUsd: 0.00000015,
+        outputPerTokenUsd: 0.0000006,
+    };
+    const powerBiSummary = powerBiMetrics?.summary || {
+        totalPromptTokens: 0,
+        totalCompletionTokens: 0,
+        totalTokens: 0,
+        totalInteractions: 0,
+        totalCostUsd: 0,
+        avgCostPerInteractionUsd: 0,
+    };
 
     container.innerHTML = `
     <!-- KPIs -->
@@ -56,16 +70,37 @@ export async function renderDirectorDashboard(container) {
 
     <div class="card" id="powerbi-card" style="margin-bottom:var(--space-8)">
       <div class="card-header">
-        <span class="card-title">${icon('chart')} Power BI — DAU y Consumo de Tokens</span>
+        <span class="card-title">${icon('chart')} Power BI — DAU, Tokens y Costo por Interacción</span>
         <span class="badge badge-info">${(powerBiMetrics?.source?.mode || 'continuous-export-db').replace('-', ' ')}</span>
       </div>
       <p style="margin:0 0 var(--space-4);color:var(--color-text-secondary)">
         Fuente: ${powerBiMetrics?.source?.storage || 'Azure Table Storage'} · Tabla ${powerBiMetrics?.source?.table || 'SessionMetrics'} · Ventana ${powerBiMetrics?.windowDays || 14} días
       </p>
+      <p style="margin:0 0 var(--space-4);color:var(--color-text-secondary)">
+        Fórmulas: Input <strong>$${Number(powerBiPricing.inputPerMillionTokensUsd).toFixed(2)}/1M</strong> · Output <strong>$${Number(powerBiPricing.outputPerMillionTokensUsd).toFixed(2)}/1M</strong>
+      </p>
+      <div class="grid-4" style="margin-bottom:var(--space-4)">
+        <div class="kpi-card" id="cost-total-kpi">
+          <div class="kpi-label">Costo total (USD)</div>
+          <div class="kpi-value">$${Number(powerBiSummary.totalCostUsd || 0).toFixed(4)}</div>
+        </div>
+        <div class="kpi-card" id="cost-avg-kpi">
+          <div class="kpi-label">Costo por interacción</div>
+          <div class="kpi-value">$${Number(powerBiSummary.avgCostPerInteractionUsd || 0).toFixed(6)}</div>
+        </div>
+        <div class="kpi-card" id="prompt-tokens-kpi">
+          <div class="kpi-label">Tokens input (periodo)</div>
+          <div class="kpi-value">${Number(powerBiSummary.totalPromptTokens || 0).toLocaleString('es-AR')}</div>
+        </div>
+        <div class="kpi-card" id="completion-tokens-kpi">
+          <div class="kpi-label">Tokens output (periodo)</div>
+          <div class="kpi-value">${Number(powerBiSummary.totalCompletionTokens || 0).toLocaleString('es-AR')}</div>
+        </div>
+      </div>
       <div class="table-wrap">
         <table class="data-table" id="powerbi-metrics-table">
           <thead>
-            <tr><th>Fecha</th><th>DAU</th><th>Tokens</th><th>Interacciones RAG</th></tr>
+            <tr><th>Fecha</th><th>DAU</th><th>Input Tokens</th><th>Output Tokens</th><th>Costo (USD)</th><th>Costo/Interacción</th><th>Interacciones RAG</th></tr>
           </thead>
           <tbody>
             ${(Array.isArray(powerBiMetrics?.daily) && powerBiMetrics.daily.length > 0)
@@ -73,11 +108,14 @@ export async function renderDirectorDashboard(container) {
                     <tr>
                       <td>${item.date}</td>
                       <td><strong>${item.dau}</strong></td>
-                      <td>${Number(item.totalTokens || 0).toLocaleString('es-AR')}</td>
+                      <td>${Number(item.promptTokens || 0).toLocaleString('es-AR')}</td>
+                      <td>${Number(item.completionTokens || 0).toLocaleString('es-AR')}</td>
+                      <td>$${Number(item.totalCost || 0).toFixed(4)}</td>
+                      <td>$${Number(item.avgCostPerInteraction || 0).toFixed(6)}</td>
                       <td>${item.ragInteractions}</td>
                     </tr>
                   `).join('')
-                : '<tr><td colspan="4" style="text-align:center;padding:20px">Sin datos para exportar a Power BI.</td></tr>'}
+                : '<tr><td colspan="7" style="text-align:center;padding:20px">Sin datos para exportar a Power BI.</td></tr>'}
           </tbody>
         </table>
       </div>

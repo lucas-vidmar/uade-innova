@@ -219,7 +219,7 @@ module workbook './modules/workbook.bicep' = {
   params: {
     location: location
     workbookName: workbookName
-    appInsightsId: appInsights.outputs.logAnalyticsWorkspaceId
+    appInsightsId: appInsights.outputs.appInsightsId
     tags: tags
   }
 }

@@ -26,10 +26,24 @@ function createDailyBucket(date) {
     return {
         date,
         dau: 0,
+        promptTokens: 0,
+        completionTokens: 0,
         totalTokens: 0,
+        inputCost: 0,
+        outputCost: 0,
+        totalCost: 0,
+        avgCostPerInteraction: 0,
         ragInteractions: 0,
         _users: new Set(),
     };
+}
+
+function computeInputCost(promptTokens = 0) {
+    return Number(promptTokens || 0) * 0.00000015;
+}
+
+function computeOutputCost(completionTokens = 0) {
+    return Number(completionTokens || 0) * 0.0000006;
 }
 
 async function loadSessionMetricsRows(context) {
@@ -69,9 +83,13 @@ async function computeDirectorMetrics(context, requestedDays = POWERBI_DEFAULT_D
         if (!iso || !buckets.has(iso)) continue;
 
         const bucket = buckets.get(iso);
+        const promptTokens = Number(row?.promptTokens || 0);
+        const completionTokens = Number(row?.completionTokens || 0);
         const totalTokens = Number(row?.totalTokens || 0);
         const userId = String(row?.userId || '').trim();
 
+        bucket.promptTokens += Number.isFinite(promptTokens) ? promptTokens : 0;
+        bucket.completionTokens += Number.isFinite(completionTokens) ? completionTokens : 0;
         bucket.totalTokens += Number.isFinite(totalTokens) ? totalTokens : 0;
         bucket.ragInteractions += 1;
         if (userId && userId !== 'anonymous') {
@@ -81,14 +99,20 @@ async function computeDirectorMetrics(context, requestedDays = POWERBI_DEFAULT_D
     }
 
     const daily = Array.from(buckets.values()).map((bucket) => ({
+        inputCost: Number(computeInputCost(bucket.promptTokens).toFixed(6)),
+        outputCost: Number(computeOutputCost(bucket.completionTokens).toFixed(6)),
+        totalCost: Number((computeInputCost(bucket.promptTokens) + computeOutputCost(bucket.completionTokens)).toFixed(6)),
+        avgCostPerInteraction: Number(((computeInputCost(bucket.promptTokens) + computeOutputCost(bucket.completionTokens)) / Math.max(bucket.ragInteractions, 1)).toFixed(8)),
         date: bucket.date,
         dau: bucket._users.size,
+        promptTokens: bucket.promptTokens,
+        completionTokens: bucket.completionTokens,
         totalTokens: bucket.totalTokens,
         ragInteractions: bucket.ragInteractions,
     }));
 
-    const latest = daily[daily.length - 1] || { dau: 0, totalTokens: 0, ragInteractions: 0 };
-    const previous = daily[daily.length - 2] || { dau: 0, totalTokens: 0, ragInteractions: 0 };
+    const latest = daily[daily.length - 1] || { dau: 0, totalTokens: 0, ragInteractions: 0, totalCost: 0 };
+    const previous = daily[daily.length - 2] || { dau: 0, totalTokens: 0, ragInteractions: 0, totalCost: 0 };
 
     const dauDelta = previous.dau > 0
         ? Math.round(((latest.dau - previous.dau) / previous.dau) * 100)
@@ -96,13 +120,19 @@ async function computeDirectorMetrics(context, requestedDays = POWERBI_DEFAULT_D
     const ragDelta = previous.ragInteractions > 0
         ? Math.round(((latest.ragInteractions - previous.ragInteractions) / previous.ragInteractions) * 100)
         : (latest.ragInteractions > 0 ? 100 : 0);
+    const costDelta = previous.totalCost > 0
+        ? Math.round(((latest.totalCost - previous.totalCost) / previous.totalCost) * 100)
+        : (latest.totalCost > 0 ? 100 : 0);
 
     return {
         updatedAt: new Date().toISOString(),
         windowDays: days,
         daily,
         totals: {
+            promptTokens: daily.reduce((sum, item) => sum + item.promptTokens, 0),
+            completionTokens: daily.reduce((sum, item) => sum + item.completionTokens, 0),
             totalTokens: daily.reduce((sum, item) => sum + item.totalTokens, 0),
+            totalCost: Number(daily.reduce((sum, item) => sum + item.totalCost, 0).toFixed(6)),
             ragInteractions: daily.reduce((sum, item) => sum + item.ragInteractions, 0),
             uniqueActiveUsers: uniqueUsersWindow.size,
         },
@@ -110,6 +140,7 @@ async function computeDirectorMetrics(context, requestedDays = POWERBI_DEFAULT_D
         deltas: {
             dau: `${dauDelta >= 0 ? '+' : ''}${dauDelta}%`,
             ragInteractions: `${ragDelta >= 0 ? '+' : ''}${ragDelta}%`,
+            cost: `${costDelta >= 0 ? '+' : ''}${costDelta}%`,
         },
     };
 }
@@ -662,6 +693,20 @@ app.http('get-director-powerbi-metrics', {
                     storage: 'Azure Table Storage',
                     table: SESSION_METRICS_TABLE,
                     integrationHint: 'Power BI can connect directly to exported DB metrics via this endpoint or Azure Table connector.',
+                },
+                pricing: {
+                    inputPerMillionTokensUsd: 0.15,
+                    outputPerMillionTokensUsd: 0.60,
+                    inputPerTokenUsd: 0.00000015,
+                    outputPerTokenUsd: 0.0000006,
+                },
+                summary: {
+                    totalPromptTokens: metrics.totals.promptTokens,
+                    totalCompletionTokens: metrics.totals.completionTokens,
+                    totalTokens: metrics.totals.totalTokens,
+                    totalInteractions: metrics.totals.ragInteractions,
+                    totalCostUsd: metrics.totals.totalCost,
+                    avgCostPerInteractionUsd: Number((metrics.totals.totalCost / Math.max(metrics.totals.ragInteractions, 1)).toFixed(8)),
                 },
                 updatedAt: metrics.updatedAt,
                 windowDays: metrics.windowDays,
