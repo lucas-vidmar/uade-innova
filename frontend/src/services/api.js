@@ -1196,5 +1196,47 @@ export const api = {
                 body: JSON.stringify({ messageId, subjectId, isPositive })
             });
             return res.json();
+        },
+
+    async reportChatIssue({ messageId, subjectId, issueDetail }) {
+            if (USE_MOCK) return { success: true, alertId: `ai-issue-${messageId || Date.now()}` };
+            const res = await apiFetch(`${BASE_URL}/chat-report-issue`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ messageId, subjectId, issueDetail: String(issueDetail || '').trim() })
+            });
+            if (!res.ok) {
+                let message = `Error ${res.status}: no se pudo reportar el problema`;
+                try {
+                    const err = await res.json();
+                    if (err?.error) message = err.error;
+                } catch {
+                    // no-op
+                }
+                throw new Error(message);
+            }
+            return res.json();
+        },
+
+    async getTeacherAiFeedbackAlerts(subjectId, limit = 10) {
+            if (!subjectId) return [];
+            if (USE_MOCK) {
+                await delay(250);
+                return [];
+            }
+
+            try {
+                const params = new URLSearchParams({
+                    subjectId,
+                    limit: String(Math.min(Math.max(Number(limit) || 10, 1), 50)),
+                });
+                const res = await fetchWithTimeout(`${BASE_URL}/teacher/ai-feedback-alerts?${params.toString()}`, { timeout: 3500 });
+                if (!res.ok) return [];
+                const data = await res.json();
+                return Array.isArray(data) ? data : [];
+            } catch (err) {
+                console.error('[API] getTeacherAiFeedbackAlerts failed:', err);
+                return [];
+            }
         }
     };

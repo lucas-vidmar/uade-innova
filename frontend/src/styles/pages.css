@@ -2317,6 +2317,33 @@
     border-color: var(--color-primary);
 }
 
+.report-issue-btn {
+    background: transparent;
+    border: 1px dashed var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
+    padding: 0 8px;
+    height: 28px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.report-issue-btn:hover {
+    border-color: var(--color-warning);
+    color: var(--color-warning);
+    background: color-mix(in srgb, var(--color-warning) 10%, transparent);
+}
+
+.report-issue-btn.active,
+.report-issue-btn:disabled {
+    cursor: default;
+    border-style: solid;
+    border-color: var(--color-success);
+    color: var(--color-success);
+    background: color-mix(in srgb, var(--color-success) 10%, transparent);
+}
+
 .chat-sources {
     display: flex;
     flex-wrap: wrap;

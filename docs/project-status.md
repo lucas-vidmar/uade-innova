@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-04-10] User Story #62: AI Accuracy & Satisfaction Feedback
+- **Status**: Completed
+- **Functional Change**: Added student-side AI response feedback controls with explicit issue reporting and introduced teacher-facing quality alerts showing reported chat issues by subject.
+- **Business Impact**: Improves trust and instructional quality by giving students a direct escalation path and giving teachers actionable visibility into problematic AI responses.
+
 ### [2026-04-10] User Story #26: SGA API Schema Mapping
 - **Status**: Completed
 - **Functional Change**: Added a contract-first OpenAPI schema (`docs/sga-openapi.json`) and implemented SGA-aligned backend endpoints (`/api/sga/tasks`, `/api/sga/early-alerts`, `/api/sga/attendance`) with frontend consumption and schema-conformance tests.

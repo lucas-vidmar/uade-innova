@@ -3,7 +3,8 @@
    ============================================================ */
 import { api } from '../services/api.js';
 import { auth } from '../services/auth.js';
-import { showConfirmDialog } from './Dialog.js';
+import { showConfirmDialog, showPromptDialog } from './Dialog.js';
+import { toast } from './Toast.js';
 
 const FOLLOW_UP_HISTORY_WINDOW_SIZE = 4;
 
@@ -114,6 +115,9 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
               <button class="feedback-btn p-1 rounded hover:bg-surface-3 transition-colors ${msg.feedback === 'negative' ? 'active text-error' : 'text-text-muted'}" data-type="negative" title="No es útil">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.53l1.6-7A2 2 0 0 1 5.77 3H17a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-4l-.5 1c-.9 1.8-1.8 3-3.5 3-1.1 0-2-1.1-2-2.5 0-1 .3-1.5 1-2.38Z"/></svg>
               </button>
+              <button class="report-issue-btn ${msg.issueReported ? 'active' : ''}" data-message-id="${msg.id || ''}" title="Reportar problema" ${msg.issueReported ? 'disabled' : ''}>
+                ${msg.issueReported ? '✅ Reportado' : '⚠️ Report Issue'}
+              </button>
             </div>
           </div>
         </div>
@@ -168,6 +172,37 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
           await api.sendChatFeedback({ messageId, subjectId, isPositive: type === 'positive' });
         } catch (err) {
           console.error('Error sending feedback:', err);
+        }
+      });
+    });
+
+    // Report issue
+    container.querySelectorAll('.report-issue-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const messageId = btn.dataset.messageId;
+        if (!messageId || btn.disabled) return;
+
+        const issueDetail = await showPromptDialog({
+          title: 'Reportar problema en respuesta IA',
+          label: '¿Qué estuvo mal o qué faltó?',
+          placeholder: 'Ej: la respuesta confunde microservicios con SOA...',
+          confirmText: 'Reportar',
+          cancelText: 'Cancelar',
+          required: false,
+        });
+        if (issueDetail === null) return;
+
+        try {
+          await api.reportChatIssue({ messageId, subjectId, issueDetail });
+          const msg = messages.find((item) => item.id === messageId);
+          if (msg) msg.issueReported = true;
+          btn.disabled = true;
+          btn.classList.add('active');
+          btn.textContent = '✅ Reportado';
+          toast('success', 'Reporte enviado', 'Tu reporte fue enviado y el docente recibió una alerta.');
+        } catch (err) {
+          console.error('Error reporting issue:', err);
+          toast('error', 'No se pudo reportar', err?.message || 'Intentá nuevamente en unos segundos.');
         }
       });
     });
@@ -251,9 +286,11 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
               <div class="chat-feedback-btns" data-message-id="${assistantMsg.id}">
                 <button class="feedback-btn" data-type="positive" title="Útil">👍</button>
                 <button class="feedback-btn" data-type="negative" title="No es útil">👎</button>
+                <button class="report-issue-btn" data-message-id="${assistantMsg.id}" title="Reportar problema">⚠️ Report Issue</button>
               </div>
             `;
             bindFeedbackEvents(footerEl);
+            bindReportIssueEvents(footerEl);
           }
         } else if (type === 'delta') {
           assistantMsg.content += data.content;
@@ -298,6 +335,38 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
         try {
           await api.sendChatFeedback({ messageId, subjectId, isPositive: type === 'positive' });
         } catch (err) { console.error('Error sending feedback:', err); }
+      });
+    });
+  };
+
+  const bindReportIssueEvents = (parent) => {
+    parent.querySelectorAll('.report-issue-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const messageId = btn.dataset.messageId;
+        if (!messageId || btn.disabled) return;
+
+        const issueDetail = await showPromptDialog({
+          title: 'Reportar problema en respuesta IA',
+          label: '¿Qué estuvo mal o qué faltó?',
+          placeholder: 'Ej: la respuesta no coincide con el material de la clase',
+          confirmText: 'Reportar',
+          cancelText: 'Cancelar',
+          required: false,
+        });
+        if (issueDetail === null) return;
+
+        try {
+          await api.reportChatIssue({ messageId, subjectId, issueDetail });
+          const msg = messages.find((item) => item.id === messageId);
+          if (msg) msg.issueReported = true;
+          btn.disabled = true;
+          btn.classList.add('active');
+          btn.textContent = '✅ Reportado';
+          toast('success', 'Reporte enviado', 'Tu reporte fue enviado y el docente recibió una alerta.');
+        } catch (err) {
+          console.error('Error reporting issue:', err);
+          toast('error', 'No se pudo reportar', err?.message || 'Intentá nuevamente en unos segundos.');
+        }
       });
     });
   };

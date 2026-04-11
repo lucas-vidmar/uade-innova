@@ -19,9 +19,10 @@ export async function renderTeacherDashboard(container) {
   }
 
   const activeSubjectName = user.subjects?.find(s => s.id === activeSubjectId)?.name || 'Materia';
-  const [classes = [], deadlines = []] = await Promise.all([
+  const [classes = [], deadlines = [], aiFeedbackAlerts = []] = await Promise.all([
     api.getClasses(activeSubjectId),
     api.getDeadlines(activeSubjectId),
+    api.getTeacherAiFeedbackAlerts(activeSubjectId, 5),
   ]);
 
   const complete = (classes || []).filter(c => c.summaryReady);
@@ -128,6 +129,29 @@ export async function renderTeacherDashboard(container) {
         ${(deadlines || []).length > 0 ? deadlines.map(d => renderDeadlineRow(d, (classes || []).find(c => c.id === d.classId))).join('') : '<div class="empty-state" style="padding:24px">Sin deadlines configurados.</div>'}
       </div>
     </div>
+
+    <div class="section-title" style="margin-top:var(--space-10)"><h2>${icon('alert')} Alertas de Calidad IA</h2><div class="line"></div></div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Reportes de alumnos</span>
+        <span class="badge badge-warning">${aiFeedbackAlerts.length}</span>
+      </div>
+      <div class="class-list">
+        ${aiFeedbackAlerts.length > 0 ? aiFeedbackAlerts.map((item) => `
+          <div class="class-list-item" style="align-items:flex-start">
+            <div class="class-list-date">${icon('alert')}</div>
+            <div class="class-list-info">
+              <div class="class-list-title">${escapeHtml(item.question || 'Consulta sin título')}</div>
+              <div class="class-list-topics">${escapeHtml(item.issueDetail || 'Sin detalle provisto.')}</div>
+              <div class="class-list-files">Reporte: ${new Date(item.createdAt).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>
+            </div>
+            <div class="class-list-actions">
+              <span class="badge badge-error">${item.status === 'open' ? 'Abierto' : 'Revisado'}</span>
+            </div>
+          </div>
+        `).join('') : '<div class="empty-state" style="padding:24px">No hay reportes de calidad IA para esta materia.</div>'}
+      </div>
+    </div>
   `;
 
   const saveBtn = container.querySelector('#deadline-save');
@@ -175,7 +199,17 @@ function icon(name) {
   const icons = {
     clock: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v6l4 2"/></svg>',
     book: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>',
+    alert: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.86 1.82 18a2 2 0 0 0 1.72 3h16.92a2 2 0 0 0 1.72-3L13.7 3.86a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
   };
 
   return `<span class="ui-icon" aria-hidden="true">${icons[name] || icons.clock}</span>`;
+}
+
+function escapeHtml(value = '') {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
