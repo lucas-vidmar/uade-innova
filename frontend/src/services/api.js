@@ -232,6 +232,61 @@ const MOCK_TEACHER_ANALYTICS = {
     ],
 };
 
+const MOCK_TEACHER_ALERTS = [
+    {
+        id: 'teacher-alert-engagement-alu-012',
+        type: 'low_engagement',
+        severity: 'high',
+        subjectId: 'arq-software-2026',
+        classId: 'class-03',
+        studentId: 'alu-012',
+        studentName: 'Tomás García',
+        title: 'Baja participación sostenida',
+        description: 'El alumno acumula 2 semanas con asistencia menor al 50% y sin interacción en consultas.',
+        attendance: '45%',
+        avgGrade: 4.2,
+        createdAt: '2026-04-09T11:30:00Z',
+        recommendedAction: 'Contactar al alumno y reforzar contenidos de Clase 3.',
+    },
+    {
+        id: 'teacher-alert-material-class-03',
+        type: 'material_report',
+        severity: 'medium',
+        subjectId: 'arq-software-2026',
+        classId: 'class-03',
+        materialId: 'm-06',
+        materialType: 'transcript',
+        title: 'Reporte de material: calidad de transcripción',
+        description: '3 estudiantes reportaron baja claridad en la transcripción de la clase.',
+        reportCount: 3,
+        createdAt: '2026-04-08T12:00:00Z',
+        recommendedAction: 'Revisar la transcripción y volver a procesar el archivo si corresponde.',
+    },
+];
+
+function normalizeTeacherAlert(item = {}, idx = 0) {
+    const type = item.type === 'material_report' ? 'material_report' : 'low_engagement';
+    const severity = item.severity === 'high' ? 'high' : 'medium';
+    return {
+        id: item.id || `teacher-alert-${idx}`,
+        type,
+        severity,
+        subjectId: item.subjectId || null,
+        classId: item.classId || null,
+        studentId: item.studentId || null,
+        studentName: item.studentName || null,
+        materialId: item.materialId || null,
+        materialType: item.materialType || null,
+        title: String(item.title || (type === 'low_engagement' ? 'Alerta de baja participación' : 'Alerta de material reportado')),
+        description: String(item.description || ''),
+        attendance: item.attendance || null,
+        avgGrade: typeof item.avgGrade === 'number' ? item.avgGrade : null,
+        reportCount: typeof item.reportCount === 'number' ? item.reportCount : 0,
+        createdAt: item.createdAt || new Date().toISOString(),
+        recommendedAction: String(item.recommendedAction || ''),
+    };
+}
+
 const MOCK_DEADLINES = [
     {
         id: 'deadline-001',
@@ -934,6 +989,25 @@ export const api = {
             if (USE_MOCK) { await delay(400); return MOCK_TEACHER_ANALYTICS; }
             const res = await apiFetch(`${BASE_URL}/analytics?subjectId=${subjectId}`);
             return res.json();
+        },
+
+    async getTeacherAlerts(subjectId) {
+            if (!subjectId) return [];
+            if (USE_MOCK) {
+                await delay(300);
+                return MOCK_TEACHER_ALERTS.filter((item) => item.subjectId === subjectId).map(normalizeTeacherAlert);
+            }
+
+            try {
+                const res = await fetchWithTimeout(`${BASE_URL}/sga/teacher-alerts?subjectId=${encodeURIComponent(subjectId)}`, { timeout: 4000 });
+                if (!res.ok) return [];
+                const data = await res.json();
+                if (!Array.isArray(data)) return [];
+                return data.map((item, idx) => normalizeTeacherAlert(item, idx));
+            } catch (err) {
+                console.error('[API] getTeacherAlerts failed:', err);
+                return [];
+            }
         },
     
     async getProfile() {

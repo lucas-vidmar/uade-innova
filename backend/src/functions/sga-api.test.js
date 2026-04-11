@@ -57,6 +57,31 @@ function assertAttendanceSchema(item) {
     assert.ok(!Number.isNaN(new Date(item.updatedAt).getTime()));
 }
 
+function assertTeacherAlertSchema(item) {
+    assert.ok(typeof item.id === 'string' && item.id.length > 0);
+    assert.ok(['low_engagement', 'material_report'].includes(item.type));
+    assert.ok(['medium', 'high'].includes(item.severity));
+    assert.ok(typeof item.subjectId === 'string' && item.subjectId.length > 0);
+    assert.ok(typeof item.classId === 'string' && item.classId.length > 0);
+    assert.ok(typeof item.title === 'string' && item.title.length > 0);
+    assert.ok(typeof item.description === 'string' && item.description.length > 0);
+    assert.ok(typeof item.recommendedAction === 'string' && item.recommendedAction.length > 0);
+    assert.ok(!Number.isNaN(new Date(item.createdAt).getTime()));
+
+    if (item.type === 'low_engagement') {
+        assert.ok(typeof item.studentId === 'string' && item.studentId.length > 0);
+        assert.ok(typeof item.studentName === 'string' && item.studentName.length > 0);
+        assert.match(item.attendance, /^\d{1,3}%$/);
+        assert.ok(typeof item.avgGrade === 'number' && item.avgGrade >= 0 && item.avgGrade <= 10);
+    }
+
+    if (item.type === 'material_report') {
+        assert.ok(typeof item.materialId === 'string' && item.materialId.length > 0);
+        assert.ok(typeof item.materialType === 'string' && item.materialType.length > 0);
+        assert.ok(Number.isInteger(item.reportCount) && item.reportCount >= 0);
+    }
+}
+
 test('sga-openapi artifact exists and defines required SGA paths', async () => {
     const raw = await readFile(OPENAPI_PATH, 'utf8');
     const spec = JSON.parse(raw);
@@ -109,4 +134,33 @@ test('sga-get-attendance returns schema-conformant payload for authorized role',
 
     const payload = JSON.parse(response.body);
     assertAttendanceSchema(payload);
+});
+
+test('sga-get-teacher-alerts requires subjectId', async () => {
+    authMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'] }));
+    const response = await handlers['sga-get-teacher-alerts']({ query: new URLSearchParams() }, {});
+    assert.equal(response.status, 400);
+});
+
+test('sga-get-teacher-alerts requires teacher/director access', async () => {
+    authMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Alumno'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+
+    const response = await handlers['sga-get-teacher-alerts']({ query: new URLSearchParams({ subjectId: 'arq-software-2026' }) }, {});
+    assert.equal(response.status, 403);
+
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+});
+
+test('sga-get-teacher-alerts returns engagement/material alerts for authorized role', async () => {
+    authMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'] }));
+    const response = await handlers['sga-get-teacher-alerts']({ query: new URLSearchParams({ subjectId: 'arq-software-2026' }) }, {});
+    assert.equal(response.status, 200);
+
+    const payload = JSON.parse(response.body);
+    assert.ok(Array.isArray(payload) && payload.length > 0);
+    payload.forEach(assertTeacherAlertSchema);
+    assert.ok(payload.some((item) => item.type === 'low_engagement'));
+    assert.ok(payload.some((item) => item.type === 'material_report'));
 });
