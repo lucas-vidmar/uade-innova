@@ -45,6 +45,7 @@ function assertEarlyAlertSchema(item) {
     assert.ok(typeof item.subjectId === 'string' && item.subjectId.length > 0);
     assert.ok(typeof item.subject === 'string' && item.subject.length > 0);
     assert.ok(['low', 'medium', 'high'].includes(item.risk));
+    assert.ok(['stable', 'watchlist', 'at_risk'].includes(item.interventionFlag));
     assert.match(item.attendance, /^\d{1,3}%$/);
     assert.ok(typeof item.avgGrade === 'number' && item.avgGrade >= 0 && item.avgGrade <= 10);
 }
@@ -114,6 +115,31 @@ test('sga-get-early-alerts returns schema-conformant alerts', async () => {
     const payload = JSON.parse(response.body);
     assert.ok(Array.isArray(payload));
     payload.forEach(assertEarlyAlertSchema);
+});
+
+test('sga-get-early-alerts flags at-risk when attendance is below 50%', async () => {
+    const response = await handlers['sga-get-early-alerts']({ query: new URLSearchParams({ subjectId: 'arq-software-2026' }) }, {});
+    assert.equal(response.status, 200);
+
+    const payload = JSON.parse(response.body);
+    const target = payload.find((item) => item.studentId === 'alu-012');
+    assert.ok(target);
+    assert.equal(target.attendance, '45%');
+    assert.equal(target.risk, 'high');
+    assert.equal(target.interventionFlag, 'at_risk');
+});
+
+test('sga-get-early-alerts can filter intervention list only', async () => {
+    const response = await handlers['sga-get-early-alerts']({ query: new URLSearchParams({ subjectId: 'arq-software-2026', interventionOnly: 'true' }) }, {});
+    assert.equal(response.status, 200);
+
+    const payload = JSON.parse(response.body);
+    assert.ok(Array.isArray(payload));
+    assert.ok(payload.length > 0);
+    payload.forEach((item) => {
+        assert.equal(item.interventionFlag, 'at_risk');
+        assert.ok(parseInt(item.attendance, 10) < 50);
+    });
 });
 
 test('sga-get-attendance requires teacher/director access', async () => {

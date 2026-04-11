@@ -13,13 +13,42 @@ function buildMockTasks(studentId) {
     ];
 }
 
-function buildMockEarlyAlerts(subjectId) {
-    const alerts = [
-        { id: 'alu-012', studentId: 'alu-012', name: 'Tomás García', subjectId: 'arq-software-2026', subject: 'Arq. de Software', risk: 'high', attendance: '45%', avgGrade: 4.2 },
-        { id: 'alu-031', studentId: 'alu-031', name: 'Lucía Martínez', subjectId: 'diseno-sistemas-2026', subject: 'Sistemas Dist.', risk: 'medium', attendance: '62%', avgGrade: 5.1 },
-        { id: 'alu-008', studentId: 'alu-008', name: 'Nicolás Peralta', subjectId: 'arq-software-2026', subject: 'Arq. de Software', risk: 'medium', attendance: '70%', avgGrade: 5.8 },
+function parseAttendancePercent(attendance) {
+    const numeric = Number.parseInt(String(attendance || '').replace('%', ''), 10);
+    return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function computeRiskFlags({ attendance, engagementScore, avgGrade }) {
+    const attendancePercent = parseAttendancePercent(attendance);
+    const grade = typeof avgGrade === 'number' ? avgGrade : 0;
+    const engagement = typeof engagementScore === 'number' ? engagementScore : 0;
+
+    if (attendancePercent < 50 || engagement < 40) {
+        return { risk: 'high', interventionFlag: 'at_risk' };
+    }
+
+    if (attendancePercent < 70 || engagement < 60 || grade < 6) {
+        return { risk: 'medium', interventionFlag: 'watchlist' };
+    }
+
+    return { risk: 'low', interventionFlag: 'stable' };
+}
+
+function buildMockEarlyAlerts(subjectId, interventionOnly = false) {
+    const snapshots = [
+        { id: 'alu-012', studentId: 'alu-012', name: 'Tomás García', subjectId: 'arq-software-2026', subject: 'Arq. de Software', attendance: '45%', avgGrade: 4.2, engagementScore: 32 },
+        { id: 'alu-031', studentId: 'alu-031', name: 'Lucía Martínez', subjectId: 'diseno-sistemas-2026', subject: 'Sistemas Dist.', attendance: '62%', avgGrade: 5.1, engagementScore: 57 },
+        { id: 'alu-008', studentId: 'alu-008', name: 'Nicolás Peralta', subjectId: 'arq-software-2026', subject: 'Arq. de Software', attendance: '70%', avgGrade: 5.8, engagementScore: 64 },
     ];
-    return subjectId ? alerts.filter((item) => item.subjectId === subjectId) : alerts;
+
+    const alerts = snapshots.map((item) => ({
+        ...item,
+        ...computeRiskFlags(item),
+    }));
+
+    const bySubject = subjectId ? alerts.filter((item) => item.subjectId === subjectId) : alerts;
+    if (!interventionOnly) return bySubject;
+    return bySubject.filter((item) => item.interventionFlag === 'at_risk');
 }
 
 function buildMockAttendance(subjectId) {
@@ -97,10 +126,11 @@ app.http('sga-get-early-alerts', {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
 
         const subjectId = request.query.get('subjectId');
+        const interventionOnly = request.query.get('interventionOnly') === 'true';
         return {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(buildMockEarlyAlerts(subjectId)),
+            body: JSON.stringify(buildMockEarlyAlerts(subjectId, interventionOnly)),
         };
     },
 });

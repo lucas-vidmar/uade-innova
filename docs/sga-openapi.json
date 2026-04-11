@@ -75,6 +75,13 @@
             "required": false,
             "schema": { "type": "string" },
             "description": "Filtro opcional por materia"
+          },
+          {
+            "name": "interventionOnly",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "boolean", "default": false },
+            "description": "Si es true, devuelve solo alumnos con bandera at_risk para lista de intervención"
           }
         ],
         "responses": {
@@ -172,7 +179,7 @@
       "SgaEarlyAlert": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "studentId", "name", "subjectId", "subject", "risk", "attendance", "avgGrade"],
+        "required": ["id", "studentId", "name", "subjectId", "subject", "risk", "interventionFlag", "attendance", "avgGrade"],
         "properties": {
           "id": { "type": "string" },
           "studentId": { "type": "string" },
@@ -180,6 +187,7 @@
           "subjectId": { "type": "string" },
           "subject": { "type": "string" },
           "risk": { "type": "string", "enum": ["low", "medium", "high"] },
+          "interventionFlag": { "type": "string", "enum": ["stable", "watchlist", "at_risk"] },
           "attendance": { "type": "string", "pattern": "^[0-9]{1,3}%$" },
           "avgGrade": { "type": "number", "minimum": 0, "maximum": 10 }
         }

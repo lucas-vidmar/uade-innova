@@ -23,6 +23,16 @@ test('director can review DAU and token metrics for Power BI', async ({ page, br
         subjectAdoption: [
           { name: 'Arq. de Software', rate: 82 },
         ],
+        earlyAlertSummary: {
+          totalStudentsAtRisk: 3,
+          highRiskCount: 1,
+          mediumRiskCount: 2,
+          lowAttendanceCount: 2,
+          lowGradeCount: 2,
+          attendanceBelow60Count: 1,
+          attendance60To75Count: 2,
+          attendanceAbove75Count: 0,
+        },
       }),
     });
   });
@@ -47,6 +57,31 @@ test('director can review DAU and token metrics for Power BI', async ({ page, br
     });
   });
 
+  await page.route('**/api/sga/early-alerts?**', async (route) => {
+    const url = route.request().url();
+    const isInterventionOnly = url.includes('interventionOnly=true');
+
+    const payload = isInterventionOnly
+      ? [{
+          id: 'alu-012',
+          studentId: 'alu-012',
+          name: 'Tomás García',
+          subjectId: 'arq-software-2026',
+          subject: 'Arq. de Software',
+          risk: 'high',
+          interventionFlag: 'at_risk',
+          attendance: '45%',
+          avgGrade: 4.2,
+        }]
+      : [];
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(payload),
+    });
+  });
+
   await page.goto('/#/director/dashboard');
 
   await expect(page.locator('#powerbi-card')).toContainText('Power BI — DAU y Consumo de Tokens');
@@ -54,4 +89,16 @@ test('director can review DAU and token metrics for Power BI', async ({ page, br
   await expect(page.locator('#powerbi-card')).toContainText('SessionMetrics');
   await expect(page.locator('#powerbi-metrics-table')).toContainText('78.100');
   await expect(page.locator('#powerbi-metrics-table tbody tr')).toHaveCount(2);
+  await expect(page.locator('#director-alerts-aggregate-table')).toBeVisible();
+  await expect(page.locator('#director-alerts-aggregate-table')).toContainText('Riesgo alto');
+  await expect(page.locator('#director-alerts-aggregate-table')).toContainText('Asistencia < 60%');
+  await expect(page.locator('#director-alerts-aggregate-table')).toContainText('Baja asistencia (total)');
+  await expect(page.locator('#director-alerts-aggregate-table')).not.toContainText('Tomás García');
+  await expect(page.locator('#director-alerts-aggregate-table')).not.toContainText('Lucía Martínez');
+  await expect(page.locator('#intervention-list-card')).toContainText('Lista de Intervención (At Risk)');
+  await expect(page.locator('#intervention-list-table')).toContainText('Tomás García');
+  await expect(page.locator('#intervention-list-table')).toContainText('45%');
+  await expect(page.locator('#intervention-list-table')).toContainText('At Risk');
+  await expect(page.locator('#intervention-list-table tbody tr')).toHaveCount(1);
+
 });

@@ -8,14 +8,22 @@ export async function renderDirectorDashboard(container) {
     renderHeader('Panel Directivo');
     container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando datos directivos...</div>`;
 
-    const [data = {}, earlyAlerts = [], powerBiMetrics = null] = await Promise.all([
+    const [data = {}, powerBiMetrics = null] = await Promise.all([
         api.getDirectorStats(),
-        api.getEarlyAlerts(),
         api.getDirectorPowerBiMetrics(14)
     ]);
-    
-    // Inject early alerts into the data object for compatibility with the existing template
-    data.earlyAlerts = earlyAlerts || [];
+
+    const defaultEarlyAlertSummary = {
+        totalStudentsAtRisk: 0,
+        highRiskCount: 0,
+        mediumRiskCount: 0,
+        lowAttendanceCount: 0,
+        lowGradeCount: 0,
+        attendanceBelow60Count: 0,
+        attendance60To75Count: 0,
+        attendanceAbove75Count: 0,
+    };
+    const earlyAlertSummary = { ...defaultEarlyAlertSummary, ...(data.earlyAlertSummary || {}) };
     const subjectAdoption = data.subjectAdoption || [];
     const maxRate = subjectAdoption.length > 0 ? Math.max(...subjectAdoption.map(s => s.rate)) : 0;
 
@@ -100,27 +108,28 @@ export async function renderDirectorDashboard(container) {
       <!-- Early alerts -->
       <div class="card">
         <div class="card-header">
-          <span class="card-title">${icon('alert')} Alertas Tempranas</span>
-          <span class="badge badge-error">${data.earlyAlerts.length} alumnos</span>
+          <span class="card-title">${icon('alert')} Alertas Tempranas (Agregado)</span>
+          <span class="badge badge-error">${earlyAlertSummary.totalStudentsAtRisk} en riesgo</span>
         </div>
         <div class="table-wrap">
-          <table class="data-table">
+          <table class="data-table" id="director-alerts-aggregate-table">
             <thead>
-              <tr><th>Alumno</th><th>Materia</th><th>Asistencia</th><th>Promedio</th><th>Riesgo</th></tr>
+              <tr><th>Métrica</th><th>Valor</th></tr>
             </thead>
             <tbody>
-              ${data.earlyAlerts.length > 0 ? data.earlyAlerts.map(a => `
-                <tr>
-                  <td><strong>${a.name}</strong></td>
-                  <td style="color:var(--color-text-secondary);font-size:var(--font-size-xs)">${a.subject}</td>
-                  <td>${a.attendance}</td>
-                  <td style="color:${parseFloat(a.avgGrade) >= 6 ? 'var(--color-success)' : 'var(--color-error)'}">${a.avgGrade}</td>
-                  <td><span class="badge ${a.risk === 'high' ? 'badge-error' : 'badge-warning'}">${a.risk === 'high' ? 'Alto' : 'Medio'}</span></td>
-                </tr>
-              `).join('') : '<tr><td colspan="5" style="text-align:center;padding:20px">No hay alertas tempranas activas.</td></tr>'}
+              <tr><td><strong>Riesgo alto</strong></td><td>${earlyAlertSummary.highRiskCount}</td></tr>
+              <tr><td><strong>Riesgo medio</strong></td><td>${earlyAlertSummary.mediumRiskCount}</td></tr>
+              <tr><td>Asistencia &lt; 60%</td><td>${earlyAlertSummary.attendanceBelow60Count}</td></tr>
+              <tr><td>Asistencia 60% - 75%</td><td>${earlyAlertSummary.attendance60To75Count}</td></tr>
+              <tr><td>Asistencia &gt; 75%</td><td>${earlyAlertSummary.attendanceAbove75Count}</td></tr>
+              <tr><td>Baja asistencia (total)</td><td>${earlyAlertSummary.lowAttendanceCount}</td></tr>
+              <tr><td>Bajo promedio (total)</td><td>${earlyAlertSummary.lowGradeCount}</td></tr>
             </tbody>
           </table>
         </div>
+        <small style="display:block;margin-top:var(--space-3);color:var(--color-text-secondary)">
+          Vista anonimizada: no se muestran datos personales de estudiantes.
+        </small>
         <div style="margin-top:var(--space-4)">
           <button class="btn btn-secondary btn-sm">Exportar listado</button>
         </div>
