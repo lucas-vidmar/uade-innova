@@ -24,6 +24,52 @@ Bienvenidos a la clase.
     assert.ok(cleaned.includes('Bienvenidos a la clase.'));
 });
 
+test('cleanTranscript removes SRT timestamps and speaker labels', () => {
+    const srt = `1
+00:00:00,000 --> 00:00:03,100
+SPEAKER_00: Buen día a todos.
+
+2
+00:00:03,100 --> 00:00:05,500
+[ALUMNO]: ¿Qué veremos hoy?
+
+3
+00:00:05,500 --> 00:00:08,000
+PROFESOR: Arquitectura hexagonal.
+`;
+
+    const cleaned = cleanTranscript(srt);
+    assert.ok(!cleaned.includes('00:00:00,000'));
+    assert.ok(!cleaned.includes('SPEAKER_00:'));
+    assert.ok(!cleaned.includes('[ALUMNO]:'));
+    assert.ok(!cleaned.includes('PROFESOR:'));
+    assert.ok(cleaned.includes('Buen día a todos.'));
+    assert.ok(cleaned.includes('¿Qué veremos hoy?'));
+    assert.ok(cleaned.includes('Arquitectura hexagonal.'));
+});
+
+test('cleanTranscript removes VTT metadata and inline speaker tags', () => {
+    const vtt = `WEBVTT
+
+STYLE
+::cue { color: lime; }
+
+NOTE Intro metadata
+
+00:00:00.000 --> 00:00:02.000 align:start position:0%
+<v Profesor>Hoy trabajamos sobre decisiones de diseño.</v>
+`;
+
+    const cleaned = cleanTranscript(vtt);
+    assert.ok(!cleaned.includes('WEBVTT'));
+    assert.ok(!cleaned.includes('STYLE'));
+    assert.ok(!cleaned.includes('NOTE'));
+    assert.ok(!cleaned.includes('align:start'));
+    assert.ok(!cleaned.includes('position:0%'));
+    assert.ok(!cleaned.includes('<v Profesor>'));
+    assert.ok(cleaned.includes('Hoy trabajamos sobre decisiones de diseño.'));
+});
+
 test('chunkText creates exact token-sized chunks with overlap', () => {
     const text = Array(50).fill('word').join(' ');
     const tokens = encoder.encode(text);

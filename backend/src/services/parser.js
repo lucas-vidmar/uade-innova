@@ -22,15 +22,23 @@ export async function parseFile(buffer, mimeType, filename = '') {
     const ext = filename.split('.').pop()?.toLowerCase() || '';
     let rawText = '';
 
-    // TXT / VTT / archivos de texto plano
+    // TXT / VTT / SRT / archivos de texto plano
     if (
         mimeType === 'text/plain' ||
         mimeType === 'text/vtt' ||
-        ['txt', 'vtt', 'md'].includes(ext)
+        mimeType === 'application/x-subrip' ||
+        mimeType === 'text/srt' ||
+        ['txt', 'vtt', 'srt', 'md'].includes(ext)
     ) {
         rawText = buffer.toString('utf-8');
-        // Si es VTT, limpiamos timestamps/metadatos (US #34)
-        if (mimeType === 'text/vtt' || ext === 'vtt') {
+        // Si es VTT/SRT, limpiamos timestamps/metadatos y speakers (US #34)
+        if (
+            mimeType === 'text/vtt' ||
+            mimeType === 'application/x-subrip' ||
+            mimeType === 'text/srt' ||
+            ext === 'vtt' ||
+            ext === 'srt'
+        ) {
             rawText = cleanTranscript(rawText);
         }
     }
@@ -134,19 +142,50 @@ export function chunkText(text, maxTokens = 512, overlapTokens = 50) {
  * @returns {string}
  */
 export function cleanTranscript(text) {
-    return text
-        // Eliminar cabecera WEBVTT y notas
-        .replace(/^WEBVTT.*?\n/gi, '')
-        .replace(/NOTE .*?\n/gi, '')
-        // Eliminar timestamps (00:00:00.000 --> 00:00:00.000)
-        .replace(/\d{2}:\d{2}:\d{2}.\d{3} --> \d{2}:\d{2}:\d{2}.\d{3}/g, '')
-        // Eliminar identificadores de línea (números solos antes del timestamp)
-        .replace(/^\d+$/gm, '')
-        // Eliminar estilos/posicionamiento opcional (<v ...>, align:start, etc.)
-        .replace(/<v [^>]+>/g, '')
-        .replace(/<\/v>/g, '')
-        .replace(/align:(start|middle|end)/g, '')
-        .replace(/position:\d+%/g, '');
+    const timestampLinePattern = /^(?:\d{1,2}:)?\d{2}:\d{2}[\.,]\d{3}\s*-->\s*(?:\d{1,2}:)?\d{2}:\d{2}[\.,]\d{3}(?:\s+.*)?$/i;
+    const speakerPrefixPattern = /^\s*(?:\[[^\]]+\]|SPEAKER[_\-\s]?\d{1,3}|[A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚÑ.'-]{1,30}(?:\s+[A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚÑ.'-]{1,30}){0,2})\s*:\s*/;
+
+    const normalized = text
+        .replace(/^\uFEFF/, '')
+        .replace(/\r\n/g, '\n')
+        .replace(/\r/g, '\n');
+
+    const lines = normalized.split('\n');
+    const cleanedLines = [];
+    let skipMetadataBlock = false;
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+
+        if (!trimmed) {
+            skipMetadataBlock = false;
+            continue;
+        }
+
+        if (/^(NOTE|STYLE|REGION)\b/i.test(trimmed)) {
+            skipMetadataBlock = true;
+            continue;
+        }
+
+        if (skipMetadataBlock) continue;
+        if (/^WEBVTT\b/i.test(trimmed)) continue;
+        if (/^\d+$/.test(trimmed)) continue; // índice típico de SRT
+        if (timestampLinePattern.test(trimmed)) continue;
+
+        const withoutTags = trimmed
+            .replace(/<v [^>]+>/gi, '')
+            .replace(/<\/v>/gi, '')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        const withoutSpeaker = withoutTags.replace(speakerPrefixPattern, '').trim();
+        if (!withoutSpeaker) continue;
+
+        cleanedLines.push(withoutSpeaker);
+    }
+
+    return cleanedLines.join('\n');
 }
 
 /**

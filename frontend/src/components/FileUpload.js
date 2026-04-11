@@ -8,7 +8,7 @@ import { showConfirmDialog } from './Dialog.js';
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 const TYPE_CONFIG = {
-  transcript: { label: 'Transcripción', icon: '📝', accept: '.txt,.docx,.vtt,.pdf', hint: 'TXT, DOCX, VTT o PDF' },
+  transcript: { label: 'Transcripción', icon: '📝', accept: '.txt,.docx,.vtt,.srt,.pdf', hint: 'TXT, DOCX, VTT, SRT o PDF' },
   presentation: { label: 'Presentación', icon: '📊', accept: '.pptx,.pdf', hint: 'PPTX o PDF' },
   notes: { label: 'Apuntes', icon: '📓', accept: '.docx,.pdf,.txt', hint: 'DOCX, PDF o TXT' },
   bibliography: { label: 'Bibliografía', icon: '📚', accept: '.pdf,.docx,.txt', hint: 'PDF, DOCX o TXT' },
