@@ -82,6 +82,10 @@ test('runPipeline should not crash when materialType is transcript and correctly
     // Validate generateClassMap was called exactly once
     assert.strictEqual(openaiMocks.generateClassMap.mock.callCount(), 1);
 
+    const firstUpsertBatch = vectorStoreMocks.upsertChunks.mock.calls[0]?.arguments?.[0] || [];
+    assert.ok(firstUpsertBatch.length > 0, 'Expected at least one vector to be upserted');
+    assert.strictEqual(firstUpsertBatch[0].metadata.materialPriority, 'primary', 'Transcript chunks must be tagged as primary');
+
     const healthLogEmitted = mockContext.log.mock.calls.some((call) =>
         call.arguments?.[0]?.includes('[Azure Search Health]')
     );

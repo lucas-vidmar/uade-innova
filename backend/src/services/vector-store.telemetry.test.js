@@ -74,6 +74,7 @@ test('querySimilarWithTelemetry emits success dependency telemetry including pro
             classIds: ['class-01'],
             materialId: 'm-1',
             materialType: 'transcript',
+            materialPriority: 'primary',
             chunkIndex: 1,
             sourceFilename: 'class-01-transcript.txt',
             lectureDate: '2026-03-05T00:00:00.000Z',
@@ -93,6 +94,7 @@ test('querySimilarWithTelemetry emits success dependency telemetry including pro
     assert.strictEqual(Array.isArray(matches), true);
     assert.strictEqual(matches.length, 1);
     assert.strictEqual(matches[0].metadata.classId, 'class-01');
+    assert.strictEqual(matches[0].metadata.materialPriority, 'primary');
     assert.strictEqual(trackDependency.mock.callCount(), 1);
 
     const payload = trackDependency.mock.calls[0].arguments[0];
@@ -145,6 +147,7 @@ test('upsertChunks should map classId and lectureDate metadata fields', async ()
                 classIds: ['class-77'],
                 materialId: 'mat-77',
                 materialType: 'notes',
+                materialPriority: 'primary',
                 chunkIndex: 7,
                 sourceFilename: 'apuntes.docx',
                 lectureDate: '2026-03-05T00:00:00.000Z',
@@ -159,6 +162,7 @@ test('upsertChunks should map classId and lectureDate metadata fields', async ()
     assert.strictEqual(payload.classId, 'class-77');
     assert.deepStrictEqual(payload.classIds, ['class-77']);
     assert.strictEqual(payload.materialType, 'notes');
+    assert.strictEqual(payload.materialPriority, 'primary');
     assert.strictEqual(payload.lectureDate, '2026-03-05T00:00:00.000Z');
 });
 
@@ -187,6 +191,7 @@ test('ensureIndexExists should define classId and lectureDate as filterable fiel
                 classIds: ['class-01'],
                 materialId: 'm-1',
                 materialType: 'transcript',
+                materialPriority: 'primary',
                 chunkIndex: 1,
                 sourceFilename: 'class-01-transcript.txt',
                 lectureDate: '2026-03-05T00:00:00.000Z',
@@ -198,10 +203,13 @@ test('ensureIndexExists should define classId and lectureDate as filterable fiel
     assert.strictEqual(indexClientMock.createOrUpdateIndex.mock.callCount(), 1);
     const indexDefinition = indexClientMock.createOrUpdateIndex.mock.calls[0].arguments[0];
     const classIdField = indexDefinition.fields.find((field) => field.name === 'classId');
+    const materialPriorityField = indexDefinition.fields.find((field) => field.name === 'materialPriority');
     const lectureDateField = indexDefinition.fields.find((field) => field.name === 'lectureDate');
 
     assert.ok(classIdField, 'classId field should exist in index schema');
     assert.strictEqual(classIdField.filterable, true, 'classId should be filterable');
+    assert.ok(materialPriorityField, 'materialPriority field should exist in index schema');
+    assert.strictEqual(materialPriorityField.filterable, true, 'materialPriority should be filterable');
     assert.ok(lectureDateField, 'lectureDate field should exist in index schema');
     assert.strictEqual(lectureDateField.filterable, true, 'lectureDate should be filterable');
 

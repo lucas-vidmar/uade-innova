@@ -103,6 +103,7 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
                   <span class="source-chip bg-surface border border-border px-2 py-1 rounded text-[10px] flex items-center gap-1" title="${s.sourceFilename}">
                     ${materialIcon(s.materialType)}
                     <span class="truncate max-w-[120px]">${s.sourceFilename}</span>
+                    <span class="source-priority source-priority-${s.materialPriority === 'secondary' ? 'secondary' : 'primary'}">${materialPriorityLabel(s.materialPriority)}</span>
                   </span>
                 `).join('')}
               </div>
@@ -280,6 +281,7 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
                   <span class="source-chip" title="${s.sourceFilename}">
                     ${materialIcon(s.materialType)}
                     ${s.sourceFilename}
+                    <span class="source-priority source-priority-${s.materialPriority === 'secondary' ? 'secondary' : 'primary'}">${materialPriorityLabel(s.materialPriority)}</span>
                   </span>
                 `).join('')}
               </div>
@@ -397,6 +399,10 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
       bibliography: 'book',
     };
     return icon(map[type] || 'document');
+  };
+
+  const materialPriorityLabel = (priority) => {
+    return priority === 'secondary' ? 'Secundario' : 'Primario';
   };
 
   const icon = (name) => {

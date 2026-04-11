@@ -25,6 +25,11 @@ const MATERIAL_TYPE_WEIGHT = {
     presentation: 0.95,
 };
 
+const MATERIAL_PRIORITY_WEIGHT = {
+    primary: 1,
+    secondary: 0.9,
+};
+
 function tokenize(text = '') {
     return String(text)
         .toLowerCase()
@@ -69,12 +74,24 @@ function getMaterialWeight(materialType) {
     return MATERIAL_TYPE_WEIGHT[materialType] || 1;
 }
 
+function getPriorityWeight(materialPriority) {
+    return MATERIAL_PRIORITY_WEIGHT[materialPriority] || 1;
+}
+
+function resolveMaterialPriority(metadata = {}) {
+    if (metadata.materialPriority === 'primary' || metadata.materialPriority === 'secondary') {
+        return metadata.materialPriority;
+    }
+    return metadata.materialType === 'bibliography' ? 'secondary' : 'primary';
+}
+
 function rankMatches(matches = []) {
     return [...matches]
         .map(match => {
             const materialType = match?.metadata?.materialType;
+            const materialPriority = resolveMaterialPriority(match?.metadata);
             const baseScore = Number(match?.score || 0);
-            const weightedScore = baseScore * getMaterialWeight(materialType);
+            const weightedScore = baseScore * getMaterialWeight(materialType) * getPriorityWeight(materialPriority);
             return {
                 ...match,
                 weightedScore,
@@ -283,6 +300,7 @@ ${contextText}
             const interactionId = uuidv4();
             const sources = matches.map(m => ({
                 materialType: m.metadata?.materialType,
+                materialPriority: resolveMaterialPriority(m.metadata),
                 classIds: m.metadata?.classIds,
                 chunkIndex: m.metadata?.chunkIndex,
                 sourceFilename: m.metadata?.sourceFilename,
@@ -430,6 +448,7 @@ ${contextText}
         // ── 7. Construir respuesta con fuentes ────────────────────
         const sources = matches.map(m => ({
             materialType: m.metadata?.materialType,
+            materialPriority: resolveMaterialPriority(m.metadata),
             classIds: m.metadata?.classIds,
             chunkIndex: m.metadata?.chunkIndex,
             sourceFilename: m.metadata?.sourceFilename,

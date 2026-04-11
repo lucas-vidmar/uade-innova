@@ -95,6 +95,7 @@ app.http('global-search', {
                     materialId: match.metadata?.materialId,
                     classIds: match.metadata?.classIds || [],
                     materialType: match.metadata?.materialType,
+                    materialPriority: match.metadata?.materialPriority || (match.metadata?.materialType === 'bibliography' ? 'secondary' : 'primary'),
                     sourceFilename: filename,
                     chunkIndex: match.metadata?.chunkIndex,
                     snippet: buildSnippet(text, query),

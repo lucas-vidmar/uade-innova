@@ -1046,6 +1046,27 @@
     font-weight: 600;
 }
 
+.global-search-priority-pill {
+    display: inline-flex;
+    align-items: center;
+    font-size: var(--font-size-xs);
+    border-radius: var(--radius-full);
+    padding: 3px 10px;
+    font-weight: 600;
+}
+
+.global-search-priority-primary {
+    color: var(--color-success);
+    background: color-mix(in srgb, var(--color-success) 16%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-success) 34%, transparent);
+}
+
+.global-search-priority-secondary {
+    color: var(--color-warning);
+    background: color-mix(in srgb, var(--color-warning) 16%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-warning) 34%, transparent);
+}
+
 .global-search-score {
     font-size: var(--font-size-xs);
     color: var(--color-text-muted);
@@ -2371,6 +2392,26 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.source-priority {
+    margin-left: 4px;
+    padding: 1px 8px;
+    border-radius: var(--radius-full);
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.source-priority-primary {
+    color: var(--color-success);
+    background: color-mix(in srgb, var(--color-success) 16%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-success) 34%, transparent);
+}
+
+.source-priority-secondary {
+    color: var(--color-warning);
+    background: color-mix(in srgb, var(--color-warning) 16%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-warning) 34%, transparent);
 }
 
 .chat-input-area {

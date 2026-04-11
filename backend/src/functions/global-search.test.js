@@ -13,6 +13,7 @@ const vectorStoreMocks = {
                 materialId: 'm-1',
                 classIds: ['class-01'],
                 materialType: 'transcript',
+                materialPriority: 'primary',
                 sourceFilename: 'class-01-transcript.txt',
                 chunkIndex: 0,
                 text: 'Architecture decisions are tied to quality attributes and trade-offs.',
@@ -24,6 +25,7 @@ const vectorStoreMocks = {
                 materialId: 'm-2',
                 classIds: ['class-03'],
                 materialType: 'bibliography',
+                materialPriority: 'secondary',
                 sourceFilename: 'clean-architecture.pdf',
                 chunkIndex: 4,
                 text: 'Architecture should protect business rules from framework details.',
@@ -85,6 +87,10 @@ test('global-search should query full subject index scoped to transcript+bibliog
     const body = JSON.parse(response.body);
     assert.strictEqual(Array.isArray(body.results), true);
     assert.strictEqual(body.results.length, 2);
+    const transcriptResult = body.results.find((item) => item.sourceFilename === 'class-01-transcript.txt');
+    const bibliographyResult = body.results.find((item) => item.sourceFilename === 'clean-architecture.pdf');
+    assert.strictEqual(transcriptResult?.materialPriority, 'primary');
+    assert.strictEqual(bibliographyResult?.materialPriority, 'secondary');
     assert.ok(body.results[0].score >= body.results[1].score, 'Results should be sorted by boosted score');
 });
 

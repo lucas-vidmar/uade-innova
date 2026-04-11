@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-04-11] User Story #33: Material Type Prioritization
+- **Status**: Completed
+- **Functional Change**: Added a primary/secondary material classification (bibliography as secondary), propagated this context through ingestion and retrieval outputs, and displayed priority badges in student chat and global search sources.
+- **Business Impact**: Improves transparency of AI evidence by clearly signaling which sources are core class material versus complementary references.
+
 ### [2026-04-11] User Story #79: Cost-per-Interaction Dashboard
 - **Status**: Completed
 - **Functional Change**: Completed Director-facing cost analytics by enforcing pricing formulas ($0.15/1M input, $0.60/1M output) across workbook and API summaries, and added daily cost-per-interaction visibility in the dashboard.

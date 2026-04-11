@@ -9,6 +9,7 @@ import { saveJson, loadJson } from './storage.js';
 import { upsertMaterialState } from './state-store.js';
 import { trackIngestionInteraction } from './telemetry.js';
 import { buildDependencyHeaders } from './correlation.js';
+import { getMaterialPriority } from './material-classification.js';
 
 const CONTAINER_PROCESSED = 'processed';
 const CONTAINER_SUMMARIES = 'class-summaries';
@@ -63,6 +64,7 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
                         classIds,
                         materialId,
                         materialType,
+                        materialPriority: getMaterialPriority(materialType),
                         chunkIndex,
                         sourceFilename: fileName,
                         lectureDate: lectureDateIso,

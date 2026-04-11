@@ -363,6 +363,7 @@ test('rag-query should build mixed context and prioritize teacher notes over bib
                 sourceFilename: 'bibliografia.pdf',
                 text: 'Definicion academica en bibliografia.',
                 materialType: 'bibliography',
+                materialPriority: 'secondary',
                 classIds: ['class1'],
                 chunkIndex: 2,
             },
@@ -374,6 +375,7 @@ test('rag-query should build mixed context and prioritize teacher notes over bib
                 sourceFilename: 'notas-docente.docx',
                 text: 'Nota del docente con prioridad conceptual.',
                 materialType: 'notes',
+                materialPriority: 'primary',
                 classIds: ['class1'],
                 chunkIndex: 1,
             },
@@ -385,6 +387,7 @@ test('rag-query should build mixed context and prioritize teacher notes over bib
                 sourceFilename: 'transcript.txt',
                 text: 'Transcripcion complementaria.',
                 materialType: 'transcript',
+                materialPriority: 'primary',
                 classIds: ['class1'],
                 chunkIndex: 5,
             },
@@ -416,4 +419,52 @@ test('rag-query should build mixed context and prioritize teacher notes over bib
         systemPrompt.indexOf('notas-docente.docx') < systemPrompt.indexOf('bibliografia.pdf'),
         'Teacher notes should appear before bibliography due to weighting',
     );
+});
+
+test('rag-query should expose material priority in returned sources', async () => {
+    vectorStoreMocks.querySimilar.mock.mockImplementationOnce(async () => [
+        {
+            id: 'biblio-2',
+            score: 0.9,
+            metadata: {
+                sourceFilename: 'referencia.pdf',
+                text: 'Texto bibliografico',
+                materialType: 'bibliography',
+                materialPriority: 'secondary',
+                classIds: ['class1'],
+                chunkIndex: 0,
+            },
+        },
+        {
+            id: 'notes-2',
+            score: 0.88,
+            metadata: {
+                sourceFilename: 'apuntes.md',
+                text: 'Texto docente',
+                materialType: 'notes',
+                materialPriority: 'primary',
+                classIds: ['class1'],
+                chunkIndex: 1,
+            },
+        },
+    ]);
+
+    const mockContext = {
+        log: mock.fn(),
+        error: mock.fn(),
+    };
+
+    const mockRequest = {
+        json: async () => ({
+            question: 'Dame fuentes mixtas',
+            subjectId: 'materia1',
+            classIds: ['class1'],
+        }),
+        user: { id: 'test-user' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.sources[0].materialPriority, 'primary');
+    assert.strictEqual(body.sources[1].materialPriority, 'secondary');
 });
