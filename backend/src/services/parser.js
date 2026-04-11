@@ -312,17 +312,19 @@ function extractPptxText(buffer) {
         const slideEntries = zip
             .getEntries()
             .filter(e => e.entryName.match(/^ppt\/slides\/slide\d+\.xml$/))
-            .sort((a, b) => a.entryName.localeCompare(b.entryName));
+            .sort((a, b) => extractSlideNumber(a.entryName) - extractSlideNumber(b.entryName));
 
         const texts = slideEntries.map((entry, index) => {
             const xml = entry.getData().toString('utf-8');
             // Extraer texto de tags <a:t> (texto de párrafos en OOXML)
             const matches = [...xml.matchAll(/<a:t[^>]*>([^<]+)<\/a:t>/g)];
-            const slideText = matches.map(m => m[1]).join(' ').trim();
-            return slideText ? `[Diapositiva ${index + 1}]\n${slideText}` : null;
+            const slideText = cleanText(matches.map(m => decodeXmlEntities(m[1])).join(' ').trim());
+            const slideTag = `[Diapositiva ${index + 1}]`;
+            // Mantener separación por diapositiva incluso si no hay texto.
+            return slideText ? `${slideTag}\n${slideText}` : slideTag;
         });
 
-        return cleanText(texts.filter(Boolean).join('\n\n'));
+        return cleanText(texts.join('\n\n'));
     } catch (err) {
         throw new CategorizedError(`Error parseando PPTX: ${err.message}`, {
             errorCategory: ErrorCategory.PARSING,
@@ -331,4 +333,19 @@ function extractPptxText(buffer) {
             cause: err,
         });
     }
+}
+
+function extractSlideNumber(entryName = '') {
+    const match = String(entryName).match(/slide(\d+)\.xml$/);
+    return Number.parseInt(match?.[1] || '0', 10);
+}
+
+function decodeXmlEntities(text = '') {
+    return text
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'")
+        .replace(/&#39;/g, "'");
 }

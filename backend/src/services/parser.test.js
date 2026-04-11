@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { chunkText, cleanTranscript, cleanText, extractTranscriptTimeline } from './parser.js';
+import { chunkText, cleanTranscript, cleanText, extractTranscriptTimeline, parseFile } from './parser.js';
 import { getEncoding } from 'js-tiktoken';
+import AdmZip from 'adm-zip';
 
 const encoder = getEncoding('cl100k_base');
 
@@ -133,4 +134,66 @@ Proximos pasos y entregables.
     assert.ok(result.sections.length >= 6, 'Should parse VTT cue sections');
     assert.ok(result.markers.length >= 1, 'Should create timeline markers');
     assert.ok(result.sections[0].timestampLabel.includes('00:00:'), 'Should include timestamp label');
+});
+
+function buildPptxBuffer(slides) {
+    const zip = new AdmZip();
+    slides.forEach(({ slideNumber, xml }) => {
+        zip.addFile(`ppt/slides/slide${slideNumber}.xml`, Buffer.from(xml, 'utf-8'));
+    });
+    return zip.toBuffer();
+}
+
+test('parseFile preserves slide-level separation tags for PPTX', async () => {
+    const slides = [
+        {
+            slideNumber: 2,
+            xml: '<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:t>Segunda diapositiva</a:t></p:sld>'
+        },
+        {
+            slideNumber: 10,
+            xml: '<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:t>Decima con &amp; entidad</a:t></p:sld>'
+        },
+        {
+            slideNumber: 1,
+            xml: '<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:t>Primera diapositiva</a:t></p:sld>'
+        }
+    ];
+
+    const buffer = buildPptxBuffer(slides);
+    const parsed = await parseFile(
+        buffer,
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'estructura.pptx'
+    );
+
+    assert.match(parsed, /\[Diapositiva 1\]/);
+    assert.match(parsed, /\[Diapositiva 2\]/);
+    assert.match(parsed, /\[Diapositiva 3\]/);
+    assert.ok(parsed.indexOf('[Diapositiva 1]') < parsed.indexOf('[Diapositiva 2]'));
+    assert.ok(parsed.indexOf('[Diapositiva 2]') < parsed.indexOf('[Diapositiva 3]'));
+    assert.match(parsed, /Decima con & entidad/);
+});
+
+test('parseFile includes slide tag even when slide has no extractable text', async () => {
+    const slides = [
+        {
+            slideNumber: 1,
+            xml: '<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:t>Slide con texto</a:t></p:sld>'
+        },
+        {
+            slideNumber: 2,
+            xml: '<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"></p:sld>'
+        }
+    ];
+
+    const buffer = buildPptxBuffer(slides);
+    const parsed = await parseFile(
+        buffer,
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'sin-texto.pptx'
+    );
+
+    assert.match(parsed, /\[Diapositiva 1\]/);
+    assert.match(parsed, /\[Diapositiva 2\]/);
 });
