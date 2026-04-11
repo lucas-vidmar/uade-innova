@@ -70,6 +70,7 @@ test('querySimilarWithTelemetry emits success dependency telemetry including pro
         document: {
             id: 'doc-1',
             subjectId: 'arq-software-2026',
+            classId: 'class-01',
             classIds: ['class-01'],
             materialId: 'm-1',
             materialType: 'transcript',
@@ -91,6 +92,7 @@ test('querySimilarWithTelemetry emits success dependency telemetry including pro
 
     assert.strictEqual(Array.isArray(matches), true);
     assert.strictEqual(matches.length, 1);
+    assert.strictEqual(matches[0].metadata.classId, 'class-01');
     assert.strictEqual(trackDependency.mock.callCount(), 1);
 
     const payload = trackDependency.mock.calls[0].arguments[0];
@@ -126,4 +128,82 @@ test('querySimilarWithTelemetry emits failed dependency telemetry when Azure Sea
     assert.strictEqual(payload.index, 'test-index');
     assert.strictEqual(payload.resultCode, 503);
     assert.ok(Number(payload.durationMs) >= 0);
+});
+
+test('upsertChunks should map classId and lectureDate metadata fields', async () => {
+    searchClientMock.mergeOrUploadDocuments.mock.resetCalls();
+
+    const { upsertChunks } = await import('./vector-store.js');
+
+    await upsertChunks([
+        {
+            id: 'doc-upsert-1',
+            values: [0.1, 0.2, 0.3],
+            metadata: {
+                subjectId: 'arq-software-2026',
+                classId: 'class-77',
+                classIds: ['class-77'],
+                materialId: 'mat-77',
+                materialType: 'notes',
+                chunkIndex: 7,
+                sourceFilename: 'apuntes.docx',
+                lectureDate: '2026-03-05T00:00:00.000Z',
+                text: 'Texto chunk',
+            },
+        },
+    ]);
+
+    assert.strictEqual(searchClientMock.mergeOrUploadDocuments.mock.callCount(), 1);
+    const payload = searchClientMock.mergeOrUploadDocuments.mock.calls[0].arguments[0][0];
+    assert.strictEqual(payload.subjectId, 'arq-software-2026');
+    assert.strictEqual(payload.classId, 'class-77');
+    assert.deepStrictEqual(payload.classIds, ['class-77']);
+    assert.strictEqual(payload.materialType, 'notes');
+    assert.strictEqual(payload.lectureDate, '2026-03-05T00:00:00.000Z');
+});
+
+test('ensureIndexExists should define classId and lectureDate as filterable fields', async () => {
+    indexClientMock.createOrUpdateIndex.mock.resetCalls();
+    searchClientMock.mergeOrUploadDocuments.mock.resetCalls();
+
+    indexClientListIndexesMock.mock.mockImplementationOnce(() => ({
+        async *[Symbol.asyncIterator]() {
+            // empty: force index creation path
+        },
+    }));
+
+    const uniqueIndexName = `test-index-${Date.now()}`;
+    process.env.AZURE_SEARCH_INDEX_NAME = uniqueIndexName;
+
+    const { upsertChunks } = await import(`./vector-store.js?schema-test=${Date.now()}`);
+
+    await upsertChunks([
+        {
+            id: 'doc-schema-1',
+            values: [0.1, 0.2, 0.3],
+            metadata: {
+                subjectId: 'arq-software-2026',
+                classId: 'class-01',
+                classIds: ['class-01'],
+                materialId: 'm-1',
+                materialType: 'transcript',
+                chunkIndex: 1,
+                sourceFilename: 'class-01-transcript.txt',
+                lectureDate: '2026-03-05T00:00:00.000Z',
+                text: 'Contenido de prueba',
+            },
+        },
+    ]);
+
+    assert.strictEqual(indexClientMock.createOrUpdateIndex.mock.callCount(), 1);
+    const indexDefinition = indexClientMock.createOrUpdateIndex.mock.calls[0].arguments[0];
+    const classIdField = indexDefinition.fields.find((field) => field.name === 'classId');
+    const lectureDateField = indexDefinition.fields.find((field) => field.name === 'lectureDate');
+
+    assert.ok(classIdField, 'classId field should exist in index schema');
+    assert.strictEqual(classIdField.filterable, true, 'classId should be filterable');
+    assert.ok(lectureDateField, 'lectureDate field should exist in index schema');
+    assert.strictEqual(lectureDateField.filterable, true, 'lectureDate should be filterable');
+
+    process.env.AZURE_SEARCH_INDEX_NAME = 'test-index';
 });

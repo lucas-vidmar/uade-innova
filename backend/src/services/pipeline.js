@@ -20,6 +20,7 @@ const BATCH_SIZE = 20;
 export async function runPipeline({ fileBuffer, fileContentType, fileName, classIds, subjectId, materialType, materialId, userId, blobUrl, correlationId }, context) {
     const startTime = Date.now();
     let totalTokens = 0;
+    const lectureDateIso = new Date().toISOString();
     const openAiHeaders = buildDependencyHeaders(correlationId);
 
     try {
@@ -58,12 +59,13 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
                     values: embedding,
                     metadata: {
                         subjectId,
+                        classId: classIds?.[0] || null,
                         classIds,
                         materialId,
                         materialType,
                         chunkIndex,
                         sourceFilename: fileName,
-                        lectureDate: new Date().toISOString(),
+                        lectureDate: lectureDateIso,
                         text: currentBatch[index],
                     },
                 });

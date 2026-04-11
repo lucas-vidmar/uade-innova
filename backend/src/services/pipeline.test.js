@@ -119,3 +119,38 @@ test('runPipeline should continue when index health stats retrieval fails', asyn
     const errorCalls = mockContext.error.mock.calls;
     assert.strictEqual(errorCalls.length, 0, 'Stats failures should not break pipeline execution');
 });
+
+test('runPipeline should index required metadata including classId and ISO lectureDate', async () => {
+    vectorStoreMocks.upsertChunks.mock.resetCalls();
+
+    const mockContext = {
+        log: mock.fn(),
+        warn: mock.fn(),
+        error: mock.fn(),
+    };
+
+    await runPipeline({
+        fileBuffer: Buffer.from('test'),
+        fileContentType: 'text/plain',
+        fileName: 'metadata-test.txt',
+        classIds: ['class-meta-01', 'class-meta-02'],
+        subjectId: 'subject-meta-01',
+        materialType: 'notes',
+        materialId: 'mat-meta-01',
+        blobUrl: 'http://test',
+    }, mockContext);
+
+    assert.strictEqual(vectorStoreMocks.upsertChunks.mock.callCount(), 1, 'Should upsert vectors once');
+    const vectors = vectorStoreMocks.upsertChunks.mock.calls[0].arguments[0];
+    assert.ok(Array.isArray(vectors) && vectors.length > 0, 'Should send at least one vector');
+
+    const firstMetadata = vectors[0].metadata;
+    assert.strictEqual(firstMetadata.subjectId, 'subject-meta-01');
+    assert.strictEqual(firstMetadata.classId, 'class-meta-01');
+    assert.strictEqual(firstMetadata.materialType, 'notes');
+    assert.strictEqual(firstMetadata.sourceFilename, 'metadata-test.txt');
+
+    const parsedLectureDate = Date.parse(firstMetadata.lectureDate);
+    assert.ok(Number.isFinite(parsedLectureDate), 'lectureDate should be parseable date');
+    assert.strictEqual(new Date(firstMetadata.lectureDate).toISOString(), firstMetadata.lectureDate, 'lectureDate should be ISO 8601');
+});

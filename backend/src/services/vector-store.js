@@ -74,6 +74,7 @@ async function ensureIndexExists(indexName) {
         fields: [
             { name: 'id', type: 'Edm.String', key: true, filterable: true },
             { name: 'subjectId', type: 'Edm.String', filterable: true },
+            { name: 'classId', type: 'Edm.String', filterable: true },
             { name: 'classIds', type: 'Collection(Edm.String)', filterable: true },
             { name: 'materialId', type: 'Edm.String', filterable: true },
             { name: 'materialType', type: 'Edm.String', filterable: true },
@@ -169,6 +170,7 @@ export async function upsertChunks(vectors) {
         const batch = vectors.slice(i, i + BATCH_SIZE).map(vector => ({
             id: vector.id,
             subjectId: vector.metadata?.subjectId,
+            classId: vector.metadata?.classId,
             classIds: vector.metadata?.classIds || [],
             materialId: vector.metadata?.materialId,
             materialType: vector.metadata?.materialType,
@@ -212,6 +214,7 @@ export async function querySimilarWithTelemetry(embedding, filter, topK = 5, dep
             select: [
                 'id',
                 'subjectId',
+                'classId',
                 'classIds',
                 'materialId',
                 'materialType',
@@ -240,6 +243,7 @@ export async function querySimilarWithTelemetry(embedding, filter, topK = 5, dep
                 score: item.score ?? item['@search.score'] ?? 0,
                 metadata: {
                     subjectId: doc.subjectId,
+                    classId: doc.classId,
                     classIds: doc.classIds || [],
                     materialId: doc.materialId,
                     materialType: doc.materialType,
