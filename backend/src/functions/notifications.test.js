@@ -3,21 +3,28 @@ import assert from 'node:assert';
 
 const authMocks = {
     validateFrontDoorId: mock.fn(() => true),
+    parseClientPrincipal: mock.fn(() => ({ userId: 'alu-001', userRoles: ['Alumno'] })),
 };
 
 const notificationStoreMocks = {
     listNotificationsBySubject: mock.fn(async () => []),
+    markNotificationReadForUser: mock.fn(async () => true),
+};
+
+const telemetryMocks = {
+    trackNotificationInteraction: mock.fn(async () => {}),
 };
 
 mock.module('../services/auth-utils.js', { namedExports: authMocks });
 mock.module('../services/notification-store.js', { namedExports: notificationStoreMocks });
+mock.module('../services/telemetry.js', { namedExports: telemetryMocks });
 
-let notificationsHandler;
+const handlers = {};
 mock.module('@azure/functions', {
     namedExports: {
         app: {
             http: (name, options) => {
-                if (name === 'get-notifications') notificationsHandler = options.handler;
+                handlers[name] = options.handler;
             },
         },
     },
@@ -26,7 +33,7 @@ mock.module('@azure/functions', {
 await import('./notifications.js');
 
 test('get-notifications should filter by subject and honor limit', async () => {
-    const response = await notificationsHandler(
+    const response = await handlers['get-notifications'](
         { query: new URLSearchParams({ subjectId: 'arq-software-2026', limit: '2' }) },
         { log: () => {} }
     );
@@ -55,7 +62,7 @@ test('get-notifications should merge persisted notifications and filter by userI
         },
     ]));
 
-    const response = await notificationsHandler(
+    const response = await handlers['get-notifications'](
         { query: new URLSearchParams({ subjectId: 'arq-software-2026', userId: 'alu-001', limit: '5' }) },
         { log: () => {}, error: () => {} }
     );
@@ -78,7 +85,7 @@ test('get-notifications should exclude targeted notifications for other users', 
         },
     ]));
 
-    const response = await notificationsHandler(
+    const response = await handlers['get-notifications'](
         { query: new URLSearchParams({ subjectId: 'arq-software-2026', userId: 'alu-001', limit: '10' }) },
         { log: () => {}, error: () => {} }
     );
@@ -90,7 +97,7 @@ test('get-notifications should exclude targeted notifications for other users', 
 });
 
 test('get-notifications should clamp invalid limit values', async () => {
-    const response = await notificationsHandler(
+    const response = await handlers['get-notifications'](
         { query: new URLSearchParams({ limit: '0' }) },
         { log: () => {} }
     );
@@ -99,4 +106,62 @@ test('get-notifications should clamp invalid limit values', async () => {
     const body = JSON.parse(response.body);
     assert.ok(Array.isArray(body));
     assert.strictEqual(body.length, 1);
+});
+
+test('mark-notification-read should persist read state and emit telemetry', async () => {
+    notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => ([
+        {
+            id: 'notif-1',
+            subjectId: 'arq-software-2026',
+            recipientUserIds: ['alu-001'],
+            unread: true,
+        },
+    ]));
+
+    const markReadTelemetryBefore = telemetryMocks.trackNotificationInteraction.mock.callCount();
+    const response = await handlers['mark-notification-read'](
+        {
+            params: { id: 'notif-1' },
+            json: async () => ({ subjectId: 'arq-software-2026', userId: 'alu-001' }),
+        },
+        { log: () => {}, error: () => {} }
+    );
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(notificationStoreMocks.markNotificationReadForUser.mock.callCount(), 1);
+    assert.strictEqual(telemetryMocks.trackNotificationInteraction.mock.callCount(), markReadTelemetryBefore + 1);
+});
+
+test('mark-notifications-read should persist all provided notification ids', async () => {
+    notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => ([
+        { id: 'notif-1', subjectId: 'arq-software-2026', recipientUserIds: ['alu-001'], unread: true },
+        { id: 'notif-2', subjectId: 'arq-software-2026', recipientUserIds: ['alu-001'], unread: true },
+    ]));
+
+    const response = await handlers['mark-notifications-read'](
+        {
+            json: async () => ({ subjectId: 'arq-software-2026', userId: 'alu-001', notificationIds: ['notif-1', 'notif-2'] }),
+        },
+        { log: () => {}, error: () => {} }
+    );
+
+    assert.strictEqual(response.status, 200);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.updated, 2);
+});
+
+test('mark-notification-read should reject unauthorized student updates', async () => {
+    authMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'alu-999', userRoles: ['Alumno'] }));
+
+    const response = await handlers['mark-notification-read'](
+        {
+            params: { id: 'notif-1' },
+            json: async () => ({ subjectId: 'arq-software-2026', userId: 'alu-001' }),
+        },
+        { log: () => {}, error: () => {} }
+    );
+
+    assert.strictEqual(response.status, 403);
+
+    authMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'alu-001', userRoles: ['Alumno'] }));
 });

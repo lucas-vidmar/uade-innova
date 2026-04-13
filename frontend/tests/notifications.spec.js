@@ -56,6 +56,14 @@ test('student notification center shows badge/dropdown and increments on trigger
     });
   });
 
+  await page.route('**/api/notifications/*/read', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ id: 'notif-1', unread: false }),
+    });
+  });
+
   await page.goto('/#/student/dashboard');
 
   const bell = page.locator('#notification-bell-btn');
@@ -69,8 +77,11 @@ test('student notification center shows badge/dropdown and increments on trigger
   await expect(page.locator('#notification-dropdown')).toBeVisible();
   await expect(page.locator('.notification-item')).toHaveCount(2);
 
+  await page.locator('[data-notification-action="mark-read"]').first().click();
+  await expect(badge).toHaveText('0');
+
   await page.locator('#notification-simulate').click();
-  await expect(badge).toHaveText('2');
+  await expect(badge).toHaveText('1');
 
   await page.locator('.notification-item').first().click();
   await expect(page).toHaveURL(/#\/student\/dashboard$/);

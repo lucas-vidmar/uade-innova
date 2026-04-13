@@ -412,37 +412,6 @@ async function fetchWithTimeout(resource, options = {}) {
 
 /* ── API Client ──────────────────────────────────────────── */
 export const api = {
-    async getMaterialStatusBatch(subjectId, materialIds = []) {
-        if (!subjectId || !Array.isArray(materialIds) || materialIds.length === 0) {
-            return { subjectId, results: [] };
-        }
-
-        const deduped = Array.from(new Set(materialIds.map((item) => String(item || '').trim()).filter(Boolean)));
-        if (deduped.length === 0) {
-            return { subjectId, results: [] };
-        }
-
-        try {
-            const params = new URLSearchParams({
-                subjectId,
-                materialIds: deduped.join(','),
-            });
-            const res = await fetchWithTimeout(
-                `${BASE_URL}/material-status?${params.toString()}`,
-                { timeout: 3500 }
-            );
-
-            if (!res.ok) throw new Error(`Error ${res.status}: material-status-batch`);
-
-            const data = await res.json();
-            const results = Array.isArray(data?.results) ? data.results : [];
-            return { subjectId, results };
-        } catch (err) {
-            console.error('[API] getMaterialStatusBatch failed:', err);
-            throw err;
-        }
-    },
-
     async getMaterialStatus(subjectId, materialId) {
         if (!subjectId || !materialId) return null;
 
@@ -603,6 +572,60 @@ export const api = {
             console.error('[API] getNotifications failed:', err);
             return buildFallbackNotifications(subjectId, limit);
         }
+    },
+
+    async markNotificationRead({ notificationId, userId, subjectId } = {}) {
+        if (!notificationId || !userId || !subjectId) {
+            throw new Error('Missing required fields: notificationId, userId, subjectId');
+        }
+
+        const res = await apiFetch(`${BASE_URL}/notifications/${encodeURIComponent(notificationId)}/read`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, subjectId }),
+        });
+
+        if (!res.ok) {
+            let message = `Error ${res.status}: No se pudo marcar la notificación como leída`;
+            try {
+                const payload = await res.json();
+                if (payload?.error) message = payload.error;
+            } catch {
+                // no-op
+            }
+            throw new Error(message);
+        }
+
+        return res.json();
+    },
+
+    async markNotificationsRead({ notificationIds = [], userId, subjectId } = {}) {
+        if (!userId || !subjectId) {
+            throw new Error('Missing required fields: userId, subjectId');
+        }
+
+        const ids = Array.isArray(notificationIds)
+            ? Array.from(new Set(notificationIds.map((item) => String(item || '').trim()).filter(Boolean)))
+            : [];
+
+        const res = await apiFetch(`${BASE_URL}/notifications/read`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, subjectId, notificationIds: ids }),
+        });
+
+        if (!res.ok) {
+            let message = `Error ${res.status}: No se pudieron marcar las notificaciones como leídas`;
+            try {
+                const payload = await res.json();
+                if (payload?.error) message = payload.error;
+            } catch {
+                // no-op
+            }
+            throw new Error(message);
+        }
+
+        return res.json();
     },
 
     async getSubjects() {
