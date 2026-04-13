@@ -605,60 +605,6 @@ export const api = {
         }
     },
 
-    async markNotificationRead({ notificationId, userId, subjectId } = {}) {
-        if (!notificationId || !userId || !subjectId) {
-            throw new Error('Missing required fields: notificationId, userId, subjectId');
-        }
-
-        const res = await apiFetch(`${BASE_URL}/notifications/${encodeURIComponent(notificationId)}/read`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, subjectId }),
-        });
-
-        if (!res.ok) {
-            let message = `Error ${res.status}: No se pudo marcar la notificación como leída`;
-            try {
-                const payload = await res.json();
-                if (payload?.error) message = payload.error;
-            } catch {
-                // no-op
-            }
-            throw new Error(message);
-        }
-
-        return res.json();
-    },
-
-    async markNotificationsRead({ notificationIds = [], userId, subjectId } = {}) {
-        if (!userId || !subjectId) {
-            throw new Error('Missing required fields: userId, subjectId');
-        }
-
-        const ids = Array.isArray(notificationIds)
-            ? Array.from(new Set(notificationIds.map((item) => String(item || '').trim()).filter(Boolean)))
-            : [];
-
-        const res = await apiFetch(`${BASE_URL}/notifications/read`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, subjectId, notificationIds: ids }),
-        });
-
-        if (!res.ok) {
-            let message = `Error ${res.status}: No se pudieron marcar las notificaciones como leídas`;
-            try {
-                const payload = await res.json();
-                if (payload?.error) message = payload.error;
-            } catch {
-                // no-op
-            }
-            throw new Error(message);
-        }
-
-        return res.json();
-    },
-
     async getSubjects() {
         if (USE_MOCK) {
             await delay(400);
