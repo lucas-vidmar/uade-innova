@@ -15,6 +15,18 @@ let timerId = null;
 let isPolling = false;
 const listeners = new Set();
 
+const configuredBaseUrl = (typeof import.meta !== 'undefined' && import.meta.env)
+    ? String(import.meta.env.VITE_API_BASE_URL || '').trim()
+    : '';
+const isLocalRuntime = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const isLocalApiUrl = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(configuredBaseUrl);
+const MATERIAL_STATUS_BASE_URL = (!isLocalRuntime && isLocalApiUrl)
+    ? '/api'
+    : (configuredBaseUrl
+        || (isLocalRuntime
+            ? 'http://localhost:7071/api'
+            : '/api'));
+
 function loadTrackedJobs() {
     try {
         const raw = localStorage.getItem(STORAGE_KEY);
@@ -126,6 +138,36 @@ function resolveTerminalStatusForJob(job, classes) {
     return null;
 }
 
+async function fetchMaterialStatusBatch(subjectId, materialIds) {
+    if (typeof api.getMaterialStatusBatch === 'function') {
+        return api.getMaterialStatusBatch(subjectId, materialIds);
+    }
+
+    const deduped = Array.from(new Set((Array.isArray(materialIds) ? materialIds : [])
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)));
+
+    if (!subjectId || deduped.length === 0) {
+        return { subjectId, results: [] };
+    }
+
+    const params = new URLSearchParams({
+        subjectId,
+        materialIds: deduped.join(','),
+    });
+
+    const response = await fetch(`${MATERIAL_STATUS_BASE_URL}/material-status?${params.toString()}`);
+    if (!response.ok) {
+        throw new Error(`Error ${response.status}: material-status-batch`);
+    }
+
+    const body = await response.json();
+    return {
+        subjectId,
+        results: Array.isArray(body?.results) ? body.results : [],
+    };
+}
+
 async function pollStatuses() {
     if (isPolling || trackedJobs.length === 0) return;
     isPolling = true;
@@ -133,16 +175,52 @@ async function pollStatuses() {
     try {
         const pending = [];
 
+        const jobIndexesBySubject = new Map();
+        trackedJobs.forEach((job, index) => {
+            if (!jobIndexesBySubject.has(job.subjectId)) {
+                jobIndexesBySubject.set(job.subjectId, []);
+            }
+            jobIndexesBySubject.get(job.subjectId).push(index);
+        });
+
+        const batchStatusByKey = new Map();
+        for (const [subjectId, indexes] of jobIndexesBySubject.entries()) {
+            const materialIds = indexes.map((index) => trackedJobs[index].materialId);
+            try {
+                const batch = await fetchMaterialStatusBatch(subjectId, materialIds);
+                const results = Array.isArray(batch?.results) ? batch.results : [];
+                results.forEach((result) => {
+                    if (!result?.materialId) return;
+                    batchStatusByKey.set(`${subjectId}::${result.materialId}`, result);
+                });
+            } catch (batchErr) {
+                console.error('[ProcessingNotifications] poll getMaterialStatusBatch failed, fallback to per-item:', batchErr);
+            }
+        }
+
         for (const job of trackedJobs) {
             let terminal = null;
             let shouldFallbackToClasses = false;
 
             try {
-                const statusResult = await api.getMaterialStatus(job.subjectId, job.materialId);
+                const batchResult = batchStatusByKey.get(`${job.subjectId}::${job.materialId}`);
+                const statusResult = batchResult?.material || null;
                 const status = statusResult?.status;
                 if (status === 'ready' || status === 'error') {
                     terminal = status;
-                } else if (status !== 'processing') {
+                } else if (status === 'pending' || status === 'processing') {
+                    // keep waiting
+                } else if (batchResult?.found === false && batchResult?.httpStatus === 404) {
+                    shouldFallbackToClasses = true;
+                } else if (!batchResult) {
+                    const singleStatusResult = await api.getMaterialStatus(job.subjectId, job.materialId);
+                    const singleStatus = singleStatusResult?.status;
+                    if (singleStatus === 'ready' || singleStatus === 'error') {
+                        terminal = singleStatus;
+                    } else if (singleStatus !== 'pending' && singleStatus !== 'processing') {
+                        shouldFallbackToClasses = true;
+                    }
+                } else {
                     shouldFallbackToClasses = true;
                 }
             } catch (statusErr) {

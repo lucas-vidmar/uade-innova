@@ -160,6 +160,73 @@ function normalizeStringArray(value) {
     return [];
 }
 
+function normalizeMaterialStatus(status) {
+    const normalized = String(status || '').trim().toLowerCase();
+    if (['pending', 'processing', 'ready', 'error'].includes(normalized)) {
+        return normalized;
+    }
+    return 'pending';
+}
+
+function normalizeMaterialForResponse(material) {
+    if (!material || typeof material !== 'object') return material;
+    return {
+        ...material,
+        status: normalizeMaterialStatus(material.status),
+    };
+}
+
+function parseMaterialIdsQuery(request) {
+    const query = request?.query;
+    const values = [];
+
+    if (query && typeof query.getAll === 'function') {
+        values.push(...query.getAll('materialIds'));
+    }
+
+    if (query && typeof query.get === 'function') {
+        const single = query.get('materialIds');
+        if (single) values.push(single);
+    }
+
+    return Array.from(new Set(values
+        .flatMap((value) => String(value || '').split(','))
+        .map((value) => value.trim())
+        .filter(Boolean)));
+}
+
+async function getMaterialBySubjectAndId(subjectId, materialId, context) {
+    let material = null;
+
+    try {
+        material = await getMaterialState(subjectId, materialId);
+    } catch (tableErr) {
+        context.error(`[StateStore] Error leyendo material ${materialId} para ${subjectId}:`, tableErr);
+    }
+
+    if (!material) {
+        const legacy = await loadJson(CONTAINER_PROCESSED, `${materialId}.json`);
+        if (legacy && legacy.subjectId === subjectId) {
+            material = {
+                id: legacy.materialId || legacy.id,
+                materialId: legacy.materialId || legacy.id,
+                subjectId: legacy.subjectId,
+                classIds: normalizeStringArray(legacy.classIds || legacy.classId),
+                type: legacy.type,
+                filename: legacy.filename,
+                status: legacy.status,
+                blobUrl: legacy.blobUrl,
+                uploadedAt: legacy.uploadedAt,
+                processedAt: legacy.processedAt,
+                errorMessage: legacy.errorMessage,
+                chunkCount: legacy.chunkCount,
+            };
+        }
+    }
+
+    return normalizeMaterialForResponse(material);
+}
+
 function slugifySubjectId(value) {
     return String(value || '')
         .normalize('NFD')
@@ -414,33 +481,7 @@ app.http('get-material-status', {
         }
 
         try {
-            let material = null;
-
-            try {
-                material = await getMaterialState(subjectId, materialId);
-            } catch (tableErr) {
-                context.error(`[StateStore] Error leyendo material ${materialId} para ${subjectId}:`, tableErr);
-            }
-
-            if (!material) {
-                const legacy = await loadJson(CONTAINER_PROCESSED, `${materialId}.json`);
-                if (legacy && legacy.subjectId === subjectId) {
-                    material = {
-                        id: legacy.materialId || legacy.id,
-                        materialId: legacy.materialId || legacy.id,
-                        subjectId: legacy.subjectId,
-                        classIds: normalizeStringArray(legacy.classIds || legacy.classId),
-                        type: legacy.type,
-                        filename: legacy.filename,
-                        status: legacy.status,
-                        blobUrl: legacy.blobUrl,
-                        uploadedAt: legacy.uploadedAt,
-                        processedAt: legacy.processedAt,
-                        errorMessage: legacy.errorMessage,
-                        chunkCount: legacy.chunkCount,
-                    };
-                }
-            }
+            const material = await getMaterialBySubjectAndId(subjectId, materialId, context);
 
             if (!material) {
                 return {
@@ -454,6 +495,61 @@ app.http('get-material-status', {
                 status: 200,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(material),
+            };
+        } catch (err) {
+            context.error(err);
+            return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Error interno' }) };
+        }
+    },
+});
+
+// ── GET /api/material-status?subjectId=...&materialIds=... ─────────
+// Consulta estado de múltiples materiales en una sola llamada
+app.http('get-material-status-batch', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'material-status',
+    handler: async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+
+        const subjectId = request.query.get('subjectId');
+        const materialIds = parseMaterialIdsQuery(request);
+
+        if (!subjectId || subjectId === 'undefined') {
+            return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Falta subjectId' }) };
+        }
+
+        if (materialIds.length === 0) {
+            return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Falta materialIds' }) };
+        }
+
+        if (materialIds.length > 50) {
+            return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'materialIds excede el máximo permitido (50)' }) };
+        }
+
+        try {
+            const results = [];
+
+            for (const materialId of materialIds) {
+                const material = await getMaterialBySubjectAndId(subjectId, materialId, context);
+                if (!material) {
+                    results.push({ materialId, found: false, httpStatus: 404 });
+                    continue;
+                }
+
+                results.push({
+                    materialId,
+                    found: true,
+                    httpStatus: 200,
+                    status: normalizeMaterialStatus(material.status),
+                    material,
+                });
+            }
+
+            return {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ subjectId, results }),
             };
         } catch (err) {
             context.error(err);
