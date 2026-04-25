@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.41.2.15936",
-      "templateHash": "2921150345132012809"
+      "templateHash": "4648717859150913987"
     }
   },
   "parameters": {
@@ -92,14 +92,28 @@
       "type": "string",
       "defaultValue": "dashboard-edu-pilot",
       "metadata": {
-        "description": "Name of the Azure AI Search vector index."
+        "description": "Name of the Pinecone vector index."
       }
     },
-    "azureSearchSkuName": {
+    "pineconeEnvironment": {
       "type": "string",
-      "defaultValue": "basic",
+      "defaultValue": "",
       "metadata": {
-        "description": "Azure AI Search SKU for vector store."
+        "description": "Pinecone environment (optional when PINECONE_HOST is provided)."
+      }
+    },
+    "pineconeHost": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Pinecone data-plane host (optional but recommended)."
+      }
+    },
+    "pineconeApiKeySecretName": {
+      "type": "string",
+      "defaultValue": "PINECONE-API-KEY",
+      "metadata": {
+        "description": "Key Vault secret name that stores the Pinecone API key."
       }
     },
     "classMaterialsContainerName": {
@@ -250,11 +264,23 @@
     "keyVaultName": "[format('kv-edu-{0}', take(variables('resourceToken'), 17))]",
     "identityName": "[format('id-dashboard-edu-{0}', variables('resourceToken'))]",
     "frontDoorName": "[format('afd-dashboard-{0}', variables('resourceToken'))]",
-    "azureSearchName": "[format('{0}dashboard-{1}', variables('abbrs').searchSearchServices, variables('resourceToken'))]",
     "workbookName": "[guid(resourceGroup().id, 'cost-per-interaction-workbook')]",
+    "anomalousUsageAlertName": "[format('alert-anomalous-token-usage-{0}', take(variables('resourceToken'), 8))]",
+    "anomalousUsageActionGroupName": "[format('ag-token-usage-{0}', take(variables('resourceToken'), 8))]",
     "safeStorageName": "[take(replace(variables('storageAccountName'), '-', ''), 24)]"
   },
   "resources": [
+    {
+      "type": "Microsoft.KeyVault/vaults/secrets",
+      "apiVersion": "2023-07-01",
+      "name": "[format('{0}/FRONT-DOOR-ID', variables('keyVaultName'))]",
+      "properties": {
+        "value": "[reference(resourceId('Microsoft.Resources/deployments', 'frontDoor'), '2025-04-01').outputs.frontDoorId.value]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'frontDoor')]"
+      ]
+    },
     {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
@@ -285,7 +311,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "6969293367927273862"
+              "templateHash": "6075212501788671251"
             }
           },
           "parameters": {
@@ -380,6 +406,13 @@
                 "description": "The resource ID of the Log Analytics Workspace."
               },
               "value": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsName'))]"
+            },
+            "appInsightsId": {
+              "type": "string",
+              "metadata": {
+                "description": "The resource ID of Application Insights component."
+              },
+              "value": "[resourceId('Microsoft.Insights/components', parameters('appInsightsName'))]"
             }
           }
         }
@@ -433,7 +466,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "608084552462910092"
+              "templateHash": "16643782382107213478"
             }
           },
           "parameters": {
@@ -505,6 +538,13 @@
               "metadata": {
                 "description": "Capacity (K TPM) for the embedding deployment."
               }
+            },
+            "ttsModelName": {
+              "type": "string",
+              "defaultValue": "tts-1",
+              "metadata": {
+                "description": "Name of the TTS model to deploy."
+              }
             }
           },
           "resources": [
@@ -563,6 +603,26 @@
                 "[resourceId('Microsoft.CognitiveServices/accounts/deployments', parameters('name'), parameters('gptModelName'))]",
                 "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]"
               ]
+            },
+            {
+              "type": "Microsoft.CognitiveServices/accounts/deployments",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', parameters('name'), parameters('ttsModelName'))]",
+              "properties": {
+                "model": {
+                  "format": "OpenAI",
+                  "name": "[parameters('ttsModelName')]",
+                  "version": "1"
+                }
+              },
+              "sku": {
+                "name": "Standard",
+                "capacity": 1
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.CognitiveServices/accounts/deployments', parameters('name'), parameters('embeddingModelName'))]",
+                "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]"
+              ]
             }
           ],
           "outputs": {
@@ -600,6 +660,13 @@
                 "description": "The deployment name for the embedding model."
               },
               "value": "[parameters('embeddingModelName')]"
+            },
+            "ttsDeploymentName": {
+              "type": "string",
+              "metadata": {
+                "description": "The deployment name for the TTS model."
+              },
+              "value": "[parameters('ttsModelName')]"
             }
           }
         }
@@ -878,129 +945,6 @@
                 "description": "The name of the classes table."
               },
               "value": "classes"
-            }
-          }
-        }
-      }
-    },
-    {
-      "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2025-04-01",
-      "name": "aiSearch",
-      "properties": {
-        "expressionEvaluationOptions": {
-          "scope": "inner"
-        },
-        "mode": "Incremental",
-        "parameters": {
-          "location": {
-            "value": "[parameters('location')]"
-          },
-          "name": {
-            "value": "[variables('azureSearchName')]"
-          },
-          "skuName": {
-            "value": "[parameters('azureSearchSkuName')]"
-          },
-          "indexName": {
-            "value": "[parameters('vectorIndexName')]"
-          },
-          "tags": {
-            "value": "[variables('tags')]"
-          }
-        },
-        "template": {
-          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-          "contentVersion": "1.0.0.0",
-          "metadata": {
-            "_generator": {
-              "name": "bicep",
-              "version": "0.41.2.15936",
-              "templateHash": "12685930645093065722"
-            }
-          },
-          "parameters": {
-            "location": {
-              "type": "string",
-              "metadata": {
-                "description": "Azure region for Azure AI Search."
-              }
-            },
-            "name": {
-              "type": "string",
-              "metadata": {
-                "description": "Name of the Azure AI Search service."
-              }
-            },
-            "skuName": {
-              "type": "string",
-              "defaultValue": "basic",
-              "metadata": {
-                "description": "SKU for Azure AI Search."
-              }
-            },
-            "indexName": {
-              "type": "string",
-              "defaultValue": "dashboard-edu-pilot",
-              "metadata": {
-                "description": "Primary vector index name used by backend."
-              }
-            },
-            "tags": {
-              "type": "object",
-              "defaultValue": {},
-              "metadata": {
-                "description": "Tags to apply to the resource."
-              }
-            }
-          },
-          "resources": [
-            {
-              "type": "Microsoft.Search/searchServices",
-              "apiVersion": "2023-11-01",
-              "name": "[parameters('name')]",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]",
-              "sku": {
-                "name": "[parameters('skuName')]"
-              },
-              "properties": {
-                "replicaCount": 1,
-                "partitionCount": 1,
-                "publicNetworkAccess": "enabled",
-                "hostingMode": "default",
-                "semanticSearch": "free"
-              }
-            }
-          ],
-          "outputs": {
-            "id": {
-              "type": "string",
-              "metadata": {
-                "description": "The resource ID of the Azure AI Search service."
-              },
-              "value": "[resourceId('Microsoft.Search/searchServices', parameters('name'))]"
-            },
-            "serviceName": {
-              "type": "string",
-              "metadata": {
-                "description": "The name of the Azure AI Search service."
-              },
-              "value": "[parameters('name')]"
-            },
-            "endpoint": {
-              "type": "string",
-              "metadata": {
-                "description": "The endpoint URL of the Azure AI Search service."
-              },
-              "value": "[format('https://{0}.search.windows.net', parameters('name'))]"
-            },
-            "defaultIndexName": {
-              "type": "string",
-              "metadata": {
-                "description": "The default vector index name to use in backend settings."
-              },
-              "value": "[parameters('indexName')]"
             }
           }
         }
@@ -1330,17 +1274,23 @@
           "openAiEmbeddingDeployment": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'openAi'), '2025-04-01').outputs.embeddingDeploymentName.value]"
           },
+          "openAiTtsDeployment": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'openAi'), '2025-04-01').outputs.ttsDeploymentName.value]"
+          },
           "classMaterialsStorageAccount": {
             "value": "[variables('safeStorageName')]"
           },
-          "azureSearchEndpoint": {
-            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'aiSearch'), '2025-04-01').outputs.endpoint.value]"
+          "pineconeIndexName": {
+            "value": "[parameters('vectorIndexName')]"
           },
-          "azureSearchIndexName": {
-            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'aiSearch'), '2025-04-01').outputs.defaultIndexName.value]"
+          "pineconeEnvironment": {
+            "value": "[parameters('pineconeEnvironment')]"
           },
-          "azureSearchServiceName": {
-            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'aiSearch'), '2025-04-01').outputs.serviceName.value]"
+          "pineconeHost": {
+            "value": "[parameters('pineconeHost')]"
+          },
+          "pineconeApiKeySecretName": {
+            "value": "[parameters('pineconeApiKeySecretName')]"
           },
           "keyVaultUri": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'keyVault'), '2025-04-01').outputs.keyVaultUri.value]"
@@ -1368,7 +1318,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "11696684498107803787"
+              "templateHash": "2230810423732882644"
             }
           },
           "parameters": {
@@ -1414,28 +1364,44 @@
                 "description": "Azure OpenAI embedding model deployment name."
               }
             },
+            "openAiTtsDeployment": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure OpenAI TTS model deployment name."
+              }
+            },
             "classMaterialsStorageAccount": {
               "type": "string",
               "metadata": {
                 "description": "Azure Storage account name for class materials."
               }
             },
-            "azureSearchEndpoint": {
+            "pineconeIndexName": {
               "type": "string",
+              "defaultValue": "dashboard-edu-pilot",
               "metadata": {
-                "description": "Azure AI Search endpoint URL."
+                "description": "Pinecone index name for vectors."
               }
             },
-            "azureSearchIndexName": {
+            "pineconeEnvironment": {
               "type": "string",
+              "defaultValue": "",
               "metadata": {
-                "description": "Azure AI Search index name for vectors."
+                "description": "Pinecone environment (optional when host is provided)."
               }
             },
-            "azureSearchServiceName": {
+            "pineconeHost": {
               "type": "string",
+              "defaultValue": "",
               "metadata": {
-                "description": "Azure AI Search service name."
+                "description": "Pinecone host endpoint (optional but recommended)."
+              }
+            },
+            "pineconeApiKeySecretName": {
+              "type": "string",
+              "defaultValue": "PINECONE-API-KEY",
+              "metadata": {
+                "description": "Key Vault secret name that stores the Pinecone API key."
               }
             },
             "keyVaultUri": {
@@ -1579,6 +1545,10 @@
                       "value": "[parameters('openAiEmbeddingDeployment')]"
                     },
                     {
+                      "name": "AZURE_OPENAI_TTS_DEPLOYMENT",
+                      "value": "[parameters('openAiTtsDeployment')]"
+                    },
+                    {
                       "name": "AZURE_STORAGE_ACCOUNT_NAME",
                       "value": "[parameters('classMaterialsStorageAccount')]"
                     },
@@ -1599,16 +1569,20 @@
                       "value": "[parameters('classesTableName')]"
                     },
                     {
-                      "name": "AZURE_SEARCH_ENDPOINT",
-                      "value": "[parameters('azureSearchEndpoint')]"
+                      "name": "PINECONE_INDEX_NAME",
+                      "value": "[parameters('pineconeIndexName')]"
                     },
                     {
-                      "name": "AZURE_SEARCH_INDEX_NAME",
-                      "value": "[parameters('azureSearchIndexName')]"
+                      "name": "PINECONE_ENVIRONMENT",
+                      "value": "[parameters('pineconeEnvironment')]"
                     },
                     {
-                      "name": "AZURE_SEARCH_API_KEY",
-                      "value": "[listAdminKeys(resourceId('Microsoft.Search/searchServices', parameters('azureSearchServiceName')), '2023-11-01').primaryKey]"
+                      "name": "PINECONE_HOST",
+                      "value": "[parameters('pineconeHost')]"
+                    },
+                    {
+                      "name": "PINECONE_API_KEY",
+                      "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/{1}/)', parameters('keyVaultUri'), parameters('pineconeApiKeySecretName'))]"
                     },
                     {
                       "name": "NODE_ENV",
@@ -1667,7 +1641,6 @@
         }
       },
       "dependsOn": [
-        "[resourceId('Microsoft.Resources/deployments', 'aiSearch')]",
         "[resourceId('Microsoft.Resources/deployments', 'appInsights')]",
         "[resourceId('Microsoft.Resources/deployments', 'identity')]",
         "[resourceId('Microsoft.Resources/deployments', 'keyVault')]",
@@ -1862,7 +1835,7 @@
             "value": "[variables('workbookName')]"
           },
           "appInsightsId": {
-            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appInsights'), '2025-04-01').outputs.logAnalyticsWorkspaceId.value]"
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appInsights'), '2025-04-01').outputs.appInsightsId.value]"
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -2084,6 +2057,494 @@
       "dependsOn": [
         "[resourceId('Microsoft.Resources/deployments', 'appInsights')]"
       ]
+    },
+    {
+      "condition": "[not(empty(parameters('notificationEmail')))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "anomalousUsageAlert",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "workspaceId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appInsights'), '2025-04-01').outputs.logAnalyticsWorkspaceId.value]"
+          },
+          "notificationEmail": {
+            "value": "[parameters('notificationEmail')]"
+          },
+          "scheduledQueryRuleName": {
+            "value": "[variables('anomalousUsageAlertName')]"
+          },
+          "actionGroupName": {
+            "value": "[variables('anomalousUsageActionGroupName')]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.41.2.15936",
+              "templateHash": "11922469376180291838"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for monitor resources."
+              }
+            },
+            "workspaceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Log Analytics Workspace connected to App Insights."
+              }
+            },
+            "notificationEmail": {
+              "type": "string",
+              "metadata": {
+                "description": "Email destination for alert notifications."
+              }
+            },
+            "scheduledQueryRuleName": {
+              "type": "string",
+              "defaultValue": "alert-anomalous-token-usage",
+              "metadata": {
+                "description": "Name of the scheduled query alert rule."
+              }
+            },
+            "actionGroupName": {
+              "type": "string",
+              "defaultValue": "ag-anomalous-token-usage",
+              "metadata": {
+                "description": "Name of the action group that sends email notifications."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags to apply to resources."
+              }
+            }
+          },
+          "variables": {
+            "tokenThreshold": 1000000
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Insights/actionGroups",
+              "apiVersion": "2023-01-01",
+              "name": "[parameters('actionGroupName')]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "groupShortName": "TokenAlert",
+                "enabled": true,
+                "emailReceivers": [
+                  {
+                    "name": "operations-email",
+                    "emailAddress": "[parameters('notificationEmail')]",
+                    "useCommonAlertSchema": true
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-12-01",
+              "name": "[parameters('scheduledQueryRuleName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "description": "Triggers when a single user exceeds 1,000,000 tokens over the last 24 hours.",
+                "displayName": "Anomalous token usage (>1M tokens / 24h per user)",
+                "severity": 2,
+                "enabled": true,
+                "scopes": [
+                  "[parameters('workspaceId')]"
+                ],
+                "evaluationFrequency": "PT5M",
+                "windowSize": "PT24H",
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "let ragFromCustomEvents =\ncustomEvents\n| where name == \"RAGInteraction\"\n| project timestamp, userId=tostring(customDimensions.userId), totalTokens=todouble(customMeasurements.totalTokens);\nlet ragFromAppEvents =\nAppEvents\n| where Name == \"RAGInteraction\"\n| project timestamp=TimeGenerated, userId=tostring(Properties.userId), totalTokens=todouble(Measurements.totalTokens);\nunion isfuzzy=true ragFromCustomEvents, ragFromAppEvents\n| where timestamp >= ago(24h)\n| where isnotempty(userId)\n| summarize tokens24h = sum(coalesce(totalTokens, 0.0)) by userId\n| where tokens24h > 1000000\n| project userId, tokens24h\n",
+                      "timeAggregation": "Count",
+                      "operator": "GreaterThanOrEqual",
+                      "threshold": 1,
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 1,
+                        "minFailingPeriodsToAlert": 1
+                      }
+                    }
+                  ]
+                },
+                "autoMitigate": true,
+                "muteActionsDuration": "PT1H",
+                "actions": {
+                  "actionGroups": [
+                    "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "actionGroupId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+            },
+            "scheduledQueryRuleId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Insights/scheduledQueryRules', parameters('scheduledQueryRuleName'))]"
+            },
+            "threshold": {
+              "type": "int",
+              "value": "[variables('tokenThreshold')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'appInsights')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "frontDoor",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "profileName": {
+            "value": "[variables('frontDoorName')]"
+          },
+          "frontendHostName": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'staticWebApp'), '2025-04-01').outputs.staticWebAppHostName.value]"
+          },
+          "backendHostName": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'functions'), '2025-04-01').outputs.functionAppHostName.value]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.41.2.15936",
+              "templateHash": "17385882914326708188"
+            }
+          },
+          "parameters": {
+            "profileName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Front Door profile."
+              }
+            },
+            "frontendHostName": {
+              "type": "string",
+              "metadata": {
+                "description": "Hostname of the Static Web App (Frontend)."
+              }
+            },
+            "backendHostName": {
+              "type": "string",
+              "metadata": {
+                "description": "Hostname of the Function App (Backend)."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags for the resources."
+              }
+            }
+          },
+          "variables": {
+            "endpointName": "[format('fd-{0}', uniqueString(resourceGroup().id, parameters('profileName')))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Cdn/profiles",
+              "apiVersion": "2023-05-01",
+              "name": "[parameters('profileName')]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "Standard_AzureFrontDoor"
+              }
+            },
+            {
+              "type": "Microsoft.Cdn/profiles/afdEndpoints",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', parameters('profileName'), variables('endpointName'))]",
+              "location": "global",
+              "properties": {
+                "enabledState": "Enabled"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Cdn/profiles', parameters('profileName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Cdn/profiles/originGroups",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', parameters('profileName'), 'frontend-group')]",
+              "properties": {
+                "loadBalancingSettings": {
+                  "sampleSize": 4,
+                  "successfulSamplesRequired": 3
+                },
+                "healthProbeSettings": {
+                  "probePath": "/",
+                  "probeRequestType": "HEAD",
+                  "probeProtocol": "Https",
+                  "probeIntervalInSeconds": 100
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Cdn/profiles', parameters('profileName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Cdn/profiles/originGroups/origins",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', parameters('profileName'), 'frontend-group', 'frontend-origin')]",
+              "properties": {
+                "hostName": "[parameters('frontendHostName')]",
+                "httpPort": 80,
+                "httpsPort": 443,
+                "originHostHeader": "[parameters('frontendHostName')]",
+                "priority": 1,
+                "weight": 1000,
+                "enforceCertificateNameCheck": true
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Cdn/profiles/originGroups', parameters('profileName'), 'frontend-group')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Cdn/profiles/originGroups",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', parameters('profileName'), 'backend-group')]",
+              "properties": {
+                "loadBalancingSettings": {
+                  "sampleSize": 4,
+                  "successfulSamplesRequired": 3
+                },
+                "healthProbeSettings": {
+                  "probePath": "/api/health",
+                  "probeRequestType": "HEAD",
+                  "probeProtocol": "Https",
+                  "probeIntervalInSeconds": 100
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Cdn/profiles', parameters('profileName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Cdn/profiles/originGroups/origins",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', parameters('profileName'), 'backend-group', 'backend-origin')]",
+              "properties": {
+                "hostName": "[parameters('backendHostName')]",
+                "httpPort": 80,
+                "httpsPort": 443,
+                "originHostHeader": "[parameters('backendHostName')]",
+                "priority": 1,
+                "weight": 1000,
+                "enforceCertificateNameCheck": true
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Cdn/profiles/originGroups', parameters('profileName'), 'backend-group')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Cdn/profiles/afdEndpoints/routes",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', parameters('profileName'), variables('endpointName'), 'route-api')]",
+              "properties": {
+                "originGroup": {
+                  "id": "[resourceId('Microsoft.Cdn/profiles/originGroups', parameters('profileName'), 'backend-group')]"
+                },
+                "supportedProtocols": [
+                  "Http",
+                  "Https"
+                ],
+                "patternsToMatch": [
+                  "/api/*"
+                ],
+                "forwardingProtocol": "HttpsOnly",
+                "linkToDefaultDomain": "Enabled",
+                "httpsRedirect": "Enabled"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Cdn/profiles/originGroups/origins', parameters('profileName'), 'backend-group', 'backend-origin')]",
+                "[resourceId('Microsoft.Cdn/profiles/originGroups', parameters('profileName'), 'backend-group')]",
+                "[resourceId('Microsoft.Cdn/profiles/afdEndpoints', parameters('profileName'), variables('endpointName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Cdn/profiles/afdEndpoints/routes",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', parameters('profileName'), variables('endpointName'), 'route-ui')]",
+              "properties": {
+                "originGroup": {
+                  "id": "[resourceId('Microsoft.Cdn/profiles/originGroups', parameters('profileName'), 'frontend-group')]"
+                },
+                "supportedProtocols": [
+                  "Http",
+                  "Https"
+                ],
+                "patternsToMatch": [
+                  "/*"
+                ],
+                "forwardingProtocol": "HttpsOnly",
+                "linkToDefaultDomain": "Enabled",
+                "httpsRedirect": "Enabled"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Cdn/profiles/afdEndpoints', parameters('profileName'), variables('endpointName'))]",
+                "[resourceId('Microsoft.Cdn/profiles/originGroups/origins', parameters('profileName'), 'frontend-group', 'frontend-origin')]",
+                "[resourceId('Microsoft.Cdn/profiles/originGroups', parameters('profileName'), 'frontend-group')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/FrontDoorWebApplicationFirewallPolicies",
+              "apiVersion": "2022-05-01",
+              "name": "[format('{0}waf', replace(parameters('profileName'), '-', ''))]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "Standard_AzureFrontDoor"
+              },
+              "properties": {
+                "policySettings": {
+                  "enabledState": "Enabled",
+                  "mode": "Prevention",
+                  "requestBodyCheck": "Enabled"
+                },
+                "customRules": {
+                  "rules": [
+                    {
+                      "name": "rate-limit-api-10rpm",
+                      "enabledState": "Enabled",
+                      "priority": 100,
+                      "ruleType": "RateLimitRule",
+                      "rateLimitThreshold": 10,
+                      "rateLimitDurationInMinutes": 1,
+                      "action": "Block",
+                      "matchConditions": [
+                        {
+                          "matchVariable": "RequestUri",
+                          "operator": "BeginsWith",
+                          "negateCondition": false,
+                          "matchValue": [
+                            "/api/"
+                          ],
+                          "transforms": [
+                            "Lowercase"
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "managedRules": {
+                  "managedRuleSets": [
+                    {
+                      "ruleSetType": "Microsoft_DefaultRuleSet",
+                      "ruleSetVersion": "2.1"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Cdn/profiles/securityPolicies",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', parameters('profileName'), 'waf-binding')]",
+              "properties": {
+                "parameters": {
+                  "type": "WebApplicationFirewall",
+                  "wafPolicy": {
+                    "id": "[resourceId('Microsoft.Network/FrontDoorWebApplicationFirewallPolicies', format('{0}waf', replace(parameters('profileName'), '-', '')))]"
+                  },
+                  "associations": [
+                    {
+                      "domains": [
+                        {
+                          "id": "[resourceId('Microsoft.Cdn/profiles/afdEndpoints', parameters('profileName'), variables('endpointName'))]"
+                        }
+                      ],
+                      "patternsToMatch": [
+                        "/*"
+                      ]
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Cdn/profiles/afdEndpoints', parameters('profileName'), variables('endpointName'))]",
+                "[resourceId('Microsoft.Cdn/profiles', parameters('profileName'))]",
+                "[resourceId('Microsoft.Network/FrontDoorWebApplicationFirewallPolicies', format('{0}waf', replace(parameters('profileName'), '-', '')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "frontDoorHostName": {
+              "type": "string",
+              "metadata": {
+                "description": "The host name of the Front Door endpoint."
+              },
+              "value": "[reference(resourceId('Microsoft.Cdn/profiles/afdEndpoints', parameters('profileName'), variables('endpointName')), '2023-05-01').hostName]"
+            },
+            "frontDoorUri": {
+              "type": "string",
+              "metadata": {
+                "description": "The URI of the Front Door endpoint."
+              },
+              "value": "[format('https://{0}', reference(resourceId('Microsoft.Cdn/profiles/afdEndpoints', parameters('profileName'), variables('endpointName')), '2023-05-01').hostName)]"
+            },
+            "frontDoorId": {
+              "type": "string",
+              "metadata": {
+                "description": "The globally unique ID of the Front Door profile (for X-Azure-FDID validation)."
+              },
+              "value": "[reference(resourceId('Microsoft.Cdn/profiles', parameters('profileName')), '2023-05-01').frontDoorId]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'functions')]",
+        "[resourceId('Microsoft.Resources/deployments', 'staticWebApp')]"
+      ]
     }
   ],
   "outputs": {
@@ -2099,6 +2560,10 @@
       "type": "string",
       "value": "[reference(resourceId('Microsoft.Resources/deployments', 'openAi'), '2025-04-01').outputs.embeddingDeploymentName.value]"
     },
+    "AZURE_OPENAI_TTS_DEPLOYMENT": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'openAi'), '2025-04-01').outputs.ttsDeploymentName.value]"
+    },
     "AZURE_STORAGE_ACCOUNT_NAME": {
       "type": "string",
       "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.accountName.value]"
@@ -2107,13 +2572,17 @@
       "type": "string",
       "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.classMaterialsContainerName.value]"
     },
-    "AZURE_SEARCH_ENDPOINT": {
+    "PINECONE_INDEX_NAME": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'aiSearch'), '2025-04-01').outputs.endpoint.value]"
+      "value": "[parameters('vectorIndexName')]"
     },
-    "AZURE_SEARCH_INDEX_NAME": {
+    "PINECONE_ENVIRONMENT": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'aiSearch'), '2025-04-01').outputs.defaultIndexName.value]"
+      "value": "[parameters('pineconeEnvironment')]"
+    },
+    "PINECONE_HOST": {
+      "type": "string",
+      "value": "[parameters('pineconeHost')]"
     },
     "AZURE_KEY_VAULT_URI": {
       "type": "string",
@@ -2130,6 +2599,10 @@
     "AZURE_STATIC_WEB_APP_URI": {
       "type": "string",
       "value": "[reference(resourceId('Microsoft.Resources/deployments', 'staticWebApp'), '2025-04-01').outputs.staticWebAppUri.value]"
+    },
+    "AZURE_FRONT_DOOR_URI": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'frontDoor'), '2025-04-01').outputs.frontDoorUri.value]"
     },
     "AZURE_RESOURCE_GROUP": {
       "type": "string",

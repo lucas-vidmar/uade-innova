@@ -57,7 +57,7 @@ test('director can review vector index health in dashboard', async ({ page }) =>
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        provider: 'azure-ai-search',
+        provider: 'pinecone',
         indexName: 'dashboard-edu-pilot',
         stats: {
           totalVectorCount: 1250,
@@ -73,7 +73,7 @@ test('director can review vector index health in dashboard', async ({ page }) =>
 
   await expect(page.locator('#vector-health-card')).toContainText('Vector Index Health');
   await expect(page.locator('#vector-health-table')).toBeVisible();
-  await expect(page.locator('#vector-health-table')).toContainText('azure-ai-search');
+  await expect(page.locator('#vector-health-table')).toContainText('pinecone');
   await expect(page.locator('#vector-health-table')).toContainText('dashboard-edu-pilot');
   await expect(page.locator('#vector-health-table')).toContainText('1.250');
   await expect(page.locator('#vector-health-table')).toContainText('8%');

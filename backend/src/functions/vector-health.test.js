@@ -34,7 +34,7 @@ test('vector-health handler should be registered', () => {
 });
 
 test('vector-health should return provider and stats payload', async () => {
-    process.env.AZURE_SEARCH_INDEX_NAME = 'dashboard-edu-pilot';
+    process.env.PINECONE_INDEX_NAME = 'dashboard-edu-pilot';
 
     const response = await capturedHandler(
         { headers: { get: () => null } },
@@ -43,7 +43,7 @@ test('vector-health should return provider and stats payload', async () => {
 
     assert.strictEqual(response.status, 200);
     const body = JSON.parse(response.body);
-    assert.strictEqual(body.provider, 'azure-ai-search');
+    assert.strictEqual(body.provider, 'pinecone');
     assert.strictEqual(body.indexName, 'dashboard-edu-pilot');
     assert.strictEqual(body.stats.totalVectorCount, 42);
 });

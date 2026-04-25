@@ -1010,7 +1010,7 @@ export const api = {
         if (USE_MOCK) {
             await delay(250);
             return {
-                provider: 'azure-ai-search',
+                provider: 'pinecone',
                 indexName: 'dashboard-edu-pilot',
                 stats: {
                     totalVectorCount: 0,

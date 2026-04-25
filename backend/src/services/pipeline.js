@@ -1,6 +1,6 @@
 /**
  * services/pipeline.js — Orquestador del pipeline de RAG
- * Procesa un material (buffer + metadata) y lo indexa en Azure AI Search.
+ * Procesa un material (buffer + metadata) y lo indexa en Pinecone.
  */
 import { parseFile, chunkText, cleanText, extractTranscriptTimeline } from './parser.js';
 import { generateEmbeddingsBatch, generateClassSummary, generateClassMap } from './openai.js';
@@ -44,7 +44,7 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
             throw new Error('No se pudo extraer texto significativo del archivo para generar chunks.');
         }
 
-        // 3. Generar embeddings en batches y preparar vectores para Azure AI Search
+        // 3. Generar embeddings en batches y preparar vectores para Pinecone
         const vectors = [];
         for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
             const currentBatch = chunks.slice(i, i + BATCH_SIZE);
@@ -74,19 +74,19 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
             });
         }
 
-        // 4. Indexar en Azure AI Search
-        const vectorIndexName = process.env.AZURE_SEARCH_INDEX_NAME;
-        context.log(`[Pipeline] Indexando ${vectors.length} vectores en Azure AI Search index: ${vectorIndexName}...`);
+        // 4. Indexar en Pinecone
+        const vectorIndexName = process.env.PINECONE_INDEX_NAME;
+        context.log(`[Pipeline] Indexando ${vectors.length} vectores en Pinecone index: ${vectorIndexName}...`);
         await upsertChunks(vectors);
         context.log(`[Pipeline] Vectores indexados con éxito.`);
 
         // ── 4b. Log vector index health metrics (Issue #78) ──────────
         try {
             const stats = await getIndexStats();
-            context.log(`[Azure Search Health] Index: ${vectorIndexName || 'n/a'} | totalVectorCount: ${stats.totalVectorCount} | indexFullness: ${(stats.indexFullness * 100).toFixed(2)}%`);
+            context.log(`[Pinecone Health] Index: ${vectorIndexName || 'n/a'} | totalVectorCount: ${stats.totalVectorCount} | indexFullness: ${(stats.indexFullness * 100).toFixed(2)}%`);
         } catch (statsErr) {
             const warn = typeof context.warn === 'function' ? context.warn.bind(context) : context.log.bind(context);
-            warn(`[Azure Search Health] No se pudo obtener stats del índice: ${statsErr.message}`);
+            warn(`[Pinecone Health] No se pudo obtener stats del índice: ${statsErr.message}`);
         }
 
         // 5. Generar resumen y mapa conceptual si es un tipo de material rico en texto

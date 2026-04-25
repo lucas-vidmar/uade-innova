@@ -160,35 +160,35 @@ Functions should use **Managed Identity** to call Azure OpenAI — not the user'
 
 ---
 
-## 4. Migrate to Azure AI Search as Vector Store
+## 4. Migrate to Pinecone as Vector Store
 
 ### Current State
 
-The architecture now uses **Azure AI Search** as the vector database:
+The architecture now uses **Pinecone (Serverless)** as the vector database:
 - Dimension: 1536 (for `text-embedding-3-small`)
-- Metric: Cosine Similarity (HNSW)
-- Authentication: Azure Search API key (with MI fallback in code)
+- Metric: Cosine Similarity
+- Authentication: API key via Key Vault
 
 ### Finding
 
-Migration to Azure AI Search removed the external vector-store dependency and consolidated observability/billing in Azure.
+Pinecone provides serverless vector storage with free tier for low-volume workloads, ideal for the pilot phase with minimal cost.
 
 ### Recommendation
 
-**Migrate to Azure AI Search** as the default vector store for the pilot phase.
+**Use Pinecone (Serverless)** as the default vector store for the pilot phase.
 
-| Aspect | Previous (Pinecone) | Current (Azure AI Search) |
+| Aspect | Previous (Standard) | Current (Serverless) |
 |--------|----------|-----------------|
-| Cost | ~$70-200/month (Standard) | ~$50-150/month (Basic) |
-| Auth | API Key | Managed Identity (RBAC) |
-| Setup | External | Native Azure resource |
+| Cost | ~$70-200/month | Free tier (first 100GB) |
+| Auth | API Key | API Key |
+| Setup | External | External |
 | Vector dimensions | 1536 | Up to 3072 |
-| Hybrid search | Extra configuration | Built-in |
-| Monitoring | Pinecone dashboard | Application Insights |
+| Hybrid search | N/A | N/A |
+| Monitoring | Pinecone dashboard | Pinecone dashboard |
 
 **Implementation decision:**
-- Azure AI Search is now the primary backend for vector retrieval
-- Pinecone runtime settings and export script should be removed from active backlog scope
+- Pinecone is the primary backend for vector retrieval
+- Azure Cognitive Search should be removed from active architecture
 
 ---
 
@@ -230,7 +230,7 @@ At that point, consider:
 | 1 | Remove Front Door | High | Low | Cost savings, reduced complexity |
 | 2 | Add Table Storage for state | High | Medium | Enables full CRUD operations |
 | 3 | Enable Easy Auth (Entra ID) | High | Medium | Security and UX |
-| 4 | Migrate to Azure AI Search | High | Medium | Reduce external dependencies |
+| 4 | Use Pinecone (Serverless) | High | Low | Cost savings (free tier) |
 | 5 | Keep gpt-4o-mini (no change) | Low | None | — |
 
 **Recommended for immediate action:** #1, #2, #3, and #4 are architectural gaps that should be addressed before the pilot goes live.

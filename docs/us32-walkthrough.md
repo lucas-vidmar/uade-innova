@@ -1,15 +1,15 @@
 # Walkthrough: User Story #32
 
-**Feature/Story Name**: Vector Metadata Tagging (Azure AI Search)  
+**Feature/Story Name**: Vector Metadata Tagging (Pinecone)  
 **Status**: Completed  
-**Business Impact**: Vector chunks now persist explicit class-level metadata and ISO lecture dates, enabling reliable Azure AI Search filtering by academic scope.
+**Business Impact**: Vector chunks now persist explicit class-level metadata and ISO lecture dates, enabling reliable Pinecone filtering by academic scope.
 
 ## What Changed
 - Updated ingestion pipeline in `backend/src/services/pipeline.js`:
   - Adds `classId` (primary selected class) to every vector chunk metadata.
   - Ensures `lectureDate` is emitted once per ingestion run as ISO 8601 and attached to every indexed chunk.
-- Updated Azure AI Search adapter in `backend/src/services/vector-store.js`:
-  - Index schema now includes filterable `classId` field.
+- Updated Pinecone adapter in `backend/src/services/vector-store.js`:
+  - Index namespace now includes filterable `classId` metadata.
   - Upsert mapping now persists `classId` with existing metadata (`subjectId`, `classIds`, `materialType`, `lectureDate`).
   - Retrieval `select`/metadata mapping now exposes `classId` for downstream consumers.
 - Added backend test coverage:
@@ -27,7 +27,7 @@
 ## Acceptance Criteria Mapping
 - **Metadata is attached to each indexed chunk**: `subjectId`, `classId`, `materialType`, and existing metadata are attached in pipeline/upsert mapping.
 - **`lectureDate` uses ISO 8601**: validated with strict ISO normalization assertion in `pipeline.test.js`.
-- **Metadata fields are filterable in Azure AI Search**: `classId` and `lectureDate` are explicitly defined as filterable in index schema and validated in test.
+- **Metadata fields are filterable in Pinecone**: `classId` and `lectureDate` are explicitly defined in vector metadata and validated in test.
 
 ## Backlog Refinement
 - Add migration/reindex utility for historical vectors created before `classId` support.

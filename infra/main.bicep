@@ -54,11 +54,17 @@ param embeddingDeploymentCapacity int = 10
 @description('Location for the Static Web App. Note: limited region availability.')
 param staticWebAppLocation string = 'eastus2'
 
-@description('Name of the Azure AI Search vector index.')
+@description('Name of the Pinecone vector index.')
 param vectorIndexName string = 'dashboard-edu-pilot'
 
-@description('Azure AI Search SKU for vector store.')
-param azureSearchSkuName string = 'basic'
+@description('Pinecone environment (optional when PINECONE_HOST is provided).')
+param pineconeEnvironment string = ''
+
+@description('Pinecone data-plane host (optional but recommended).')
+param pineconeHost string = ''
+
+@description('Key Vault secret name that stores the Pinecone API key.')
+param pineconeApiKeySecretName string = 'PINECONE-API-KEY'
 
 @description('Name of the Storage container for class materials.')
 param classMaterialsContainerName string = 'class-materials'
@@ -88,7 +94,6 @@ var appInsightsName = '${abbrs.insightsComponents}dashboard-${resourceToken}'
 var keyVaultName = 'kv-edu-${take(resourceToken, 17)}'
 var identityName = 'id-dashboard-edu-${resourceToken}'
 var frontDoorName = 'afd-dashboard-${resourceToken}'
-var azureSearchName = '${abbrs.searchSearchServices}dashboard-${resourceToken}'
 var workbookName = guid(resourceGroup().id, 'cost-per-interaction-workbook')
 var anomalousUsageAlertName = 'alert-anomalous-token-usage-${take(resourceToken, 8)}'
 var anomalousUsageActionGroupName = 'ag-token-usage-${take(resourceToken, 8)}'
@@ -135,18 +140,6 @@ module storage './modules/storage.bicep' = {
   }
 }
 
-// ─── Module: Azure AI Search (vector store) ──────────────────────
-module aiSearch './modules/aisearch.bicep' = {
-  name: 'aiSearch'
-  params: {
-    location: location
-    name: azureSearchName
-    skuName: azureSearchSkuName
-    indexName: vectorIndexName
-    tags: tags
-  }
-}
-
 // ─── Module: Key Vault ────────────────────────────────────────────
 module keyVault './modules/keyvault.bicep' = {
   name: 'keyVault'
@@ -185,9 +178,10 @@ module functions './modules/functions.bicep' = {
     openAiEmbeddingDeployment: openAi.outputs.embeddingDeploymentName
     openAiTtsDeployment: openAi.outputs.ttsDeploymentName
     classMaterialsStorageAccount: safeStorageName
-    azureSearchEndpoint: aiSearch.outputs.endpoint
-    azureSearchIndexName: aiSearch.outputs.defaultIndexName
-    azureSearchServiceName: aiSearch.outputs.serviceName
+    pineconeIndexName: vectorIndexName
+    pineconeEnvironment: pineconeEnvironment
+    pineconeHost: pineconeHost
+    pineconeApiKeySecretName: pineconeApiKeySecretName
     keyVaultUri: keyVault.outputs.keyVaultUri
     classMaterialsContainerName: classMaterialsContainerName
     materialsTableName: storage.outputs.materialsTableName
@@ -275,8 +269,9 @@ output AZURE_OPENAI_EMBEDDING_DEPLOYMENT string = openAi.outputs.embeddingDeploy
 output AZURE_OPENAI_TTS_DEPLOYMENT string = openAi.outputs.ttsDeploymentName
 output AZURE_STORAGE_ACCOUNT_NAME string = storage.outputs.accountName
 output AZURE_STORAGE_CONTAINER_MATERIALS string = storage.outputs.classMaterialsContainerName
-output AZURE_SEARCH_ENDPOINT string = aiSearch.outputs.endpoint
-output AZURE_SEARCH_INDEX_NAME string = aiSearch.outputs.defaultIndexName
+output PINECONE_INDEX_NAME string = vectorIndexName
+output PINECONE_ENVIRONMENT string = pineconeEnvironment
+output PINECONE_HOST string = pineconeHost
 output AZURE_KEY_VAULT_URI string = keyVault.outputs.keyVaultUri
 output AZURE_FUNCTION_APP_URI string = functions.outputs.functionAppUri
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = appInsights.outputs.connectionString

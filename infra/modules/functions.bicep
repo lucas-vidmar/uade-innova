@@ -34,14 +34,17 @@ param openAiTtsDeployment string
 @description('Azure Storage account name for class materials.')
 param classMaterialsStorageAccount string
 
-@description('Azure AI Search endpoint URL.')
-param azureSearchEndpoint string
+@description('Pinecone index name for vectors.')
+param pineconeIndexName string = 'dashboard-edu-pilot'
 
-@description('Azure AI Search index name for vectors.')
-param azureSearchIndexName string
+@description('Pinecone environment (optional when host is provided).')
+param pineconeEnvironment string = ''
 
-@description('Azure AI Search service name.')
-param azureSearchServiceName string
+@description('Pinecone host endpoint (optional but recommended).')
+param pineconeHost string = ''
+
+@description('Key Vault secret name that stores the Pinecone API key.')
+param pineconeApiKeySecretName string = 'PINECONE-API-KEY'
 
 @description('Key Vault URI.')
 param keyVaultUri string
@@ -178,18 +181,22 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           name: 'AZURE_TABLE_CLASSES'
           value: classesTableName
         }
-        // Azure AI Search
+        // Pinecone vector store
         {
-          name: 'AZURE_SEARCH_ENDPOINT'
-          value: azureSearchEndpoint
+          name: 'PINECONE_INDEX_NAME'
+          value: pineconeIndexName
         }
         {
-          name: 'AZURE_SEARCH_INDEX_NAME'
-          value: azureSearchIndexName
+          name: 'PINECONE_ENVIRONMENT'
+          value: pineconeEnvironment
         }
         {
-          name: 'AZURE_SEARCH_API_KEY'
-          value: listAdminKeys(resourceId('Microsoft.Search/searchServices', azureSearchServiceName), '2023-11-01').primaryKey
+          name: 'PINECONE_HOST'
+          value: pineconeHost
+        }
+        {
+          name: 'PINECONE_API_KEY'
+          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/${pineconeApiKeySecretName}/)'
         }
         {
           name: 'NODE_ENV'
