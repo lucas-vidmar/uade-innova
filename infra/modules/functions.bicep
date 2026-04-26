@@ -58,11 +58,11 @@ param tags object = {}
 @description('Name of the Storage container for class materials.')
 param classMaterialsContainerName string = 'class-materials'
 
-@description('Resource ID of the User-Assigned Managed Identity.')
-param userAssignedIdentityId string
+@description('Resource ID of the User-Assigned Managed Identity (optional for system-assigned).')
+param userAssignedIdentityId string = ''
 
-@description('Client ID of the User-Assigned Managed Identity.')
-param userAssignedClientId string
+@description('Client ID of the User-Assigned Managed Identity (optional for system-assigned).')
+param userAssignedClientId string = ''
 
 @description('Table name for material state entities.')
 param materialsTableName string = 'materials'
@@ -92,10 +92,7 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
   tags: union(tags, { 'azd-service-name': 'backend' })
   kind: 'functionapp,linux'
   identity: {
-    type: 'UserAssigned'
-    userAssignedIdentities: {
-      '${userAssignedIdentityId}': {}
-    }
+    type: 'SystemAssigned'  // Using System-Assigned for simplified deployment
   }
   properties: {
     serverFarmId: consumptionPlan.id

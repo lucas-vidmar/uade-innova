@@ -151,16 +151,22 @@ module keyVault './modules/keyvault.bicep' = {
 }
 
 // ─── Module: Identity & RBAC ─────────────────────────────────────
-module identity './modules/identity.bicep' = {
-  name: 'identity'
-  params: {
-    identityName: identityName
-    location: location
-    openAiAccountId: openAi.outputs.id
-    storageAccountId: storage.outputs.accountId
-    keyVaultId: keyVault.outputs.keyVaultId
-  }
-}
+// COMMENTED OUT due to missing RBAC permissions
+// module identity './modules/identity.bicep' = {
+//   name: 'identity'
+//   params: {
+//     identityName: identityName
+//     location: location
+//     openAiAccountId: openAi.outputs.id
+//     storageAccountId: storage.outputs.accountId
+//     keyVaultId: keyVault.outputs.keyVaultId
+//   }
+// }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TEMPORARY: Use System-Assigned Identity instead of User-Assigned
+// ═══════════════════════════════════════════════════════════════════
+var useSystemAssignedIdentity = true
 
 // ─── Module: Azure Functions (Consumption Plan — sin VM quota) ────
 // Plan Y1/Dynamic: pago por ejecución, escala a 0, sin reserva de VM.
@@ -169,8 +175,9 @@ module functions './modules/functions.bicep' = {
   params: {
     location: location
     functionAppName: functionAppName
-    userAssignedIdentityId: identity.outputs.identityId
-    userAssignedClientId: identity.outputs.clientId
+    // Temporarily empty - using system-assigned identity
+    userAssignedIdentityId: ''
+    userAssignedClientId: ''
     storageAccountName: safeStorageName
     appInsightsConnectionString: appInsights.outputs.connectionString
     openAiEndpoint: openAi.outputs.endpoint
@@ -231,17 +238,20 @@ module anomalousUsageAlert './modules/anomalous-usage-alert.bicep' = if (!empty(
   }
 }
 
-// ─── Module: Azure Front Door (WAF) ───────────────────────────────
-// Proporciona protección OWASP y enrutamiento a los endpoints
-module frontDoor './modules/frontdoor.bicep' = {
-  name: 'frontDoor'
-  params: {
-    profileName: frontDoorName
-    frontendHostName: staticWebApp.outputs.staticWebAppHostName
-    backendHostName: functions.outputs.functionAppHostName
-    tags: tags
-  }
-}
+// // ─── Module: Azure Front Door (WAF) ───────────────────────────────
+// // Proporciona protección OWASP y enrutamiento a los endpoints
+// // DISABLED: Subscription not registered for Microsoft.Cdn
+// module frontDoor './modules/frontdoor.bicep' = {
+//   name: 'frontDoor'
+//   params: {
+//     profileName: frontDoorName
+//     frontendHostName: staticWebApp.outputs.staticWebAppHostName
+//     backendHostName: functions.outputs.functionAppHostName
+//     tags: tags
+//   }
+// }
+
+/*
 
 /*
 // ─── Module: Azure Budget (Issue #71) ─────────────────────────────
@@ -254,13 +264,14 @@ module budget './modules/budget.bicep' = {
 }
 */
 
-// ─── Front Door ID Secret in Key Vault ────────────────────────────
-resource fdSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  name: '${keyVaultName}/FRONT-DOOR-ID'
-  properties: {
-    value: frontDoor.outputs.frontDoorId
-  }
-}
+// // ─── Front Door ID Secret in Key Vault ────────────────────────────
+// // DISABLED: Front Door not deployed
+// resource fdSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+//   name: '${keyVaultName}/FRONT-DOOR-ID'
+//   properties: {
+//     value: frontDoor.outputs.frontDoorId
+//   }
+// }
 
 // ─── Outputs ────────────────────────────────────────────────────
 output AZURE_OPENAI_ENDPOINT string = openAi.outputs.endpoint
@@ -276,6 +287,5 @@ output AZURE_KEY_VAULT_URI string = keyVault.outputs.keyVaultUri
 output AZURE_FUNCTION_APP_URI string = functions.outputs.functionAppUri
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = appInsights.outputs.connectionString
 output AZURE_STATIC_WEB_APP_URI string = staticWebApp.outputs.staticWebAppUri
-output AZURE_FRONT_DOOR_URI string = frontDoor.outputs.frontDoorUri
+// output AZURE_FRONT_DOOR_URI string = ''  // Disabled - CDN not registered
 output AZURE_RESOURCE_GROUP string = resourceGroup().name
-output AZURE_WORKBOOK_ID string = workbook.outputs.workbookId
