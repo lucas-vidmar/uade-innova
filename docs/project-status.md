@@ -19,6 +19,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 - **Functional Change**: Completed Director-facing cost analytics by enforcing pricing formulas ($0.15/1M input, $0.60/1M output) across workbook and API summaries, and added daily cost-per-interaction visibility in the dashboard.
 - **Business Impact**: Gives leadership direct and auditable visibility into AI unit economics, improving FinOps control and faster budget response.
 
+### [2026-04-13] User Story #94: Per-notification Quick Actions
+- **Status**: Completed
+- **Functional Change**: Added per-notification quick action to mark items as read (`PATCH /api/notifications/{id}/read`), introduced per-user read persistence (`readByUserIds`), and integrated immediate student feedback in the notification center.
+- **Business Impact**: Improves inbox usability and perceived responsiveness by letting students clear specific alerts instantly with clear confirmation.
+
 ### [2026-04-10] User Story #77: Vector Search Performance Metrics
 - **Status**: Completed
 - **Functional Change**: Added dedicated Application Insights dependency telemetry for Pinecone vector retrieval, including provider/index metadata, and wrapped retrieval calls with an injectable latency tracker to separate retrieval timing from LLM timing.

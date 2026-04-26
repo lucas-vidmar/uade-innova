@@ -41,3 +41,23 @@ test('upsertNotificationForSubject should replace existing notification by id', 
   assert.strictEqual(payload[0].id, 'notif-auto-summary-arq-software-2026-class-03');
   assert.ok(payload[0].message.includes('Arquitectura Hexagonal'));
 });
+
+test('markNotificationReadForUser should append user to readByUserIds', async () => {
+  storageMocks.loadJson.mock.mockImplementation(async () => ([
+    {
+      id: 'notif-1',
+      type: 'material',
+      title: 'Nuevo material',
+      subjectId: 'arq-software-2026',
+      unread: true,
+      readByUserIds: [],
+    },
+  ]));
+
+  const updated = await store.markNotificationReadForUser('arq-software-2026', 'notif-1', 'alu-001');
+  assert.strictEqual(updated, true);
+
+  const [, , payload] = storageMocks.saveJson.mock.calls.at(-1).arguments;
+  assert.strictEqual(payload[0].id, 'notif-1');
+  assert.deepStrictEqual(payload[0].readByUserIds, ['alu-001']);
+});

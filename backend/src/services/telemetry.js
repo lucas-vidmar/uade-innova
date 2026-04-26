@@ -196,3 +196,35 @@ export async function trackUserLogin({ userId, roles = [] }) {
         },
     });
 }
+
+/**
+ * Tracks notification-center interactions (quick actions/read acknowledgements).
+ *
+ * @param {object} params
+ * @param {string} params.action
+ * @param {string} params.status
+ * @param {string} params.userId
+ * @param {string} params.subjectId
+ * @param {string} params.notificationId
+ */
+export async function trackNotificationInteraction({
+    action,
+    status,
+    userId,
+    subjectId,
+    notificationId,
+}) {
+    const client = await getClient();
+    if (!client) return;
+
+    client.trackEvent({
+        name: 'NotificationInteraction',
+        properties: {
+            action: action || 'unknown',
+            status: status || 'unknown',
+            userId: userId || 'anonymous',
+            subjectId: subjectId || 'unknown',
+            notificationId: notificationId || 'unknown',
+        },
+    });
+}

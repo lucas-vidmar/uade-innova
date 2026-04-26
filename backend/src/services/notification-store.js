@@ -7,6 +7,11 @@ function normalizeRecipientUserIds(value) {
   return Array.from(new Set(value.filter(Boolean).map((item) => String(item).trim()).filter(Boolean)));
 }
 
+function normalizeReadByUserIds(value) {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.filter(Boolean).map((item) => String(item).trim()).filter(Boolean)));
+}
+
 function normalizeNotification(item = {}, idx = 0) {
   const type = ['grade', 'summary', 'material', 'deadline'].includes(item.type) ? item.type : 'material';
   return {
@@ -19,6 +24,7 @@ function normalizeNotification(item = {}, idx = 0) {
     targetHash: item.targetHash || '#/student/dashboard',
     subjectId: item.subjectId || null,
     recipientUserIds: normalizeRecipientUserIds(item.recipientUserIds),
+    readByUserIds: normalizeReadByUserIds(item.readByUserIds),
     origin: item.origin || 'manual',
   };
 }
@@ -44,6 +50,25 @@ export async function upsertNotificationForSubject(subjectId, notification) {
   }
 
   next.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  await saveJson(CONTAINER_NOTIFICATIONS, `${subjectId}.json`, next);
+  return true;
+}
+
+export async function markNotificationReadForUser(subjectId, notificationId, userId) {
+  if (!subjectId || !notificationId || !userId) return false;
+
+  const current = await listNotificationsBySubject(subjectId);
+  const idx = current.findIndex((item) => item.id === notificationId);
+  if (idx < 0) return false;
+
+  const target = current[idx];
+  const readByUserIds = normalizeReadByUserIds(target.readByUserIds);
+  if (!readByUserIds.includes(userId)) {
+    readByUserIds.push(userId);
+  }
+
+  const next = [...current];
+  next[idx] = { ...target, readByUserIds };
   await saveJson(CONTAINER_NOTIFICATIONS, `${subjectId}.json`, next);
   return true;
 }

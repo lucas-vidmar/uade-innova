@@ -13,7 +13,7 @@ test('notification read state persists across reloads', async ({ page }) => {
     sessionStorage.setItem('edu_consent_accepted', 'true');
   });
 
-  const seedNotifications = [
+  const notifications = [
     {
       id: 'notif-1',
       type: 'grade',
@@ -53,7 +53,7 @@ test('notification read state persists across reloads', async ({ page }) => {
   });
 
   await page.route('**/api/notifications?**', async (route) => {
-    const payload = seedNotifications.map((item) => ({ ...item, unread: !readIds.includes(item.id) }));
+    const payload = notifications.map((item) => ({ ...item, unread: !readIds.includes(item.id) }));
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(payload) });
   });
 
@@ -62,6 +62,14 @@ test('notification read state persists across reloads', async ({ page }) => {
     const ids = Array.isArray(payload?.notificationIds) ? payload.notificationIds : [];
     readIds = Array.from(new Set([...readIds, ...ids]));
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ updated: ids.length }) });
+  });
+
+  await page.route('**/api/notifications/*/read', async (route) => {
+    const payload = route.request().postDataJSON();
+    const match = route.request().url().match(/notifications\/(.+)\/read/);
+    const id = match ? decodeURIComponent(match[1]) : null;
+    if (id) readIds = Array.from(new Set([...readIds, id]));
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id, unread: false, subjectId: payload?.subjectId }) });
   });
 
   await page.goto('/#/student/dashboard');

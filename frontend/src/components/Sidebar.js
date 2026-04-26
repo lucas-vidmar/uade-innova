@@ -3,6 +3,7 @@
    ============================================================ */
 import { auth } from '../services/auth.js';
 import { api } from '../services/api.js';
+import { toast } from './Toast.js';
 
 const NAV = {
   student: [
@@ -284,6 +285,12 @@ async function initializeNotificationCenter({ userId, subjectId }) {
             </div>
             <div class="notification-title">${escapeHtml(item.title)}</div>
             <div class="notification-message">${escapeHtml(item.message)}</div>
+            ${item.unread ? `
+              <div class="notification-actions">
+                <span class="notification-quick-label">Acciones rápidas</span>
+                <span class="notification-action-btn" role="button" tabindex="0" data-notification-action="mark-read">Marcar leída</span>
+              </div>
+            ` : ''}
           </button>
         `;
       })
@@ -308,8 +315,25 @@ async function initializeNotificationCenter({ userId, subjectId }) {
 
   const onMarkAllRead = (e) => {
     e.stopPropagation();
+    const unreadIds = notifications.filter((item) => item.unread).map((item) => item.id);
+    if (unreadIds.length === 0) {
+      toast('success', 'Notificaciones actualizadas', 'No había notificaciones pendientes de lectura.');
+      return;
+    }
+
+    const before = notifications;
     notifications = notifications.map((item) => ({ ...item, unread: false }));
     render();
+
+    api.markNotificationsRead({ notificationIds: unreadIds, userId, subjectId })
+      .then(() => {
+        toast('success', 'Notificaciones actualizadas', 'Se marcaron todas como leídas.');
+      })
+      .catch((err) => {
+        notifications = before;
+        render();
+        toast('error', 'No se pudo actualizar', err?.message || 'Intentá nuevamente en unos segundos.');
+      });
   };
 
   const onSimulate = (e) => {
@@ -323,18 +347,40 @@ async function initializeNotificationCenter({ userId, subjectId }) {
         createdAt: new Date().toISOString(),
         unread: true,
         targetHash: '#/student/dashboard',
+        subjectId,
       },
       ...notifications,
     ];
     render();
   };
 
-  const onListClick = (e) => {
+  const onListClick = async (e) => {
     const item = e.target.closest('[data-notification-id]');
     if (!item) return;
     const id = item.getAttribute('data-notification-id');
+    const markReadAction = e.target.closest('[data-notification-action="mark-read"]');
+    const before = notifications;
     notifications = notifications.map((notif) => (notif.id === id ? { ...notif, unread: false } : notif));
     render();
+
+    const clicked = notifications.find((notif) => notif.id === id);
+    if (clicked?.subjectId && userId) {
+      try {
+        await api.markNotificationRead({ notificationId: id, userId, subjectId: clicked.subjectId });
+        toast('success', 'Notificación leída', 'Tu acción se guardó correctamente.');
+      } catch (err) {
+        notifications = before;
+        render();
+        toast('error', 'No se pudo actualizar', err?.message || 'Intentá nuevamente en unos segundos.');
+        if (markReadAction) return;
+      }
+    }
+
+    if (markReadAction) {
+      toast('success', 'Notificación leída', 'La notificación fue marcada como leída.');
+      return;
+    }
+
     setOpen(false);
 
     const targetHash = item.getAttribute('data-target-hash');
