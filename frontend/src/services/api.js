@@ -1359,6 +1359,20 @@ export const api = {
             }
         },
 
+    async clearChatHistory(subjectId) {
+            if (USE_MOCK) return { success: true, count: 0 };
+            try {
+                const res = await apiFetch(`${BASE_URL}/chat-history?subjectId=${subjectId}`, {
+                    method: 'DELETE'
+                });
+                if (!res.ok) throw new Error(`Error ${res.status}: clearChatHistory`);
+                return res.json();
+            } catch (err) {
+                console.error('[API] clearChatHistory failed:', err);
+                throw err;
+            }
+        },
+
     async sendChatFeedback({ messageId, subjectId, isPositive }) {
             if (USE_MOCK) return { success: true };
             const res = await apiFetch(`${BASE_URL}/chat-feedback`, {

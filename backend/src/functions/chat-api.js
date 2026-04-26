@@ -1,9 +1,9 @@
-import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
+import { validateFrontDoorId, parseClientPrincipal, getAuthenticatedUser } from '../services/auth-utils.js';
 /**
  * chat-api.js — Azure Functions para feedback e historial de chat
  */
 import { app } from '@azure/functions';
-import { saveJson, loadJson, listBlobs } from '../services/storage.js';
+import { saveJson, loadJson, listBlobs, deleteBlob } from '../services/storage.js';
 
 const CONTAINER_CHAT = 'chat-logs';
 const CONTAINER_TEACHER_ALERTS = 'teacher-alerts';
@@ -28,15 +28,14 @@ app.http('get-chat-history', {
     handler: async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         const subjectId = request.query.get('subjectId');
-        const userId = request.user?.id || 'anonymous';
-        const userIdSanitized = userId.replace(/[^a-zA-Z0-9]/g, '_');
+        const { userId, sanitizedId } = getAuthenticatedUser(request);
 
         if (!subjectId) {
             return { status: 400, body: 'Falta subjectId' };
         }
 
         try {
-            const prefix = `${userIdSanitized}/${subjectId}/`;
+            const prefix = `${sanitizedId}/${subjectId}/`;
             const blobNames = await listBlobs(CONTAINER_CHAT, prefix);
             
             // Cargar los últimos 10 mensajes
@@ -53,8 +52,33 @@ app.http('get-chat-history', {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(history.reverse()) // Volver a orden cronológico
             };
+        }
+    }
+});
+
+// ── DELETE /api/chat-history?subjectId={id} ──────────────────────────
+app.http('delete-chat-history', {
+    methods: ['DELETE'],
+    authLevel: 'anonymous',
+    route: 'chat-history',
+    handler: async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+        const subjectId = request.query.get('subjectId');
+        const { sanitizedId } = getAuthenticatedUser(request);
+
+        if (!subjectId) return { status: 400, body: 'Falta subjectId' };
+
+        try {
+            const prefix = `${sanitizedId}/${subjectId}/`;
+            const blobNames = await listBlobs(CONTAINER_CHAT, prefix);
+            
+            for (const name of blobNames) {
+                await deleteBlob(CONTAINER_CHAT, name);
+            }
+
+            return { status: 200, body: JSON.stringify({ success: true, count: blobNames.length }) };
         } catch (err) {
-            context.error('Error obteniendo historial:', err);
+            context.error('Error eliminando historial:', err);
             return { status: 500, body: 'Error interno' };
         }
     }
@@ -69,14 +93,13 @@ app.http('chat-feedback', {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         try {
             const { messageId, subjectId, isPositive } = await request.json();
-            const userId = request.user?.id || 'anonymous';
-            const userIdSanitized = userId.replace(/[^a-zA-Z0-9]/g, '_');
+            const { userId, sanitizedId } = getAuthenticatedUser(request);
 
             if (!messageId || !subjectId) {
                 return { status: 400, body: 'Faltan campos messageId o subjectId' };
             }
 
-            const blobPath = `${userIdSanitized}/${subjectId}/${messageId}.json`;
+            const blobPath = `${sanitizedId}/${subjectId}/${messageId}.json`;
             const log = await loadJson(CONTAINER_CHAT, blobPath);
 
             if (!log) {
@@ -109,16 +132,14 @@ app.http('chat-report-issue', {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         try {
             const { messageId, subjectId, issueDetail } = await request.json();
-            const principal = parseClientPrincipal(request);
-            const userId = principal?.oid || request.user?.id || 'anonymous';
-            const userIdSanitized = String(userId).replace(/[^a-zA-Z0-9]/g, '_');
+            const { userId, sanitizedId } = getAuthenticatedUser(request);
             const detail = String(issueDetail || '').trim();
 
             if (!messageId || !subjectId) {
                 return { status: 400, body: JSON.stringify({ error: 'Faltan campos messageId o subjectId' }) };
             }
 
-            const blobPath = `${userIdSanitized}/${subjectId}/${messageId}.json`;
+            const blobPath = `${sanitizedId}/${subjectId}/${messageId}.json`;
             const log = await loadJson(CONTAINER_CHAT, blobPath);
 
             if (!log) {

@@ -41,15 +41,35 @@ export function parseClientPrincipal(request) {
         const mappedRole = roleMapping[mockRole] || 'Anonymous';
         
         return {
-            userId: 'mock-user-id',
+            userId: `mock-${mockRole}`,
             userDetails: `Mock ${mappedRole}`,
             userRoles: ['authenticated', mappedRole],
             groups: [],
-            oid: 'mock-user-oid'
+            oid: `mock-${mockRole}-oid`
         };
     }
 
     return null;
+}
+
+/**
+ * Unifies user identification across functions, respecting both real SWA principals 
+ * and the x-mock-role header for pilot/demo modes.
+ * @param {Request} request 
+ */
+export function getAuthenticatedUser(request) {
+    const principal = parseClientPrincipal(request);
+    
+    // Priority: Principal fields -> Anonymous fallback
+    const userId = principal?.userId || principal?.oid || 'anonymous';
+    const sanitizedId = String(userId).replace(/[^a-zA-Z0-9]/g, '_');
+    
+    return {
+        userId,
+        sanitizedId,
+        principal,
+        role: principal?.userRoles?.find(r => ['Director', 'Docente', 'Alumno'].includes(r)) || 'Anonymous'
+    };
 }
 
 /**

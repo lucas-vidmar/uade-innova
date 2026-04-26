@@ -8,7 +8,7 @@ import { querySimilar } from '../services/vector-store.js';
 import { saveJson, saveMetricsToTable } from '../services/storage.js';
 import { getShadowPrompt } from '../services/prompts.js';
 import { trackRAGInteraction } from '../services/telemetry.js';
-import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
+import { parseClientPrincipal, validateFrontDoorId, getAuthenticatedUser } from '../services/auth-utils.js';
 import { normalizeCategorizedError, ErrorCategory } from '../services/error-categories.js';
 import { resolveCorrelationId, buildDependencyHeaders, withCorrelationResponseHeaders } from '../services/correlation.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -368,10 +368,10 @@ ${contextText}
                             firstTokenAt,
                         }).catch(err => context.error('[Telemetry] Error emitting RAGInteraction event from stream:', err));
 
-                        // Persistir logs
+                        const { userId, sanitizedId } = getAuthenticatedUser(request);
                         const chatLog = {
                             id: interactionId,
-                            userId: request.user?.id || 'anonymous',
+                            userId,
                             subjectId,
                             classIds,
                             transcriptFocus,
@@ -383,14 +383,13 @@ ${contextText}
                             timestamp: new Date().toISOString(),
                         };
 
-                        const userIdSanitized = (request.user?.id || 'anon').replace(/[^a-zA-Z0-9]/g, '_');
-                        saveJson('chat-logs', `${userIdSanitized}/${subjectId}/${interactionId}.json`, chatLog)
+                        saveJson('chat-logs', `${sanitizedId}/${subjectId}/${interactionId}.json`, chatLog)
                             .catch(e => context.error('Error guardando log de chat (stream):', e));
 
                         saveMetricsToTable('SessionMetrics', {
                             partitionKey: subjectId,
                             rowKey: interactionId,
-                            userId: request.user?.id || 'anonymous',
+                            userId,
                             promptTokens: finalUsage?.prompt_tokens || 0,
                             completionTokens: finalUsage?.completion_tokens || 0,
                             totalTokens: totalInteractionTokens,
@@ -440,8 +439,7 @@ ${contextText}
 
         // ── 6b. Emit App Insights telemetry (Issue #69) ───────────
         const durationMs = Date.now() - startTime;
-        const principal = parseClientPrincipal(request);
-        const userId = principal?.oid || 'anonymous';
+        const { userId, sanitizedId } = getAuthenticatedUser(request);
 
         // Accumulate total tokens for this interaction (embedding + chat)
         const totalInteractionTokens = (embeddingUsage?.total_tokens || 0) + (chatUsage?.total_tokens || 0);
@@ -471,7 +469,7 @@ ${contextText}
         const interactionId = uuidv4();
         const chatLog = {
             id: interactionId,
-            userId: request.user?.id || 'anonymous',
+            userId,
             subjectId,
             classIds,
             transcriptFocus,
@@ -486,14 +484,13 @@ ${contextText}
 
         try {
             // Guardamos en un container específico para logs
-            const userIdSanitized = (request.user?.id || 'anon').replace(/[^a-zA-Z0-9]/g, '_');
-            await saveJson('chat-logs', `${userIdSanitized}/${subjectId}/${interactionId}.json`, chatLog);
+            await saveJson('chat-logs', `${sanitizedId}/${subjectId}/${interactionId}.json`, chatLog);
 
             // Asíncronamente persistimos las métricas RAG en la Table Storage (HU #83)
             saveMetricsToTable('SessionMetrics', {
                 partitionKey: subjectId,
                 rowKey: interactionId,
-                userId: request.user?.id || 'anonymous',
+                userId,
                 promptTokens: chatUsage?.prompt_tokens || 0,
                 completionTokens: chatUsage?.completion_tokens || 0,
                 totalTokens: totalInteractionTokens,

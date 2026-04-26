@@ -211,14 +211,21 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
     // Clear
     container.querySelector('#chat-clear')?.addEventListener('click', async () => {
       const shouldClear = await showConfirmDialog({
-        title: 'Limpiar conversacion',
-        message: 'Seguro que queres limpiar la conversacion actual?',
+        title: 'Limpiar conversación',
+        message: '¿Seguro que querés limpiar la conversación actual? Esto eliminará el historial del servidor.',
         confirmText: 'Limpiar',
         cancelText: 'Cancelar',
       });
       if (shouldClear) {
-        messages = [];
-        render();
+        try {
+          await api.clearChatHistory(subjectId);
+          messages = [];
+          render();
+          toast('success', 'Conversación eliminada');
+        } catch (err) {
+          console.error('Error clearing chat history:', err);
+          toast('error', 'Error al eliminar historial');
+        }
       }
     });
 
