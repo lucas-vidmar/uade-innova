@@ -92,7 +92,7 @@ var staticWebAppName = 'stapp-dashboard-${resourceToken}'
 var logAnalyticsName = '${abbrs.operationalInsightsWorkspaces}dashboard-${resourceToken}'
 var appInsightsName = '${abbrs.insightsComponents}dashboard-${resourceToken}'
 var keyVaultName = 'kv-edu-${take(resourceToken, 17)}'
-var identityName = 'id-dashboard-edu-${resourceToken}'
+
 var frontDoorName = 'afd-dashboard-${resourceToken}'
 var workbookName = guid(resourceGroup().id, 'cost-per-interaction-workbook')
 var anomalousUsageAlertName = 'alert-anomalous-token-usage-${take(resourceToken, 8)}'
@@ -150,23 +150,7 @@ module keyVault './modules/keyvault.bicep' = {
   }
 }
 
-// ─── Module: Identity & RBAC ─────────────────────────────────────
-// COMMENTED OUT due to missing RBAC permissions
-// module identity './modules/identity.bicep' = {
-//   name: 'identity'
-//   params: {
-//     identityName: identityName
-//     location: location
-//     openAiAccountId: openAi.outputs.id
-//     storageAccountId: storage.outputs.accountId
-//     keyVaultId: keyVault.outputs.keyVaultId
-//   }
-// }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// TEMPORARY: Use System-Assigned Identity instead of User-Assigned
-// ═══════════════════════════════════════════════════════════════════
-var useSystemAssignedIdentity = true
 
 // ─── Module: Azure Functions (Consumption Plan — sin VM quota) ────
 // Plan Y1/Dynamic: pago por ejecución, escala a 0, sin reserva de VM.
@@ -175,9 +159,7 @@ module functions './modules/functions.bicep' = {
   params: {
     location: location
     functionAppName: functionAppName
-    // Temporarily empty - using system-assigned identity
-    userAssignedIdentityId: ''
-    userAssignedClientId: ''
+
     storageAccountName: safeStorageName
     appInsightsConnectionString: appInsights.outputs.connectionString
     openAiEndpoint: openAi.outputs.endpoint

@@ -58,11 +58,7 @@ param tags object = {}
 @description('Name of the Storage container for class materials.')
 param classMaterialsContainerName string = 'class-materials'
 
-@description('Resource ID of the User-Assigned Managed Identity (optional for system-assigned).')
-param userAssignedIdentityId string = ''
 
-@description('Client ID of the User-Assigned Managed Identity (optional for system-assigned).')
-param userAssignedClientId string = ''
 
 @description('Table name for material state entities.')
 param materialsTableName string = 'materials'
@@ -199,10 +195,7 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           name: 'NODE_ENV'
           value: 'production'
         }
-        {
-          name: 'AZURE_CLIENT_ID'
-          value: userAssignedClientId
-        }
+
         {
           name: 'SWA_ROLES_SECRET'
           value: 'UADE-Pilot-Secure-Roles-Secret-2026'

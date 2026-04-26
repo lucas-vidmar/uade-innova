@@ -1,7 +1,6 @@
 /**
  * services/openai.js — Cliente Azure OpenAI
- * Standardized on DefaultAzureCredential for both local development (az login)
- * and Azure production (Managed Identity).
+ * Authenticated via API Key.
  */
 import { AzureOpenAI } from 'openai';
 import { DefaultAzureCredential, getBearerTokenProvider } from '@azure/identity';
@@ -23,17 +22,12 @@ function getClient() {
             apiVersion: '2024-08-01-preview',
         };
 
-        if (apiKey) {
-            // Plan B: Use API Key (for environments with restricted RBAC/Managed Identity)
-            config.apiKey = apiKey;
-            console.log('[OpenAI] Authenticated using API Key');
-        } else {
-            // Plan A: Use DefaultAzureCredential (Managed Identity)
-            const credential = new DefaultAzureCredential();
-            const scope = 'https://cognitiveservices.azure.com/.default';
-            config.azureADTokenProvider = getBearerTokenProvider(credential, scope);
-            console.log('[OpenAI] Authenticated using DefaultAzureCredential');
+        if (!apiKey) {
+            throw new Error('AZURE_OPENAI_API_KEY is not defined in environment variables. API Key is required for authentication.');
         }
+
+        config.apiKey = apiKey;
+        console.log('[OpenAI] Authenticated using API Key');
 
         _client = new AzureOpenAI(config);
     }

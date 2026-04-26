@@ -9,6 +9,20 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-04-26] RBAC & Cognitive Search Deprecation
+- **Status**: Completed
+- **Functional Change**: Removed all requirements and configurations for RBAC and Managed Identities across Azure resources, falling back to API Keys and Connection Strings due to lack of resource group permissions. Officially deprecated Azure Cognitive Search in favor of Pinecone.
+- **Business Impact**: Unblocks the pilot deployment in environments with restrictive IAM policies and optimizes FinOps by finalizing the vector database shift.
+
+### [2026-04-25] Project Deployment & Quality Check
+- **Status**: Completed with Blockers
+- **Functional Change**: Successfully merged all active feature branches into `main` and executed a full production deployment using `azd deploy`. Verified frontend availability and dashboard state on Azure.
+- **Business Impact**: Moves the pilot into a live staging environment for end-user testing. Identified a critical RBAC blocker preventing AI interactions in production.
+- **Key Milestones**:
+  - Unified code across `feat/us96-material-status-batch` and `main`.
+  - Zero-downtime deployment to Azure Static Web Apps and Functions.
+  - Discovery of missing `Cognitive Services OpenAI User` role for Managed Identity.
+
 ### [2026-04-11] User Story #33: Material Type Prioritization
 - **Status**: Completed
 - **Functional Change**: Added a primary/secondary material classification (bibliography as secondary), propagated this context through ingestion and retrieval outputs, and displayed priority badges in student chat and global search sources.

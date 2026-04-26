@@ -17,22 +17,16 @@ function getClient() {
             throw new Error('AZURE_STORAGE_ACCOUNT_NAME is not defined in environment variables.');
         }
 
-        if (accountKey) {
-            // Plan B: Use Storage Access Key (if RBAC/Managed Identity is not yet configured)
-            const sharedKeyCredential = new StorageSharedKeyCredential(accountName, accountKey);
-            _client = new BlobServiceClient(
-                `https://${accountName}.blob.core.windows.net`,
-                sharedKeyCredential
-            );
-            console.log('[Storage] Authenticated using Access Key');
-        } else {
-            // Plan A (Zero-Trust): Use Managed Identity / DefaultAzureCredential
-            _client = new BlobServiceClient(
-                `https://${accountName}.blob.core.windows.net`,
-                new DefaultAzureCredential()
-            );
-            console.log('[Storage] Authenticated using DefaultAzureCredential');
+        if (!accountKey) {
+            throw new Error('AZURE_STORAGE_ACCESS_KEY is not defined in environment variables. Access Key is required for authentication.');
         }
+
+        const sharedKeyCredential = new StorageSharedKeyCredential(accountName, accountKey);
+        _client = new BlobServiceClient(
+            `https://${accountName}.blob.core.windows.net`,
+            sharedKeyCredential
+        );
+        console.log('[Storage] Authenticated using Access Key');
     }
     return _client;
 }
@@ -173,19 +167,15 @@ export function getTableClient(tableName) {
         throw new Error('AZURE_STORAGE_ACCOUNT_NAME is not defined in environment variables.');
     }
 
-    if (accountKey) {
-        return new TableClient(
-            `https://${accountName}.table.core.windows.net`, 
-            tableName, 
-            new AzureNamedKeyCredential(accountName, accountKey)
-        );
-    } else {
-        return new TableClient(
-            `https://${accountName}.table.core.windows.net`, 
-            tableName, 
-            new DefaultAzureCredential()
-        );
+    if (!accountKey) {
+        throw new Error('AZURE_STORAGE_ACCESS_KEY is not defined in environment variables. Access Key is required for authentication.');
     }
+
+    return new TableClient(
+        `https://${accountName}.table.core.windows.net`, 
+        tableName, 
+        new AzureNamedKeyCredential(accountName, accountKey)
+    );
 }
 
 /**

@@ -172,7 +172,7 @@ Los docentes cargan directamente los materiales desde el panel de la plataforma.
 ### **C. Metadatos e Identidad (Seguridad)**
 
 * **Input:** Claims de Microsoft Entra ID.  
-* **Procesamiento:** Validación RBAC y recuperación de preferencias.  
+* **Procesamiento:** Validación básica y recuperación de preferencias.  
 * **Output:** Perfil autenticado y filtrado de contenidos.
 
 ### **D. Activos Multimedia Generados**
@@ -209,7 +209,7 @@ Se solicita la creación de un **Resource Group (RG)** dedicado para el entorno 
 | **Azure Functions** (Consumption Plan Y1) | **Procesamiento Serverless:** Pipeline de ingesta de materiales (chunking, embeddings, hitos) y RAG. Pago por ejecución, escala a 0. **No requiere VM quota.** | Website Contributor |
 | **Azure Storage Account** | **Persistencia:** Archivos de clase subidos por docentes y runtime de Functions. | Storage Account Contributor + Storage Blob Data Contributor |
 | **Azure Application Insights** | **Observabilidad y FinOps:** Monitoreo de trazas, latencia y costos de tokens. | Monitoring Contributor |
-| **Managed Identities** | **Seguridad Zero-Trust:** Functions se autentica contra OpenAI y Storage sin credenciales hardcodeadas. *(Pendiente: requiere permiso `roleAssignments/write` que UADE debe otorgar.)* | User Access Administrator (pendiente UADE) |
+| **Autenticación (API Keys)** | **Seguridad:** Debido a la falta de permisos `roleAssignments/write` en el RG, Functions se autentica contra OpenAI, Storage y Pinecone mediante API Keys y Connection Strings (no se utilizan Managed Identities). | N/A |
 
 ### **7.2. Servicios de Identidad y Microsoft 365 (Microsoft Entra ID)**
 

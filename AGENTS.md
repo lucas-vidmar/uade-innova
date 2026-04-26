@@ -38,7 +38,7 @@ Para maximizar el FinOps y minimizar el CapEx, se utiliza una arquitectura **100
 
 ## **4\. Restricciones Técnicas y Seguridad**
 
-* **Zero-Trust:** Prohibido el uso de API Keys hardcodeadas. Se deben usar **Managed Identities** para la comunicación entre servicios.  
+* **Seguridad:** Por falta de permisos para roles RBAC en el Resource Group, la autenticación entre servicios se realiza utilizando **API Keys y Connection Strings** a través de variables de entorno, evitando Managed Identities por el momento.  
 * **Region:** East US o Brazil South (priorizar disponibilidad de GPT-4o mini).  
 * **FinOps:** El costo objetivo por alumno debe ser \< $1.50 USD/mes.  
 * **RAG Tuning:** Implementar filtrado por metadatos (subject\_id, lecture\_date) para evitar filtraciones de contexto entre materias.
@@ -85,8 +85,7 @@ infra/
     ├── staticwebapp.bicep   # Azure Static Web Apps (Free tier — sin VM quota)
     ├── storage.bicep        # Azure Blob Storage (archivos de clase)
     ├── keyvault.bicep       # Azure Key Vault (Pinecone API Key)
-    ├── appinsights.bicep    # Application Insights + Log Analytics
-    └── identity.bicep       # Managed Identities + role assignments (pendiente permisos UADE)
+    └── appinsights.bicep    # Application Insights + Log Analytics
 ```
 
 ### **7.3. Recursos a definir en Bicep**
@@ -100,7 +99,6 @@ infra/
 | Azure Static Web Apps | `stapp-dashboard-{token}` | **Free tier.** CDN global, SSL, 100 GB/mes. Sin VM quota. |
 | App Insights | `appi-dashboard-{token}` | Vinculado a Functions para trazas y costos. |
 | Key Vault | `kv-edu-{token}` | Almacena Pinecone API Key como secret. |
-| Managed Identity | Asignada a Functions | Auth Zero-Trust contra OpenAI y Storage. (RBAC pendiente UADE.) |
 
 ---
 
@@ -273,10 +271,6 @@ PINECONE_API_KEY=...
 AZURE_STORAGE_ACCOUNT_NAME=stdashboard{token}
 AZURE_STORAGE_CONTAINER_MATERIALS=class-materials
 
-# Identity (se inyecta automáticamente via Managed Identity en Azure)
-AZURE_CLIENT_ID=...
-AZURE_TENANT_ID=...
-
 # App (generado por azd desde la URL de Static Web Apps)
 VITE_API_BASE_URL=https://func-dashboard-ingest-{token}.azurewebsites.net/api
 AZURE_STATIC_WEB_APP_URI=https://<nombre>.azurestaticapps.net
@@ -292,7 +286,7 @@ AZURE_STATIC_WEB_APP_URI=https://<nombre>.azurestaticapps.net
 * **Naming de funciones:** camelCase. Naming de archivos: kebab-case.
 * **Logging:** Usar `context.log()` en Functions. Todos los errores deben loguearse con el `materialId` o `classId` como contexto para facilitar el debugging en App Insights.
 * **Chunking:** Tamaño de chunk: 512 tokens. Solapamiento: 50 tokens. Usar `tiktoken` para contar tokens.
-* **Autenticación local:** Para desarrollo local, usar una API Key de Azure OpenAI en `.env.local`. En producción, siempre Managed Identity (nunca commitear keys).
+* **Autenticación:** Tanto local como en producción se utilizarán **API Keys y Connection Strings** en `.env.local` y App Settings de Azure, dado que no hay permisos para Managed Identities/RBAC. Nunca commitear keys al repositorio.
 * **Sin mocks en producción:** Los mocks de SGA (notas/asistencia) son únicamente para el prototipo de frontend. El backend debe dejar los endpoints preparados para conectar una API real.
 
 ---

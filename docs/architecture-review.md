@@ -154,9 +154,9 @@ Static Web Apps → Authentication (Easy Auth)
 3. Configure route guards in the frontend to redirect unauthenticated users
 4. Pass the validated user principal to Functions via `x-ms-client-principal` header (injected by Easy Auth)
 
-### Note on Managed Identity for Backend
+### Note on Backend Authentication
 
-Functions should use **Managed Identity** to call Azure OpenAI — not the user's token. The user's token is only used for frontend authentication. The backend's call to OpenAI is a service-to-service operation and should use the Function's system-assigned identity.
+Functions should use **API Keys and Connection Strings** to call Azure OpenAI and Storage — not the user's token. The user's token is only used for frontend authentication. The backend's call to resources is a service-to-service operation and uses API Keys due to missing RBAC permissions in the resource group.
 
 ---
 
@@ -188,7 +188,7 @@ Pinecone provides serverless vector storage with free tier for low-volume worklo
 
 **Implementation decision:**
 - Pinecone is the primary backend for vector retrieval
-- Azure Cognitive Search should be removed from active architecture
+- Azure Cognitive Search has been completely removed from active architecture
 
 ---
 
