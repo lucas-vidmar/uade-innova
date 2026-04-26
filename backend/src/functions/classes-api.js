@@ -237,10 +237,12 @@ function slugifySubjectId(value) {
 }
 
 function normalizeSubject(subject = {}) {
-    const id = String(subject.id || '').trim();
-    const name = String(subject.name || '').trim();
-    const group = String(subject.group || '').trim();
-    return { id, name, group };
+    return {
+        ...subject,
+        id: String(subject.id || '').trim(),
+        name: String(subject.name || '').trim(),
+        group: String(subject.group || '').trim()
+    };
 }
 
 async function loadSubjects() {
@@ -338,9 +340,9 @@ app.http('save-subject', {
                 return { status: 404, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Materia no encontrada' }) };
             }
 
-            subjects[idx] = { ...subjects[idx], name: payload.name, group: payload.group || subjects[idx].group || '' };
+            subjects[idx] = { ...subjects[idx], ...payload };
             await saveSubjects(subjects);
-            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: desiredId, name: subjects[idx].name }) };
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(subjects[idx]) };
         } catch (err) {
             context.error(err);
             return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: `Error guardando materia: ${err.message}` }) };

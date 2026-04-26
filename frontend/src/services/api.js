@@ -681,14 +681,8 @@ export const api = {
                 ]);
             }
             const data = await res.json();
-            if (Array.isArray(data) && data.length > 0) return data;
-            if (window.location.hostname === 'localhost') {
-                return mergeSubjectsWithLocal([
-                    { id: 'arq-software-2026', name: 'Arquitectura de Software' },
-                    { id: 'diseno-sistemas-2026', name: 'Diseño de Sistemas' }
-                ]);
-            }
-            return mergeSubjectsWithLocal(Array.isArray(data) ? data : []);
+            if (Array.isArray(data)) return data;
+            return mergeSubjectsWithLocal([]);
         } catch (err) {
             console.error('[API] getSubjects failed:', err);
             return mergeSubjectsWithLocal([

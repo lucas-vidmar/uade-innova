@@ -60,8 +60,13 @@ export function parseClientPrincipal(request) {
 export function getAuthenticatedUser(request) {
     const principal = parseClientPrincipal(request);
     
-    // Priority: Principal fields -> Anonymous fallback
-    const userId = principal?.userId || principal?.oid || 'anonymous';
+    // Priority: Principal fields -> x-edu-uid -> Anonymous fallback
+    let userId = principal?.userId || principal?.oid;
+    
+    if (!userId) {
+        userId = request.headers.get('x-edu-uid') || 'anonymous';
+    }
+    
     const sanitizedId = String(userId).replace(/[^a-zA-Z0-9]/g, '_');
     
     return {

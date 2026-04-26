@@ -211,7 +211,8 @@ app.http('rag-query', {
 
         if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' }, correlationId);
         context.log('rag-query triggered');
-        context.log(`[Trace] Correlation-ID: ${correlationId}`);
+        const { userId, sanitizedId } = getAuthenticatedUser(request);
+        context.log(`[Trace] Correlation-ID: ${correlationId} | User: ${userId}`);
 
         // Capture start time for end-to-end latency measurement (Issue #69)
         const startTime = Date.now();
