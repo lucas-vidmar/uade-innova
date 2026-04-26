@@ -18,7 +18,7 @@
             "value": "gpt-4o-mini"
         },
         "gptModelVersion": {
-            "value": "2024-07-18"
+            "value": "2024-10-01"
         },
         "gptDeploymentCapacity": {
             "value": 10
