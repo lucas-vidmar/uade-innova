@@ -87,7 +87,7 @@ test('runPipeline should not crash when materialType is transcript and correctly
     assert.strictEqual(firstUpsertBatch[0].metadata.materialPriority, 'primary', 'Transcript chunks must be tagged as primary');
 
     const healthLogEmitted = mockContext.log.mock.calls.some((call) =>
-        call.arguments?.[0]?.includes('[Azure Search Health]')
+        call.arguments?.[0]?.includes('[Pinecone Health]')
     );
     assert.strictEqual(healthLogEmitted, true, 'Should emit index health log after successful upsert');
 });

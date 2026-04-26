@@ -21,7 +21,7 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ### [2026-04-10] User Story #77: Vector Search Performance Metrics
 - **Status**: Completed
-- **Functional Change**: Added dedicated Application Insights dependency telemetry for Azure AI Search vector retrieval, including provider/index metadata, and wrapped retrieval calls with an injectable latency tracker to separate retrieval timing from LLM timing.
+- **Functional Change**: Added dedicated Application Insights dependency telemetry for Pinecone vector retrieval, including provider/index metadata, and wrapped retrieval calls with an injectable latency tracker to separate retrieval timing from LLM timing.
 - **Business Impact**: Enables operations and FinOps teams to isolate vector-search bottlenecks independently from GPT response latency.
 
 ### [2026-04-10] User Story #66: Early Warning Pedagogical Alarms

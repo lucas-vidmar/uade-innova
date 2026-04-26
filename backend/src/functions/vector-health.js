@@ -17,9 +17,9 @@ app.http('vector-health', {
                 status: 200,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    provider: 'azure-ai-search',
-                    endpoint: process.env.AZURE_SEARCH_ENDPOINT || null,
-                    indexName: process.env.AZURE_SEARCH_INDEX_NAME || null,
+                    provider: 'pinecone',
+                    endpoint: process.env.PINECONE_HOST || null,
+                    indexName: process.env.PINECONE_INDEX_NAME || null,
                     stats,
                     timestamp: new Date().toISOString(),
                 }),
@@ -30,7 +30,7 @@ app.http('vector-health', {
                 status: 500,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    provider: 'azure-ai-search',
+                    provider: 'pinecone',
                     error: err.message,
                 }),
             };

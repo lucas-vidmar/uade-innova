@@ -54,11 +54,17 @@ param embeddingDeploymentCapacity int = 10
 @description('Location for the Static Web App. Note: limited region availability.')
 param staticWebAppLocation string = 'eastus2'
 
-@description('Name of the Azure AI Search vector index.')
+@description('Name of the Pinecone vector index.')
 param vectorIndexName string = 'dashboard-edu-pilot'
 
-@description('Azure AI Search SKU for vector store.')
-param azureSearchSkuName string = 'basic'
+@description('Pinecone environment (optional when PINECONE_HOST is provided).')
+param pineconeEnvironment string = ''
+
+@description('Pinecone data-plane host (optional but recommended).')
+param pineconeHost string = ''
+
+@description('Key Vault secret name that stores the Pinecone API key.')
+param pineconeApiKeySecretName string = 'PINECONE-API-KEY'
 
 @description('Name of the Storage container for class materials.')
 param classMaterialsContainerName string = 'class-materials'
@@ -88,7 +94,6 @@ var appInsightsName = '${abbrs.insightsComponents}dashboard-${resourceToken}'
 var keyVaultName = 'kv-edu-${take(resourceToken, 17)}'
 var identityName = 'id-dashboard-edu-${resourceToken}'
 var frontDoorName = 'afd-dashboard-${resourceToken}'
-var azureSearchName = '${abbrs.searchSearchServices}dashboard-${resourceToken}'
 var workbookName = guid(resourceGroup().id, 'cost-per-interaction-workbook')
 var anomalousUsageAlertName = 'alert-anomalous-token-usage-${take(resourceToken, 8)}'
 var anomalousUsageActionGroupName = 'ag-token-usage-${take(resourceToken, 8)}'
@@ -135,18 +140,6 @@ module storage './modules/storage.bicep' = {
   }
 }
 
-// ─── Module: Azure AI Search (vector store) ──────────────────────
-module aiSearch './modules/aisearch.bicep' = {
-  name: 'aiSearch'
-  params: {
-    location: location
-    name: azureSearchName
-    skuName: azureSearchSkuName
-    indexName: vectorIndexName
-    tags: tags
-  }
-}
-
 // ─── Module: Key Vault ────────────────────────────────────────────
 module keyVault './modules/keyvault.bicep' = {
   name: 'keyVault'
@@ -158,16 +151,22 @@ module keyVault './modules/keyvault.bicep' = {
 }
 
 // ─── Module: Identity & RBAC ─────────────────────────────────────
-module identity './modules/identity.bicep' = {
-  name: 'identity'
-  params: {
-    identityName: identityName
-    location: location
-    openAiAccountId: openAi.outputs.id
-    storageAccountId: storage.outputs.accountId
-    keyVaultId: keyVault.outputs.keyVaultId
-  }
-}
+// COMMENTED OUT due to missing RBAC permissions
+// module identity './modules/identity.bicep' = {
+//   name: 'identity'
+//   params: {
+//     identityName: identityName
+//     location: location
+//     openAiAccountId: openAi.outputs.id
+//     storageAccountId: storage.outputs.accountId
+//     keyVaultId: keyVault.outputs.keyVaultId
+//   }
+// }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TEMPORARY: Use System-Assigned Identity instead of User-Assigned
+// ═══════════════════════════════════════════════════════════════════
+var useSystemAssignedIdentity = true
 
 // ─── Module: Azure Functions (Consumption Plan — sin VM quota) ────
 // Plan Y1/Dynamic: pago por ejecución, escala a 0, sin reserva de VM.
@@ -176,8 +175,9 @@ module functions './modules/functions.bicep' = {
   params: {
     location: location
     functionAppName: functionAppName
-    userAssignedIdentityId: identity.outputs.identityId
-    userAssignedClientId: identity.outputs.clientId
+    // Temporarily empty - using system-assigned identity
+    userAssignedIdentityId: ''
+    userAssignedClientId: ''
     storageAccountName: safeStorageName
     appInsightsConnectionString: appInsights.outputs.connectionString
     openAiEndpoint: openAi.outputs.endpoint
@@ -185,9 +185,10 @@ module functions './modules/functions.bicep' = {
     openAiEmbeddingDeployment: openAi.outputs.embeddingDeploymentName
     openAiTtsDeployment: openAi.outputs.ttsDeploymentName
     classMaterialsStorageAccount: safeStorageName
-    azureSearchEndpoint: aiSearch.outputs.endpoint
-    azureSearchIndexName: aiSearch.outputs.defaultIndexName
-    azureSearchServiceName: aiSearch.outputs.serviceName
+    pineconeIndexName: vectorIndexName
+    pineconeEnvironment: pineconeEnvironment
+    pineconeHost: pineconeHost
+    pineconeApiKeySecretName: pineconeApiKeySecretName
     keyVaultUri: keyVault.outputs.keyVaultUri
     classMaterialsContainerName: classMaterialsContainerName
     materialsTableName: storage.outputs.materialsTableName
@@ -237,17 +238,20 @@ module anomalousUsageAlert './modules/anomalous-usage-alert.bicep' = if (!empty(
   }
 }
 
-// ─── Module: Azure Front Door (WAF) ───────────────────────────────
-// Proporciona protección OWASP y enrutamiento a los endpoints
-module frontDoor './modules/frontdoor.bicep' = {
-  name: 'frontDoor'
-  params: {
-    profileName: frontDoorName
-    frontendHostName: staticWebApp.outputs.staticWebAppHostName
-    backendHostName: functions.outputs.functionAppHostName
-    tags: tags
-  }
-}
+// // ─── Module: Azure Front Door (WAF) ───────────────────────────────
+// // Proporciona protección OWASP y enrutamiento a los endpoints
+// // DISABLED: Subscription not registered for Microsoft.Cdn
+// module frontDoor './modules/frontdoor.bicep' = {
+//   name: 'frontDoor'
+//   params: {
+//     profileName: frontDoorName
+//     frontendHostName: staticWebApp.outputs.staticWebAppHostName
+//     backendHostName: functions.outputs.functionAppHostName
+//     tags: tags
+//   }
+// }
+
+/*
 
 /*
 // ─── Module: Azure Budget (Issue #71) ─────────────────────────────
@@ -260,13 +264,14 @@ module budget './modules/budget.bicep' = {
 }
 */
 
-// ─── Front Door ID Secret in Key Vault ────────────────────────────
-resource fdSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  name: '${keyVaultName}/FRONT-DOOR-ID'
-  properties: {
-    value: frontDoor.outputs.frontDoorId
-  }
-}
+// // ─── Front Door ID Secret in Key Vault ────────────────────────────
+// // DISABLED: Front Door not deployed
+// resource fdSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+//   name: '${keyVaultName}/FRONT-DOOR-ID'
+//   properties: {
+//     value: frontDoor.outputs.frontDoorId
+//   }
+// }
 
 // ─── Outputs ────────────────────────────────────────────────────
 output AZURE_OPENAI_ENDPOINT string = openAi.outputs.endpoint
@@ -275,12 +280,12 @@ output AZURE_OPENAI_EMBEDDING_DEPLOYMENT string = openAi.outputs.embeddingDeploy
 output AZURE_OPENAI_TTS_DEPLOYMENT string = openAi.outputs.ttsDeploymentName
 output AZURE_STORAGE_ACCOUNT_NAME string = storage.outputs.accountName
 output AZURE_STORAGE_CONTAINER_MATERIALS string = storage.outputs.classMaterialsContainerName
-output AZURE_SEARCH_ENDPOINT string = aiSearch.outputs.endpoint
-output AZURE_SEARCH_INDEX_NAME string = aiSearch.outputs.defaultIndexName
+output PINECONE_INDEX_NAME string = vectorIndexName
+output PINECONE_ENVIRONMENT string = pineconeEnvironment
+output PINECONE_HOST string = pineconeHost
 output AZURE_KEY_VAULT_URI string = keyVault.outputs.keyVaultUri
 output AZURE_FUNCTION_APP_URI string = functions.outputs.functionAppUri
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = appInsights.outputs.connectionString
 output AZURE_STATIC_WEB_APP_URI string = staticWebApp.outputs.staticWebAppUri
-output AZURE_FRONT_DOOR_URI string = frontDoor.outputs.frontDoorUri
+// output AZURE_FRONT_DOOR_URI string = ''  // Disabled - CDN not registered
 output AZURE_RESOURCE_GROUP string = resourceGroup().name
-output AZURE_WORKBOOK_ID string = workbook.outputs.workbookId

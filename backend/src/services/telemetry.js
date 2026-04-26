@@ -93,10 +93,10 @@ export async function trackRAGInteraction({
 }
 
 /**
- * Tracks Azure AI Search vector-query dependency latency in App Insights.
+ * Tracks Pinecone vector-query dependency latency in App Insights.
  *
  * @param {object} params
- * @param {string} [params.provider]     - Vector provider name (default: azure-ai-search)
+ * @param {string} [params.provider]     - Vector provider name (default: pinecone)
  * @param {string} [params.index]        - Vector index identifier
  * @param {string} [params.indexName]    - Alias for index
  * @param {string} [params.target]       - Dependency target endpoint
@@ -106,7 +106,7 @@ export async function trackRAGInteraction({
  * @param {string|number} [params.resultCode] - Result code / status code
  */
 export async function trackVectorSearchDependency({
-    provider = 'azure-ai-search',
+    provider = 'pinecone',
     index,
     indexName,
     target,
@@ -118,8 +118,8 @@ export async function trackVectorSearchDependency({
     const client = await getClient();
     if (!client) return;
 
-    const resolvedIndex = index || indexName || process.env.AZURE_SEARCH_INDEX_NAME || 'unknown-index';
-    const resolvedTarget = target || process.env.AZURE_SEARCH_ENDPOINT || 'azure-ai-search';
+    const resolvedIndex = index || indexName || process.env.PINECONE_INDEX_NAME || 'unknown-index';
+    const resolvedTarget = target || process.env.PINECONE_HOST || 'pinecone';
 
     client.trackDependency({
         target: resolvedTarget,
@@ -128,7 +128,7 @@ export async function trackVectorSearchDependency({
         duration: Math.max(0, Number(durationMs) || 0),
         success: Boolean(success),
         resultCode: String(resultCode ?? (success ? 200 : 500)),
-        dependencyTypeName: 'Azure AI Search',
+        dependencyTypeName: 'Pinecone',
         properties: {
             provider,
             index: resolvedIndex,

@@ -69,7 +69,18 @@ test('student notification center shows badge/dropdown and increments on trigger
   await expect(page.locator('#notification-dropdown')).toBeVisible();
   await expect(page.locator('.notification-item')).toHaveCount(2);
 
-  await page.locator('#notification-simulate').click();
+  await page.evaluate(() => {
+    window.dispatchEvent(new CustomEvent('student:trigger-notification', {
+      detail: {
+        id: 'notif-ext-test',
+        type: 'material',
+        title: 'Nuevo material disponible',
+        message: 'Se agregó un recurso nuevo.',
+        createdAt: new Date().toISOString(),
+        targetHash: '#/student/dashboard',
+      },
+    }));
+  });
   await expect(badge).toHaveText('2');
 
   await page.locator('.notification-item').first().click();

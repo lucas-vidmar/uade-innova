@@ -1,86 +1,46 @@
 import { test, mock } from 'node:test';
 import assert from 'node:assert';
 
-const mockSearchResultItems = [];
-
-const searchClientSearchMock = mock.fn(async () => ({
-    results: {
-        async *[Symbol.asyncIterator]() {
-            for (const item of mockSearchResultItems) {
-                yield item;
-            }
-        },
-    },
+const fetchMock = mock.fn(async () => ({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify({ matches: [] }),
 }));
 
-const searchClientMock = {
-    search: searchClientSearchMock,
-    mergeOrUploadDocuments: mock.fn(async () => ({ results: [] })),
-};
+global.fetch = fetchMock;
 
-const indexClientListIndexesMock = mock.fn(() => ({
-    async *[Symbol.asyncIterator]() {
-        yield { name: process.env.AZURE_SEARCH_INDEX_NAME || 'dashboard-edu-pilot' };
-    },
-}));
-
-const indexClientMock = {
-    listIndexes: indexClientListIndexesMock,
-    createOrUpdateIndex: mock.fn(async () => ({})),
-    getIndexStatistics: mock.fn(async () => ({ documentCount: 0 })),
-};
-
-mock.module('@azure/search-documents', {
-    namedExports: {
-        AzureKeyCredential: class AzureKeyCredential {
-            constructor(key) {
-                this.key = key;
-            }
-        },
-        SearchClient: class SearchClient {
-            constructor() {
-                return searchClientMock;
-            }
-        },
-        SearchIndexClient: class SearchIndexClient {
-            constructor() {
-                return indexClientMock;
-            }
-        },
-    },
-});
-
-mock.module('@azure/identity', {
-    namedExports: {
-        DefaultAzureCredential: class DefaultAzureCredential {},
-    },
-});
-
-process.env.AZURE_SEARCH_ENDPOINT = 'https://fake-search.search.windows.net';
-process.env.AZURE_SEARCH_INDEX_NAME = 'test-index';
-process.env.AZURE_SEARCH_API_KEY = 'fake-key';
+process.env.PINECONE_HOST = 'https://test-index-test.svc.pinecone.io';
+process.env.PINECONE_INDEX_NAME = 'test-index';
+process.env.PINECONE_API_KEY = 'fake-key';
 
 const { querySimilarWithTelemetry } = await import('./vector-store.js');
 
 test('querySimilarWithTelemetry emits success dependency telemetry including provider and index', async () => {
-    searchClientSearchMock.mock.resetCalls();
-    mockSearchResultItems.length = 0;
-    mockSearchResultItems.push({
-        score: 0.84,
-        document: {
-            id: 'doc-1',
-            subjectId: 'arq-software-2026',
-            classId: 'class-01',
-            classIds: ['class-01'],
-            materialId: 'm-1',
-            materialType: 'transcript',
-            materialPriority: 'primary',
-            chunkIndex: 1,
-            sourceFilename: 'class-01-transcript.txt',
-            lectureDate: '2026-03-05T00:00:00.000Z',
-            text: 'Contenido de prueba',
-        },
-    });
+    fetchMock.mock.resetCalls();
+    fetchMock.mock.mockImplementationOnce(async () => ({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+            matches: [
+                {
+                    id: 'doc-1',
+                    score: 0.84,
+                    metadata: {
+                        subjectId: 'arq-software-2026',
+                        classId: 'class-01',
+                        classIds: ['class-01'],
+                        materialId: 'm-1',
+                        materialType: 'transcript',
+                        materialPriority: 'primary',
+                        chunkIndex: 1,
+                        sourceFilename: 'class-01-transcript.txt',
+                        lectureDate: '2026-03-05T00:00:00.000Z',
+                        text: 'Contenido de prueba',
+                    },
+                },
+            ],
+        }),
+    }));
 
     const trackDependency = mock.fn(async () => {});
 
@@ -99,18 +59,18 @@ test('querySimilarWithTelemetry emits success dependency telemetry including pro
 
     const payload = trackDependency.mock.calls[0].arguments[0];
     assert.strictEqual(payload.success, true);
-    assert.strictEqual(payload.provider, 'azure-ai-search');
+    assert.strictEqual(payload.provider, 'pinecone');
     assert.strictEqual(payload.index, 'test-index');
     assert.strictEqual(payload.resultCode, 200);
     assert.ok(Number(payload.durationMs) >= 0);
 });
 
-test('querySimilarWithTelemetry emits failed dependency telemetry when Azure Search throws', async () => {
-    const azureError = new Error('search unavailable');
-    azureError.status = 503;
-    searchClientSearchMock.mock.mockImplementationOnce(async () => {
-        throw azureError;
-    });
+test('querySimilarWithTelemetry emits failed dependency telemetry when Pinecone fails', async () => {
+    fetchMock.mock.mockImplementationOnce(async () => ({
+        ok: false,
+        status: 503,
+        text: async () => JSON.stringify({ message: 'pinecone unavailable' }),
+    }));
 
     const trackDependency = mock.fn(async () => {});
 
@@ -126,14 +86,19 @@ test('querySimilarWithTelemetry emits failed dependency telemetry when Azure Sea
     assert.strictEqual(trackDependency.mock.callCount(), 1);
     const payload = trackDependency.mock.calls[0].arguments[0];
     assert.strictEqual(payload.success, false);
-    assert.strictEqual(payload.provider, 'azure-ai-search');
+    assert.strictEqual(payload.provider, 'pinecone');
     assert.strictEqual(payload.index, 'test-index');
     assert.strictEqual(payload.resultCode, 503);
     assert.ok(Number(payload.durationMs) >= 0);
 });
 
 test('upsertChunks should map classId and lectureDate metadata fields', async () => {
-    searchClientMock.mergeOrUploadDocuments.mock.resetCalls();
+    fetchMock.mock.resetCalls();
+    fetchMock.mock.mockImplementationOnce(async () => ({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ upsertedCount: 1 }),
+    }));
 
     const { upsertChunks } = await import('./vector-store.js');
 
@@ -156,62 +121,15 @@ test('upsertChunks should map classId and lectureDate metadata fields', async ()
         },
     ]);
 
-    assert.strictEqual(searchClientMock.mergeOrUploadDocuments.mock.callCount(), 1);
-    const payload = searchClientMock.mergeOrUploadDocuments.mock.calls[0].arguments[0][0];
+    assert.strictEqual(fetchMock.mock.callCount(), 1);
+    const [url, request] = fetchMock.mock.calls[0].arguments;
+    assert.strictEqual(url.endsWith('/vectors/upsert'), true);
+    const body = JSON.parse(request.body);
+    const payload = body.vectors[0].metadata;
     assert.strictEqual(payload.subjectId, 'arq-software-2026');
     assert.strictEqual(payload.classId, 'class-77');
     assert.deepStrictEqual(payload.classIds, ['class-77']);
     assert.strictEqual(payload.materialType, 'notes');
     assert.strictEqual(payload.materialPriority, 'primary');
     assert.strictEqual(payload.lectureDate, '2026-03-05T00:00:00.000Z');
-});
-
-test('ensureIndexExists should define classId and lectureDate as filterable fields', async () => {
-    indexClientMock.createOrUpdateIndex.mock.resetCalls();
-    searchClientMock.mergeOrUploadDocuments.mock.resetCalls();
-
-    indexClientListIndexesMock.mock.mockImplementationOnce(() => ({
-        async *[Symbol.asyncIterator]() {
-            // empty: force index creation path
-        },
-    }));
-
-    const uniqueIndexName = `test-index-${Date.now()}`;
-    process.env.AZURE_SEARCH_INDEX_NAME = uniqueIndexName;
-
-    const { upsertChunks } = await import(`./vector-store.js?schema-test=${Date.now()}`);
-
-    await upsertChunks([
-        {
-            id: 'doc-schema-1',
-            values: [0.1, 0.2, 0.3],
-            metadata: {
-                subjectId: 'arq-software-2026',
-                classId: 'class-01',
-                classIds: ['class-01'],
-                materialId: 'm-1',
-                materialType: 'transcript',
-                materialPriority: 'primary',
-                chunkIndex: 1,
-                sourceFilename: 'class-01-transcript.txt',
-                lectureDate: '2026-03-05T00:00:00.000Z',
-                text: 'Contenido de prueba',
-            },
-        },
-    ]);
-
-    assert.strictEqual(indexClientMock.createOrUpdateIndex.mock.callCount(), 1);
-    const indexDefinition = indexClientMock.createOrUpdateIndex.mock.calls[0].arguments[0];
-    const classIdField = indexDefinition.fields.find((field) => field.name === 'classId');
-    const materialPriorityField = indexDefinition.fields.find((field) => field.name === 'materialPriority');
-    const lectureDateField = indexDefinition.fields.find((field) => field.name === 'lectureDate');
-
-    assert.ok(classIdField, 'classId field should exist in index schema');
-    assert.strictEqual(classIdField.filterable, true, 'classId should be filterable');
-    assert.ok(materialPriorityField, 'materialPriority field should exist in index schema');
-    assert.strictEqual(materialPriorityField.filterable, true, 'materialPriority should be filterable');
-    assert.ok(lectureDateField, 'lectureDate field should exist in index schema');
-    assert.strictEqual(lectureDateField.filterable, true, 'lectureDate should be filterable');
-
-    process.env.AZURE_SEARCH_INDEX_NAME = 'test-index';
 });

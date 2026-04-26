@@ -32,17 +32,20 @@
         "embeddingDeploymentCapacity": {
             "value": 10
         },
-        "principalId": {
-            "value": "${AZURE_PRINCIPAL_ID}"
-        },
         "staticWebAppLocation": {
             "value": "eastus2"
         },
         "vectorIndexName": {
             "value": "dashboard-edu-pilot"
         },
-        "azureSearchSkuName": {
-            "value": "basic"
+        "pineconeEnvironment": {
+            "value": ""
+        },
+        "pineconeHost": {
+            "value": ""
+        },
+        "pineconeApiKeySecretName": {
+            "value": "PINECONE-API-KEY"
         },
         "classMaterialsContainerName": {
             "value": "class-materials"

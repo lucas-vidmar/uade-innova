@@ -412,6 +412,37 @@ async function fetchWithTimeout(resource, options = {}) {
 
 /* ── API Client ──────────────────────────────────────────── */
 export const api = {
+    async getMaterialStatusBatch(subjectId, materialIds = []) {
+        if (!subjectId || !Array.isArray(materialIds) || materialIds.length === 0) {
+            return { subjectId, results: [] };
+        }
+
+        const deduped = Array.from(new Set(materialIds.map((item) => String(item || '').trim()).filter(Boolean)));
+        if (deduped.length === 0) {
+            return { subjectId, results: [] };
+        }
+
+        try {
+            const params = new URLSearchParams({
+                subjectId,
+                materialIds: deduped.join(','),
+            });
+            const res = await fetchWithTimeout(
+                `${BASE_URL}/material-status?${params.toString()}`,
+                { timeout: 3500 }
+            );
+
+            if (!res.ok) throw new Error(`Error ${res.status}: material-status-batch`);
+
+            const data = await res.json();
+            const results = Array.isArray(data?.results) ? data.results : [];
+            return { subjectId, results };
+        } catch (err) {
+            console.error('[API] getMaterialStatusBatch failed:', err);
+            throw err;
+        }
+    },
+
     async getMaterialStatus(subjectId, materialId) {
         if (!subjectId || !materialId) return null;
 
@@ -979,7 +1010,7 @@ export const api = {
         if (USE_MOCK) {
             await delay(250);
             return {
-                provider: 'azure-ai-search',
+                provider: 'pinecone',
                 indexName: 'dashboard-edu-pilot',
                 stats: {
                     totalVectorCount: 0,

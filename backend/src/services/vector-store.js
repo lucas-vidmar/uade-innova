@@ -1,194 +1,145 @@
 /**
- * services/vector-store.js — Adaptador de Azure AI Search
+ * services/vector-store.js — Adaptador de Pinecone
  * API publica usada por el motor RAG: upsert/query/stats.
  */
-import {
-    AzureKeyCredential,
-    SearchClient,
-    SearchIndexClient,
-} from '@azure/search-documents';
-import { DefaultAzureCredential } from '@azure/identity';
 import { CategorizedError, ErrorCategory } from './error-categories.js';
 import { trackVectorSearchDependency } from './telemetry.js';
 
-const VECTOR_DIMENSIONS = Number.parseInt(process.env.AZURE_SEARCH_VECTOR_DIMENSIONS || '1536', 10);
 const BATCH_SIZE = 100;
-
-let _searchClient = null;
-let _indexClient = null;
-let _indexReadyPromise = null;
-
-function getSearchEndpoint() {
-    return process.env.AZURE_SEARCH_ENDPOINT || '';
-}
+const REQUEST_TIMEOUT_MS = 15000;
 
 function getIndexName() {
-    return process.env.AZURE_SEARCH_INDEX_NAME || 'dashboard-edu-pilot';
+    return process.env.PINECONE_INDEX_NAME || 'dashboard-edu-pilot';
 }
 
-function getCredential() {
-    const apiKey = process.env.AZURE_SEARCH_API_KEY;
-    if (apiKey) {
-        console.log('[Azure Search] Authenticated using API key');
-        return new AzureKeyCredential(apiKey);
-    }
-
-    console.log('[Azure Search] Authenticated using DefaultAzureCredential');
-    return new DefaultAzureCredential();
+function getNamespace() {
+    const namespace = process.env.PINECONE_NAMESPACE;
+    return namespace && namespace.trim() ? namespace.trim() : undefined;
 }
 
-async function ensureClients() {
-    const endpoint = getSearchEndpoint();
+function normalizeHost(rawHost) {
+    const host = String(rawHost || '').trim().replace(/\/+$/, '');
+    if (!host) return '';
+    if (host.startsWith('http://') || host.startsWith('https://')) return host;
+    return `https://${host}`;
+}
+
+function getHost() {
+    const explicitHost = normalizeHost(process.env.PINECONE_HOST);
+    if (explicitHost) return explicitHost;
+
+    // Compatibilidad con configuraciones legacy de Pinecone.
+    const environment = String(process.env.PINECONE_ENVIRONMENT || '').trim();
+    if (!environment) return '';
+
+    return `https://${getIndexName()}-${environment}.svc.pinecone.io`;
+}
+
+function getApiKey() {
+    return String(process.env.PINECONE_API_KEY || '').trim();
+}
+
+function assertConfiguration() {
+    const apiKey = getApiKey();
+    const host = getHost();
     const indexName = getIndexName();
 
-    if (!endpoint || !indexName) {
-        throw new Error('Configuracion incompleta: AZURE_SEARCH_ENDPOINT y AZURE_SEARCH_INDEX_NAME son requeridas.');
+    if (!apiKey) {
+        throw new Error('Configuracion incompleta: PINECONE_API_KEY es requerida.');
     }
 
-    if (!_searchClient || !_indexClient) {
-        const credential = getCredential();
-        _indexClient = new SearchIndexClient(endpoint, credential);
-        _searchClient = new SearchClient(endpoint, indexName, credential);
+    if (!host) {
+        throw new Error('Configuracion incompleta: PINECONE_HOST (o PINECONE_ENVIRONMENT) es requerida.');
     }
 
-    if (!_indexReadyPromise) {
-        _indexReadyPromise = ensureIndexExists(indexName);
+    if (!indexName) {
+        throw new Error('Configuracion incompleta: PINECONE_INDEX_NAME es requerida.');
     }
 
-    await _indexReadyPromise;
-    return { searchClient: _searchClient, indexClient: _indexClient, indexName };
+    return { apiKey, host, indexName };
 }
 
-async function ensureIndexExists(indexName) {
-    const existingIndexes = [];
-    for await (const idx of _indexClient.listIndexes()) {
-        existingIndexes.push(idx.name);
+function parseJsonSafely(text) {
+    if (!text) return {};
+    try {
+        return JSON.parse(text);
+    } catch {
+        return { raw: text };
     }
+}
 
-    if (existingIndexes.includes(indexName)) {
-        return;
-    }
+async function pineconeRequest(path, payload = {}) {
+    const { apiKey, host } = assertConfiguration();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-    const indexDefinition = {
-        name: indexName,
-        fields: [
-            { name: 'id', type: 'Edm.String', key: true, filterable: true },
-            { name: 'subjectId', type: 'Edm.String', filterable: true },
-            { name: 'classId', type: 'Edm.String', filterable: true },
-            { name: 'classIds', type: 'Collection(Edm.String)', filterable: true },
-            { name: 'materialId', type: 'Edm.String', filterable: true },
-            { name: 'materialType', type: 'Edm.String', filterable: true },
-            { name: 'materialPriority', type: 'Edm.String', filterable: true },
-            { name: 'chunkIndex', type: 'Edm.Int32', filterable: true, sortable: true },
-            { name: 'sourceFilename', type: 'Edm.String', filterable: true, searchable: true },
-            { name: 'lectureDate', type: 'Edm.DateTimeOffset', filterable: true, sortable: true },
-            { name: 'text', type: 'Edm.String', searchable: true },
-            {
-                name: 'contentVector',
-                type: 'Collection(Edm.Single)',
-                searchable: true,
-                vectorSearchDimensions: VECTOR_DIMENSIONS,
-                vectorSearchProfileName: 'default-vector-profile',
+    try {
+        const response = await fetch(`${host}${path}`, {
+            method: 'POST',
+            headers: {
+                'Api-Key': apiKey,
+                'Content-Type': 'application/json',
             },
-        ],
-        vectorSearch: {
-            algorithms: [
-                {
-                    name: 'default-hnsw',
-                    kind: 'hnsw',
-                    hnswParameters: { metric: 'cosine' },
-                },
-            ],
-            profiles: [
-                {
-                    name: 'default-vector-profile',
-                    algorithmConfigurationName: 'default-hnsw',
-                },
-            ],
-        },
+            body: JSON.stringify(payload),
+            signal: controller.signal,
+        });
+
+        const text = await response.text();
+        const body = parseJsonSafely(text);
+
+        if (!response.ok) {
+            const message = body?.message || body?.error || `Pinecone request failed: ${response.status}`;
+            const err = new Error(message);
+            err.status = response.status;
+            err.code = body?.code || `HTTP_${response.status}`;
+            err.details = body;
+            throw err;
+        }
+
+        return body;
+    } catch (err) {
+        if (err?.name === 'AbortError') {
+            const timeoutErr = new Error(`Timeout consultando Pinecone en ${path}`);
+            timeoutErr.status = 504;
+            timeoutErr.code = 'PINECONE_TIMEOUT';
+            throw timeoutErr;
+        }
+        throw err;
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
+function normalizeMetadata(rawMetadata = {}) {
+    const metadata = rawMetadata && typeof rawMetadata === 'object' ? rawMetadata : {};
+    const classIds = Array.isArray(metadata.classIds)
+        ? metadata.classIds
+        : metadata.classId
+            ? [metadata.classId]
+            : [];
+
+    return {
+        ...metadata,
+        classIds,
     };
-
-    await _indexClient.createOrUpdateIndex(indexDefinition);
-    console.log(`[Azure Search] Index creado: ${indexName}`);
-}
-
-function escapeFilterValue(value) {
-    return String(value || '').replace(/'/g, "''");
-}
-
-function buildFilter(filter) {
-    if (!filter || typeof filter !== 'object') return undefined;
-
-    const andParts = [];
-
-    for (const [field, condition] of Object.entries(filter)) {
-        if (field === '$or') continue;
-        andParts.push(parseCondition(field, condition));
-    }
-
-    if (Array.isArray(filter.$or) && filter.$or.length > 0) {
-        const orParts = filter.$or
-            .map(entry => {
-                const [field, condition] = Object.entries(entry || {})[0] || [];
-                return field ? parseCondition(field, condition) : '';
-            })
-            .filter(Boolean);
-
-        if (orParts.length > 0) {
-            andParts.push(`(${orParts.join(' or ')})`);
-        }
-    }
-
-    return andParts.length > 0 ? andParts.join(' and ') : undefined;
-}
-
-function parseCondition(field, condition) {
-    if (!condition || typeof condition !== 'object') {
-        throw new Error(`Filtro no soportado para campo ${field}`);
-    }
-
-    if ('$eq' in condition) {
-        return `${field} eq '${escapeFilterValue(condition.$eq)}'`;
-    }
-
-    if ('$in' in condition) {
-        const values = Array.isArray(condition.$in) ? condition.$in : [];
-        if (values.length === 0) return '';
-
-        if (field === 'classIds') {
-            return `classIds/any(c: ${values.map(v => `c eq '${escapeFilterValue(v)}'`).join(' or ')})`;
-        }
-
-        return `(${values.map(v => `${field} eq '${escapeFilterValue(v)}'`).join(' or ')})`;
-    }
-
-    throw new Error(`Operador no soportado en filtro para ${field}`);
 }
 
 export async function upsertChunks(vectors) {
-    const { searchClient } = await ensureClients();
+    if (!Array.isArray(vectors) || vectors.length === 0) return;
+
+    const namespace = getNamespace();
+
     for (let i = 0; i < vectors.length; i += BATCH_SIZE) {
-        const batch = vectors.slice(i, i + BATCH_SIZE).map(vector => ({
-            id: vector.id,
-            subjectId: vector.metadata?.subjectId,
-            classId: vector.metadata?.classId,
-            classIds: vector.metadata?.classIds || [],
-            materialId: vector.metadata?.materialId,
-            materialType: vector.metadata?.materialType,
-            materialPriority: vector.metadata?.materialPriority,
-            chunkIndex: vector.metadata?.chunkIndex,
-            sourceFilename: vector.metadata?.sourceFilename,
-            lectureDate: vector.metadata?.lectureDate,
-            text: vector.metadata?.text,
-            contentVector: vector.values,
+        const batch = vectors.slice(i, i + BATCH_SIZE).map((vector) => ({
+            id: String(vector.id),
+            values: Array.isArray(vector.values) ? vector.values : [],
+            metadata: normalizeMetadata(vector.metadata),
         }));
 
-        const result = await searchClient.mergeOrUploadDocuments(batch);
-        const failed = result.results?.filter(r => !r.succeeded) || [];
-        if (failed.length > 0) {
-            const firstError = failed[0]?.errorMessage || 'Error desconocido en indexacion';
-            throw new Error(firstError);
-        }
+        const payload = { vectors: batch };
+        if (namespace) payload.namespace = namespace;
+
+        await pineconeRequest('/vectors/upsert', payload);
     }
 }
 
@@ -202,62 +153,33 @@ export async function querySimilarWithTelemetry(embedding, filter, topK = 5, dep
         : trackVectorSearchDependency;
 
     const startedAt = Date.now();
-    const provider = 'azure-ai-search';
+    const provider = 'pinecone';
     const indexName = getIndexName();
-    const target = getSearchEndpoint() || 'azure-ai-search';
+    const target = getHost() || 'pinecone';
+    const namespace = getNamespace();
 
     try {
-        const { searchClient } = await ensureClients();
-        const filterExpression = buildFilter(filter);
+        const payload = {
+            vector: embedding,
+            topK,
+            includeMetadata: true,
+            includeValues: false,
+        };
 
-        const response = await searchClient.search('*', {
-            top: topK,
-            filter: filterExpression,
-            select: [
-                'id',
-                'subjectId',
-                'classId',
-                'classIds',
-                'materialId',
-                'materialType',
-                'materialPriority',
-                'chunkIndex',
-                'sourceFilename',
-                'lectureDate',
-                'text',
-            ],
-            vectorSearchOptions: {
-                queries: [
-                    {
-                        kind: 'vector',
-                        vector: embedding,
-                        fields: ['contentVector'],
-                        kNearestNeighborsCount: topK,
-                    },
-                ],
-            },
-        });
-
-        const matches = [];
-        for await (const item of response.results) {
-            const doc = item.document || {};
-            matches.push({
-                id: doc.id,
-                score: item.score ?? item['@search.score'] ?? 0,
-                metadata: {
-                    subjectId: doc.subjectId,
-                    classId: doc.classId,
-                    classIds: doc.classIds || [],
-                    materialId: doc.materialId,
-                    materialType: doc.materialType,
-                    materialPriority: doc.materialPriority,
-                    chunkIndex: doc.chunkIndex,
-                    sourceFilename: doc.sourceFilename,
-                    lectureDate: doc.lectureDate,
-                    text: doc.text,
-                },
-            });
+        if (filter && typeof filter === 'object' && Object.keys(filter).length > 0) {
+            payload.filter = filter;
         }
+
+        if (namespace) payload.namespace = namespace;
+
+        const response = await pineconeRequest('/query', payload);
+        const matches = Array.isArray(response?.matches)
+            ? response.matches.map((match) => ({
+                id: match?.id,
+                score: Number(match?.score || 0),
+                metadata: normalizeMetadata(match?.metadata),
+            }))
+            : [];
 
         await dependencyTracker({
             provider,
@@ -283,7 +205,7 @@ export async function querySimilarWithTelemetry(embedding, filter, topK = 5, dep
             resultCode: err?.status || err?.code || 500,
         });
 
-        console.error('[Azure Search] Error en querySimilar:', err);
+        console.error('[Pinecone] Error en querySimilar:', err);
         throw new CategorizedError(`Error consultando la base vectorial: ${err.message}`, {
             errorCategory: ErrorCategory.RETRIEVAL_FAILURE,
             code: err?.code || 'RETRIEVAL_QUERY_FAILED',
@@ -295,11 +217,10 @@ export async function querySimilarWithTelemetry(embedding, filter, topK = 5, dep
 }
 
 export async function getIndexStats() {
-    const { indexClient, indexName } = await ensureClients();
-    const stats = await indexClient.getIndexStatistics(indexName);
+    const stats = await pineconeRequest('/describe_index_stats', {});
     return {
-        totalVectorCount: stats.documentCount ?? 0,
-        indexFullness: 0,
-        namespaces: {},
+        totalVectorCount: stats?.totalVectorCount ?? stats?.total_vector_count ?? 0,
+        indexFullness: stats?.indexFullness ?? stats?.index_fullness ?? 0,
+        namespaces: stats?.namespaces || {},
     };
 }

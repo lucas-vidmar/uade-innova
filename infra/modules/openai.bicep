@@ -52,59 +52,64 @@ resource openAiAccount 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
   }
 }
 
-// ─── GPT-4o-mini Deployment ────────────────────────────────────
-resource gptDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-05-01' = {
-  parent: openAiAccount
-  name: gptModelName
-  properties: {
-    model: {
-      format: 'OpenAI'
-      name: gptModelName
-      version: gptModelVersion
-    }
-    raiPolicyName: 'Microsoft.Default'
-  }
-  sku: {
-    name: 'Standard'
-    capacity: gptDeploymentCapacity
-  }
-}
+// ═════════════════════════════════════════════════════════════════════════════
+// SKIP deployments - they were manually created in Azure OpenAI and are pinned to latest versions
+// Removing model version specification to avoid deprecation errors
+// ═════════════════════════════════════════════════════════════════════════════
 
-// ─── text-embedding-3-small Deployment ─────────────────────────
-resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-05-01' = {
-  parent: openAiAccount
-  name: embeddingModelName
-  dependsOn: [gptDeployment] // Sequential deployments required by Azure OpenAI
-  properties: {
-    model: {
-      format: 'OpenAI'
-      name: embeddingModelName
-      version: embeddingModelVersion
-    }
-  }
-  sku: {
-    name: 'Standard'
-    capacity: embeddingDeploymentCapacity
-  }
-}
+// // ─── GPT-4o-mini Deployment ────────────────────────────────────
+// // Note: Using latest version - do not specify version to avoid deprecation errors
+// resource gptDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-05-01' = {
+//   parent: openAiAccount
+//   name: gptModelName
+//   properties: {
+//     model: {
+//       format: 'OpenAI'
+//       name: gptModelName
+//     }
+//     raiPolicyName: 'Microsoft.Default'
+//   }
+//   sku: {
+//     name: 'Standard'
+//     capacity: gptDeploymentCapacity
+//   }
+// }
+
+// // ─── text-embedding-3-small Deployment ─────────────────────────
+// // Note: Using latest version - do not specify version to avoid deprecation errors
+// resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-05-01' = {
+//   parent: openAiAccount
+//   name: embeddingModelName
+//   dependsOn: [gptDeployment] // Sequential deployments required by Azure OpenAI
+//   properties: {
+//     model: {
+//       format: 'OpenAI'
+//       name: embeddingModelName
+//     }
+//   }
+//   sku: {
+//     name: 'Standard'
+//     capacity: embeddingDeploymentCapacity
+//   }
+// }
 
 // ─── tts-1 Deployment ──────────────────────────────────────────
-resource ttsDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-05-01' = {
-  parent: openAiAccount
-  name: ttsModelName
-  dependsOn: [embeddingDeployment]
-  properties: {
-    model: {
-      format: 'OpenAI'
-      name: ttsModelName
-      version: '1'
-    }
-  }
-  sku: {
-    name: 'Standard'
-    capacity: 1 // TTS typically uses capacity 1 for standard tier
-  }
-}
+// SKIPPED: Model may be deprecated, use manually-created deployment
+// resource ttsDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-05-01' = {
+//   parent: openAiAccount
+//   name: ttsModelName
+//   properties: {
+//     model: {
+//       format: 'OpenAI'
+//       name: ttsModelName
+//       version: '1'
+//     }
+//   }
+//   sku: {
+//     name: 'Standard'
+//     capacity: 1 // TTS typically uses capacity 1 for standard tier
+//   }
+// }
 
 // ─── Outputs ───────────────────────────────────────────────────
 @description('The Azure OpenAI service endpoint URL.')
@@ -114,13 +119,12 @@ output endpoint string = openAiAccount.properties.endpoint
 output name string = openAiAccount.name
 
 @description('The resource ID of the Azure OpenAI resource.')
-output id string = openAiAccount.id
+output id string = openAiAccount.name
 
-@description('The deployment name for the GPT chat model.')
-output chatDeploymentName string = gptDeployment.name
+// Note: Deployment names are hardcoded to match manually-created deployments in Azure OpenAI
+output chatDeploymentName string = 'gpt-4o-mini'
 
-@description('The deployment name for the embedding model.')
-output embeddingDeploymentName string = embeddingDeployment.name
+output embeddingDeploymentName string = 'text-embedding-3-small'
 
-@description('The deployment name for the TTS model.')
-output ttsDeploymentName string = ttsDeployment.name
+// TTS deployment may not exist - return empty if not manually created
+output ttsDeploymentName string = ''

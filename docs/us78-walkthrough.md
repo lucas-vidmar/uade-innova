@@ -1,6 +1,6 @@
 # Walkthrough: User Story #78
 
-**Feature/Story Name**: Azure AI Search Index Health Monitoring  
+**Feature/Story Name**: Pinecone Index Health Monitoring  
 **Status**: Completed  
 **Business Impact**: Ingestion operations now expose vector index growth/capacity signals in logs and in a consumable health endpoint/dashboard view, improving operational traceability.
 
