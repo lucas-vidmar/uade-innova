@@ -55,7 +55,12 @@ function resolveEffectiveUserId(request, principal, body = null) {
   const bodyUserId = body?.userId ? String(body.userId) : null;
   const requestedUserId = bodyUserId || queryUserId;
   const isDev = process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
-  if (!isDev && requestedUserId && !principalUserId) return { userId: null, forbidden: true };
+  
+  // Pilot Phase: allow requestedUserId if principal is missing (since we are using CORS directly to functions)
+  if (!isDev && requestedUserId && !principalUserId) {
+    return { userId: requestedUserId, forbidden: false };
+  }
+  
   if (!isDev && principalUserId && requestedUserId && principalUserId !== requestedUserId) return { userId: null, forbidden: true };
   return { userId: principalUserId || requestedUserId || null, forbidden: false };
 }

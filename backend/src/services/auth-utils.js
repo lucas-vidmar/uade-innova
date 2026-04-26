@@ -8,29 +8,48 @@
  * @returns {Object|null} The parsed principal object or null if not found.
  */
 export function parseClientPrincipal(request) {
+    // 1. Try to parse real SWA principal
     const clientPrincipalHeader = request.headers.get('x-ms-client-principal');
-    if (!clientPrincipalHeader) {
-        return null;
+    if (clientPrincipalHeader) {
+        try {
+            const encoded = Buffer.from(clientPrincipalHeader, 'base64').toString('utf-8');
+            const principal = JSON.parse(encoded);
+            
+            // Extract useful claims for easier access
+            const claims = principal.claims || [];
+            const groups = claims.filter(c => c.typ === 'groups').map(c => c.val);
+            const oid = claims.find(c => c.typ === "http://schemas.microsoft.com/identity/claims/objectidentifier")?.val || principal.userId;
+            
+            return {
+                ...principal,
+                groups,
+                oid
+            };
+        } catch (error) {
+            console.error('Error parsing x-ms-client-principal:', error);
+        }
     }
 
-    try {
-        const encoded = Buffer.from(clientPrincipalHeader, 'base64').toString('utf-8');
-        const principal = JSON.parse(encoded);
-        
-        // Extract useful claims for easier access
-        const claims = principal.claims || [];
-        const groups = claims.filter(c => c.typ === 'groups').map(c => c.val);
-        const oid = claims.find(c => c.typ === "http://schemas.microsoft.com/identity/claims/objectidentifier")?.val || principal.userId;
+    // 2. Fallback to mock role header for demo/mock mode
+    const mockRole = request.headers.get('x-mock-role');
+    if (mockRole) {
+        const roleMapping = {
+            'director': 'Director',
+            'teacher': 'Docente',
+            'student': 'Alumno'
+        };
+        const mappedRole = roleMapping[mockRole] || 'Anonymous';
         
         return {
-            ...principal,
-            groups,
-            oid
+            userId: 'mock-user-id',
+            userDetails: `Mock ${mappedRole}`,
+            userRoles: ['authenticated', mappedRole],
+            groups: [],
+            oid: 'mock-user-oid'
         };
-    } catch (error) {
-        console.error('Error parsing x-ms-client-principal:', error);
-        return null;
     }
+
+    return null;
 }
 
 /**

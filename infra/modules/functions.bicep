@@ -22,6 +22,9 @@ param appInsightsConnectionString string
 @description('Azure OpenAI endpoint.')
 param openAiEndpoint string
 
+@description('Azure OpenAI Account ID.')
+param openAiAccountId string
+
 @description('Azure OpenAI chat model deployment name.')
 param openAiChatDeployment string
 
@@ -142,6 +145,10 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           value: openAiEndpoint
         }
         {
+          name: 'AZURE_OPENAI_API_KEY'
+          value: listKeys(openAiAccountId, '2023-05-01').key1
+        }
+        {
           name: 'AZURE_OPENAI_CHAT_DEPLOYMENT'
           value: openAiChatDeployment
         }
@@ -161,6 +168,10 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         {
           name: 'AZURE_STORAGE_ACCESS_KEY'
           value: listKeys(storageAccountId, '2023-01-01').keys[0].value
+        }
+        {
+          name: 'AZURE_STORAGE_CONNECTION_STRING'
+          value: 'DefaultEndpointsProtocol=https;AccountName=${classMaterialsStorageAccount};AccountKey=${listKeys(storageAccountId, '2023-01-01').keys[0].value};EndpointSuffix=core.windows.net'
         }
         {
           name: 'AZURE_STORAGE_CONTAINER_MATERIALS'

@@ -178,6 +178,28 @@ function jsonResponse(status, payload, correlationId) {
     };
 }
 
+function handleErrorResponse(status, message, category, isStream, correlationId) {
+    if (isStream) {
+        const encoder = new TextEncoder();
+        const responseStream = new ReadableStream({
+            start(controller) {
+                controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ error: message, errorCategory: category })}\n\n`));
+                controller.close();
+            }
+        });
+        return {
+            status: 200,
+            headers: {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                ...withCorrelationResponseHeaders(correlationId),
+            },
+            body: responseStream
+        };
+    }
+    return jsonResponse(status, { error: message, errorCategory: category }, correlationId);
+}
+
 app.http('rag-query', {
     methods: ['POST'],
     authLevel: 'anonymous',
@@ -223,10 +245,7 @@ app.http('rag-query', {
         } catch (err) {
             const categorizedError = normalizeCategorizedError(err, ErrorCategory.LLM);
             context.error('Error generando embedding:', categorizedError);
-            return jsonResponse(categorizedError.status, {
-                error: `Error procesando la pregunta (embedding): ${categorizedError.message}`,
-                errorCategory: categorizedError.errorCategory,
-            }, correlationId);
+            return handleErrorResponse(categorizedError.status, `Error procesando la pregunta (embedding): ${categorizedError.message}`, categorizedError.errorCategory, stream, correlationId);
         }
 
         // ── 3. Filtro Pinecone por subjectId y classIds ───────────
@@ -249,21 +268,14 @@ app.http('rag-query', {
         } catch (err) {
             const categorizedError = normalizeCategorizedError(err, ErrorCategory.RETRIEVAL_FAILURE);
             context.error('Error consultando Pinecone:', categorizedError);
-            return jsonResponse(categorizedError.status, {
-                error: `Error buscando en la base de conocimiento: ${categorizedError.message}`,
-                errorCategory: categorizedError.errorCategory,
-            }, correlationId);
+            return handleErrorResponse(categorizedError.status, `Error buscando en la base de conocimiento: ${categorizedError.message}`, categorizedError.errorCategory, stream, correlationId);
         }
 
         matches = filterMatchesByTranscriptFocus(matches, transcriptFocus);
         matches = buildHybridContext(matches, MAX_RAG_CHUNKS);
 
-        if (matches.length === 0) {
-            return jsonResponse(200, {
-                answer: 'No encontré información sobre eso en los materiales seleccionados.',
-                sources: [],
-            }, correlationId);
-        }
+        // Nota: No retornamos temprano si matches.length === 0 para permitir que el LLM
+        // responda "No encontré información" siguiendo el protocolo de streaming si es necesario.
 
         // ── 5. Construir prompt RAG ───────────────────────────────
         const contextText = matches

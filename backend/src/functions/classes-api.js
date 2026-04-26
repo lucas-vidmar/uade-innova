@@ -245,7 +245,10 @@ function normalizeSubject(subject = {}) {
 
 async function loadSubjects() {
     const saved = await loadJson(CONTAINER_CLASSES, SUBJECTS_BLOB);
-    if (!Array.isArray(saved) || saved.length === 0) return [...DEFAULT_SUBJECTS];
+    // Solo cargamos los valores por defecto si el archivo no existe (null) o no es un array.
+    // Si es un array vacío [], significa que el usuario eliminó todo y debemos respetarlo.
+    if (saved === null || !Array.isArray(saved)) return [...DEFAULT_SUBJECTS];
+    
     return saved.map(normalizeSubject).filter((s) => s.id && s.name);
 }
 
@@ -289,7 +292,7 @@ app.http('get-subjects', {
         return { 
             status: 200, 
             headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify(filteredSubjects.map(({id, name}) => ({id, name}))) 
+            body: JSON.stringify(filteredSubjects) 
         };
     }
 });
@@ -305,6 +308,7 @@ app.http('save-subject', {
 
         const principal = parseClientPrincipal(request);
         if (!canManageSubjects(principal)) {
+            context.warn(`Unauthorized attempt to save subject. User: ${principal?.userDetails || 'Anonymous'}. Roles: ${principal?.userRoles?.join(',') || 'None'}`);
             return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Director access required' }) };
         }
 
@@ -353,12 +357,13 @@ app.http('delete-subject', {
     handler: async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
 
+        const subjectId = request.params.subjectId;
         const principal = parseClientPrincipal(request);
         if (!canManageSubjects(principal)) {
+            context.warn(`Unauthorized attempt to delete subject ${subjectId || 'unknown'}. User: ${principal?.userDetails || 'Anonymous'}. Roles: ${principal?.userRoles?.join(',') || 'None'}`);
             return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Director access required' }) };
         }
 
-        const subjectId = request.params.subjectId;
         if (!subjectId) {
             return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Falta subjectId' }) };
         }

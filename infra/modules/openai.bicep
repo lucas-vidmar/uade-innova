@@ -119,7 +119,7 @@ output endpoint string = openAiAccount.properties.endpoint
 output name string = openAiAccount.name
 
 @description('The resource ID of the Azure OpenAI resource.')
-output id string = openAiAccount.name
+output accountId string = openAiAccount.id
 
 // Note: Deployment names are hardcoded to match manually-created deployments in Azure OpenAI
 output chatDeploymentName string = 'gpt-4o-mini'

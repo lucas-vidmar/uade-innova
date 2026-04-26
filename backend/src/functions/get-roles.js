@@ -17,8 +17,14 @@ app.http('get-roles', {
             const reqBody = await request.json();
             const claims = reqBody?.claims || [];
 
-            // Extract the 'groups' claims from the token
-            const groupClaims = claims.filter(c => c.typ === 'groups').map(c => c.val);
+            // Extract the 'groups' claims from the token (handles both short and long claim types)
+            const groupClaims = claims
+                .filter(c => c.typ === 'groups' || c.typ === 'http://schemas.microsoft.com/ws/2008/06/identity/claims/groups')
+                .map(c => c.val);
+
+            // Extract user identity for logging
+            const userEmail = claims.find(c => c.typ === 'preferred_username' || c.typ === 'email' || c.typ === 'name')?.val;
+            context.log(`Mapping roles for user ${userEmail || 'unknown'}. Found ${groupClaims.length} group claims.`);
 
             // Our internal roles to map to the user
             const roles = [];
@@ -27,19 +33,30 @@ app.http('get-roles', {
             // of the "Alumnos-Pilot" and "Docentes-Pilot" groups respectively instead of generic strings. 
             // For now, based on the requirements, we'll map generic group names for the logic flow.
 
-            if (groupClaims.includes('Alumnos-Pilot')) {
+            // Case-insensitive check for group names
+            const hasGroup = (name) => groupClaims.some(g => g.toLowerCase() === name.toLowerCase());
+
+            if (hasGroup('Alumnos-Pilot')) {
                 roles.push('Alumno');
             }
 
-            if (groupClaims.includes('Docentes-Pilot')) {
+            if (hasGroup('Docentes-Pilot')) {
                 roles.push('Docente');
             }
             
-            if (groupClaims.includes('Directores-Pilot')) {
+            if (hasGroup('Directores-Pilot')) {
                 roles.push('Director');
             }
 
-            // A user could theoretically be both, or none. If none, they just remain 'authenticated'.
+            // Emergency bypass for specific emails if defined in env
+            const adminEmails = (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase());
+            if (userEmail && adminEmails.includes(userEmail.toLowerCase())) {
+                context.log(`Emergency role 'Director' assigned via email match for ${userEmail}`);
+                if (!roles.includes('Director')) roles.push('Director');
+            }
+
+            context.log(`Final roles assigned: ${roles.join(', ')}`);
+
             return {
                 jsonBody: {
                     roles: roles

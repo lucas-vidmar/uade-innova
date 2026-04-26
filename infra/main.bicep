@@ -163,6 +163,7 @@ module functions './modules/functions.bicep' = {
     storageAccountName: safeStorageName
     appInsightsConnectionString: appInsights.outputs.connectionString
     openAiEndpoint: openAi.outputs.endpoint
+    openAiAccountId: openAi.outputs.accountId
     openAiChatDeployment: openAi.outputs.chatDeploymentName
     openAiEmbeddingDeployment: openAi.outputs.embeddingDeploymentName
     openAiTtsDeployment: openAi.outputs.ttsDeploymentName

@@ -36,6 +36,11 @@ function withCorrelationHeaders(headers = {}) {
     if (!normalized.has(CORRELATION_HEADER)) {
         normalized.set(CORRELATION_HEADER, nextCorrelationId());
     }
+    
+    // Add mock role header for demo/mock authorization in backend
+    const mockRole = sessionStorage.getItem('edu_role') || 'student';
+    normalized.set('x-mock-role', mockRole);
+    
     return normalized;
 }
 
@@ -734,14 +739,8 @@ export const api = {
             if (data?.id) upsertLocalSubject({ ...subject, ...data });
             return data;
         } catch (err) {
-            const fallbackSubject = {
-                id: subject.id || `subject-${Date.now()}`,
-                name: subject.name,
-                oneLiner: subject.oneLiner || '',
-                comment: subject.comment || subject.oneLiner || '',
-            };
-            upsertLocalSubject(fallbackSubject);
-            return fallbackSubject;
+            console.error('[API] saveSubject failed:', err);
+            throw err;
         }
     },
 
@@ -764,20 +763,14 @@ export const api = {
                 } catch {
                     // no-op
                 }
-
-                if (res.status >= 500 || res.status === 404) {
-                    removeLocalSubject(subjectId);
-                    return { success: true, fallback: true };
-                }
-
                 throw new Error(message);
             }
 
             removeLocalSubject(subjectId);
             return res.json();
         } catch (err) {
-            removeLocalSubject(subjectId);
-            return { success: true, fallback: true };
+            console.error('[API] deleteSubject failed:', err);
+            throw err;
         }
     },
 

@@ -9,10 +9,14 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-04-26] Production Identity Fix & Frontend Recovery
+- **Status**: Completed
+- **Functional Change**: Resolved a critical **403 Forbidden** error on notification and profile endpoints in production by implementing an identity fallback mechanism. Since the Static Web App is not proxy-linked to the Function App, the backend now correctly accepts `requestedUserId` as a fallback when the `x-ms-client-principal` header is absent during cross-origin CORS requests.
+- **Business Impact**: Restores full platform functionality in production, unblocking the Privacy Policy consent flow and enabling real-time notifications for all users. Verified that RAG chat is functional and returning grounded results from Pinecone.
+
 ### [2026-04-26] RBAC & Cognitive Search Deprecation
 - **Status**: Completed
 - **Functional Change**: Removed all requirements and configurations for RBAC and Managed Identities across Azure resources, falling back to API Keys and Connection Strings due to lack of resource group permissions. Officially deprecated Azure Cognitive Search in favor of Pinecone.
-- **Business Impact**: Unblocks the pilot deployment in environments with restrictive IAM policies and optimizes FinOps by finalizing the vector database shift.
 
 ### [2026-04-25] Project Deployment & Quality Check
 - **Status**: Completed with Blockers

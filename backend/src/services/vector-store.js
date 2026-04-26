@@ -45,10 +45,12 @@ function assertConfiguration() {
     const indexName = getIndexName();
 
     if (!apiKey) {
+        console.error('[VectorStore] PINECONE_API_KEY is missing.');
         throw new Error('Configuracion incompleta: PINECONE_API_KEY es requerida.');
     }
 
     if (!host) {
+        console.error('[VectorStore] PINECONE_HOST is missing. Check your environment variables.');
         throw new Error('Configuracion incompleta: PINECONE_HOST (o PINECONE_ENVIRONMENT) es requerida.');
     }
 
@@ -56,6 +58,7 @@ function assertConfiguration() {
         throw new Error('Configuracion incompleta: PINECONE_INDEX_NAME es requerida.');
     }
 
+    console.log(`[VectorStore] Configured with host: ${host}, index: ${indexName}`);
     return { apiKey, host, indexName };
 }
 
@@ -139,7 +142,9 @@ export async function upsertChunks(vectors) {
         const payload = { vectors: batch };
         if (namespace) payload.namespace = namespace;
 
+        console.log(`[VectorStore] Upserting batch of ${batch.length} vectors to index ${getIndexName()}...`);
         await pineconeRequest('/vectors/upsert', payload);
+        console.log(`[VectorStore] Upserted batch. Index stats expected to update soon.`);
     }
 }
 
