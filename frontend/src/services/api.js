@@ -468,28 +468,6 @@ export const api = {
         }
     },
 
-    async getClasses(subjectId) {
-        if (USE_MOCK) { await delay(); return MOCK_CLASSES.filter(c => c.subjectId === subjectId); }
-        const localClasses = getLocalClasses(subjectId);
-        try {
-            const res = await fetchWithTimeout(`${BASE_URL}/classes?subjectId=${subjectId}`, { timeout: 4000 });
-            if (!res.ok) {
-                if (localClasses.length > 0) return localClasses;
-                return MOCK_CLASSES.filter(c => c.subjectId === subjectId);
-            }
-            const data = await res.json();
-            if (Array.isArray(data) && data.length > 0) return data;
-            if (localClasses.length > 0) return localClasses;
-            if (window.location.hostname === 'localhost') {
-                return MOCK_CLASSES.filter(c => c.subjectId === subjectId);
-            }
-            return Array.isArray(data) ? data : [];
-        } catch (err) {
-            console.error('[API] getClasses failed:', err);
-            if (localClasses.length > 0) return localClasses;
-            return MOCK_CLASSES.filter(c => c.subjectId === subjectId);
-        }
-    },
 
     async getDeadlines(subjectId) {
         if (USE_MOCK) {
@@ -667,35 +645,32 @@ export const api = {
     async getSubjects() {
         if (USE_MOCK) {
             await delay(400);
-            return [
-                { id: 'arq-software-2026', name: 'Arquitectura de Software' },
-                { id: 'diseno-sistemas-2026', name: 'Diseño de Sistemas' }
-            ];
+            return mergeSubjectsWithLocal([]);
         }
         try {
             const res = await apiFetch(`${BASE_URL}/subjects`);
             if (!res.ok) {
-                return mergeSubjectsWithLocal([
-                    { id: 'arq-software-2026', name: 'Arquitectura de Software' },
-                    { id: 'diseno-sistemas-2026', name: 'Diseño de Sistemas' }
-                ]);
+                return mergeSubjectsWithLocal([]);
             }
             const data = await res.json();
-            if (Array.isArray(data)) return data;
-            return mergeSubjectsWithLocal([]);
+            const subjects = Array.isArray(data) ? data : [];
+            return mergeSubjectsWithLocal(subjects);
         } catch (err) {
             console.error('[API] getSubjects failed:', err);
-            return mergeSubjectsWithLocal([
-                { id: 'arq-software-2026', name: 'Arquitectura de Software' },
-                { id: 'diseno-sistemas-2026', name: 'Diseño de Sistemas' }
-            ]);
+            return mergeSubjectsWithLocal([]);
         }
     },
 
     async saveSubject(subject) {
         if (USE_MOCK) {
             await delay(250);
-            return { id: subject.id || `subject-${Date.now()}`, name: subject.name };
+            const mockSubject = { 
+                ...subject, 
+                id: subject.id || `subject-${Date.now()}`,
+                name: subject.name || 'Nueva Materia'
+            };
+            upsertLocalSubject(mockSubject);
+            return mockSubject;
         }
 
         const method = subject?.id ? 'PUT' : 'POST';
@@ -735,6 +710,28 @@ export const api = {
         } catch (err) {
             console.error('[API] saveSubject failed:', err);
             throw err;
+        }
+    },
+
+    async getClasses(subjectId) {
+        const localClassesBySubject = readLocalJson(LOCAL_CLASSES_KEY, {});
+        const localClasses = Array.isArray(localClassesBySubject[subjectId]) ? localClassesBySubject[subjectId] : [];
+
+        if (USE_MOCK) {
+            await delay(400);
+            return localClasses;
+        }
+
+        try {
+            const res = await apiFetch(`${BASE_URL}/classes/${subjectId}`);
+            if (!res.ok) return localClasses;
+            const data = await res.json();
+            const classes = Array.isArray(data) ? data : [];
+            setLocalClasses(subjectId, classes);
+            return classes;
+        } catch (err) {
+            console.error('[API] getClasses failed:', err);
+            return localClasses;
         }
     },
 

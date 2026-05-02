@@ -145,9 +145,9 @@ export function renderSidebar() {
             <div class="profile-panel-section">
               <div class="profile-label mb-2">Cambiar Rol (Demo)</div>
               <div class="profile-role-switcher" id="profile-role-switcher-nav">
-                <button class="role-btn ${user.role === 'student' ? 'active' : ''}" data-role="student">Vista Alumno</button>
-                <button class="role-btn ${user.role === 'teacher' ? 'active' : ''}" data-role="teacher">Vista Docente</button>
-                <button class="role-btn ${user.role === 'director' ? 'active' : ''}" data-role="director">Vista Director</button>
+                <button class="role-btn ${user.role === 'student' ? 'active' : ''}" data-role="student">Valentina Rodríguez (Alumno)</button>
+                <button class="role-btn ${user.role === 'teacher' ? 'active' : ''}" data-role="teacher">Dr. Martín Ferreiro (Docente)</button>
+                <button class="role-btn ${user.role === 'director' ? 'active' : ''}" data-role="director">Lucas Vidmar (Director)</button>
               </div>
             </div>
 

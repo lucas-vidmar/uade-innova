@@ -24,10 +24,7 @@ const USERS = {
         email: 'valentina.rodriguez@uade.edu.ar',
         role: 'student',
         avatar: 'VR',
-        subjects: [
-            { id: 'arq-software-2026', name: 'Arquitecturas de Software (2026-1)' },
-            { id: 'diseno-sistemas-2026', name: 'Diseño de Sistemas (2026-1)' }
-        ],
+        subjects: [],
     },
     teacher: {
         id: 'doc-001',
@@ -35,22 +32,16 @@ const USERS = {
         email: 'mferreiro@uade.edu.ar',
         role: 'teacher',
         avatar: 'MF',
-        subjects: [
-            { id: 'arq-software-2026', name: 'Arquitecturas de Software (2026-1)' },
-            { id: 'diseno-sistemas-2026', name: 'Diseño de Sistemas (2026-1)' }
-        ],
+        subjects: [],
     },
     director: {
         id: 'dir-001',
-        name: 'Prof. Ana Belgrano',
-        email: 'abelgrano@uade.edu.ar',
+        name: 'Lucas Vidmar',
+        email: 'lvidmar@uade.edu.ar',
         role: 'director',
-        avatar: 'AB',
+        avatar: 'LV',
         department: 'Ingeniería en Informática',
-        subjects: [
-            { id: 'arq-software-2026', name: 'Arquitecturas de Software (2026-1)' },
-            { id: 'diseno-sistemas-2026', name: 'Diseño de Sistemas (2026-1)' }
-        ],
+        subjects: [],
     },
 };
 
