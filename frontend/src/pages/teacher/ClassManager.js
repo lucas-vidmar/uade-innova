@@ -11,7 +11,22 @@ export async function renderClassManager(container) {
 
     const subjectId = auth.getActiveSubjectId();
     if (!subjectId) {
-        container.innerHTML = `<div class="empty-state">No hay materia seleccionada.</div>`;
+        const userRole = auth.getRole();
+        container.innerHTML = `
+            <div class="empty-state card">
+                <div class="empty-state-icon">📚</div>
+                <h3>No hay materia seleccionada</h3>
+                <p>${userRole === 'director' 
+                    ? 'Para gestionar clases, primero debés seleccionar una materia desde el selector superior o crear una nueva.' 
+                    : 'Seleccioná una materia en el menú superior para ver sus clases.'}</p>
+                <div style="margin-top: 20px; display: flex; gap: 12px; justify-content: center;">
+                    ${userRole === 'director' ? `
+                        <a href="#/director/subjects" class="btn btn-primary">Ir a Gestión de Materias</a>
+                    ` : ''}
+                    <button class="btn btn-ghost" onclick="document.getElementById('global-course-btn').click()">Seleccionar Materia</button>
+                </div>
+            </div>
+        `;
         return;
     }
     try {

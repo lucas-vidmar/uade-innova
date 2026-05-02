@@ -1,5 +1,6 @@
 import { renderHeader } from '../../components/Header.js';
 import { api } from '../../services/api.js';
+import { auth } from '../../services/auth.js';
 import { toast } from '../../components/Toast.js';
 import { showConfirmDialog } from '../../components/Dialog.js';
 
@@ -262,6 +263,10 @@ export async function renderSubjectManagement(container) {
                     <div class="empty-state card">
                         <div class="empty-state-icon">📚</div>
                         <p>No hay materias disponibles.</p>
+                        <button class="btn btn-primary" id="btn-new-subject" style="margin-top: 20px;">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                            Nueva materia
+                        </button>
                     </div>
                 ` : `
                     <section class="subject-directory-shell">
@@ -546,19 +551,25 @@ export async function renderSubjectManagement(container) {
         document.getElementById('btn-new-subject')?.addEventListener('click', async () => {
             const result = await openCreateSubjectModal();
             if (!result) return;
-
             try {
-                await api.saveSubject({
+                const newSubject = {
                     id: result.id,
                     name: result.name,
                     oneLiner: result.oneLiner || '',
                     comment: result.oneLiner || '',
                     description: result.oneLiner || '',
-                });
+                };
+                await api.saveSubject(newSubject);
+                
+                // Set as active so user can go straight to Class Management
+                auth.setActiveSubjectId(result.id);
+
                 await refreshSubjects();
                 await refreshSubjectProfessorMap();
                 toast('success', 'Materia creada', 'La materia fue creada correctamente.');
-                render();
+                
+                // Reload to update header/sidebar context
+                setTimeout(() => window.location.reload(), 1000);
             } catch (err) {
                 toast('error', 'Error', err.message || 'No se pudo crear la materia.');
             }
@@ -653,10 +664,18 @@ export async function renderSubjectManagement(container) {
 
                 try {
                     await api.deleteSubject(subjectId);
+                    
+                    // Sync active subject if it was the one deleted
+                    if (auth.getActiveSubjectId() === subjectId) {
+                        sessionStorage.removeItem('edu_active_subject');
+                    }
+
                     await refreshSubjects();
                     await refreshSubjectProfessorMap();
                     toast('success', 'Materia eliminada', 'La materia fue eliminada correctamente.');
-                    render();
+                    
+                    // Reload to update header/sidebar context
+                    setTimeout(() => window.location.reload(), 1000);
                 } catch (err) {
                     toast('error', 'Error', err.message || 'No se pudo eliminar la materia.');
                 }
