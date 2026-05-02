@@ -57,41 +57,42 @@ resource openAiAccount 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
 // Removing model version specification to avoid deprecation errors
 // ═════════════════════════════════════════════════════════════════════════════
 
-// // ─── GPT-4o-mini Deployment ────────────────────────────────────
-// // Note: Using latest version - do not specify version to avoid deprecation errors
-// resource gptDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-05-01' = {
-//   parent: openAiAccount
-//   name: gptModelName
-//   properties: {
-//     model: {
-//       format: 'OpenAI'
-//       name: gptModelName
-//     }
-//     raiPolicyName: 'Microsoft.Default'
-//   }
-//   sku: {
-//     name: 'Standard'
-//     capacity: gptDeploymentCapacity
-//   }
-// }
+// ─── GPT-4o-mini Deployment ────────────────────────────────────
+// Note: Using latest version - do not specify version to avoid deprecation errors
+resource gptDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-05-01' = {
+  parent: openAiAccount
+  name: gptModelName
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: gptModelName
+      version: gptModelVersion
+    }
+    raiPolicyName: 'Microsoft.Default'
+  }
+  sku: {
+    name: 'Standard'
+    capacity: gptDeploymentCapacity
+  }
+}
 
-// // ─── text-embedding-3-small Deployment ─────────────────────────
-// // Note: Using latest version - do not specify version to avoid deprecation errors
-// resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-05-01' = {
-//   parent: openAiAccount
-//   name: embeddingModelName
-//   dependsOn: [gptDeployment] // Sequential deployments required by Azure OpenAI
-//   properties: {
-//     model: {
-//       format: 'OpenAI'
-//       name: embeddingModelName
-//     }
-//   }
-//   sku: {
-//     name: 'Standard'
-//     capacity: embeddingDeploymentCapacity
-//   }
-// }
+// ─── text-embedding-3-small Deployment ─────────────────────────
+// Note: Using latest version - do not specify version to avoid deprecation errors
+resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-05-01' = {
+  parent: openAiAccount
+  name: embeddingModelName
+  dependsOn: [gptDeployment] // Sequential deployments required by Azure OpenAI
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: embeddingModelName
+    }
+  }
+  sku: {
+    name: 'Standard'
+    capacity: embeddingDeploymentCapacity
+  }
+}
 
 // ─── tts-1 Deployment ──────────────────────────────────────────
 // SKIPPED: Model may be deprecated, use manually-created deployment

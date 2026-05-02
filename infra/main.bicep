@@ -37,7 +37,7 @@ param openAiSkuName string = 'S0'
 param gptModelName string = 'gpt-4o-mini'
 
 @description('Versión del modelo GPT.')
-param gptModelVersion string = '2024-07-18'
+param gptModelVersion string = '2025-04-14'
 
 @description('Capacidad del deployment GPT en miles de TPM.')
 param gptDeploymentCapacity int = 10
