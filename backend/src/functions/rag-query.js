@@ -352,8 +352,8 @@ ${contextText}
 
                         // Calcular duración y métricas al finalizar
                         const durationMs = Date.now() - startTime;
-                        const principal = parseClientPrincipal(request);
-                        const userId = principal?.oid || 'anonymous';
+                        const userAuth = getAuthenticatedUser(request);
+                        const userId = userAuth.userId;
                         const totalInteractionTokens = (embeddingUsage?.total_tokens || 0) + (finalUsage?.total_tokens || 0);
 
                         trackRAGInteraction({
@@ -369,10 +369,10 @@ ${contextText}
                             firstTokenAt,
                         }).catch(err => context.error('[Telemetry] Error emitting RAGInteraction event from stream:', err));
 
-                        const { userId, sanitizedId } = getAuthenticatedUser(request);
+
                         const chatLog = {
                             id: interactionId,
-                            userId,
+                            userId: userAuth.userId,
                             subjectId,
                             classIds,
                             transcriptFocus,
@@ -384,7 +384,7 @@ ${contextText}
                             timestamp: new Date().toISOString(),
                         };
 
-                        saveJson('chat-logs', `${sanitizedId}/${subjectId}/${interactionId}.json`, chatLog)
+                        saveJson('chat-logs', `${userAuth.sanitizedId}/${subjectId}/${interactionId}.json`, chatLog)
                             .catch(e => context.error('Error guardando log de chat (stream):', e));
 
                         saveMetricsToTable('SessionMetrics', {
@@ -440,7 +440,7 @@ ${contextText}
 
         // ── 6b. Emit App Insights telemetry (Issue #69) ───────────
         const durationMs = Date.now() - startTime;
-        const { userId, sanitizedId } = getAuthenticatedUser(request);
+        // userId and sanitizedId are already defined at the top of the handler
 
         // Accumulate total tokens for this interaction (embedding + chat)
         const totalInteractionTokens = (embeddingUsage?.total_tokens || 0) + (chatUsage?.total_tokens || 0);

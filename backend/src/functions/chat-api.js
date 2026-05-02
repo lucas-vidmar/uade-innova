@@ -52,9 +52,13 @@ app.http('get-chat-history', {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(history.reverse()) // Volver a orden cronológico
             };
+        } catch (error) {
+            context.error('Error cargando historial de chat:', error);
+            return { status: 500, body: 'Error interno cargando historial' };
         }
     }
 });
+
 
 // ── DELETE /api/chat-history?subjectId={id} ──────────────────────────
 app.http('delete-chat-history', {
