@@ -38,19 +38,24 @@ app.http('get-chat-history', {
             const prefix = `${sanitizedId}/${subjectId}/`;
             const blobNames = await listBlobs(CONTAINER_CHAT, prefix);
             
-            // Cargar los últimos 10 mensajes
-            const recentBlobs = blobNames.reverse().slice(0, 10);
+            // Cargar todos los mensajes
             const history = [];
 
-            for (const name of recentBlobs) {
+            for (const name of blobNames) {
                 const data = await loadJson(CONTAINER_CHAT, name);
                 if (data) history.push(data);
             }
 
+            // Ordenar cronológicamente por timestamp (más antiguo primero)
+            history.sort((a, b) => new Date(a.timestamp || a.createdAt || 0) - new Date(b.timestamp || b.createdAt || 0));
+
+            // Devolver los últimos 10 en orden cronológico
+            const recent = history.slice(-10);
+
             return {
                 status: 200,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(history.reverse()) // Volver a orden cronológico
+                body: JSON.stringify(recent)
             };
         } catch (error) {
             context.error('Error cargando historial de chat:', error);
