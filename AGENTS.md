@@ -321,3 +321,14 @@ Utilizar el catálogo `Azure2` con formato de imagen (no formas nativas):
 
 ### **13.4. Instrucción de Herramienta**
 Invocar `drawio-mcp` para crear el diagrama y guardar el resultado como `.drawio` envuelto en un tag `<mxfile><diagram>...</diagram></mxfile>` si se requiere un archivo físico.
+
+---
+
+## **14. Ciclo de Vida de Implementación y Verificación**
+
+Para garantizar la calidad y disponibilidad del dashboard, se establece el siguiente flujo obligatorio para cada tarea de implementación:
+
+1.  **Despliegue Mandatorio**: Todo cambio de código o nueva funcionalidad debe ser desplegado a Azure inmediatamente después de su implementación local utilizando el comando `azd deploy`.
+2.  **Prueba en Producción/Staging**: No es suficiente con pruebas locales. El agente DEBE acceder a la URL pública de la Azure Static Web App utilizando las herramientas de navegación (Chrome).
+3.  **Verificación E2E**: Se debe verificar el funcionamiento de la característica implementada directamente en el navegador, asegurando que la integración con Azure Functions y otros servicios sea correcta.
+4.  **Cierre de Tarea**: Una tarea solo se considera finalizada una vez que se ha confirmado visualmente su funcionamiento en el entorno desplegado.
