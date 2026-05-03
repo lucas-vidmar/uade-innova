@@ -1,132 +1,109 @@
-import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
-/**
- * ingest-material.js — POST /api/ingest-material
- * Pipeline completo de ingesta: parsea archivo → chunks → embeddings → vector store
- */
 import { app } from '@azure/functions';
+import { v4 as uuidv4 } from 'uuid';
+import path from 'path';
 import busboy from 'busboy';
 import { PassThrough } from 'stream';
-import { v4 as uuidv4 } from 'uuid';
-import { parseFile, chunkText } from '../services/parser.js';
-import { generateEmbedding } from '../services/openai.js';
-import { uploadFile, saveJson } from '../services/storage.js';
+import { uploadFile } from '../services/storage.js';
 import { upsertMaterialState } from '../services/state-store.js';
-import { resolveCorrelationId, withCorrelationResponseHeaders } from '../services/correlation.js';
-
-const CONTAINER_MATERIALS = process.env.AZURE_STORAGE_CONTAINER_MATERIALS || 'class-materials';
-const CONTAINER_PROCESSED = 'processed';
+import { validateFrontDoorId } from '../services/auth-utils.js';
 
 app.http('ingest-material', {
     methods: ['POST'],
     authLevel: 'anonymous',
     route: 'ingest-material',
     handler: async (request, context) => {
-        const correlationId = resolveCorrelationId(request);
-
         if (!validateFrontDoorId(request)) {
-            return {
-                status: 403,
-                headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
-                body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' })
-            };
+            return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         }
-        context.log('ingest-material triggered');
-        context.log(`[Trace] Correlation-ID: ${correlationId}`);
-
-        // ── 1. Parsear multipart/form-data ─────────────────────────
-        let fileBuffer, fileContentType, fileName, classIds, subjectId, materialType;
 
         try {
-            ({ fileBuffer, fileContentType, fileName, classIds, subjectId, materialType } =
-                await parseMultipart(request));
-        } catch (err) {
-            return {
-                status: 400,
-                headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
-                body: JSON.stringify({ error: err.message })
+            context.log(`[Ingest] Received request for ${request.url}`);
+            const { fileBuffer, fileContentType, fileName, classIds, subjectId, materialType } = await parseMultipart(request, context);
+            
+            context.log(`[Ingest] Multipart parsed successfully: ${fileName} (${fileContentType}), subjectId=${subjectId}, materialType=${materialType}, classIds=${JSON.stringify(classIds)}`);
+
+            if (!classIds || classIds.length === 0 || !subjectId || !materialType) {
+                context.log.warn(`[Ingest] Missing required fields: classIds=${classIds?.length}, subjectId=${!!subjectId}, materialType=${!!materialType}`);
+                return {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ error: 'Faltan campos requeridos: classIds, subjectId, materialType' }),
+                };
+            }
+
+            const materialId = uuidv4();
+            const material = {
+                materialId,
+                subjectId,
+                classIds,
+                type: materialType,
+                filename: fileName,
+                status: 'pending',
+                uploadedAt: new Date().toISOString(),
             };
-        }
 
-        if (!classIds || classIds.length === 0 || !subjectId || !materialType) {
-            return {
-                status: 400,
-                headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
-                body: JSON.stringify({ error: 'Faltan campos requeridos: classIds, subjectId, materialType' }),
-            };
-        }
+            try {
+                context.log(`[Ingest] Initializing material state in Table Storage: ${materialId}`);
+                await upsertMaterialState(material);
 
-        const materialId = uuidv4();
-        // Usamos la primer clase del array para agrupar el binario en Storage (solo organizativo)
-        const primaryClassId = classIds[0];
-        const blobName = `${primaryClassId}/${materialId}-${fileName}`;
+                const blobName = `${subjectId}/${materialId}${path.extname(fileName)}`;
+                context.log(`[Ingest] Uploading file to blob storage: ${blobName}`);
 
-        const principal = parseClientPrincipal(request);
-        const userId = principal?.oid || 'anonymous';
+                const blobUrl = await uploadFile(
+                    process.env.AZURE_STORAGE_CONTAINER_MATERIALS || 'class-materials',
+                    blobName,
+                    fileBuffer,
+                    fileContentType,
+                    {
+                        materialId,
+                        subjectId,
+                        materialType,
+                        classIds: JSON.stringify(classIds),
+                        fileName
+                    }
+                );
 
-        // ── 2. Subir archivo crudo al Blob Storage con Metadatos ────
-        const metadata = {
-            materialId,
-            classIds: classIds.join(','),
-            subjectId,
-            materialType,
-            fileName: fileName,
-            userId: userId,
-            correlationId,
-        };
+                context.log(`[Ingest] File uploaded successfully: ${blobUrl}`);
 
-        let blobUrl;
-        try {
-            blobUrl = await uploadFile(CONTAINER_MATERIALS, blobName, fileBuffer, fileContentType, metadata);
-            context.log(`Archivo subido con metadatos: ${blobUrl}`);
+                const updatedMaterial = await upsertMaterialState({
+                    ...material,
+                    blobUrl,
+                    status: 'processing'
+                });
+
+                return {
+                    status: 202,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updatedMaterial),
+                };
+            } catch (storageErr) {
+                context.log.error(`[Ingest] Storage error for ${materialId}:`, storageErr);
+                return {
+                    status: 500,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ error: `Error de almacenamiento: ${storageErr.message}` }),
+                };
+            }
+
         } catch (err) {
-            context.error('Error subiendo a Storage:', err);
+            context.log.error('[Ingest] Fatal error in ingest-material handler:', err);
             return {
                 status: 500,
-                headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
-                body: JSON.stringify({ error: 'Error subiendo archivo a Storage' })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ error: err.message || 'Error interno del servidor' }),
             };
         }
-
-        // Responder inmediatamente con 202 (pipeline será disparado por el BlobTrigger)
-        const responsePayload = { materialId, status: 'processing' };
-
-        // Registrar estado inicial: processing
-        const pendingState = {
-            materialId,
-            classIds,
-            subjectId,
-            type: materialType,
-            filename: fileName,
-            status: 'processing',
-            blobUrl,
-            chunkCount: 0,
-            uploadedAt: new Date().toISOString(),
-            processedAt: new Date().toISOString(),
-        };
-
-        try {
-            await upsertMaterialState(pendingState, 'Replace');
-        } catch (err) {
-            context.error(`[StateStore] Error persisting processing state for ${materialId}:`, err);
-        }
-
-        await saveJson(CONTAINER_PROCESSED, `${materialId}.json`, pendingState);
-
-        return {
-            status: 202,
-            headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
-            body: JSON.stringify(responsePayload),
-        };
-    },
+    }
 });
 
-// Nota: se eliminó runPipeline de aquí porque ahora se ejecuta vía BlobTrigger en process-material.js
-
-// ─── Helper: parsear multipart/form-data ─────────────────────────
-function parseMultipart(request) {
+/**
+ * Parsea el cuerpo de la petición multipart/form-data usando busboy.
+ */
+async function parseMultipart(request, context) {
     return new Promise((resolve, reject) => {
-        const contentType = request.headers.get('content-type') || '';
-        // Límite de 25MB por archivo para cumplir con requerimientos de la historia de usuario
+        const contentType = request.headers.get('content-type');
+        if (!contentType) return reject(new Error('Missing content-type header'));
+
         const MAX_FILE_SIZE = 25 * 1024 * 1024;
 
         const bb = busboy({
@@ -142,6 +119,24 @@ function parseMultipart(request) {
         let fileName = '';
         const fields = {};
         let limitReached = false;
+        let fileStreamFinished = false;
+        let busboyFinished = false;
+
+        const checkCompletion = () => {
+            if (busboyFinished && (fileStreamFinished || !fileName)) {
+                if (limitReached) return reject(new Error(`El archivo excede el límite permitido de ${MAX_FILE_SIZE / (1024 * 1024)}MB`));
+                if (!fileBuffer && fileName) return reject(new Error('No se recibió el contenido del archivo'));
+                
+                resolve({
+                    fileBuffer,
+                    fileContentType,
+                    fileName,
+                    classIds: fields.classIds || (fields.classId ? [fields.classId] : []),
+                    subjectId: fields.subjectId,
+                    materialType: fields.materialType,
+                });
+            }
+        };
 
         bb.on('file', (fieldname, file, info) => {
             const { filename, mimeType } = info;
@@ -152,12 +147,14 @@ function parseMultipart(request) {
             file.on('data', d => chunks.push(d));
             file.on('limit', () => {
                 limitReached = true;
-                file.resume(); // Consumir el resto sin guardar
+                file.resume();
             });
             file.on('end', () => {
                 if (!limitReached) {
                     fileBuffer = Buffer.concat(chunks);
                 }
+                fileStreamFinished = true;
+                checkCompletion();
             });
         });
 
@@ -170,27 +167,25 @@ function parseMultipart(request) {
         });
 
         bb.on('finish', () => {
-            if (limitReached) return reject(new Error(`El archivo excede el límite permitido de ${MAX_FILE_SIZE / (1024 * 1024)}MB`));
-            if (!fileBuffer) return reject(new Error('No se recibió ningún archivo'));
-            resolve({
-                fileBuffer,
-                fileContentType,
-                fileName,
-                classIds: fields.classIds || (fields.classId ? [fields.classId] : []),
-                subjectId: fields.subjectId,
-                materialType: fields.materialType,
-            });
+            busboyFinished = true;
+            checkCompletion();
         });
 
-        bb.on('error', reject);
+        bb.on('error', (err) => {
+            context.log.error('[Busboy] Error:', err);
+            reject(err);
+        });
 
         request.arrayBuffer().then(buffer => {
-            if (buffer.byteLength > MAX_FILE_SIZE + (1024 * 100)) { // +100KB para campos extra
+            if (buffer.byteLength > MAX_FILE_SIZE + (1024 * 100)) {
                 return reject(new Error('El tamaño de la petición excede el límite de seguridad.'));
             }
             const pass = new PassThrough();
             pass.end(Buffer.from(buffer));
             pass.pipe(bb);
-        }).catch(err => reject(new Error('No se pudo leer el cuerpo de la petición')));
+        }).catch(err => {
+            context.log.error('[Ingest] Error reading request buffer:', err);
+            reject(new Error('No se pudo leer el cuerpo de la petición'));
+        });
     });
 }

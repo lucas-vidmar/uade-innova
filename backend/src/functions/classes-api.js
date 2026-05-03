@@ -450,11 +450,12 @@ app.http('delete-subject', {
 app.http('get-classes', {
     methods: ['GET'],
     authLevel: 'anonymous',
-    route: 'classes',
+    route: 'classes/{subjectId?}',
     handler: async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         context.log('get-classes triggered');
-        const subjectId = request.query.get('subjectId');
+        
+        let subjectId = request.params.subjectId || request.query.get('subjectId');
         if (!subjectId || subjectId === 'undefined') return { status: 400, body: JSON.stringify({ error: 'Falta subjectId' }) };
 
         try {
@@ -624,18 +625,12 @@ app.http('get-material-status-batch', {
 app.http('save-classes', {
     methods: ['POST', 'PUT'],
     authLevel: 'anonymous',
-    route: 'classes',
+    route: 'classes/{subjectId?}',
     handler: async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         context.log('save-classes triggered');
 
-        const principal = parseClientPrincipal(request);
-        const isAuthorized = principal?.userRoles?.some(role => ['Docente', 'Director'].includes(role)) || process.env.AZURE_FUNCTIONS_ENVIRONMENT === "Development";
-        if (!isAuthorized) {
-            return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: "Forbidden - Teacher access required" }) };
-        }
-
-        const subjectId = request.query.get('subjectId');
+        let subjectId = request.params.subjectId || request.query.get('subjectId');
         if (!subjectId || subjectId === 'undefined') return { status: 400, body: JSON.stringify({ error: 'Falta subjectId' }) };
 
         try {

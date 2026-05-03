@@ -723,7 +723,7 @@ export const api = {
         }
 
         try {
-            const res = await apiFetch(`${BASE_URL}/classes/${subjectId}`);
+            const res = await apiFetch(`${BASE_URL}/classes?subjectId=${subjectId}`);
             if (!res.ok) return localClasses;
             const data = await res.json();
             const classes = Array.isArray(data) ? data : [];
@@ -969,7 +969,8 @@ export const api = {
                 const res = await apiFetch(`${BASE_URL}/ingest-material`, { method: 'POST', body: formData });
 
                 if (!res.ok) {
-                    if (res.status === 404 || res.status >= 500) {
+                    // Solo fallback si estamos en local y falla por 404 (funcionalidad no implementada)
+                    if (USE_MOCK || (res.status === 404 && window.location.hostname === 'localhost')) {
                         return {
                             materialId: `m-local-${Date.now()}`,
                             status: 'processing',
