@@ -2,7 +2,8 @@ import { app } from '@azure/functions';
 import { loadJson, saveJson, listBlobs, deleteBlob, getTableClient } from '../services/storage.js';
 import { v4 as uuidv4 } from 'uuid';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
-import { listClassesBySubject, listMaterialsBySubject, replaceClassesForSubject, deleteMaterialStateById, getMaterialState } from '../services/state-store.js';
+import { listClassesBySubject, listMaterialsBySubject, replaceClassesForSubject, deleteMaterialStateById, getMaterialState, deleteClassesBySubject, deleteMaterialsBySubject } from '../services/state-store.js';
+import * as vectorStore from '../services/vector-store.js';
 
 const CONTAINER_CLASSES = process.env.AZURE_STORAGE_CONTAINER_CLASSES || 'classes-config';
 const CONTAINER_PROCESSED = 'processed';
@@ -360,6 +361,8 @@ app.http('delete-subject', {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
 
         const subjectId = request.params.subjectId;
+        const cascade = request.query.get('cascade') === 'true';
+
         const principal = parseClientPrincipal(request);
         if (!canManageSubjects(principal)) {
             context.warn(`Unauthorized attempt to delete subject ${subjectId || 'unknown'}. User: ${principal?.userDetails || 'Anonymous'}. Roles: ${principal?.userRoles?.join(',') || 'None'}`);
@@ -371,19 +374,70 @@ app.http('delete-subject', {
         }
 
         try {
-            const classes = await listClassesBySubject(subjectId);
-            if (Array.isArray(classes) && classes.length > 0) {
-                return { status: 409, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'No se puede eliminar una materia con clases asociadas' }) };
-            }
-
             const subjects = await loadSubjects();
-            const next = subjects.filter((s) => s.id !== subjectId);
-            if (next.length === subjects.length) {
-                return { status: 404, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Materia no encontrada' }) };
+            const index = subjects.findIndex(s => s.id === subjectId);
+            if (index === -1) {
+                return { status: 404, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: "Materia no encontrada" }) };
             }
 
-            await saveSubjects(next);
-            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: true }) };
+            const classes = await listClassesBySubject(subjectId);
+            if (classes.length > 0 && !cascade) {
+                return {
+                    status: 409,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        error: "No se puede eliminar una materia con clases asociadas. Use 'cascade=true' para eliminar todo.",
+                        classCount: classes.length
+                    })
+                };
+            }
+
+            if (cascade) {
+                context.log(`[CascadeDelete] Iniciando limpieza para materia ${subjectId}...`);
+
+                // 1. Limpiar Pinecone (por subjectId es más eficiente)
+                try {
+                    await vectorStore.deleteVectorsByFilter({ subjectId: { "$eq": subjectId } });
+                    context.log(`[CascadeDelete] Vectores de ${subjectId} eliminados.`);
+                } catch (vErr) {
+                    context.error(`[CascadeDelete] Error eliminando vectores:`, vErr);
+                }
+
+                // 2. Limpiar materiales (blobs y tablas)
+                const materials = await listMaterialsBySubject(subjectId);
+                for (const material of materials) {
+                    try {
+                        // Borrar blobs de materiales
+                        await deleteBlob(CONTAINER_PROCESSED, `${material.materialId}.json`);
+                        // El blob original suele estar en class-materials/{classId}/{materialId}-{filename}
+                        if (material.blobUrl && material.classIds?.length > 0) {
+                            const primaryClassId = material.classIds[0];
+                            const blobName = `${primaryClassId}/${material.materialId}-${material.filename}`;
+                            await deleteBlob('class-materials', blobName).catch(() => {});
+                        }
+                    } catch (mErr) {
+                        context.error(`[CascadeDelete] Error borrando archivos de material ${material.materialId}:`, mErr);
+                    }
+                }
+                await deleteMaterialsBySubject(subjectId);
+
+                // 3. Limpiar clases (resúmenes, mapas y tablas)
+                for (const cls of classes) {
+                    try {
+                        await deleteBlob('class-summaries', `${cls.id}.json`).catch(() => {});
+                        await deleteBlob('class-maps', `${cls.id}.json`).catch(() => {});
+                    } catch (cErr) {
+                        context.error(`[CascadeDelete] Error borrando recursos de clase ${cls.id}:`, cErr);
+                    }
+                }
+                await deleteClassesBySubject(subjectId);
+
+                context.log(`[CascadeDelete] Limpieza de ${subjectId} completada.`);
+            }
+
+            subjects.splice(index, 1);
+            await saveSubjects(subjects);
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: true, cascade }) };
         } catch (err) {
             context.error(err);
             return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: `Error eliminando materia: ${err.message}` }) };
@@ -839,6 +893,14 @@ app.http('delete-material', {
 
         const materialId = request.params.materialId;
         try {
+            // Limpieza en Vector Store
+            try {
+                await vectorStore.deleteVectorsByFilter({ materialId: { "$eq": materialId } });
+                context.log(`[DeleteMaterial] Vectores para ${materialId} eliminados.`);
+            } catch (vErr) {
+                context.error(`[DeleteMaterial] Error eliminando vectores de ${materialId}:`, vErr);
+            }
+
             try {
                 await deleteMaterialStateById(materialId);
             } catch (tableErr) {

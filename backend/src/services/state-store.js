@@ -201,3 +201,23 @@ export async function listClassesBySubject(subjectId) {
   const entities = await queryByPartition(CLASSES_TABLE, subjectId);
   return entities.map(fromClassEntity);
 }
+
+export async function deleteClassesBySubject(subjectId) {
+  if (!subjectId) return;
+  await ensureTable(CLASSES_TABLE);
+  const client = getTableClient(CLASSES_TABLE);
+  const entities = await queryByPartition(CLASSES_TABLE, subjectId);
+  for (const entity of entities) {
+    await client.deleteEntity(entity.partitionKey, entity.rowKey);
+  }
+}
+
+export async function deleteMaterialsBySubject(subjectId) {
+  if (!subjectId) return;
+  await ensureTable(MATERIALS_TABLE);
+  const client = getTableClient(MATERIALS_TABLE);
+  const entities = await queryByPartition(MATERIALS_TABLE, subjectId);
+  for (const entity of entities) {
+    await client.deleteEntity(entity.partitionKey, entity.rowKey);
+  }
+}

@@ -229,3 +229,20 @@ export async function getIndexStats() {
         namespaces: stats?.namespaces || {},
     };
 }
+
+/**
+ * Elimina vectores del indice usando un filtro (ej: por subjectId o materialId)
+ * @param {object} filter - Filtro de Pinecone (ej: { materialId: { "$eq": "..." } })
+ */
+export async function deleteVectorsByFilter(filter) {
+    if (!filter || typeof filter !== 'object' || Object.keys(filter).length === 0) {
+        throw new Error('[VectorStore] deleteVectorsByFilter requiere un filtro no vacio');
+    }
+
+    const namespace = getNamespace();
+    const payload = { filter };
+    if (namespace) payload.namespace = namespace;
+
+    console.log(`[VectorStore] Deleting vectors with filter: ${JSON.stringify(filter)}`);
+    return await pineconeRequest('/vectors/delete', payload);
+}
