@@ -149,15 +149,6 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-* {
-  box-shadow: none !important;
-}
-
-*::before,
-*::after {
-  box-shadow: none !important;
-}
-
 h1,
 h2,
 h3,
