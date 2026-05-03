@@ -103,11 +103,10 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
           <div class="chat-msg-footer mt-3 flex justify-between items-end gap-4">
             ${msg.sources?.length > 0 ? `
               <div class="chat-sources flex flex-wrap gap-2">
-                ${msg.sources.map(s => `
+                ${deduplicateSources(msg.sources).map(s => `
                   <span class="source-chip bg-surface border border-border px-2 py-1 rounded text-[10px] flex items-center gap-1" title="${s.sourceFilename}">
                     ${materialIcon(s.materialType)}
                     <span class="truncate max-w-[120px]">${s.sourceFilename}</span>
-                    <span class="source-priority source-priority-${s.materialPriority === 'secondary' ? 'secondary' : 'primary'}">${materialPriorityLabel(s.materialPriority)}</span>
                   </span>
                 `).join('')}
               </div>
@@ -288,11 +287,10 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
             footerEl.innerHTML = `
               <div class="chat-sources">
                 <span class="chat-sources-label">Fuentes:</span>
-                ${assistantMsg.sources.map(s => `
+                ${deduplicateSources(assistantMsg.sources).map(s => `
                   <span class="source-chip" title="${s.sourceFilename}">
                     ${materialIcon(s.materialType)}
                     ${s.sourceFilename}
-                    <span class="source-priority source-priority-${s.materialPriority === 'secondary' ? 'secondary' : 'primary'}">${materialPriorityLabel(s.materialPriority)}</span>
                   </span>
                 `).join('')}
               </div>
@@ -412,8 +410,15 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
     return icon(map[type] || 'document');
   };
 
-  const materialPriorityLabel = (priority) => {
-    return priority === 'secondary' ? 'Secundario' : 'Primario';
+  const deduplicateSources = (sources) => {
+    if (!Array.isArray(sources)) return [];
+    const seen = new Set();
+    return sources.filter(s => {
+      const key = s.sourceFilename || s.materialId || JSON.stringify(s);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   };
 
   const icon = (name) => {

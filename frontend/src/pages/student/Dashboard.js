@@ -28,7 +28,6 @@ function renderSearchResult(result, classesById) {
     <a href="${targetHref}" class="global-search-result-item" data-search-result="true">
       <div class="global-search-result-header">
         <span class="global-search-material-pill">${materialIcon} ${result.materialType === 'bibliography' ? 'Bibliografía' : 'Transcripción'}</span>
-        <span class="global-search-priority-pill global-search-priority-${result.materialPriority === 'secondary' ? 'secondary' : 'primary'}">${result.materialPriority === 'secondary' ? 'Secundario' : 'Primario'}</span>
         <span class="global-search-score">Relevancia ${(result.score * 100).toFixed(0)}%</span>
       </div>
       <div class="global-search-filename">${result.sourceFilename || 'Fuente sin nombre'}</div>
