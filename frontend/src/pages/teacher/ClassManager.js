@@ -172,7 +172,8 @@ export async function renderClassManager(container) {
             // Agregar clase
             document.getElementById('btn-add-class')?.addEventListener('click', () => {
                 const newId = `class-${String(classes.length + 1).padStart(2, '0')}`;
-                classes.push({ id: newId, subjectId, title: "Nueva Clase", date: null, topics: [], materials: [] });
+                const today = new Date().toISOString().split('T')[0];
+                classes.push({ id: newId, subjectId, title: "Nueva Clase", date: today, topics: [], materials: [] });
                 saveAllClasses(classes);
             });
 

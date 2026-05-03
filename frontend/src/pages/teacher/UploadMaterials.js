@@ -15,6 +15,19 @@ const MATERIAL_TABS = [
   { type: 'bibliography', icon: '📚', label: 'Bibliografía' },
 ];
 
+function escapeHtml(str) {
+  if (typeof str !== 'string') return '';
+  return str.replace(/[&<>"']/g, function(m) {
+    return {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    }[m];
+  });
+}
+
 export async function renderTeacherUpload(container) {
   renderHeader('Cargar Materiales');
   container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando clases...</div>`;
@@ -69,15 +82,21 @@ export async function renderTeacherUpload(container) {
   const render = () => {
     // Info preview for the FIRST selected class just as visual feedback
     const primaryClass = selectedClassIds.length > 0 ? classes.find(c => c.id === selectedClassIds[0]) : null;
+    const selectedClasses = classes.filter(c => selectedClassIds.includes(c.id));
+
+    console.log('[UploadMaterials] Rendering with selectedClassIds:', selectedClassIds);
 
     container.innerHTML = `
       <!-- Class selector -->
       <div class="upload-header card" style="margin-bottom:var(--space-6)">
-        <div class="upload-header-inner">
-          <div>
+        <div class="upload-header-inner" style="display:flex; justify-content:space-between; align-items:center;">
+          <div style="flex: 1">
             <h2 style="font-size:var(--font-size-xl);margin-bottom:var(--space-2)">📤 Carga de Materiales de Clase</h2>
             <p style="color:var(--color-text-secondary);font-size:var(--font-size-sm)">Seleccioná una clase y cargá los materiales correspondientes. El pipeline de IA los procesará automáticamente.</p>
           </div>
+          <button class="btn btn-ghost p-2" id="btn-refresh-classes" title="Actualizar datos desde el servidor">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:block"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.85.83 6.72 2.25L21 8M21 3v5h-5"/></svg>
+          </button>
         </div>
 
         <div class="form-group" style="margin-top:var(--space-5)">
@@ -87,17 +106,24 @@ export async function renderTeacherUpload(container) {
             ${classes.map(c => `
               <label style="display:flex; align-items:center; gap:var(--space-2); cursor:pointer;">
                 <input type="checkbox" class="class-checkbox" value="${c.id}" ${selectedClassIds.includes(c.id) ? 'checked' : ''} />
-                <span>${c.title} <span style="color:var(--color-text-muted); font-size:12px;">— ${new Date(c.date + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}</span></span>
+                <span>${escapeHtml(c.title)} <span style="color:var(--color-text-muted); font-size:12px;">— ${c.date ? new Date(c.date + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }) : 'Sin fecha'}</span></span>
               </label>
             `).join('')}
           </div>
         </div>
 
         ${primaryClass ? `
-          <div class="class-info-strip">
-            <span class="badge ${primaryClass.summaryReady ? 'badge-success' : primaryClass.materials.length > 0 ? 'badge-warning' : 'badge-neutral'}">
-              ${primaryClass.summaryReady ? '✅ Material de la primer clase completo' : primaryClass.materials.length > 0 ? '⚙️ Procesando material' : '📭 Sin material en esta clase'}
-            </span>
+          <div class="selection-status-bar ${selectedClassIds.length === 0 ? 'status-error' : ''}">
+            <div class="status-info">
+              <span class="status-icon">${selectedClassIds.length > 0 ? '📍' : '⚠️'}</span>
+              <span class="status-text">
+                ${selectedClassIds.length > 0 
+                  ? `Subiendo a <strong>${selectedClassIds.length}</strong> ${selectedClassIds.length === 1 ? 'clase' : 'clases'}: 
+                     <span class="selected-names">${selectedClasses.map(c => c.title).join(', ')}</span>`
+                  : '<strong>No seleccionaste ninguna clase.</strong> Seleccioná al menos una para subir materiales.'
+                }
+              </span>
+            </div>
           </div>
         ` : ''}
       </div>
@@ -170,6 +196,22 @@ export async function renderTeacherUpload(container) {
     document.getElementById('reject-summary')?.addEventListener('click', () => {
       toast('warning', 'Regenerando...', 'La IA generará un nuevo resumen en unos momentos.');
     });
+
+    document.getElementById('btn-refresh-classes')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btn-refresh-classes');
+      btn.classList.add('animate-spin');
+      try {
+        const freshClasses = await api.getClasses(activeSubjectId, true); // true for skipCache
+        // Update local classes array in place
+        classes.splice(0, classes.length, ...freshClasses);
+        toast('success', 'Datos actualizados', 'Se sincronizaron las clases y materiales con el servidor.');
+        render();
+      } catch (err) {
+        toast('error', 'Error al refrescar', err.message);
+      } finally {
+        btn.classList.remove('animate-spin');
+      }
+    });
   };
 
   const mountUploadZone = (selectedClass) => {
@@ -186,6 +228,8 @@ export async function renderTeacherUpload(container) {
           throw new Error('No class selected');
         }
 
+        console.log('[UploadMaterials] Starting upload for file:', rawFile.name, 'Target classes:', selectedClassIds);
+
         // Perform real API upload
         const formData = new FormData();
         formData.append('file', rawFile);
@@ -197,6 +241,7 @@ export async function renderTeacherUpload(container) {
 
         try {
           const response = await api.ingestMaterial(formData);
+          console.log('[UploadMaterials] Upload response:', response);
           updateProgress(100);
 
           if (response?.fallback) {
@@ -225,6 +270,7 @@ export async function renderTeacherUpload(container) {
             }
           });
 
+          console.log('[UploadMaterials] Local state updated. Re-rendering...');
           render();
 
           if (response?.materialId && (response?.status || 'processing') === 'processing') {

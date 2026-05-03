@@ -23,17 +23,20 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
     container.innerHTML = `
       <!-- Class selector -->
       <div class="chat-sources-bar">
-        <span class="text-[10px] font-bold text-text-muted uppercase tracking-wider">Fuentes de consulta:</span>
-        <div class="flex flex-wrap gap-2" id="chat-chips">
+        <div class="chat-sources-top">
+          <span class="chat-sources-label">Fuentes de consulta:</span>
+          <button class="chat-new-btn" id="chat-clear" title="Nuevo chat">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <span>Nuevo chat</span>
+          </button>
+        </div>
+        <div class="chat-chips-container" id="chat-chips">
           ${(classes || []).map(c => `
             <button class="source-pill ${selectedClassIds.includes(c.id) ? 'active' : ''}" data-class-id="${c.id}">
               ${(c.title || '').split('—')[0].trim() || 'Clase'}
             </button>
           `).join('')}
         </div>
-        <button class="ml-auto text-primary hover:bg-surface p-1 rounded-md transition-colors" id="chat-clear" title="Limpiar conversación">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-        </button>
       </div>
 
       <!-- Messages -->
@@ -211,9 +214,9 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
     // Clear
     container.querySelector('#chat-clear')?.addEventListener('click', async () => {
       const shouldClear = await showConfirmDialog({
-        title: 'Limpiar conversación',
-        message: '¿Seguro que querés limpiar la conversación actual? Esto eliminará el historial del servidor.',
-        confirmText: 'Limpiar',
+        title: 'Iniciar nuevo chat',
+        message: '¿Seguro que querés comenzar una nueva conversación? Esto despejará el historial actual.',
+        confirmText: 'Nuevo chat',
         cancelText: 'Cancelar',
       });
       if (shouldClear) {

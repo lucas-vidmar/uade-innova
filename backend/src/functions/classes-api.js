@@ -487,13 +487,18 @@ app.http('get-classes', {
             }
 
             // 3. Cruzar datos
-            const resultClasses = classesConfig.map(c => ({ 
-                ...c, 
-                materials: [], 
-                summaryReady: c.summaryReady || false,
-                professorIds: c.professorIds || [],
-                studentIds: c.studentIds || []
-            }));
+            context.log(`[get-classes] Joining ${classesConfig.length} classes with ${materials.length} materials for subject ${subjectId}`);
+
+            const resultClasses = classesConfig.map(c => {
+                if (!c.date) context.log.warn(`[get-classes] Class ${c.id} ("${c.title}") is missing the date field.`);
+                return { 
+                    ...c, 
+                    materials: [], 
+                    summaryReady: c.summaryReady || false,
+                    professorIds: c.professorIds || [],
+                    studentIds: c.studentIds || []
+                };
+            });
 
             // Materiales huérfanos o que pertenecen a múltiples clases
             for (const mat of materials) {
@@ -508,9 +513,16 @@ app.http('get-classes', {
                     classIds: targetClasses
                 };
 
+                context.log(`[get-classes] Processing material ${matSafe.id} ("${matSafe.filename}") - status: ${matSafe.status}, linked classes: ${targetClasses.join(', ')}`);
+
                 for (const cid of targetClasses) {
                     const cls = resultClasses.find(c => c.id === cid);
-                    if (cls) cls.materials.push(matSafe);
+                    if (cls) {
+                        cls.materials.push(matSafe);
+                        context.log(`[get-classes]   -> Successfully linked material ${matSafe.id} to class ${cid}`);
+                    } else {
+                        context.log.warn(`[get-classes]   -> Warning: Material ${matSafe.id} refers to non-existent class ${cid}`);
+                    }
                 }
             }
 

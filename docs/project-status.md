@@ -9,6 +9,11 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
+### [2026-05-03] Material Visibility & Date Initialization Fix
+- **Status**: Completed
+- **Functional Change**: Resolved the "Invalid Date" issue in the class management UI by ensuring new classes are initialized with a valid ISO date string. Implemented a robust multi-class material ingestion pipeline by normalizing `classIds` parsing in the backend and adding a "Refresh" button in the teacher's upload panel to force-refetch data from the server.
+- **Business Impact**: Restores teacher confidence in the material upload process and ensures a professional UI experience by eliminating broken date labels and enabling immediate verification of uploaded content.
+
 ### [2026-04-26] Production Identity Fix & Frontend Recovery
 - **Status**: Completed
 - **Functional Change**: Resolved a critical **403 Forbidden** error on notification and profile endpoints in production by implementing an identity fallback mechanism. Since the Static Web App is not proxy-linked to the Function App, the backend now correctly accepts `requestedUserId` as a fallback when the `x-ms-client-principal` header is absent during cross-origin CORS requests.

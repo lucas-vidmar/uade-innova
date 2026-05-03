@@ -135,6 +135,7 @@ async function parseMultipart(request, context) {
                     subjectId: fields.subjectId,
                     materialType: fields.materialType,
                 });
+                context.log(`[Ingest] Fields successfully extracted: subjectId=${fields.subjectId}, materialType=${fields.materialType}, classIds=${JSON.stringify(fields.classIds || fields.classId)}`);
             }
         };
 
@@ -159,8 +160,10 @@ async function parseMultipart(request, context) {
         });
 
         bb.on('field', (name, val) => {
-            if (name === 'classIds') {
-                fields[name] = fields[name] ? [...fields[name], val].flatMap(v => v.split(',')) : val.split(',');
+            if (name === 'classIds' || name === 'classId') {
+                const targetName = 'classIds';
+                const parts = val.split(',').map(v => v.trim()).filter(Boolean);
+                fields[targetName] = (fields[targetName] || []).concat(parts);
             } else {
                 fields[name] = val;
             }
