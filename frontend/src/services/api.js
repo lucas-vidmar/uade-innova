@@ -735,18 +735,31 @@ export const api = {
         }
     },
 
-    async deleteSubject(subjectId) {
+    /**
+     * Elimina una materia.
+     * @param {string} subjectId 
+     * @param {boolean} cascade - Si es true, elimina también clases y materiales asociados.
+     */
+    async deleteSubject(subjectId, cascade = false) {
         if (USE_MOCK) {
             await delay(250);
             return { success: true };
         }
 
         try {
-            const res = await apiFetch(`${BASE_URL}/subjects/${encodeURIComponent(subjectId)}`, {
+            const url = new URL(`${BASE_URL}/subjects/${encodeURIComponent(subjectId)}`);
+            if (cascade) url.searchParams.set('cascade', 'true');
+
+            const res = await apiFetch(url.toString(), {
                 method: 'DELETE',
             });
 
             if (!res.ok) {
+                // Si el servidor dice que no existe, lo removemos de local igualmente para sincronizar
+                if (res.status === 404) {
+                    removeLocalSubject(subjectId);
+                }
+                
                 let message = `Error ${res.status}: No se pudo eliminar la materia`;
                 try {
                     const err = await res.json();
@@ -757,6 +770,7 @@ export const api = {
                 throw new Error(message);
             }
 
+            // Éxito: limpiar de local storage
             removeLocalSubject(subjectId);
             return res.json();
         } catch (err) {

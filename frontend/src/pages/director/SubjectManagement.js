@@ -653,6 +653,43 @@ export async function renderSubjectManagement(container) {
                 const subjectId = e.currentTarget.getAttribute('data-subject-id');
                 const subjectName = e.currentTarget.getAttribute('data-subject-name') || subjectId;
                 if (!subjectId) return;
+
+                const performDelete = async (cascade = false) => {
+                    try {
+                        await api.deleteSubject(subjectId, cascade);
+                        
+                        if (auth.getActiveSubjectId() === subjectId) {
+                            sessionStorage.removeItem('edu_active_subject');
+                        }
+
+                        await refreshSubjects();
+                        await refreshSubjectProfessorMap();
+                        toast('success', 'Materia eliminada', cascade ? 'La materia y todos sus recursos fueron eliminados.' : 'La materia fue eliminada correctamente.');
+                        
+                        setTimeout(() => window.location.reload(), 1000);
+                    } catch (err) {
+                        if (err.message.includes(' Use \'cascade=true\'')) {
+                            const shouldCascade = await showConfirmDialog({
+                                title: 'Eliminar con clases asociadas',
+                                message: `La materia "${subjectName}" tiene clases y materiales. ¿Deseas eliminar ABSOLUTAMENTE TODO lo relacionado con esta materia? Esta acción es irreversible e incluye vectores de búsqueda y resúmenes IA.`,
+                                confirmText: 'Eliminar todo',
+                                cancelText: 'Cancelar',
+                                danger: true,
+                            });
+                            if (shouldCascade) {
+                                await performDelete(true);
+                            }
+                        } else {
+                            // Si el error indica que no existe (404), refrescamos la lista para limpiar fantasmas
+                            if (err.message.includes('404') || err.message.toLowerCase().includes('no encontrada')) {
+                                await refreshSubjects();
+                                render();
+                            }
+                            toast('error', 'Error', err.message || 'No se pudo eliminar la materia.');
+                        }
+                    }
+                };
+
                 const shouldDelete = await showConfirmDialog({
                     title: 'Eliminar materia',
                     message: `Seguro que queres eliminar la materia "${subjectName}"?`,
@@ -660,24 +697,9 @@ export async function renderSubjectManagement(container) {
                     cancelText: 'Cancelar',
                     danger: true,
                 });
-                if (!shouldDelete) return;
 
-                try {
-                    await api.deleteSubject(subjectId);
-                    
-                    // Sync active subject if it was the one deleted
-                    if (auth.getActiveSubjectId() === subjectId) {
-                        sessionStorage.removeItem('edu_active_subject');
-                    }
-
-                    await refreshSubjects();
-                    await refreshSubjectProfessorMap();
-                    toast('success', 'Materia eliminada', 'La materia fue eliminada correctamente.');
-                    
-                    // Reload to update header/sidebar context
-                    setTimeout(() => window.location.reload(), 1000);
-                } catch (err) {
-                    toast('error', 'Error', err.message || 'No se pudo eliminar la materia.');
+                if (shouldDelete) {
+                    await performDelete(false);
                 }
             });
         });
