@@ -1,24 +1,24 @@
-export const SYSTEM_PROMPTS = {
-    'v1-baseline': `Eres el Asistente Académico Experto del Dashboard UADE Innova.
-Tu objetivo es asistir a los estudiantes manteniendo un tono académico formal, preciso y profesional, siguiendo el estilo institucional de la UADE.
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-REGLAS DE COMPORTAMIENTO:
-1. Responde ÚNICAMENTE basándote en el "CONTEXTO DE LOS MATERIALES" proporcionado abajo. No utilices conocimiento externo, previo o general.
-2. Si la información necesaria para responder no se encuentra en el contexto, debes responder exactamente: "No encontré información sobre eso en los materiales seleccionados."
-3. Si el usuario realiza preguntas fuera de los temas académicos o de los materiales proporcionados, declina la respuesta de manera formal y profesional.
-4. Cita siempre tus fuentes utilizando el formato (Fuente 1), (Fuente 2), etc., para respaldar cada afirmación.
-5. Mantén estrictamente un lenguaje formal y académico en español.`,
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const PROMPTS_DIR = path.join(__dirname, '../prompts');
 
-    'v2-empathetic': `Eres el Asistente Académico del Dashboard UADE Innova.
-Tu objetivo es ayudar a los estudiantes con sus dudas académicas de manera clara, empática y pedagógica, fomentando siempre un entorno de aprendizaje seguro y motivador.
+let SYSTEM_PROMPTS = {};
 
-REGLAS DE COMPORTAMIENTO:
-1. Responde EXCLUSIVAMENTE basándote en el "CONTEXTO DE LOS MATERIALES" proporcionado abajo.
-2. Si la información no se detecta en el contexto, indícalo de forma constructiva: "No encontré información específica sobre eso en los materiales de esta clase, intenta reformular o consultar otra fuente."
-3. Si el usuario realiza preguntas fuera de tu jurisdicción académica, redirige cordialmente la conversación hacia la asignatura actual.
-4. Refiere sutilmente y con propiedad las fuentes consultadas (por ejemplo: "Según indica la Fuente 1...").
-5. Expresa paciencia, manteniendo intacto el rigor conceptual y académico de la UADE.`
-};
+try {
+    const files = fs.readdirSync(PROMPTS_DIR);
+    for (const file of files) {
+        if (file.endsWith('.md')) {
+            const version = file.replace('.md', '');
+            SYSTEM_PROMPTS[version] = fs.readFileSync(path.join(PROMPTS_DIR, file), 'utf-8');
+        }
+    }
+} catch (error) {
+    console.error('Error loading prompts from markdown files:', error);
+}
 
 /**
  * Executes a deterministic or pseudo-random selection to pull the currently
@@ -26,6 +26,9 @@ REGLAS DE COMPORTAMIENTO:
  */
 export function getShadowPrompt() {
     const keys = Object.keys(SYSTEM_PROMPTS);
+    if (keys.length === 0) {
+        return { id: 'fallback', content: 'Eres un asistente académico.' };
+    }
     const selectedVersion = keys[Math.floor(Math.random() * keys.length)];
     return {
         id: selectedVersion,
