@@ -145,6 +145,17 @@ export async function renderStudentDashboard(container) {
               </div>
               <div class="p-4 text-center text-xs text-text-muted italic animate-pulse">Cargando clases...</div>
             </div>
+
+            <!-- Chats recientes -->
+            <div class="sidebar-section" id="section-history">
+              <div class="sidebar-section-header">
+                <div class="sidebar-section-title">
+                  <svg class="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+                  <span>Chats recientes</span>
+                </div>
+              </div>
+              <div class="p-4 text-center text-xs text-text-muted italic animate-pulse">Cargando historial...</div>
+            </div>
           </aside>
         </div>
       </div>
@@ -263,6 +274,33 @@ export async function renderStudentDashboard(container) {
       ])).flat()
     });
     chatMount.appendChild(chatWidget);
+
+    // Update History Sidebar
+    const sectionHistory = document.getElementById('section-history');
+    if (sectionHistory) {
+      const recentHistory = (history || []).slice(-3).reverse();
+      sectionHistory.innerHTML = `
+        <div class="sidebar-section-header">
+          <div class="sidebar-section-title">
+            <svg class="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+            <span>Chats recientes</span>
+          </div>
+        </div>
+        <div class="p-0">
+          <ul class="sidebar-list">
+            ${recentHistory.length > 0 ? recentHistory.map(c => `
+              <li class="sidebar-list-item cursor-pointer hover:bg-surface-2 transition-colors" onclick="location.hash='#/student/chat'">
+                <div class="chat-history-info">
+                  <p class="chat-history-q">${escapeHtml(c.question)}</p>
+                  <p class="chat-history-date">Reciente</p>
+                </div>
+                <span class="chat-history-arrow">→</span>
+              </li>
+            `).join('') : '<li class="p-6 text-center text-xs text-text-muted italic">Sin actividad reciente</li>'}
+          </ul>
+        </div>
+      `;
+    }
   });
 
   renderBottomNav();

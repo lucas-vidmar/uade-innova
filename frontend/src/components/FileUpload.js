@@ -16,7 +16,12 @@ const TYPE_CONFIG = {
 
 const STATUS_CONFIG = {
   pending: { label: 'Pendiente', badge: 'badge-neutral', icon: '⏳' },
-  processing: { label: 'Procesando', badge: 'badge-warning', icon: '⚙️' },
+  processing: { 
+    label: 'Procesando', 
+    badge: 'badge-warning', 
+    icon: '⚙️',
+    tip: 'Extrayendo texto y vectorizando para el chat...'
+  },
   ready: { label: 'Listo', badge: 'badge-success', icon: '✅' },
   error: { label: 'Error', badge: 'badge-error', icon: '❌' },
 };

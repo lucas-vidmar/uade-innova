@@ -9,10 +9,14 @@ Integrating a RAG-based AI system to enhance the educational experience at UADE,
 
 ## Status Log
 
-### [2026-05-03] Material Visibility & Date Initialization Fix
+### [2026-05-03] Backend Reliability & Processing Pipeline Fixes
 - **Status**: Completed
-- **Functional Change**: Resolved the "Invalid Date" issue in the class management UI by ensuring new classes are initialized with a valid ISO date string. Implemented a robust multi-class material ingestion pipeline by normalizing `classIds` parsing in the backend and adding a "Refresh" button in the teacher's upload panel to force-refetch data from the server.
-- **Business Impact**: Restores teacher confidence in the material upload process and ensures a professional UI experience by eliminating broken date labels and enabling immediate verification of uploaded content.
+- **Functional Change**: 
+  - **Fix Error 500**: Resolved a critical issue in `get-classes` caused by `ensureTable` throwing on existing tables.
+  - **Fix Processing Trigger**: Corrected a mismatched path in the Blob Trigger (`process-material`) that was preventing files from being automatically processed.
+  - **Improved Dashboard UI**: Updated the Teacher Dashboard to clearly distinguish between files being actively processed by IA and those waiting for teacher validation. Added a "Procesando" tip in the upload panel.
+  - **Maintenance Tool**: Created `scripts/retrigger-processing.js` to manually re-activate any materials that were stuck due to the previous trigger bug.
+- **Business Impact**: Restores full system stability and ensures that uploaded materials are correctly processed and visible to both students and teachers, eliminating "ghost" materials and user confusion.
 
 ### [2026-04-26] Production Identity Fix & Frontend Recovery
 - **Status**: Completed

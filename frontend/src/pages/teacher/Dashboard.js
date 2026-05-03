@@ -26,7 +26,11 @@ export async function renderTeacherDashboard(container) {
   ]);
 
   const complete = (classes || []).filter(c => c.summaryReady);
-  const processing = (classes || []).filter(c => !c.summaryReady && (c.materials || []).length > 0);
+  const processing = (classes || []).filter(c => {
+    const hasMaterials = (c.materials || []).length > 0;
+    const allReady = (c.materials || []).every(m => m.status === 'ready');
+    return !c.summaryReady && hasMaterials;
+  });
   const empty = (classes || []).filter(c => (c.materials || []).length === 0);
 
   const renderDeadlineRow = (deadline, cls) => `
@@ -66,10 +70,11 @@ export async function renderTeacherDashboard(container) {
       ${(classes || []).map(c => {
         const ready = c.summaryReady;
         const materials = c.materials || [];
-        const hasFiles = materials.length > 0 && !ready;
-        const status = ready ? { label: 'Material completo', badge: 'badge-success' }
-          : hasFiles ? { label: 'Procesando', badge: 'badge-warning' }
-            : { label: 'Sin material', badge: 'badge-neutral' };
+        const anyProcessing = materials.some(m => m.status === 'processing' || m.status === 'pending');
+        const status = ready ? { label: 'Listo', badge: 'badge-success' }
+          : anyProcessing ? { label: 'Procesando...', badge: 'badge-warning' }
+            : materials.length > 0 ? { label: 'Pendiente revisión', badge: 'badge-info' }
+              : { label: 'Sin material', badge: 'badge-neutral' };
         return `
           <div class="class-list-item">
             <div class="class-list-date">${c.date ? new Date(c.date + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }) : '---'}</div>

@@ -459,30 +459,47 @@ app.http('get-classes', {
         if (!subjectId || subjectId === 'undefined') return { status: 400, body: JSON.stringify({ error: 'Falta subjectId' }) };
 
         try {
-            // 1. Leer desde Table Storage (source of truth)
             let classesConfig = [];
             let materials = [];
+            let tableSuccess = false;
 
             try {
                 classesConfig = await listClassesBySubject(subjectId);
                 materials = await listMaterialsBySubject(subjectId);
+                tableSuccess = true;
+                context.log(`[get-classes] Table storage query successful for ${subjectId}`);
             } catch (tableErr) {
-                context.error(`[StateStore] Error leyendo classes/materials para ${subjectId}:`, tableErr);
+                context.log.error(`[get-classes] Table storage error for ${subjectId}:`, tableErr.message);
+                // Si falla la tabla, intentamos fallback a blobs
             }
 
-            // 2. Fallback temporal al estado legacy en blobs si no hay datos en tablas
-            if (!Array.isArray(classesConfig) || classesConfig.length === 0) {
-                const legacyClasses = await loadJson(CONTAINER_CLASSES, `${subjectId}.json`);
-                classesConfig = Array.isArray(legacyClasses) ? legacyClasses : [];
-            }
+            // 2. Fallback solo si las tablas fallaron o están vacías Y realmente queremos intentar recuperar legacy
+            if (!tableSuccess || (classesConfig.length === 0 && materials.length === 0)) {
+                context.log(`[get-classes] Attempting legacy blob fallback for ${subjectId}...`);
+                
+                // Fallback de Clases
+                if (classesConfig.length === 0) {
+                    const legacyClasses = await loadJson(CONTAINER_CLASSES, `${subjectId}.json`);
+                    if (legacyClasses) {
+                        classesConfig = Array.isArray(legacyClasses) ? legacyClasses : [];
+                        context.log(`[get-classes] Loaded ${classesConfig.length} legacy classes from blob`);
+                    }
+                }
 
-            if (!Array.isArray(materials) || materials.length === 0) {
-                const blobNames = await listBlobs(CONTAINER_PROCESSED);
-                materials = [];
-                for (const blob of blobNames) {
-                    if (!blob.endsWith('.json')) continue;
-                    const mat = await loadJson(CONTAINER_PROCESSED, blob);
-                    if (mat && mat.subjectId === subjectId) materials.push(mat);
+                // Fallback de Materiales (SOLO si no hay nada en tablas)
+                // PRECAUCIÓN: Esto es lento si hay muchos blobs. Lo limitamos.
+                if (materials.length === 0) {
+                    const blobNames = await listBlobs(CONTAINER_PROCESSED);
+                    const subjectMaterials = [];
+                    // Solo escaneamos los primeros 50 para evitar timeouts si el sistema crece
+                    const limitedBlobs = blobNames.slice(0, 50); 
+                    for (const blob of limitedBlobs) {
+                        if (!blob.endsWith('.json')) continue;
+                        const mat = await loadJson(CONTAINER_PROCESSED, blob);
+                        if (mat && mat.subjectId === subjectId) subjectMaterials.push(mat);
+                    }
+                    materials = subjectMaterials;
+                    if (materials.length > 0) context.log(`[get-classes] Found ${materials.length} materials in legacy blobs`);
                 }
             }
 

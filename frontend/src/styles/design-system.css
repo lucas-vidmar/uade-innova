@@ -207,7 +207,7 @@ body.top-nav-mobile-open .top-nav-mobile {
 .chat-sources-bar {
   padding: var(--space-4);
   border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface-2);
+  background: var(--color-bg) !important;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -362,17 +362,17 @@ body.top-nav-mobile-open .top-nav-mobile {
 
 /* Sidebar Sections */
 .sidebar-section {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background: transparent;
+  border: none;
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
   overflow: hidden;
 }
 
 .sidebar-section-header {
   padding: var(--space-4) var(--space-5);
   border-bottom: 1px solid var(--color-border);
-  background: rgba(248, 250, 252, 0.5);
+  background: var(--color-bg) !important;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -410,7 +410,9 @@ body.top-nav-mobile-open .top-nav-mobile {
 }
 
 .sidebar-list-item:hover {
-  background: var(--color-bg);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  border-left: 3px solid var(--color-primary);
+  padding-left: calc(var(--space-4) - 3px);
 }
 
 .sidebar-item-title {

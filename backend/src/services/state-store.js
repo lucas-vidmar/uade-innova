@@ -35,7 +35,14 @@ function normalizeStringArray(value) {
 async function ensureTable(tableName) {
   if (ensuredTables.has(tableName)) return;
   const client = getTableClient(tableName);
-  await client.createTable();
+  try {
+    await client.createTable();
+  } catch (err) {
+    // 409 means the table already exists, which is fine
+    if (err.statusCode !== 409) {
+      throw err;
+    }
+  }
   ensuredTables.add(tableName);
 }
 

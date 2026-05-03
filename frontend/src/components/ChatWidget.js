@@ -10,7 +10,7 @@ const FOLLOW_UP_HISTORY_WINDOW_SIZE = 4;
 
 export function createChatWidget({ classes = [], subjectId = '', initialMessages = [], highlightMessageId = null, transcriptFocus: initialTranscriptFocus = null }) {
   const user = auth.getUser();
-  let selectedClassIds = (classes || []).slice(0, 2).map(c => c.id);
+  let selectedClassIds = [];
   let messages = [...initialMessages];
   let isLoading = false;
   let transcriptFocus = initialTranscriptFocus;
@@ -50,9 +50,9 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
           <textarea
             id="chat-input"
             class="chat-input"
-            placeholder="Preguntá sobre los materiales de clase..."
+            placeholder="${selectedClassIds.length === 0 ? 'Seleccioná al menos una clase para chatear...' : 'Preguntá sobre los materiales de clase...'}"
             rows="1"
-            ${isLoading ? 'disabled' : ''}
+            ${isLoading || selectedClassIds.length === 0 ? 'disabled' : ''}
           ></textarea>
           <button
             class="chat-send-btn ${isLoading || selectedClassIds.length === 0 ? 'disabled' : ''}"
@@ -73,16 +73,17 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
   const renderWelcome = () => `
     <div class="chat-welcome-container">
       <div class="mb-6 text-primary flex justify-center">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 8V4m0 4 4-4m-4 4L8 4m4 12v4m0-4 4 4m-4-4-4 4M4 12h4m-4 0 4 4m-4-4 4-4m12 0h-4m4 0-4 4m4-4-4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
       </div>
       <h3 class="text-2xl font-extrabold text-text-primary mb-2">¡Hola, ${user.name.split(' ')[0]}!</h3>
-      <p class="text-text-secondary text-sm">Soy tu asistente de ${auth.getActiveSubjectId() || 'estudio'}. ¿En qué puedo ayudarte hoy con la cursada de 2026?</p>
+      <p class="text-text-secondary text-base font-medium">¿En qué puedo ayudarte hoy?</p>
       
-      <div class="chat-suggestions">
-        ${['¿Qué es la arquitectura hexagonal?', '¿Cuál es la diferencia entre microservicios y monolito?', 'Explicame el patrón SAGA'].map(s => `
-          <button class="suggestion-pill" data-suggestion="${s}">${s}</button>
-        `).join('')}
-      </div>
+      ${selectedClassIds.length === 0 ? `
+        <div class="mt-4 p-3 bg-primary/10 text-primary rounded-xl flex items-center gap-3 border border-primary/20 animate-pulse">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span class="text-sm font-bold">Tenés que seleccionar al menos una clase para empezar.</span>
+        </div>
+      ` : ''}
     </div>
   `;
 

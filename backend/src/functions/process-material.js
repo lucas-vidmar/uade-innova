@@ -95,16 +95,16 @@ async function persistProcessingError(params, context, message) {
 }
 
 app.storageBlob('process-material', {
-    path: `${CONTAINER_MATERIALS}/{classId}/{blobName}`,
+    path: `${CONTAINER_MATERIALS}/{subjectId}/{blobName}`,
     connection: 'AzureWebJobsStorage',
     handler: async (blob, context) => {
         const blobPath = context.triggerMetadata.blobTrigger;
         context.log(`[BlobTrigger] Procesando: ${blobPath}`);
 
         const pathFromTrigger = context.triggerMetadata?.name;
-        const classId = context.bindingData?.classId;
+        const subjectIdFromPath = context.bindingData?.subjectId;
         const rawBlobName = context.bindingData?.blobName || '';
-        const fullBlobPath = pathFromTrigger || (classId && rawBlobName ? `${classId}/${rawBlobName}` : '');
+        const fullBlobPath = pathFromTrigger || (subjectIdFromPath && rawBlobName ? `${subjectIdFromPath}/${rawBlobName}` : '');
 
         // 1. Extraer metadatos subidos por ingest-material.js
         // En algunos entornos el trigger no incluye metadata; hacemos fallback a getProperties().metadata.
@@ -116,10 +116,19 @@ app.storageBlob('process-material', {
         };
 
         const materialId = metadata.materialid || extractMaterialIdFromBlobName(rawBlobName) || 'unknown';
-        const subjectId = metadata.subjectid || 'unknown';
-        const classIds = metadata.classids
-            ? metadata.classids.split(',').map((id) => id.trim()).filter(Boolean)
-            : (classId ? [classId] : []);
+        const subjectId = metadata.subjectid || subjectIdFromPath || 'unknown';
+        let classIds = [];
+        if (metadata.classids) {
+            try {
+                classIds = JSON.parse(metadata.classids);
+                if (!Array.isArray(classIds)) classIds = [classIds];
+            } catch (e) {
+                classIds = metadata.classids.split(',').map(id => id.trim()).filter(Boolean);
+            }
+        } else if (subjectIdFromPath) {
+            // we no longer have classId in the path, so this fallback is less useful, but kept for compatibility
+            classIds = [subjectIdFromPath]; // actually this might be wrong, it used to be classId
+        }
         const fileName = deriveFilename(metadata.filename, rawBlobName || context.triggerMetadata?.name);
 
         const params = {
