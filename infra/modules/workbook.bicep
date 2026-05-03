@@ -1,10 +1,10 @@
 /*
   workbook.bicep — Azure Workbook: Cost-per-Interaction Dashboard
-  Director View: Real-time GPT-4o-mini cost tracking per user interaction.
+  Director View: Real-time Hybrid AI (DeepSeek + GPT-4o-mini) cost tracking.
 
-  Pricing (gpt-4o-mini):
-    Input  tokens: $0.15 / 1M  → $0.00000015 per token
-    Output tokens: $0.60 / 1M  → $0.00000060 per token
+  Pricing (Ref):
+    DeepSeek V4: Input $0.14/1M, Output $0.28/1M
+    GPT-4o-mini: Input $0.15/1M, Output $0.60/1M
 */
 
 @description('Azure region for resources.')
@@ -30,7 +30,7 @@ var workbookContent = {
     {
       type: 1
       content: {
-        json: '## 💰 Cost-per-Interaction Dashboard\nReal-time GPT-4o-mini cost tracking. Pricing: **$0.15/1M input tokens** · **$0.60/1M output tokens**'
+        json: '## 💰 Cost-per-Interaction Dashboard\nReal-time Hybrid AI (DeepSeek/GPT) cost tracking. Pricing (Avg): **$0.15/1M input tokens** · **$0.40/1M output tokens**'
       }
       name: 'header'
     }

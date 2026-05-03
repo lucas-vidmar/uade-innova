@@ -3,7 +3,7 @@
  * Motor RAG: embedding de la pregunta → similitud Pinecone → chat con contexto
  */
 import { app } from '@azure/functions';
-import { generateEmbedding, chatCompletion } from '../services/openai.js';
+import { generateEmbedding, chatCompletion } from '../services/ai.js';
 import { querySimilar } from '../services/vector-store.js';
 import { saveJson, saveMetricsToTable } from '../services/storage.js';
 import { getShadowPrompt } from '../services/prompts.js';
@@ -295,11 +295,35 @@ app.http('rag-query', {
         }
 
         matches = buildHybridContext(matches, MAX_RAG_CHUNKS);
+        
+        const REFUSAL_MESSAGE = "No encontré información sobre eso en los materiales seleccionados.";
 
-        // Nota: No retornamos temprano si matches.length === 0 para permitir que el LLM
-        // responda "No encontré información" siguiendo el protocolo de streaming si es necesario.
+        // ── 5. Early return if no context found ───────────────────
+        if (matches.length === 0) {
+            if (stream) {
+                const responseStream = new ReadableStream({
+                    start(controller) {
+                        const encoder = new TextEncoder();
+                        controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ sources: [] })}\n\n`));
+                        controller.enqueue(encoder.encode(`data: ${REFUSAL_MESSAGE}\n\n`));
+                        controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ answer: REFUSAL_MESSAGE })}\n\n`));
+                        controller.close();
+                    }
+                });
+                return {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/event-stream', ...withCorrelationResponseHeaders(correlationId) },
+                    body: responseStream
+                };
+            } else {
+                return jsonResponse(200, {
+                    answer: REFUSAL_MESSAGE,
+                    sources: []
+                }, correlationId);
+            }
+        }
 
-        // ── 5. Construir prompt RAG ───────────────────────────────
+        // ── 6. Construir prompt RAG ───────────────────────────────
         const contextText = matches
             .map((m, i) => `[Fuente ${i + 1} - Archivo: ${m.metadata?.sourceFilename || 'Desconocido'}]\n${m.metadata?.text || ''}`)
             .join('\n\n---\n\n');

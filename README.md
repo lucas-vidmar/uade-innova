@@ -12,7 +12,7 @@ El sistema centraliza el conocimiento institucional mediante el procesamiento au
 ## 🛠️ Stack Tecnológico (100% Serverless)
 Para minimizar el CapEx y maximizar la escalabilidad, la arquitectura es enteramente **Serverless**:
 
-- **Generative AI:** Azure OpenAI Service (`gpt-4o-mini` y `text-embedding-3-small`).
+- **Generative AI:** Híbrido (**DeepSeek V4 Flash** vía Azure AI Foundry y Azure OpenAI para embeddings).
 - **Vector Database:** Pinecone (Serverless index, cosine similarity).
 - **Backend:** Azure Functions (**Consumption Plan Y1**) + Node.js 20/TypeScript.
 - **Frontend:** Azure Static Web Apps (**Free Tier**) + React/Vite.
@@ -42,7 +42,7 @@ graph LR
 
 ## 🚀 Estado Actual y Despliegue
 - **✔ Infraestructura (IaC):** Desplegada exitosamente mediante Bicep y `azd`.
-- **✔ Inteligencia:** Modelos de OpenAI y Pinecone configurados y operativos (dim: 1536).
+- **✔ Inteligencia:** Modelos de DeepSeek V4 Flash y OpenAI configurados y operativos.
 - **✔ Backend/RAG:** Pipeline de ingesta y consulta RAG probado y validado.
 - **✔ Frontend:** Dashboard operativo y conectado al backend.
 - **🌐 URL pública:** https://agreeable-beach-002ff0c0f.6.azurestaticapps.net

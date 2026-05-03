@@ -49,7 +49,7 @@ app.http('manage-get-users', {
             };
 
         } catch (error) {
-            context.log.error('Error fetching users for admin:', error);
+            context.error('Error fetching users for admin:', error);
             return {
                 status: 500,
                 body: "Internal Server Error"

@@ -12,9 +12,9 @@ Este documento sirve como marco de referencia para la implementación del sistem
 
 Para maximizar el FinOps y minimizar el CapEx, se utiliza una arquitectura **100% Serverless** (sin VMs reservadas):
 
-* **Generative AI:** Azure OpenAI Service.
-  * **Modelos:** gpt-4o-mini (Chat/Razonamiento) y text-embedding-3-small (Vectorización).
-  * **Nota:** UADE ya provisionó el recurso `RS-OPENAI-LLM` en el RG `RG_UADE_INNOVA_DEV`.
+* **Generative AI:** Híbrido (Azure AI Foundry + Azure OpenAI).
+  * **Modelos:** DeepSeek V4 Flash (Chat/Razonamiento vía Azure AI Foundry) y text-embedding-3-small (Vectorización vía Azure OpenAI).
+  * **Nota:** UADE ya provisionó el recurso `RS-OPENAI-LLM` para embeddings. El modelo DeepSeek se consume desde el catálogo de modelos de Azure AI Foundry.
 * **Vector Database:** Pinecone (Tier: Serverless/Standard).
   * **Dimensión:** 1536 (específico para el modelo de embeddings v3).
   * **Métrica:** Cosine Similarity.
@@ -257,10 +257,15 @@ interface PineconeMetadata {
 Estas variables son generadas por `azd provision` y deben estar presentes en `.env.local` (local) y en la configuración de Static Web App / Functions (producción). El agente nunca debe hardcodear estos valores.
 
 ```bash
-# Azure OpenAI
+# Azure OpenAI (Embeddings & TTS)
 AZURE_OPENAI_ENDPOINT=https://<rs-openai-llm>.openai.azure.com/
-AZURE_OPENAI_CHAT_DEPLOYMENT=gpt-4o-mini
 AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-3-small
+AZURE_OPENAI_TTS_DEPLOYMENT=tts-1
+
+# Azure AI Foundry (DeepSeek)
+AI_FOUNDRY_DEEPSEEK_ENDPOINT=https://<model-name>.<region>.models.ai.azure.com/v1
+AI_FOUNDRY_DEEPSEEK_KEY=...
+AI_FOUNDRY_DEEPSEEK_MODEL=deepseek-v4-flash
 
 # Pinecone
 PINECONE_HOST=https://<index-name>-<environment>.svc.pinecone.io

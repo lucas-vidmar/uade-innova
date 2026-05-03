@@ -51,7 +51,7 @@ app.http('get-profile', {
             }
 
         } catch (error) {
-            context.log.error('Error fetching profile:', error);
+            context.error('Error fetching profile:', error);
             return {
                 status: 500,
                 body: "Internal Server Error"

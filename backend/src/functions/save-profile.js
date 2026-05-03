@@ -39,7 +39,7 @@ app.http('save-profile', {
             };
 
         } catch (error) {
-            context.log.error('Error saving profile:', error);
+            context.error('Error saving profile:', error);
             return {
                 status: 500,
                 body: "Internal Server Error"

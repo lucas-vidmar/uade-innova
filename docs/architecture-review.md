@@ -196,16 +196,14 @@ Pinecone provides serverless vector storage with free tier for low-volume worklo
 
 ### Current State
 
-All AI inference uses `gpt-4o-mini` for both:
 - Embedding generation (text-embedding-3-small)
-- Chat/RAG responses (gpt-4o-mini)
+- Chat/RAG responses (DeepSeek V4 Flash / gpt-4o-mini fallback)
 
 ### Finding
 
 For a cost-sensitive pilot with a **$1.50/aluno/mês** target:
-- `gpt-4o-mini` is already the most cost-effective option
-- At 65 users, even low-volume usage will be well under budget
-- Over-engineering model selection now is premature
+- `DeepSeek V4 Flash` is the most cost-effective option for reasoning and generation.
+- `gpt-4o-mini` remains as a robust fallback in Azure OpenAI.
 
 ### Recommendation
 
@@ -231,7 +229,7 @@ At that point, consider:
 | 2 | Add Table Storage for state | High | Medium | Enables full CRUD operations |
 | 3 | Enable Easy Auth (Entra ID) | High | Medium | Security and UX |
 | 4 | Use Pinecone (Serverless) | High | Low | Cost savings (free tier) |
-| 5 | Keep gpt-4o-mini (no change) | Low | None | — |
+| 5 | Use DeepSeek V4 Flash | High | Low | Cost savings & quality |
 
 **Recommended for immediate action:** #1, #2, #3, and #4 are architectural gaps that should be addressed before the pilot goes live.
 

@@ -158,7 +158,7 @@ Los docentes cargan directamente los materiales desde el panel de la plataforma.
 
 | **Tipo de Material** | **Formatos Aceptados** | **Procesamiento** | **Output** |
 |---|---|---|---|
-| **Transcripción** | TXT, DOCX, VTT | Limpieza de texto, extracción de hitos (preguntas, definiciones, tareas) vía GPT-4o mini. | Resúmenes estructurados, línea de tiempo y contexto para el chat RAG. |
+| **Transcripción** | TXT, DOCX, VTT | Limpieza de texto, extracción de hitos (preguntas, definiciones, tareas) vía DeepSeek V4 Flash. | Resúmenes estructurados, línea de tiempo y contexto para el chat RAG. |
 | **Presentación** | PPTX, PDF | Extracción de texto por diapositiva, análisis de estructura temática. | Índice de temas, contexto para el chat RAG. |
 | **Apuntes del Docente** | DOCX, PDF, TXT | Chunking y generación de embeddings. | Vectores indexados por clase en Pinecone. |
 | **Bibliografía** | PDF, DOCX, TXT | Chunking, generación de embeddings, marcado como "Fuente Maestra". | Vectores indexados por materia en Pinecone. |
@@ -204,7 +204,7 @@ Se solicita la creación de un **Resource Group (RG)** dedicado para el entorno 
 
 | **Servicio** | **Propósito y Justificación Crítica** | **Rol Requerido (RBAC)** |
 |---|---|---|
-| **Azure OpenAI Service** | **Motor Core de IA:** Modelos `gpt-4o-mini` (Generación) y `text-embedding-3-small` (Vectorización). UADE ya provisionó el recurso `RS-OPENAI-LLM` en el RG. | Cognitive Services OpenAI Contributor |
+| **Azure OpenAI Service** | **Motor Core de IA:** Modelos `deepseek-v4-flash` (Generación) y `text-embedding-3-small` (Vectorización). UADE ya provisionó el recurso `RS-OPENAI-LLM` en el RG. | Cognitive Services OpenAI Contributor |
 | **Azure Static Web Apps** (Free tier) | **Hosting Frontend:** Alojamiento serverless del dashboard React/Vite. CDN global, SSL automático, 100 GB bandwidth/mes. **No requiere VM quota.** | Website Contributor |
 | **Azure Functions** (Consumption Plan Y1) | **Procesamiento Serverless:** Pipeline de ingesta de materiales (chunking, embeddings, hitos) y RAG. Pago por ejecución, escala a 0. **No requiere VM quota.** | Website Contributor |
 | **Azure Storage Account** | **Persistencia:** Archivos de clase subidos por docentes y runtime de Functions. | Storage Account Contributor + Storage Blob Data Contributor |
@@ -228,7 +228,7 @@ Dado que la arquitectura utiliza una base de datos vectorial gestionada externa 
 
 ## **8\. Estado del Desarrollo y Siguientes Pasos (Actualizado)**
 
-* **✔ Infraestructura Azure:** Desplegado mediante IaC (Bicep/azd). Endpoint de OpenAI `gpt-4o-mini` y `text-embedding-3-small` listos.
+* **✔ Infraestructura Azure:** Desplegado mediante IaC (Bicep/azd). Endpoint de OpenAI `deepseek-v4-flash` y `text-embedding-3-small` listos.
 * **✔ Base de Datos Vectorial:** Pinecone index creado y conectado (dimension: 1536, cosine).
 * **✔ Ingesta y RAG Backend:** Pipeline completo en Azure Functions probado y validado (extracción, chunking, embeddings, upsert, answer generation).
 * **✔ Frontend Integrado:** Dashboard React conectado al backend local (sin mocks).

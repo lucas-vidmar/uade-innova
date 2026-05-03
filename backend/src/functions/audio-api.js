@@ -1,6 +1,6 @@
 import { app } from '@azure/functions';
 import { uploadFile, downloadFile, listBlobs } from '../services/storage.js';
-import { generateClassAudio } from '../services/openai.js';
+import { generateClassAudio } from '../services/ai.js';
 import { loadJson } from '../services/storage.js';
 import { resolveCorrelationId, buildDependencyHeaders, withCorrelationResponseHeaders } from '../services/correlation.js';
 
@@ -74,7 +74,7 @@ app.http('get-class-audio', {
             };
 
         } catch (err) {
-            context.log.error(`Error en get-class-audio para ${classId}:`, err);
+            context.error(`Error en get-class-audio para ${classId}:`, err);
             return {
                 status: 500,
                 headers: withCorrelationResponseHeaders(correlationId),

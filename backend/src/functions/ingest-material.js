@@ -23,7 +23,7 @@ app.http('ingest-material', {
             context.log(`[Ingest] Multipart parsed successfully: ${fileName} (${fileContentType}), subjectId=${subjectId}, materialType=${materialType}, classIds=${JSON.stringify(classIds)}`);
 
             if (!classIds || classIds.length === 0 || !subjectId || !materialType) {
-                context.log.warn(`[Ingest] Missing required fields: classIds=${classIds?.length}, subjectId=${!!subjectId}, materialType=${!!materialType}`);
+                context.warn(`[Ingest] Missing required fields: classIds=${classIds?.length}, subjectId=${!!subjectId}, materialType=${!!materialType}`);
                 return {
                     status: 400,
                     headers: { 'Content-Type': 'application/json' },
@@ -77,7 +77,7 @@ app.http('ingest-material', {
                     body: JSON.stringify(updatedMaterial),
                 };
             } catch (storageErr) {
-                context.log.error(`[Ingest] Storage error for ${materialId}:`, storageErr);
+                context.error(`[Ingest] Storage error for ${materialId}:`, storageErr);
                 return {
                     status: 500,
                     headers: { 'Content-Type': 'application/json' },
@@ -86,7 +86,7 @@ app.http('ingest-material', {
             }
 
         } catch (err) {
-            context.log.error('[Ingest] Fatal error in ingest-material handler:', err);
+            context.error('[Ingest] Fatal error in ingest-material handler:', err);
             return {
                 status: 500,
                 headers: { 'Content-Type': 'application/json' },
@@ -175,7 +175,7 @@ async function parseMultipart(request, context) {
         });
 
         bb.on('error', (err) => {
-            context.log.error('[Busboy] Error:', err);
+            context.error('[Busboy] Error:', err);
             reject(err);
         });
 
@@ -187,7 +187,7 @@ async function parseMultipart(request, context) {
             pass.end(Buffer.from(buffer));
             pass.pipe(bb);
         }).catch(err => {
-            context.log.error('[Ingest] Error reading request buffer:', err);
+            context.error('[Ingest] Error reading request buffer:', err);
             reject(new Error('No se pudo leer el cuerpo de la petición'));
         });
     });

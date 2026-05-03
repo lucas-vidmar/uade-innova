@@ -9,7 +9,7 @@ app.http('get-roles', {
         const expectedCode = process.env.SWA_ROLES_SECRET || 'UADE-Pilot-Secure-Roles-Secret-2026';
         
         if (receivedCode !== expectedCode) {
-            context.log.warn('Unauthorized attempt to access get-roles endpoint.');
+            context.warn('Unauthorized attempt to access get-roles endpoint.');
             return { status: 401, body: JSON.stringify({ error: 'Unauthorized - Invalid SWA Secret' }) };
         }
         try {
@@ -63,7 +63,7 @@ app.http('get-roles', {
                 }
             };
         } catch (error) {
-            context.log.error('Error parsing roles request', error);
+            context.error('Error parsing roles request', error);
             return {
                 status: 500,
                 body: "Internal Server Error"

@@ -16,7 +16,10 @@ mock.module('@azure/functions', {
 await import('./get-roles.js');
 
 test('get-roles should return 401 when code query parameter is missing or invalid', async () => {
-    const mockContext = { log: { warn: mock.fn(), error: mock.fn() } };
+    const logMock = mock.fn();
+    logMock.warn = mock.fn();
+    logMock.error = mock.fn();
+    const mockContext = { log: logMock };
     const mockRequest1 = { query: new Map() };
     const mockRequest2 = { query: new Map([['code', 'wrong-code']]) };
 
@@ -31,7 +34,10 @@ test('get-roles should return mapped roles when valid code is provided', async (
     const prevSecret = process.env.SWA_ROLES_SECRET;
     process.env.SWA_ROLES_SECRET = 'test-secret';
 
-    const mockContext = { log: { warn: mock.fn(), error: mock.fn() } };
+    const logMock = mock.fn();
+    logMock.warn = mock.fn();
+    logMock.error = mock.fn();
+    const mockContext = { log: logMock };
     const mockRequest = {
         query: new Map([['code', 'test-secret']]),
         json: async () => ({

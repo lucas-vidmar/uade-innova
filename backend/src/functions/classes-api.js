@@ -469,7 +469,7 @@ app.http('get-classes', {
                 tableSuccess = true;
                 context.log(`[get-classes] Table storage query successful for ${subjectId}`);
             } catch (tableErr) {
-                context.log.error(`[get-classes] Table storage error for ${subjectId}:`, tableErr.message);
+                context.error(`[get-classes] Table storage error for ${subjectId}:`, tableErr.message);
                 // Si falla la tabla, intentamos fallback a blobs
             }
 
@@ -507,7 +507,7 @@ app.http('get-classes', {
             context.log(`[get-classes] Joining ${classesConfig.length} classes with ${materials.length} materials for subject ${subjectId}`);
 
             const resultClasses = classesConfig.map(c => {
-                if (!c.date) context.log.warn(`[get-classes] Class ${c.id} ("${c.title}") is missing the date field.`);
+                if (!c.date) context.warn(`[get-classes] Class ${c.id} ("${c.title}") is missing the date field.`);
                 return { 
                     ...c, 
                     materials: [], 
@@ -540,7 +540,7 @@ app.http('get-classes', {
                         cls.materials.push(matSafe);
                         context.log(`[get-classes]   -> Successfully linked material ${matSafe.id} to class ${cid}`);
                     } else {
-                        context.log.warn(`[get-classes]   -> Warning: Material ${matSafe.id} refers to non-existent class ${cid}`);
+                        context.warn(`[get-classes]   -> Warning: Material ${matSafe.id} refers to non-existent class ${cid}`);
                     }
                 }
             }
@@ -659,6 +659,13 @@ app.http('save-classes', {
     route: 'classes/{subjectId?}',
     handler: async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+        
+        const principal = parseClientPrincipal(request);
+        const isAuthorized = principal?.userRoles?.some(role => ['Docente', 'Director'].includes(role)) || process.env.AZURE_FUNCTIONS_ENVIRONMENT === "Development";
+        if (!isAuthorized) {
+            return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: "Forbidden - Teacher access required" }) };
+        }
+
         context.log('save-classes triggered');
 
         let subjectId = request.params.subjectId || request.query.get('subjectId');
@@ -1076,7 +1083,7 @@ app.http('update-material-text', {
             const { chunkText } = await import('../services/parser.js');
             const chunks = chunkText(text);
 
-            const { generateEmbeddingsBatch } = await import('../services/openai.js');
+            const { generateEmbeddingsBatch } = await import('../services/ai.js');
             const chunkTexts = chunks.map(c => c.text);
             const { embeddings } = await generateEmbeddingsBatch(chunkTexts);
 

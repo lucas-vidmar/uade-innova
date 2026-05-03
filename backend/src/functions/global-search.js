@@ -3,7 +3,7 @@
  * Búsqueda global por materia sobre transcripciones y bibliografía.
  */
 import { app } from '@azure/functions';
-import { generateEmbedding } from '../services/openai.js';
+import { generateEmbedding } from '../services/ai.js';
 import { querySimilar } from '../services/vector-store.js';
 import { validateFrontDoorId } from '../services/auth-utils.js';
 import { resolveCorrelationId, buildDependencyHeaders, withCorrelationResponseHeaders } from '../services/correlation.js';

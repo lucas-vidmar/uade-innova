@@ -15,7 +15,7 @@ param skuName string = 'S0'
 @description('Tags to apply to the resource.')
 param tags object = {}
 
-@description('Name of the GPT model to deploy.')
+@description('Name of the GPT model to deploy (used as Fallback for DeepSeek).')
 param gptModelName string = 'gpt-4o-mini'
 
 @description('Version of the GPT model.')

@@ -6,6 +6,11 @@ let principalMock = { userRoles: ['Docente'], oid: 'teacher-oid' };
 const authMocks = {
     validateFrontDoorId: mock.fn(() => true),
     parseClientPrincipal: mock.fn(() => principalMock),
+    getAuthenticatedUser: mock.fn(() => ({ 
+        userId: principalMock.oid, 
+        sanitizedId: String(principalMock.oid).replace(/[^a-zA-Z0-9]/g, '_'),
+        roles: principalMock.userRoles 
+    })),
 };
 
 const storageState = {
@@ -37,6 +42,8 @@ const storageMocks = {
         if (container !== 'teacher-alerts') return [];
         return Array.from(storageState.alerts.keys()).filter((key) => key.startsWith(prefix));
     }),
+    deleteBlob: mock.fn(async () => {}),
+    getTableClient: mock.fn(() => ({})),
 };
 
 mock.module('../services/auth-utils.js', { namedExports: authMocks });

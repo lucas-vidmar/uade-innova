@@ -38,7 +38,7 @@ const authUtilsMocks = {
     validateFrontDoorId: mock.fn(() => true),
 };
 
-mock.module('../services/openai.js', { namedExports: openaiMocks });
+mock.module('../services/ai.js', { namedExports: openaiMocks });
 mock.module('../services/vector-store.js', { namedExports: vectorStoreMocks });
 mock.module('../services/auth-utils.js', { namedExports: authUtilsMocks });
 

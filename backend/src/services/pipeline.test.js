@@ -44,7 +44,7 @@ const stateStoreMocks = {
 };
 
 mock.module('./parser.js', { namedExports: parserMocks });
-mock.module('./openai.js', { namedExports: openaiMocks });
+mock.module('./ai.js', { namedExports: openaiMocks });
 mock.module('./vector-store.js', { namedExports: vectorStoreMocks });
 mock.module('./storage.js', { namedExports: storageMocks });
 mock.module('./state-store.js', { namedExports: stateStoreMocks });

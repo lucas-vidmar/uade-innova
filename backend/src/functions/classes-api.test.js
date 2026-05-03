@@ -27,6 +27,9 @@ mock.module('../services/state-store.js', {
         replaceClassesForSubject: mock.fn(async () => true),
         deleteMaterialStateById: mock.fn(async () => true),
         getMaterialState: mock.fn(async () => null),
+        upsertMaterialState: mock.fn(async () => true),
+        deleteClassesBySubject: mock.fn(async () => true),
+        deleteMaterialsBySubject: mock.fn(async () => true),
     }
 });
 mock.module('uuid', { namedExports: { v4: () => '1234' } });
@@ -120,6 +123,7 @@ test('classes-api save-classes should require authorization', async (t) => {
 
     const mockContext = { log: mock.fn(), error: mock.fn() };
     const mockRequest = { 
+        params: {},
         query: new Map([['subjectId', 'test']]), 
         json: async () => ([]) 
     };
@@ -136,7 +140,7 @@ test('classes-api get-director-stats should require Director role', async () => 
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
 
     const mockContext = { log: mock.fn(), error: mock.fn() };
-    const mockRequest = { query: new Map() };
+    const mockRequest = { params: {}, query: new Map() };
 
     const response = await handlers['get-director-stats'](mockRequest, mockContext);
     assert.strictEqual(response.status, 403);
@@ -148,7 +152,7 @@ test('classes-api get-director-stats returns aggregate summary without student i
     authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
 
     const mockContext = { log: mock.fn(), error: mock.fn() };
-    const mockRequest = { query: new Map() };
+    const mockRequest = { params: {}, query: new Map() };
 
     const response = await handlers['get-director-stats'](mockRequest, mockContext);
     assert.strictEqual(response.status, 200);
@@ -170,7 +174,7 @@ test('classes-api get-director-powerbi-metrics should require Director role', as
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
 
     const mockContext = { log: mock.fn(), error: mock.fn() };
-    const mockRequest = { query: new Map() };
+    const mockRequest = { params: {}, query: new Map() };
 
     const response = await handlers['get-director-powerbi-metrics'](mockRequest, mockContext);
     assert.strictEqual(response.status, 403);
@@ -198,7 +202,7 @@ test('classes-api get-director-powerbi-metrics returns aggregated daily metrics'
     }));
 
     const mockContext = { log: mock.fn(), error: mock.fn() };
-    const mockRequest = { query: new Map([['days', '2']]) };
+    const mockRequest = { params: {}, query: new Map([['days', '2']]) };
 
     const response = await handlers['get-director-powerbi-metrics'](mockRequest, mockContext);
     assert.strictEqual(response.status, 200);

@@ -106,7 +106,7 @@ app.http('get-teacher-analytics', {
             };
 
         } catch (err) {
-            context.log.error('Error procesando analitica:', err);
+            context.error('Error procesando analitica:', err);
             return { status: 500, body: 'Error interno procesando analitica' };
         }
     }

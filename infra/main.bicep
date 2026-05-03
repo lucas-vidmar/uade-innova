@@ -5,7 +5,7 @@
   Arquitectura Serverless (sin VM quota):
     - Frontend: Azure Static Web Apps (Free tier, CDN global)
     - Backend:  Azure Functions Consumption Plan Y1 (pago por ejecución)
-    - IA:       Azure OpenAI (ya provisionado por UADE como RS-OPENAI-LLM)
+    - IA:       Azure OpenAI (Embeddings & Fallback) + Azure AI Foundry (DeepSeek)
 
   targetScope = 'resourceGroup' — deploya dentro de RG_UADE_INNOVA_DEV
   sin requerir permisos a nivel suscripción.
@@ -27,13 +27,13 @@ param environmentName string
 @description('Región Azure primaria para todos los recursos.')
 param location string = resourceGroup().location
 
-@description('Región para Azure OpenAI. eastus2 tiene quota de gpt-4o-mini en UADE.')
+@description('Región para Azure OpenAI (Embeddings & Fallback). eastus2 tiene quota de gpt-4o-mini en UADE.')
 param openAiLocation string = 'eastus2'
 
 @description('SKU del recurso Azure OpenAI.')
 param openAiSkuName string = 'S0'
 
-@description('Nombre del modelo GPT a deployar.')
+@description('Nombre del modelo GPT a deployar en Azure OpenAI (Fallback).')
 param gptModelName string = 'gpt-4o-mini'
 
 @description('Versión del modelo GPT.')

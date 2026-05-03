@@ -27,12 +27,22 @@ const vectorStoreMocks = {
 
 const storageMocks = {
     saveJson: mock.fn(async () => true),
-    saveMetricsToTable: mock.fn(async () => true)
+    saveMetricsToTable: mock.fn(async () => true),
+    getTableClient: mock.fn(() => ({
+        createTable: mock.fn(async () => {}),
+        listEntities: mock.fn(() => ({
+            [Symbol.asyncIterator]: async function* () { yield* []; }
+        })),
+        upsertEntity: mock.fn(async () => {}),
+        getEntity: mock.fn(async () => ({})),
+        deleteEntity: mock.fn(async () => {})
+    }))
 };
 
 const authUtilsMocks = {
     validateFrontDoorId: mock.fn(() => true),
     parseClientPrincipal: mock.fn(() => ({ oid: 'test-user-oid', userRoles: ['Alumno'] })),
+    getAuthenticatedUser: mock.fn(() => ({ id: 'test-user-oid', roles: ['Alumno'] })),
 };
 
 const telemetryMocks = {
@@ -40,7 +50,7 @@ const telemetryMocks = {
 };
 
 // Mock dependencies
-mock.module('../services/openai.js', { namedExports: openaiMocks });
+mock.module('../services/ai.js', { namedExports: openaiMocks });
 mock.module('../services/vector-store.js', { namedExports: vectorStoreMocks });
 mock.module('../services/storage.js', { namedExports: storageMocks });
 mock.module('../services/auth-utils.js', { namedExports: authUtilsMocks });
