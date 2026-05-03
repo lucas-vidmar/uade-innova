@@ -148,7 +148,11 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
             context.error(`[StateStore] No se pudo persistir estado ready para ${materialId}:`, stateErr);
         }
 
-        await saveJson(CONTAINER_PROCESSED, `${materialId}.json`, materialState);
+        await saveJson(CONTAINER_PROCESSED, `${materialId}.json`, {
+            ...materialState,
+            extractedText: text,
+            chunks: chunks.map(c => typeof c === 'string' ? { text: c } : c),
+        });
         context.log(`[Pipeline] Estado guardado: processed/${materialId}.json (ready)`);
 
         if (materialType === 'transcript' && extractedTimeline) {

@@ -980,6 +980,7 @@ app.http('update-material', {
             const updates = {};
             if (body.type) updates.type = body.type;
             if (body.classIds) updates.classIds = body.classIds;
+            if (body.filename) updates.filename = body.filename;
             if (typeof body.reviewed === 'boolean') updates.reviewed = body.reviewed;
 
             const updated = await upsertMaterialState({

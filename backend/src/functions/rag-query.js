@@ -12,6 +12,7 @@ import { parseClientPrincipal, validateFrontDoorId, getAuthenticatedUser } from 
 import { normalizeCategorizedError, ErrorCategory } from '../services/error-categories.js';
 import { resolveCorrelationId, buildDependencyHeaders, withCorrelationResponseHeaders } from '../services/correlation.js';
 import { v4 as uuidv4 } from 'uuid';
+import { listMaterialsBySubject } from '../services/state-store.js';
 const MAX_RAG_CHUNKS = 4;
 const RETRIEVAL_CANDIDATES = 10;
 const MIN_HISTORY_TURNS = 3;
@@ -273,6 +274,26 @@ app.http('rag-query', {
         }
 
         matches = filterMatchesByTranscriptFocus(matches, transcriptFocus);
+
+        // ── 4b. Filtrar materiales no revisados ───────────────────
+        try {
+            const allMaterials = await listMaterialsBySubject(subjectId);
+            const reviewedMaterialIds = new Set(
+                allMaterials.filter(m => m.reviewed === true).map(m => m.materialId || m.id)
+            );
+            // Si hay al menos un material revisado, filtrar; si no hay ninguno revisado,
+            // dejamos pasar todo para no bloquear el chat completamente.
+            if (reviewedMaterialIds.size > 0) {
+                const before = matches.length;
+                matches = matches.filter(m => reviewedMaterialIds.has(m.metadata?.materialId));
+                if (before !== matches.length) {
+                    context.log(`[RAG] Filtro de revisión: ${before} → ${matches.length} matches (${reviewedMaterialIds.size} materiales revisados)`);
+                }
+            }
+        } catch (reviewErr) {
+            context.error('[RAG] Error filtrando por revisión (no bloqueante):', reviewErr);
+        }
+
         matches = buildHybridContext(matches, MAX_RAG_CHUNKS);
 
         // Nota: No retornamos temprano si matches.length === 0 para permitir que el LLM

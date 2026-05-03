@@ -122,7 +122,7 @@ export async function renderMaterialManager(container) {
                                                 <td class="mat-col-name">
                                                     <div class="mat-filename-wrap">
                                                         <span class="mat-filename-icon">${typeIcon(mat.type)}</span>
-                                                        <span class="mat-filename-text" title="${escapeHtml(mat.filename)}">${escapeHtml(mat.filename || 'Sin nombre')}</span>
+                                                        <span class="mat-filename-text subject-directory-name" data-idx="${i}" data-field="filename" title="Click para editar nombre">${escapeHtml(mat.filename || 'Sin nombre')}</span>
                                                     </div>
                                                 </td>
                                                 <td class="mat-col-type">
@@ -251,6 +251,43 @@ export async function renderMaterialManager(container) {
                                 updateMaterial(idx, { type: newType });
                             }
                         });
+                    });
+                });
+            });
+
+            // Filename inline edit — click to turn into input
+            container.querySelectorAll('.mat-filename-text[data-field="filename"]').forEach(cell => {
+                cell.addEventListener('click', () => {
+                    const idx = parseInt(cell.dataset.idx);
+                    const mat = materials[idx];
+                    if (!mat) return;
+                    const currentVal = mat.filename || '';
+
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.className = 'form-input mat-inline-input';
+                    input.value = currentVal;
+                    input.style.width = '100%';
+                    input.style.fontSize = '0.88rem';
+                    input.style.fontWeight = '600';
+
+                    cell.replaceWith(input);
+                    input.focus();
+                    input.select();
+
+                    const commit = () => {
+                        const newVal = input.value.trim();
+                        if (newVal && newVal !== currentVal) {
+                            updateMaterial(idx, { filename: newVal });
+                        } else {
+                            render();
+                        }
+                    };
+
+                    input.addEventListener('blur', commit);
+                    input.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+                        if (e.key === 'Escape') { input.value = currentVal; input.blur(); }
                     });
                 });
             });

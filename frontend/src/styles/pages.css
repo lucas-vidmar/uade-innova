@@ -2917,6 +2917,18 @@
     color: #202735;
     letter-spacing: -0.01em;
     word-break: break-all;
+    cursor: text;
+}
+
+.mat-inline-input {
+    padding: 3px 8px;
+    border: 1px solid #0c6099;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #202735;
+    box-shadow: 0 0 0 3px rgba(12, 96, 153, 0.12);
+    outline: none;
+    transition: border-color 0.15s ease;
 }
 
 /* ── Type inline edit cell ────── */
