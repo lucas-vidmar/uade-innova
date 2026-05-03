@@ -2,7 +2,7 @@ import { app } from '@azure/functions';
 import { loadJson, saveJson, listBlobs, deleteBlob, getTableClient } from '../services/storage.js';
 import { v4 as uuidv4 } from 'uuid';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
-import { listClassesBySubject, listMaterialsBySubject, replaceClassesForSubject, deleteMaterialStateById, getMaterialState, deleteClassesBySubject, deleteMaterialsBySubject } from '../services/state-store.js';
+import { listClassesBySubject, listMaterialsBySubject, replaceClassesForSubject, deleteMaterialStateById, getMaterialState, upsertMaterialState, deleteClassesBySubject, deleteMaterialsBySubject } from '../services/state-store.js';
 import * as vectorStore from '../services/vector-store.js';
 
 const CONTAINER_CLASSES = process.env.AZURE_STORAGE_CONTAINER_CLASSES || 'classes-config';
@@ -527,7 +527,9 @@ app.http('get-classes', {
                     status: mat.status,
                     uploadedAt: mat.uploadedAt || mat.processedAt,
                     blobUrl: mat.blobUrl,
-                    classIds: targetClasses
+                    classIds: targetClasses,
+                    reviewed: mat.reviewed === true,
+                    chunkCount: mat.chunkCount,
                 };
 
                 context.log(`[get-classes] Processing material ${matSafe.id} ("${matSafe.filename}") - status: ${matSafe.status}, linked classes: ${targetClasses.join(', ')}`);
@@ -936,6 +938,195 @@ app.http('delete-material', {
         } catch (err) {
             context.error(err);
             return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: `No se pudo borrar el material: ${err.message}` }) };
+        }
+    }
+});
+
+// ── PATCH /api/materials/{materialId} ────────────────────────────────────
+// Actualiza metadatos de un material (type, classIds, reviewed)
+app.http('update-material', {
+    methods: ['PATCH'],
+    authLevel: 'anonymous',
+    route: 'materials/{materialId}',
+    handler: async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden' }) };
+        const principal = parseClientPrincipal(request);
+        const isAuthorized = !principal
+            || principal?.userRoles?.some(role => ['Docente', 'Director'].includes(role))
+            || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
+        if (!isAuthorized) {
+            return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Teacher access required' }) };
+        }
+
+        const materialId = request.params.materialId;
+        let body;
+        try {
+            body = await request.json();
+        } catch {
+            return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Body JSON inválido' }) };
+        }
+
+        const subjectId = body.subjectId;
+        if (!subjectId) {
+            return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'subjectId es requerido' }) };
+        }
+
+        try {
+            const existing = await getMaterialState(subjectId, materialId);
+            if (!existing) {
+                return { status: 404, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Material no encontrado' }) };
+            }
+
+            const updates = {};
+            if (body.type) updates.type = body.type;
+            if (body.classIds) updates.classIds = body.classIds;
+            if (typeof body.reviewed === 'boolean') updates.reviewed = body.reviewed;
+
+            const updated = await upsertMaterialState({
+                ...existing,
+                materialId: existing.materialId || existing.id,
+                subjectId,
+                ...updates,
+            }, 'Merge');
+
+            context.log(`[UpdateMaterial] ${materialId} updated:`, JSON.stringify(updates));
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: true, material: updated }) };
+        } catch (err) {
+            context.error(`[UpdateMaterial] Error updating ${materialId}:`, err);
+            return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: `Error al actualizar: ${err.message}` }) };
+        }
+    }
+});
+
+// ── GET /api/materials/{materialId}/text ──────────────────────────────
+// Devuelve el texto extraído de un material desde el blob processed/{id}.json
+app.http('get-material-text', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'materials/{materialId}/text',
+    handler: async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden' }) };
+
+        const materialId = request.params.materialId;
+        const subjectId = request.query.get('subjectId');
+
+        try {
+            const processed = await loadJson(CONTAINER_PROCESSED, `${materialId}.json`);
+            if (!processed) {
+                return { status: 404, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: '', error: 'No se encontró texto procesado' }) };
+            }
+
+            const text = processed.extractedText || processed.text || '';
+            return {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text, chunkCount: processed.chunks?.length || 0, filename: processed.filename || '' })
+            };
+        } catch (err) {
+            context.error(`[GetMaterialText] Error for ${materialId}:`, err);
+            return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: '', error: err.message }) };
+        }
+    }
+});
+
+// ── PUT /api/materials/{materialId}/text ──────────────────────────────
+// Actualiza texto extraído y re-genera embeddings
+app.http('update-material-text', {
+    methods: ['PUT'],
+    authLevel: 'anonymous',
+    route: 'materials/{materialId}/text',
+    handler: async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden' }) };
+        const principal = parseClientPrincipal(request);
+        const isAuthorized = !principal
+            || principal?.userRoles?.some(role => ['Docente', 'Director'].includes(role))
+            || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
+        if (!isAuthorized) {
+            return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden' }) };
+        }
+
+        const materialId = request.params.materialId;
+        let body;
+        try {
+            body = await request.json();
+        } catch {
+            return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Body JSON inválido' }) };
+        }
+
+        const { subjectId, text } = body;
+        if (!subjectId || typeof text !== 'string') {
+            return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'subjectId y text son requeridos' }) };
+        }
+
+        try {
+            // 1. Load existing processed blob
+            const processed = await loadJson(CONTAINER_PROCESSED, `${materialId}.json`) || {};
+            const materialState = await getMaterialState(subjectId, materialId);
+
+            // 2. Delete old vectors
+            try {
+                await vectorStore.deleteVectorsByFilter({ materialId: { '$eq': materialId } });
+                context.log(`[UpdateMaterialText] Deleted old vectors for ${materialId}`);
+            } catch (vErr) {
+                context.error(`[UpdateMaterialText] Error deleting vectors:`, vErr);
+            }
+
+            // 3. Re-chunk and re-embed
+            const { chunkText } = await import('../services/parser.js');
+            const chunks = chunkText(text);
+
+            const { generateEmbeddingsBatch } = await import('../services/openai.js');
+            const chunkTexts = chunks.map(c => c.text);
+            const { embeddings } = await generateEmbeddingsBatch(chunkTexts);
+
+            // 4. Upsert to Pinecone
+            const classIds = materialState?.classIds || processed.classIds || [];
+            const vectors = embeddings.map((embedding, i) => ({
+                id: `${materialId}-chunk-${i}`,
+                values: embedding,
+                metadata: {
+                    subjectId,
+                    classId: classIds[0] || '',
+                    classIds: JSON.stringify(classIds),
+                    materialId,
+                    materialType: materialState?.type || processed.materialType || 'notes',
+                    chunkIndex: i,
+                    sourceFilename: materialState?.filename || processed.filename || '',
+                    text: chunkTexts[i]?.substring(0, 1000) || '',
+                }
+            }));
+
+            await vectorStore.upsertVectors(vectors);
+
+            // 5. Update processed blob
+            processed.extractedText = text;
+            processed.text = text;
+            processed.chunks = chunks;
+            processed.chunkCount = chunks.length;
+            processed.processedAt = new Date().toISOString();
+            await saveJson(CONTAINER_PROCESSED, `${materialId}.json`, processed);
+
+            // 6. Update state
+            if (materialState) {
+                await upsertMaterialState({
+                    ...materialState,
+                    materialId,
+                    subjectId,
+                    status: 'ready',
+                    chunkCount: chunks.length,
+                    processedAt: new Date().toISOString(),
+                }, 'Merge');
+            }
+
+            context.log(`[UpdateMaterialText] ${materialId}: re-indexed ${chunks.length} chunks.`);
+            return {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ success: true, chunkCount: chunks.length })
+            };
+        } catch (err) {
+            context.error(`[UpdateMaterialText] Error for ${materialId}:`, err);
+            return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: err.message }) };
         }
     }
 });

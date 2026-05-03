@@ -1413,6 +1413,64 @@ export const api = {
             return res.json();
         },
 
+    async updateMaterial(subjectId, materialId, updates) {
+            if (!subjectId || !materialId) throw new Error('subjectId y materialId son requeridos');
+            const res = await apiFetch(`${BASE_URL}/materials/${encodeURIComponent(materialId)}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ subjectId, ...updates }),
+            });
+            if (!res.ok) {
+                let message = `Error ${res.status}: no se pudo actualizar el material`;
+                try {
+                    const contentType = res.headers.get('content-type') || '';
+                    if (contentType.includes('application/json')) {
+                        const err = await res.json();
+                        if (err?.error) message = err.error;
+                    }
+                } catch { /* no-op */ }
+                throw new Error(message);
+            }
+            return res.json();
+        },
+
+    async getMaterialText(subjectId, materialId) {
+            if (!subjectId || !materialId) return { text: '' };
+            try {
+                const res = await fetchWithTimeout(
+                    `${BASE_URL}/materials/${encodeURIComponent(materialId)}/text?subjectId=${encodeURIComponent(subjectId)}`,
+                    { timeout: 8000 }
+                );
+                if (!res.ok) return { text: '' };
+                const data = await res.json();
+                return data && typeof data === 'object' ? data : { text: '' };
+            } catch (err) {
+                console.error('[API] getMaterialText failed:', err);
+                return { text: '' };
+            }
+        },
+
+    async updateMaterialText(subjectId, materialId, text) {
+            if (!subjectId || !materialId) throw new Error('subjectId y materialId son requeridos');
+            const res = await apiFetch(`${BASE_URL}/materials/${encodeURIComponent(materialId)}/text`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ subjectId, text }),
+            });
+            if (!res.ok) {
+                let message = `Error ${res.status}: no se pudo actualizar el texto`;
+                try {
+                    const contentType = res.headers.get('content-type') || '';
+                    if (contentType.includes('application/json')) {
+                        const err = await res.json();
+                        if (err?.error) message = err.error;
+                    }
+                } catch { /* no-op */ }
+                throw new Error(message);
+            }
+            return res.json();
+        },
+
     async getTeacherAiFeedbackAlerts(subjectId, limit = 10) {
             if (!subjectId) return [];
             if (USE_MOCK) {

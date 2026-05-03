@@ -22,6 +22,7 @@ const ROUTES = {
     '/teacher/classes': () => import('./pages/teacher/ClassManager.js').then(m => m.renderClassManager),
     '/teacher/upload': () => import('./pages/teacher/UploadMaterials.js').then(m => m.renderTeacherUpload),
     '/teacher/analytics': () => import('./pages/teacher/Analytics.js').then(m => m.renderTeacherAnalytics),
+    '/teacher/materials': () => import('./pages/teacher/MaterialManager.js').then(m => m.renderMaterialManager),
     '/director/dashboard': () => import('./pages/director/Dashboard.js').then(m => m.renderDirectorDashboard),
     '/director/classes': () => import('./pages/director/ClassManagement.js').then(m => m.renderClassManagement),
     '/director/subjects': () => import('./pages/director/SubjectManagement.js').then(m => m.renderSubjectManagement),
