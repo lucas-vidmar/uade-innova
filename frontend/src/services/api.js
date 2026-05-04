@@ -1355,7 +1355,9 @@ export const api = {
                 return [
                     { id: 'h1', question: '¿Qué es la arquitectura hexagonal?', answer: 'La arquitectura hexagonal...', createdAt: '2026-04-10T10:00:00Z' },
                     { id: 'h2', question: 'Diferencia entre CQRS y Event Sourcing', answer: 'CQRS separa lectura de escritura...', createdAt: '2026-04-11T11:00:00Z' },
-                    { id: 'h3', question: '¿Cómo funciona SAGA pattern?', answer: 'El patrón SAGA gestiona transacciones...', createdAt: '2026-04-12T12:00:00Z' }
+                    { id: 'h3', question: '¿Cómo funciona SAGA pattern?', answer: 'El patrón SAGA gestiona transacciones...', createdAt: '2026-04-12T12:00:00Z' },
+                    { id: 'h4', question: '¿Para qué sirve DDD?', answer: 'DDD organiza el dominio en modelos...', createdAt: '2026-04-13T09:30:00Z' },
+                    { id: 'h5', question: '¿Qué es el bounded context?', answer: 'Es un limite semantico del modelo...', createdAt: '2026-04-14T15:20:00Z' }
                 ];
             }
             try {

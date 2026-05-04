@@ -201,10 +201,31 @@ export async function renderStudentDashboard(container) {
     return Array.from(sessions.values()).sort((a, b) => b.lastAt - a.lastAt);
   };
 
+  const HISTORY_PAGE_SIZE = 5;
+  let historyPage = 0;
+  let sessionSummariesCache = [];
+
+  const renderHistoryList = () => {
+    const visibleCount = Math.min((historyPage + 1) * HISTORY_PAGE_SIZE, sessionSummariesCache.length);
+    const visibleItems = sessionSummariesCache.slice(0, visibleCount);
+    if (visibleItems.length === 0) {
+      return '<li class="p-6 flex flex-row items-center justify-center gap-2 text-center text-text-muted bg-surface-2 rounded-xl mt-2 border border-dashed border-border"><span class="opacity-50">' + icon('chat') + '</span><span class="text-xs italic">Sin actividad reciente</span></li>';
+    }
+    return visibleItems.map(c => `
+      <li class="sidebar-list-item cursor-pointer hover:bg-surface-2 transition-colors" data-chat-session-id="${escapeHtml(c.sessionId)}">
+        <div class="chat-history-row">
+          <span class="chat-history-title">${escapeHtml(c.title)}</span>
+          <span class="chat-history-date">${new Date(c.lastAt || Date.now()).toLocaleDateString()}</span>
+        </div>
+      </li>
+    `).join('');
+  };
+
   const updateHistorySidebar = (history) => {
     const sectionHistory = document.getElementById('section-history');
     if (!sectionHistory) return;
-    const sessionSummaries = buildSessionSummaries(history);
+    sessionSummariesCache = buildSessionSummaries(history);
+    historyPage = 0;
     sectionHistory.innerHTML = `
       <div class="sidebar-section-header">
         <div class="sidebar-section-title">
@@ -212,28 +233,39 @@ export async function renderStudentDashboard(container) {
           <span>Chats recientes</span>
         </div>
       </div>
-      <div class="chat-history-scroll">
+      <div class="chat-history-scroll" id="chat-history-scroll">
         <ul class="sidebar-list">
-          ${sessionSummaries.length > 0 ? sessionSummaries.map(c => `
-            <li class="sidebar-list-item cursor-pointer hover:bg-surface-2 transition-colors" data-chat-session-id="${escapeHtml(c.sessionId)}">
-              <div class="chat-history-info w-full overflow-hidden">
-                <p class="chat-history-q text-sm truncate max-w-[190px]">${escapeHtml(c.title)}</p>
-                <p class="chat-history-date text-[10px] text-text-muted mt-0.5">${new Date(c.lastAt || Date.now()).toLocaleDateString()}</p>
-              </div>
-              <span class="chat-history-arrow ml-2 flex-shrink-0">→</span>
-            </li>
-          `).join('') : '<li class="p-6 flex flex-row items-center justify-center gap-2 text-center text-text-muted bg-surface-2 rounded-xl mt-2 border border-dashed border-border"><span class="opacity-50">' + icon('chat') + '</span><span class="text-xs italic">Sin actividad reciente</span></li>'}
+          ${renderHistoryList()}
         </ul>
       </div>
     `;
 
-    sectionHistory.querySelectorAll('[data-chat-session-id]').forEach(item => {
-      item.addEventListener('click', () => {
-        const sessionId = item.dataset.chatSessionId;
-        if (!sessionId) return;
-        window.location.hash = `#/student/dashboard?sessionId=${encodeURIComponent(sessionId)}`;
+    const bindHistoryClicks = () => {
+      sectionHistory.querySelectorAll('[data-chat-session-id]').forEach(item => {
+        item.addEventListener('click', () => {
+          const sessionId = item.dataset.chatSessionId;
+          if (!sessionId) return;
+          window.location.hash = `#/student/dashboard?sessionId=${encodeURIComponent(sessionId)}`;
+        });
       });
-    });
+    };
+
+    const historyScroll = sectionHistory.querySelector('#chat-history-scroll');
+    if (historyScroll) {
+      historyScroll.onscroll = () => {
+        const nearBottom = historyScroll.scrollTop + historyScroll.clientHeight >= historyScroll.scrollHeight - 20;
+        if (!nearBottom) return;
+        if ((historyPage + 1) * HISTORY_PAGE_SIZE >= sessionSummariesCache.length) return;
+        historyPage += 1;
+        const list = historyScroll.querySelector('.sidebar-list');
+        if (list) {
+          list.innerHTML = renderHistoryList();
+          bindHistoryClicks();
+        }
+      };
+    }
+
+    bindHistoryClicks();
   };
 
   const loadChatSession = async (sessionId) => {
