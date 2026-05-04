@@ -8,10 +8,11 @@ import { toast } from './Toast.js';
 
 const FOLLOW_UP_HISTORY_WINDOW_SIZE = 4;
 
-export function createChatWidget({ classes = [], subjectId = '', initialMessages = [], highlightMessageId = null, transcriptFocus: initialTranscriptFocus = null }) {
+export function createChatWidget({ classes = [], subjectId = '', sessionId = null, initialMessages = [], highlightMessageId = null, transcriptFocus: initialTranscriptFocus = null, onNewChat, onMessageSent }) {
   const user = auth.getUser();
   let selectedClassIds = [];
   let messages = [...initialMessages];
+  let currentSessionId = sessionId || crypto.randomUUID();
   let isLoading = false;
   let transcriptFocus = initialTranscriptFocus;
 
@@ -212,24 +213,13 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
     });
 
     // Clear
-    container.querySelector('#chat-clear')?.addEventListener('click', async () => {
-      const shouldClear = await showConfirmDialog({
-        title: 'Iniciar nuevo chat',
-        message: '¿Seguro que querés comenzar una nueva conversación? Esto despejará el historial actual.',
-        confirmText: 'Nuevo chat',
-        cancelText: 'Cancelar',
-      });
-      if (shouldClear) {
-        try {
-          await api.clearChatHistory(subjectId);
-          messages = [];
-          render();
-          toast('success', 'Conversación eliminada');
-        } catch (err) {
-          console.error('Error clearing chat history:', err);
-          toast('error', 'Error al eliminar historial');
-        }
-      }
+    container.querySelector('#chat-clear')?.addEventListener('click', () => {
+      const previousSessionId = currentSessionId;
+      messages = [];
+      currentSessionId = crypto.randomUUID();
+      render();
+      toast('success', 'Nuevo chat iniciado', 'Las consultas anteriores se guardaron en el historial.');
+      if (onNewChat) onNewChat({ newSessionId: currentSessionId, previousSessionId });
     });
 
     // Send
@@ -273,6 +263,7 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
         question,
         classIds: selectedClassIds,
         subjectId,
+        sessionId: currentSessionId,
         conversationHistory,
         historyWindowSize: FOLLOW_UP_HISTORY_WINDOW_SIZE,
         transcriptFocus,
@@ -332,6 +323,7 @@ export function createChatWidget({ classes = [], subjectId = '', initialMessages
       if (sendBtn) sendBtn.disabled = false;
       const textarea = container.querySelector('#chat-input');
       if (textarea) textarea.disabled = false;
+      if (onMessageSent) onMessageSent({ sessionId: currentSessionId });
     }
   };
 

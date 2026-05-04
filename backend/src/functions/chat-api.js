@@ -46,11 +46,17 @@ app.http('get-chat-history', {
                 if (data) history.push(data);
             }
 
+            history.forEach((item) => {
+                if (!item.sessionId) {
+                    item.sessionId = item.id || null;
+                }
+            });
+
             // Ordenar cronológicamente por timestamp (más antiguo primero)
             history.sort((a, b) => new Date(a.timestamp || a.createdAt || 0) - new Date(b.timestamp || b.createdAt || 0));
 
-            // Devolver los últimos 10 en orden cronológico
-            const recent = history.slice(-10);
+            // Devolver los últimos 50 en orden cronológico (para permitir scroll en historial)
+            const recent = history.slice(-50);
 
             return {
                 status: 200,

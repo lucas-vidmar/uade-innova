@@ -226,7 +226,7 @@ app.http('rag-query', {
             return jsonResponse(400, { error: 'Body JSON inválido' }, correlationId);
         }
 
-        const { question, classIds, subjectId, stream = false, conversationHistory, historyWindowSize, transcriptFocus } = body;
+        const { question, classIds, subjectId, sessionId, stream = false, conversationHistory, historyWindowSize, transcriptFocus } = body;
 
         if (!question || !subjectId) {
             return jsonResponse(400, { error: 'Faltan campos requeridos: question, subjectId' }, correlationId);
@@ -235,7 +235,7 @@ app.http('rag-query', {
         const recentConversationHistory = normalizeConversationHistory(conversationHistory, historyWindowSize);
         const rewrittenQuestion = await rewriteQuestionWithHistory(question, recentConversationHistory, context);
 
-        context.log(`Pregunta: "${question}" | Reescrita: "${rewrittenQuestion}" | Materia: ${subjectId} | Clases: ${classIds?.join(',')}`);
+        context.log(`Pregunta: "${question}" | Reescrita: "${rewrittenQuestion}" | Materia: ${subjectId} | Clases: ${classIds?.join(',') || 'todas'} | Session: ${sessionId || 'auto'}`);
 
         // ── 2. Embedding de la pregunta ───────────────────────────
         let questionEmbedding;
@@ -296,16 +296,23 @@ app.http('rag-query', {
 
         matches = buildHybridContext(matches, MAX_RAG_CHUNKS);
         
-        const REFUSAL_MESSAGE = "No encontré información sobre eso en los materiales seleccionados.";
+        const REFUSAL_MESSAGE = "No encontre informacion sobre eso en los materiales seleccionados.";
 
         // ── 5. Early return if no context found ───────────────────
         if (matches.length === 0) {
+            context.log(`[RAG] No matches found for subjectId=${subjectId}. Sending refusal stream.`);
             if (stream) {
                 const responseStream = new ReadableStream({
                     start(controller) {
                         const encoder = new TextEncoder();
+                        // 1. Enviar metadatos vacíos para inicializar el footer
                         controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ sources: [] })}\n\n`));
-                        controller.enqueue(encoder.encode(`data: ${REFUSAL_MESSAGE}\n\n`));
+                        
+                        // 2. Enviar el mensaje como un delta para que la UI lo anime/muestre progresivamente si quiere, 
+                        // o al menos use el path más probado del frontend.
+                        controller.enqueue(encoder.encode(`event: delta\ndata: ${JSON.stringify({ content: REFUSAL_MESSAGE })}\n\n`));
+                        
+                        // 3. Enviar evento final
                         controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ answer: REFUSAL_MESSAGE })}\n\n`));
                         controller.close();
                     }
@@ -325,11 +332,18 @@ app.http('rag-query', {
 
         // ── 6. Construir prompt RAG ───────────────────────────────
         const contextText = matches
-            .map((m, i) => `[Fuente ${i + 1} - Archivo: ${m.metadata?.sourceFilename || 'Desconocido'}]\n${m.metadata?.text || ''}`)
-            .join('\n\n---\n\n');
+            .map((m) => {
+                const filename = m.metadata?.sourceFilename || 'desconocido';
+                const materialType = m.metadata?.materialType || 'material';
+                const chunkIndex = Number.isInteger(m.metadata?.chunkIndex) ? m.metadata.chunkIndex : '';
+                const header = `<chunk archivo="${filename}" tipo="${materialType}" indice="${chunkIndex}">`;
+                const body = `${m.metadata?.text || ''}`;
+                return `${header}\n${body}\n</chunk>`;
+            })
+            .join('\n\n');
 
         const focusClause = transcriptFocus?.label
-            ? `\n\n### FOCO DE TRANSCRIPCION SELECCIONADO POR EL ALUMNO:\n${transcriptFocus.label}\nUsa este foco para priorizar la respuesta sobre esa seccion de la clase.`
+            ? `\n\n<transcripcion_foco>\n${transcriptFocus.label}\nUsa este foco para priorizar la respuesta sobre esa seccion de la clase.\n</transcripcion_foco>`
             : '';
 
         const { id: promptId, content: systemPromptBase } = getShadowPrompt();
@@ -341,9 +355,9 @@ app.http('rag-query', {
                 role: 'system',
                 content: `${systemPromptBase}${focusClause}
 
-### CONTEXTO DE LOS MATERIALES:
+<contexto_rag>
 ${contextText}
-### FIN DEL CONTEXTO`,
+</contexto_rag>`,
 
             },
             {
@@ -419,6 +433,7 @@ ${contextText}
                             id: interactionId,
                             userId: userAuth.userId,
                             subjectId,
+                            sessionId: sessionId || interactionId,
                             classIds,
                             transcriptFocus,
                             question,
@@ -517,6 +532,7 @@ ${contextText}
             id: interactionId,
             userId,
             subjectId,
+            sessionId: sessionId || interactionId,
             classIds,
             transcriptFocus,
             question,

@@ -864,7 +864,7 @@ export const api = {
      * @param {Object} params - { question, classIds, subjectId }
      * @param {Function} onEvent - Callback para cada evento del stream: (type, data) => void
      */
-    async ragQueryStream({ question, classIds, subjectId, conversationHistory =[], historyWindowSize = 4, transcriptFocus = null }, onEvent) {
+    async ragQueryStream({ question, classIds, subjectId, sessionId, conversationHistory =[], historyWindowSize = 4, transcriptFocus = null }, onEvent) {
             if (USE_MOCK) {
                 // Simular streaming para mocks
                 await delay(400);
@@ -888,7 +888,7 @@ export const api = {
             const response = await apiFetch(`${BASE_URL}/rag-query`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ question, classIds, subjectId, stream: true, conversationHistory, historyWindowSize, transcriptFocus }),
+                body: JSON.stringify({ question, classIds, subjectId, sessionId, stream: true, conversationHistory, historyWindowSize, transcriptFocus }),
             });
 
             if (response.status === 429) {

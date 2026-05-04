@@ -66,6 +66,12 @@ function icon(name) {
   return `<span class="ui-icon" aria-hidden="true">${icons[name] || icons.document}</span>`;
 }
 
+function parseHashQuery() {
+  const hash = window.location.hash || '';
+  const query = hash.split('?')[1] || '';
+  return new URLSearchParams(query);
+}
+
 export async function renderStudentDashboard(container) {
   const user = auth.getUser();
   const activeSubjectId = auth.getActiveSubjectId();
@@ -162,6 +168,113 @@ export async function renderStudentDashboard(container) {
   `;
 
   renderHeader(document.getElementById('app-header'), 'Inicio', false);
+
+  const buildSessionSummaries = (history = []) => {
+    const sessions = new Map();
+
+    history.forEach((item, index) => {
+      const sessionKey = item.sessionId || item.id || `legacy-${index}`;
+      if (!sessionKey) return;
+      const timestamp = new Date(item.timestamp || item.createdAt || 0).getTime();
+      const question = String(item.question || '').trim();
+
+      if (!sessions.has(sessionKey)) {
+        sessions.set(sessionKey, {
+          sessionId: sessionKey,
+          title: question || 'Chat sin título',
+          lastAt: timestamp || 0,
+          count: 1,
+        });
+        return;
+      }
+
+      const current = sessions.get(sessionKey);
+      const nextLastAt = Math.max(current.lastAt, timestamp || 0);
+      sessions.set(sessionKey, {
+        ...current,
+        title: question || current.title,
+        lastAt: nextLastAt,
+        count: current.count + 1,
+      });
+    });
+
+    return Array.from(sessions.values()).sort((a, b) => b.lastAt - a.lastAt);
+  };
+
+  const updateHistorySidebar = (history) => {
+    const sectionHistory = document.getElementById('section-history');
+    if (!sectionHistory) return;
+    const sessionSummaries = buildSessionSummaries(history);
+    sectionHistory.innerHTML = `
+      <div class="sidebar-section-header">
+        <div class="sidebar-section-title">
+          <svg class="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+          <span>Chats recientes</span>
+        </div>
+      </div>
+      <div class="chat-history-scroll">
+        <ul class="sidebar-list">
+          ${sessionSummaries.length > 0 ? sessionSummaries.map(c => `
+            <li class="sidebar-list-item cursor-pointer hover:bg-surface-2 transition-colors" data-chat-session-id="${escapeHtml(c.sessionId)}">
+              <div class="chat-history-info w-full overflow-hidden">
+                <p class="chat-history-q text-sm truncate max-w-[190px]">${escapeHtml(c.title)}</p>
+                <p class="chat-history-date text-[10px] text-text-muted mt-0.5">${new Date(c.lastAt || Date.now()).toLocaleDateString()}</p>
+              </div>
+              <span class="chat-history-arrow ml-2 flex-shrink-0">→</span>
+            </li>
+          `).join('') : '<li class="p-6 flex flex-row items-center justify-center gap-2 text-center text-text-muted bg-surface-2 rounded-xl mt-2 border border-dashed border-border"><span class="opacity-50">' + icon('chat') + '</span><span class="text-xs italic">Sin actividad reciente</span></li>'}
+        </ul>
+      </div>
+    `;
+
+    sectionHistory.querySelectorAll('[data-chat-session-id]').forEach(item => {
+      item.addEventListener('click', () => {
+        const sessionId = item.dataset.chatSessionId;
+        if (!sessionId) return;
+        window.location.hash = `#/student/dashboard?sessionId=${encodeURIComponent(sessionId)}`;
+      });
+    });
+  };
+
+  const loadChatSession = async (sessionId) => {
+    if (!sessionId) return;
+    const [classes, history] = await Promise.all([
+      api.getClasses(activeSubjectId),
+      api.getChatHistory(activeSubjectId),
+    ]);
+
+    const sessionMessages = (history || [])
+      .filter(item => (item.sessionId || item.id) === sessionId)
+      .sort((a, b) => new Date(a.timestamp || a.createdAt || 0) - new Date(b.timestamp || b.createdAt || 0));
+
+    const chatMount = document.getElementById('chat-widget-mount');
+    if (!chatMount) return;
+
+    chatMount.innerHTML = '';
+    const chatWidget = createChatWidget({
+      classes: classes || [],
+      subjectId: activeSubjectId,
+      sessionId,
+      initialMessages: sessionMessages.map(c => ([
+        { role: 'user', content: c.question },
+        { role: 'assistant', content: c.answer || '', sources: c.sources || [], id: c.id }
+      ])).flat(),
+      onNewChat: handleNewChat,
+      onMessageSent: handleMessageSent,
+    });
+    chatMount.appendChild(chatWidget);
+    updateHistorySidebar(history);
+  };
+
+  const handleNewChat = async () => {
+    const history = await api.getChatHistory(activeSubjectId);
+    updateHistorySidebar(history);
+  };
+
+  const handleMessageSent = async () => {
+    const history = await api.getChatHistory(activeSubjectId);
+    updateHistorySidebar(history);
+  };
 
   // 2. Start fetches in parallel
   const fetchClassesTask = api.getClasses(activeSubjectId);
@@ -264,41 +377,32 @@ export async function renderStudentDashboard(container) {
     if (!chatMount) return;
 
     chatMount.innerHTML = ''; // Clear placeholder
+    const hashQuery = parseHashQuery();
+    const selectedSessionId = hashQuery.get('sessionId');
+
+    const sessionSummaries = buildSessionSummaries(history || []);
+    const latestSessionId = sessionSummaries[0]?.sessionId || null;
+
+    const seedSessionId = selectedSessionId || latestSessionId;
+    const seedMessages = seedSessionId
+      ? (history || []).filter(item => (item.sessionId || item.id) === seedSessionId)
+      : (history || []).slice(-5);
+
     const chatWidget = createChatWidget({
       classes: classes || [],
       subjectId: activeSubjectId,
-      initialMessages: (history || []).slice(-5).map(c => ([
+      sessionId: seedSessionId || null,
+      initialMessages: seedMessages.map(c => ([
         { role: 'user', content: c.question },
         { role: 'assistant', content: c.answer || '', sources: c.sources || [], id: c.id }
-      ])).flat()
+      ])).flat(),
+      onNewChat: handleNewChat,
+      onMessageSent: handleMessageSent,
     });
     chatMount.appendChild(chatWidget);
-
-    // Update History Sidebar
-    const sectionHistory = document.getElementById('section-history');
-    if (sectionHistory) {
-      const recentHistory = [...(history || [])].reverse();
-      sectionHistory.innerHTML = `
-        <div class="sidebar-section-header">
-          <div class="sidebar-section-title">
-            <svg class="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
-            <span>Chats recientes</span>
-          </div>
-        </div>
-        <div class="p-0 max-h-64 overflow-y-auto custom-scrollbar" style="max-height: 250px;">
-          <ul class="sidebar-list">
-            ${recentHistory.length > 0 ? recentHistory.map(c => `
-              <li class="sidebar-list-item cursor-pointer hover:bg-surface-2 transition-colors" onclick="location.hash='#/student/chat'">
-                <div class="chat-history-info w-full overflow-hidden">
-                  <p class="chat-history-q text-sm truncate max-w-[190px]">${escapeHtml(c.question)}</p>
-                  <p class="chat-history-date text-[10px] text-text-muted mt-0.5">${new Date(c.timestamp || c.createdAt || Date.now()).toLocaleDateString()}</p>
-                </div>
-                <span class="chat-history-arrow ml-2 flex-shrink-0">→</span>
-              </li>
-            `).join('') : '<li class="p-6 flex flex-row items-center justify-center gap-2 text-center text-text-muted bg-surface-2 rounded-xl mt-2 border border-dashed border-border"><span class="opacity-50">' + icon('chat') + '</span><span class="text-xs italic">Sin actividad reciente</span></li>'}
-          </ul>
-        </div>
-      `;
+    updateHistorySidebar(history);
+    if (selectedSessionId) {
+      window.history.replaceState(null, '', '#/student/dashboard');
     }
   });
 
