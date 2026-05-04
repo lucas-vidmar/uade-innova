@@ -37,7 +37,7 @@ param embeddingDeploymentCapacity int = 10
 param ttsModelName string = 'tts-1'
 
 // ─── Azure OpenAI Account ───────────────────────────────────────
-resource openAiAccount 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
+resource openAiAccount 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
   name: name
   location: location
   tags: tags
@@ -53,13 +53,39 @@ resource openAiAccount 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// Responsible AI Policy (Content Safety - Prompt Shields)
+// ═════════════════════════════════════════════════════════════════════════════
+
+resource raiPolicy 'Microsoft.CognitiveServices/accounts/raiPolicies@2024-10-01' = {
+  parent: openAiAccount
+  name: 'jailbreak-shield'
+  properties: {
+    basePolicyName: 'Microsoft.Default'
+    contentFilters: [
+      {
+        name: 'Jailbreak'
+        source: 'Prompt'
+        enabled: true
+        blocking: true
+      }
+      {
+        name: 'Indirect Attack'
+        source: 'Prompt'
+        enabled: true
+        blocking: true
+      }
+    ]
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // SKIP deployments - they were manually created in Azure OpenAI and are pinned to latest versions
 // Removing model version specification to avoid deprecation errors
 // ═════════════════════════════════════════════════════════════════════════════
 
 // ─── GPT-4o-mini Deployment ────────────────────────────────────
 // Note: Using latest version - do not specify version to avoid deprecation errors
-resource gptDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-05-01' = {
+resource gptDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
   parent: openAiAccount
   name: gptModelName
   properties: {
@@ -68,7 +94,7 @@ resource gptDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-05
       name: gptModelName
       version: gptModelVersion
     }
-    raiPolicyName: 'Microsoft.Default'
+    raiPolicyName: raiPolicy.name
   }
   sku: {
     name: 'Standard'
@@ -78,7 +104,7 @@ resource gptDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-05
 
 // ─── text-embedding-3-small Deployment ─────────────────────────
 // Note: Using latest version - do not specify version to avoid deprecation errors
-resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-05-01' = {
+resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
   parent: openAiAccount
   name: embeddingModelName
   dependsOn: [gptDeployment] // Sequential deployments required by Azure OpenAI

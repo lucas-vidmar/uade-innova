@@ -34,7 +34,7 @@ param openAiLocation string = 'eastus2'
 param openAiSkuName string = 'S0'
 
 @description('Nombre del modelo GPT a deployar en Azure OpenAI (Fallback).')
-param gptModelName string = 'gpt-4o-mini'
+param gptModelName string = 'gpt-4.1-mini'
 
 @description('Versión del modelo GPT.')
 param gptModelVersion string = '2025-04-14'
