@@ -8,4 +8,10 @@
 * **Key Milestones**: 
   - Corrección de la estructura de datos corrupta (doble stringify) en los identificadores de clase.
   - Saneamiento retroactivo de la base de datos (Azure Table Storage).
-  - Verificación End-to-End del pipeline de carga en la API en vivo, comprobando la generación y extracción correcta de metadatos en la base vectorial (Pinecone).
+* **Feature/Story Name**: Mejora de Interfaz de Usuario (Dashboard del Alumno)
+* **Status**: Completed
+* **Business Impact**: El alumno experimenta un diseño más limpio y moderno, con estados vacíos claros y métricas presentadas con mayor legibilidad, mejorando la usabilidad general del dashboard.
+* **Key Milestones**:
+  - Alineación de la barra de búsqueda y los módulos de métricas con las columnas principales de contenido.
+  - Se eliminaron los fondos de los módulos de métricas para un diseño minimalista.
+  - Se añadieron iconos translúcidos y bordes a los estados vacíos de tareas, clases e historial.

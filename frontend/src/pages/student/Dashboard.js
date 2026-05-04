@@ -83,8 +83,8 @@ export async function renderStudentDashboard(container) {
       <div class="container py-8">
         
         <!-- Welcome & Search Section -->
-        <div class="flex flex-col md:flex-row items-center justify-between gap-6 mb-8">
-          <div class="search-container flex-1 max-w-xl">
+        <div class="dashboard-layout-grid mb-2 items-center" style="padding-bottom: 0;">
+          <div class="search-container w-full" style="max-width: 100%;">
             <div class="search-icon-wrapper">
               <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path></svg>
             </div>
@@ -96,16 +96,16 @@ export async function renderStudentDashboard(container) {
             />
           </div>
 
-          <div class="metrics-container flex items-center gap-4" id="dashboard-metrics-container">
-            <div class="metric-card bg-surface border border-border p-4 rounded-xl shadow-sm flex flex-col items-center min-w-[140px] animate-pulse">
+          <div class="metrics-container grid grid-cols-3 gap-2 w-full" id="dashboard-metrics-container">
+            <div class="bg-transparent p-2 flex flex-col items-center justify-center animate-pulse">
               <span class="h-8 w-8 bg-surface-2 rounded mb-2"></span>
               <span class="h-3 w-16 bg-surface-2 rounded"></span>
             </div>
-            <div class="metric-card bg-surface border border-border p-4 rounded-xl shadow-sm flex flex-col items-center min-w-[140px] animate-pulse">
+            <div class="bg-transparent p-2 flex flex-col items-center justify-center animate-pulse">
               <span class="h-8 w-8 bg-surface-2 rounded mb-2"></span>
               <span class="h-3 w-16 bg-surface-2 rounded"></span>
             </div>
-            <div class="metric-card bg-surface border border-border p-4 rounded-xl shadow-sm flex flex-col items-center min-w-[140px] animate-pulse">
+            <div class="bg-transparent p-2 flex flex-col items-center justify-center animate-pulse">
               <span class="h-8 w-8 bg-surface-2 rounded mb-2"></span>
               <span class="h-3 w-16 bg-surface-2 rounded"></span>
             </div>
@@ -200,11 +200,11 @@ export async function renderStudentDashboard(container) {
             <li class="sidebar-list-item">
               <p class="sidebar-item-title">${escapeHtml(t.title)}</p>
               <div class="sidebar-item-meta">
-                <span>${new Date(t.dueDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}</span>
+                 <span>${new Date(t.dueDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}</span>
                 <span class="font-bold text-error">Próximo</span>
               </div>
             </li>
-          `).join('') : '<li class="p-6 text-center text-xs text-text-muted italic">Sin tareas pendientes</li>'}
+          `).join('') : '<li class="p-6 flex flex-row items-center justify-center gap-2 text-center text-text-muted bg-surface-2 rounded-xl mt-2 border border-dashed border-border"><span class="opacity-50">' + icon('tasks') + '</span><span class="text-xs italic">Sin tareas pendientes</span></li>'}
         </ul>
       </div>
     `;
@@ -213,17 +213,17 @@ export async function renderStudentDashboard(container) {
     const metricsContainer = document.getElementById('dashboard-metrics-container');
     if (metricsContainer) {
       metricsContainer.innerHTML = `
-        <div class="metric-card bg-surface border border-border p-4 rounded-xl shadow-sm flex flex-col items-center min-w-[140px] transition-all hover:shadow-md hover:-translate-y-1">
+        <div class="bg-transparent p-2 flex flex-col items-center justify-center transition-all">
           <span class="text-3xl font-extrabold text-primary">${avgGrade > 0 ? avgGrade.toFixed(1) : '-'}</span>
-          <span class="text-[10px] uppercase font-bold text-text-muted mt-1 tracking-wider">Promedio</span>
+          <span class="text-[10px] uppercase font-bold text-text-muted mt-1 tracking-wider text-center">Promedio</span>
         </div>
-        <div class="metric-card bg-surface border border-border p-4 rounded-xl shadow-sm flex flex-col items-center min-w-[140px] transition-all hover:shadow-md hover:-translate-y-1">
+        <div class="bg-transparent p-2 flex flex-col items-center justify-center transition-all">
           <span class="text-3xl font-extrabold ${riskValue > 0 ? 'text-error' : 'text-text-muted'}">${riskValue}</span>
-          <span class="text-[10px] uppercase font-bold text-text-muted mt-1 tracking-wider">Riesgo Académico</span>
+          <span class="text-[10px] uppercase font-bold text-text-muted mt-1 tracking-wider text-center">Riesgo Académico</span>
         </div>
-        <div class="metric-card bg-surface border border-border p-4 rounded-xl shadow-sm flex flex-col items-center min-w-[140px] transition-all hover:shadow-md hover:-translate-y-1">
+        <div class="bg-transparent p-2 flex flex-col items-center justify-center transition-all">
           <span class="text-3xl font-extrabold text-success">92%</span>
-          <span class="text-[10px] uppercase font-bold text-text-muted mt-1 tracking-wider">Asistencia</span>
+          <span class="text-[10px] uppercase font-bold text-text-muted mt-1 tracking-wider text-center">Asistencia</span>
         </div>
       `;
     }
@@ -252,7 +252,7 @@ export async function renderStudentDashboard(container) {
               <p class="text-[10px] text-text-muted mt-1 leading-tight">${c.topics ? c.topics.join(', ') : 'Sin temas'}</p>
             </li>
           `).join('')}
-          ${classes?.length === 0 ? '<li class="p-6 text-center text-xs text-text-muted italic">No hay clases programadas</li>' : ''}
+          ${classes?.length === 0 ? '<li class="p-6 flex flex-row items-center justify-center gap-2 text-center text-text-muted bg-surface-2 rounded-xl mt-2 border border-dashed border-border"><span class="opacity-50">' + icon('calendar') + '</span><span class="text-xs italic">No hay clases programadas</span></li>' : ''}
         </ul>
       </div>
     `;
@@ -277,7 +277,7 @@ export async function renderStudentDashboard(container) {
     // Update History Sidebar
     const sectionHistory = document.getElementById('section-history');
     if (sectionHistory) {
-      const recentHistory = (history || []).slice(-3).reverse();
+      const recentHistory = [...(history || [])].reverse();
       sectionHistory.innerHTML = `
         <div class="sidebar-section-header">
           <div class="sidebar-section-title">
@@ -285,17 +285,17 @@ export async function renderStudentDashboard(container) {
             <span>Chats recientes</span>
           </div>
         </div>
-        <div class="p-0">
+        <div class="p-0 max-h-64 overflow-y-auto custom-scrollbar" style="max-height: 250px;">
           <ul class="sidebar-list">
             ${recentHistory.length > 0 ? recentHistory.map(c => `
               <li class="sidebar-list-item cursor-pointer hover:bg-surface-2 transition-colors" onclick="location.hash='#/student/chat'">
-                <div class="chat-history-info">
-                  <p class="chat-history-q">${escapeHtml(c.question)}</p>
-                  <p class="chat-history-date">Reciente</p>
+                <div class="chat-history-info w-full overflow-hidden">
+                  <p class="chat-history-q text-sm truncate max-w-[190px]">${escapeHtml(c.question)}</p>
+                  <p class="chat-history-date text-[10px] text-text-muted mt-0.5">${new Date(c.timestamp || c.createdAt || Date.now()).toLocaleDateString()}</p>
                 </div>
-                <span class="chat-history-arrow">→</span>
+                <span class="chat-history-arrow ml-2 flex-shrink-0">→</span>
               </li>
-            `).join('') : '<li class="p-6 text-center text-xs text-text-muted italic">Sin actividad reciente</li>'}
+            `).join('') : '<li class="p-6 flex flex-row items-center justify-center gap-2 text-center text-text-muted bg-surface-2 rounded-xl mt-2 border border-dashed border-border"><span class="opacity-50">' + icon('chat') + '</span><span class="text-xs italic">Sin actividad reciente</span></li>'}
           </ul>
         </div>
       `;
