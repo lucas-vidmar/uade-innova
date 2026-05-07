@@ -42,3 +42,7 @@ frontend/test-results/
 .azurite/
 tmp/
 *.txt
+
+
+# APM dependencies
+apm_modules/

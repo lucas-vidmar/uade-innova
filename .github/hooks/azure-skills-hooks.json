@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "type": "command",
+        "bash": ".github/hooks/scripts/azure-skills/hooks/scripts/track-telemetry.sh",
+        "powershell": ".github/hooks/scripts/azure-skills/hooks/scripts/track-telemetry.ps1"
+      }
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+name: azure-educational-dashboard
+version: 1.0.0
+description: APM project for azure-educational-dashboard
+author: Lucas Vidmar
+dependencies:
+  apm:
+  - microsoft/azure-skills
+  mcp: []
+includes: auto
+scripts: {}

@@ -1,0 +1,36 @@
+{
+  "hooks": {
+    "AfterTool": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "powershell": ".gemini/hooks/azure-skills/hooks/scripts/track-telemetry.ps1",
+            "command": ".gemini/hooks/azure-skills/hooks/scripts/track-telemetry.sh"
+          }
+        ],
+        "_apm_source": "azure-skills"
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .gemini/hooks/azure-skills/hooks/scripts/track-telemetry.sh"
+          }
+        ],
+        "_apm_source": "azure-skills"
+      }
+    ]
+  },
+  "mcpServers": {
+    "azure": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@azure/mcp@latest",
+        "server",
+        "start"
+      ]
+    }
+  }
+}
