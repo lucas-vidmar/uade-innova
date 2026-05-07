@@ -9,8 +9,7 @@
       "type": "local",
       "command": [
         "npx",
-        "-y",
-        "@modelcontextprotocol/server-playwright"
+        "@playwright/mcp@latest"
       ],
       "enabled": true
     },
@@ -24,6 +23,10 @@
         "server",
         "start"
       ]
+    },
+    "github": {
+      "type": "remote",
+      "url": "https://api.githubcopilot.com/mcp/"
     }
   }
 }
