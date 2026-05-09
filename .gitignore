@@ -46,3 +46,6 @@ tmp/
 
 # APM dependencies
 apm_modules/
+
+#BMAD
+_bmad/
