@@ -2,6 +2,7 @@
    Auth Service — Mock SSO for local development
    ============================================================ */
 import { api } from './api.js';
+import { enrollments as enrollmentService } from './enrollments.js';
 
 const CORRELATION_HEADER = 'x-correlation-id';
 
@@ -52,6 +53,7 @@ export const auth = {
         return {
             ...baseUser,
             subjects: mergeSubjectsWithLocal(baseUser.subjects || []),
+            enrollments: enrollmentService.getCachedEnrollments(),
         };
     },
 
@@ -140,6 +142,41 @@ export const auth = {
         this.setRole(role);
     },
 
+    getEnrolledSubjects() {
+        const role = this.getRole();
+        const user = this.getUser();
+        const userId = user.id;
+        const enrollmentData = enrollmentService.getCachedEnrollments();
+        
+        if (!enrollmentData || enrollmentData.length === 0) {
+            return user.subjects || [];
+        }
+
+        if (role === 'director') {
+            return user.subjects || [];
+        }
+
+        if (role === 'teacher') {
+            const teacherSubjects = enrollmentData
+                .filter(e => e.role === 'teacher' && e.status === 'active')
+                .map(e => e.subjectId);
+            return (user.subjects || []).filter(s => teacherSubjects.includes(s.id));
+        }
+
+        const enrolledSubjectIds = enrollmentData
+            .filter(e => e.status === 'active')
+            .map(e => e.subjectId);
+        return (user.subjects || []).filter(s => enrolledSubjectIds.includes(s.id));
+    },
+
+    isEnrolled(subjectId) {
+        return enrollmentService.isEnrolled(subjectId);
+    },
+
+    getEnrollmentRole(subjectId) {
+        return enrollmentService.getEnrollmentRole(subjectId);
+    },
+
     async initAuth() {
         let authenticated = false;
         try {
@@ -170,15 +207,27 @@ export const auth = {
         if (!authenticated) {
             if (!sessionStorage.getItem('edu_role')) {
                  sessionStorage.setItem('edu_role', 'student');
-                 sessionStorage.setItem('edu_active_subject', USERS.student.subjects[0].id);
+                 if (USERS.student.subjects.length > 0) {
+                     sessionStorage.setItem('edu_active_subject', USERS.student.subjects[0].id);
+                 }
             }
             if (!sessionStorage.getItem('edu_logged_in')) {
                 sessionStorage.setItem('edu_logged_in', 'true');
             }
         }
 
-        const role = this.getRole();
+        const user = this.getUser();
+        const userId = user.id;
         
+        // Load enrollment data from Enrollments table
+        try {
+            if (userId) {
+                await enrollmentService.fetchMyEnrollments(userId);
+            }
+        } catch (err) {
+            console.error('Error fetching enrollment data:', err);
+        }
+
         // Sync subjects from backend
         try {
             const subjects = await api.getSubjects();
@@ -186,8 +235,9 @@ export const auth = {
                 USERS[role].subjects = subjects;
                 
                 const activeId = this.getActiveSubjectId();
-                if (activeId && !subjects.some(s => s.id === activeId) && subjects.length > 0) {
-                    sessionStorage.setItem('edu_active_subject', subjects[0].id);
+                const enrolledSubjects = this.getEnrolledSubjects();
+                if (activeId && !enrolledSubjects.some(s => s.id === activeId) && enrolledSubjects.length > 0) {
+                    sessionStorage.setItem('edu_active_subject', enrolledSubjects[0].id);
                 }
             }
         } catch (err) {

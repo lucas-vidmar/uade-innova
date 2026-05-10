@@ -176,6 +176,7 @@ module functions './modules/functions.bicep' = {
     classMaterialsContainerName: classMaterialsContainerName
     materialsTableName: storage.outputs.materialsTableName
     classesTableName: storage.outputs.classesTableName
+    enrollmentsTableName: storage.outputs.enrollmentsTableName
     storageAccountId: storage.outputs.accountId
     tags: tags
   }

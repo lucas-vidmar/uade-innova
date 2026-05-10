@@ -3,13 +3,14 @@
    ============================================================ */
 import { api } from '../services/api.js';
 import { auth } from '../services/auth.js';
-import { showConfirmDialog, showPromptDialog } from './Dialog.js';
+import { showPromptDialog } from './Dialog.js';
 import { toast } from './Toast.js';
 
 const FOLLOW_UP_HISTORY_WINDOW_SIZE = 4;
 
 export function createChatWidget({ classes = [], subjectId = '', sessionId = null, initialMessages = [], highlightMessageId = null, transcriptFocus: initialTranscriptFocus = null, onNewChat, onMessageSent }) {
   const user = auth.getUser();
+  const hasEnrollment = auth.isEnrolled(subjectId) !== false;
   let selectedClassIds = [];
   let messages = [...initialMessages];
   let currentSessionId = sessionId || crypto.randomUUID();
@@ -46,27 +47,27 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
       </div>
 
       <!-- Input Area -->
-      <div class="chat-input-area">
-        <div class="chat-input-wrapper">
-          <textarea
-            id="chat-input"
-            class="chat-input"
-            placeholder="${selectedClassIds.length === 0 ? 'Seleccioná al menos una clase para chatear...' : 'Preguntá sobre los materiales de clase...'}"
-            rows="1"
-            ${isLoading || selectedClassIds.length === 0 ? 'disabled' : ''}
-          ></textarea>
-          <button
-            class="chat-send-btn ${isLoading || selectedClassIds.length === 0 ? 'disabled' : ''}"
-            id="chat-send"
-            ${isLoading || selectedClassIds.length === 0 ? 'disabled' : ''}
-            title="Enviar mensaje"
-          >
-            ${isLoading ? '<span class="spinner"></span>' : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" stroke-linecap="round" stroke-linejoin="round"/></svg>`}
-          </button>
+        <div class="chat-input-area">
+          <div class="chat-input-wrapper">
+            <textarea
+              id="chat-input"
+              class="chat-input"
+              placeholder="${!hasEnrollment ? 'No estás matriculado en esta materia.' : (selectedClassIds.length === 0 ? 'Seleccioná al menos una clase para chatear...' : 'Preguntá sobre los materiales de clase...')}"
+              rows="1"
+              ${isLoading || selectedClassIds.length === 0 || !hasEnrollment ? 'disabled' : ''}
+            ></textarea>
+            <button
+              class="chat-send-btn ${isLoading || selectedClassIds.length === 0 || !hasEnrollment ? 'disabled' : ''}"
+              id="chat-send"
+              ${isLoading || selectedClassIds.length === 0 || !hasEnrollment ? 'disabled' : ''}
+              title="Enviar mensaje"
+            >
+              ${isLoading ? '<span class="spinner"></span>' : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" stroke-linecap="round" stroke-linejoin="round"/></svg>`}
+            </button>
+          </div>
+          ${!hasEnrollment ? '<p class="chat-footer-hint text-error">No estás matriculado en esta materia. Contactá a administración.</p>' : '<p class="chat-footer-hint">La IA puede cometer errores. Verificá la información importante.</p>'}
         </div>
-        <p class="chat-footer-hint">La IA puede cometer errores. Verificá la información importante.</p>
-      </div>
-    `;
+      `;
     bindChatEvents();
     scrollToBottom();
   };
@@ -234,7 +235,7 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
   const sendMessage = async () => {
     const input = container.querySelector('#chat-input');
     const question = input?.value?.trim();
-    if (!question || isLoading || selectedClassIds.length === 0) return;
+    if (!question || isLoading || selectedClassIds.length === 0 || hasEnrollment === false) return;
 
     const conversationHistory = messages
       .filter(msg => (msg.role === 'user' || msg.role === 'assistant') && typeof msg.content === 'string' && msg.content.trim().length > 0)
@@ -308,6 +309,12 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         }
       });
     } catch (err) {
+      if (err?.message?.includes('ENROLLMENT_REQUIRED') || err?.status === 403) {
+        assistantMsg.content = 'No estás matriculado en esta materia. Contactá a administración.';
+        assistantMsg.streaming = false;
+        render();
+        return;
+      }
       const category = err?.errorCategory || 'LLM';
       const categoryMessage = category === 'SAFETY'
         ? 'Categoria: SAFETY (contenido bloqueado por seguridad).'

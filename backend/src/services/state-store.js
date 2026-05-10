@@ -2,6 +2,9 @@ import { getTableClient } from './storage.js';
 
 const MATERIALS_TABLE = process.env.AZURE_TABLE_MATERIALS || 'materials';
 const CLASSES_TABLE = process.env.AZURE_TABLE_CLASSES || 'classes';
+const ENROLLMENTS_TABLE = process.env.AZURE_STORAGE_ENROLLMENTS_TABLE
+  || process.env.AZURE_TABLE_ENROLLMENTS
+  || 'Enrollments';
 
 const ensuredTables = new Set();
 
@@ -228,5 +231,80 @@ export async function deleteMaterialsBySubject(subjectId) {
   const entities = await queryByPartition(MATERIALS_TABLE, subjectId);
   for (const entity of entities) {
     await client.deleteEntity(entity.partitionKey, entity.rowKey);
+  }
+}
+
+// ─── Enrollment Operations ─────────────────────────────────────────
+
+function toEnrollmentEntity(enrollment) {
+  return compactObject({
+    partitionKey: enrollment.subjectId,
+    rowKey: enrollment.userId,
+    role: enrollment.role,
+    status: enrollment.status || 'active',
+    enrolledAt: enrollment.enrolledAt || new Date().toISOString(),
+  });
+}
+
+function fromEnrollmentEntity(entity) {
+  return {
+    subjectId: entity.partitionKey,
+    userId: entity.rowKey,
+    role: entity.role,
+    status: entity.status,
+    enrolledAt: entity.enrolledAt,
+  };
+}
+
+export async function getEnrollment(subjectId, userId) {
+  if (!subjectId || !userId) return null;
+  await ensureTable(ENROLLMENTS_TABLE);
+  const client = getTableClient(ENROLLMENTS_TABLE);
+  try {
+    const entity = await client.getEntity(subjectId, userId);
+    return fromEnrollmentEntity(entity);
+  } catch {
+    return null;
+  }
+}
+
+export async function getEnrollmentsByUser(userId) {
+  if (!userId) return [];
+  await ensureTable(ENROLLMENTS_TABLE);
+  const client = getTableClient(ENROLLMENTS_TABLE);
+  const filter = `RowKey eq '${escapeODataValue(userId)}'`;
+  const entities = [];
+  for await (const entity of client.listEntities({ queryOptions: { filter } })) {
+    entities.push(fromEnrollmentEntity(entity));
+  }
+  return entities;
+}
+
+export async function getEnrollmentsBySubject(subjectId) {
+  if (!subjectId) return [];
+  const entities = await queryByPartition(ENROLLMENTS_TABLE, subjectId);
+  return entities.map(fromEnrollmentEntity);
+}
+
+export async function upsertEnrollment(enrollment) {
+  if (!enrollment?.subjectId || !enrollment?.userId) {
+    throw new Error('upsertEnrollment requires subjectId and userId');
+  }
+  await ensureTable(ENROLLMENTS_TABLE);
+  const client = getTableClient(ENROLLMENTS_TABLE);
+  const entity = toEnrollmentEntity(enrollment);
+  await client.upsertEntity(entity, 'Replace');
+  return fromEnrollmentEntity(entity);
+}
+
+export async function deleteEnrollment(subjectId, userId) {
+  if (!subjectId || !userId) return false;
+  await ensureTable(ENROLLMENTS_TABLE);
+  const client = getTableClient(ENROLLMENTS_TABLE);
+  try {
+    await client.deleteEntity(subjectId, userId);
+    return true;
+  } catch {
+    return false;
   }
 }

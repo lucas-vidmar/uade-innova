@@ -161,6 +161,12 @@ resource classesTable 'Microsoft.Storage/storageAccounts/tableServices/tables@20
   name: 'classes'
 }
 
+// ─── Table: Enrollments (subject-to-user enrollment tracking) ───
+resource enrollmentsTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-01-01' = {
+  parent: tableService
+  name: 'Enrollments'
+}
+
 // ─── Outputs ───────────────────────────────────────────────────
 @description('The name of the Storage Account.')
 output accountName string = storageAccount.name
@@ -182,3 +188,6 @@ output materialsTableName string = materialsTable.name
 
 @description('The name of the classes table.')
 output classesTableName string = classesTable.name
+
+@description('The name of the Enrollments table.')
+output enrollmentsTableName string = enrollmentsTable.name

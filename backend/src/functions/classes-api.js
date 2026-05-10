@@ -2,7 +2,7 @@ import { app } from '@azure/functions';
 import { loadJson, saveJson, listBlobs, deleteBlob, getTableClient } from '../services/storage.js';
 import { v4 as uuidv4 } from 'uuid';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
-import { listClassesBySubject, listMaterialsBySubject, replaceClassesForSubject, deleteMaterialStateById, getMaterialState, upsertMaterialState, deleteClassesBySubject, deleteMaterialsBySubject } from '../services/state-store.js';
+import { listClassesBySubject, listMaterialsBySubject, replaceClassesForSubject, deleteMaterialStateById, getMaterialState, upsertMaterialState, deleteClassesBySubject, deleteMaterialsBySubject, getEnrollmentsByUser } from '../services/state-store.js';
 import * as vectorStore from '../services/vector-store.js';
 
 const CONTAINER_CLASSES = process.env.AZURE_STORAGE_CONTAINER_CLASSES || 'classes-config';
@@ -278,18 +278,41 @@ app.http('get-subjects', {
         const roles = principal?.userRoles || [];
         const isTeacher = roles.includes('Docente');
         const isDirector = roles.includes('Director');
+        const userId = principal?.userId || principal?.oid || request.headers.get('x-mock-role') || 'anonymous';
 
         const allSubjects = await loadSubjects();
 
-        // Filtering logic:
-        // 1. Teachers see all subjects in the pilot.
-        // 2. Students see only subjects whose 'group' they belong to.
-        // 3. Local dev (no principal) sees everything for convenience.
-        
+        // Enrollment-based filtering (primary) with group-based fallback (backward compatibility)
         let filteredSubjects = allSubjects;
         
-        if (principal && !isTeacher && !isDirector) {
-            filteredSubjects = allSubjects.filter(s => !s.group || groups.includes(s.group));
+        try {
+            const userEnrollments = await getEnrollmentsByUser(userId);
+
+            if (userEnrollments.length > 0) {
+                // Primary: enrollment table filtering
+                if (isDirector) {
+                    filteredSubjects = allSubjects;
+                } else if (isTeacher) {
+                    const assignedSubjectIds = userEnrollments
+                        .filter(e => e.role === 'teacher' && e.status === 'active')
+                        .map(e => e.subjectId);
+                    filteredSubjects = allSubjects.filter(s => assignedSubjectIds.includes(s.id));
+                } else {
+                    const enrolledSubjectIds = userEnrollments
+                        .filter(e => e.status === 'active')
+                        .map(e => e.subjectId);
+                    filteredSubjects = allSubjects.filter(s => enrolledSubjectIds.includes(s.id));
+                }
+            } else if (principal && !isTeacher && !isDirector) {
+                // Fallback: group-based filtering for students without enrollment records
+                filteredSubjects = allSubjects.filter(s => !s.group || groups.includes(s.group));
+            }
+        } catch (enrollmentErr) {
+            context.warn(`[get-subjects] Enrollment lookup failed, falling back to group filtering: ${enrollmentErr.message}`);
+            // Fallback: group-based filtering
+            if (principal && !isTeacher && !isDirector) {
+                filteredSubjects = allSubjects.filter(s => !s.group || groups.includes(s.group));
+            }
         }
 
         return { 

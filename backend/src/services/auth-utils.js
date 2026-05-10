@@ -32,6 +32,7 @@ export function parseClientPrincipal(request) {
 
     // 2. Fallback to mock role header for demo/mock mode
     const mockRole = request.headers.get('x-mock-role');
+    const eduUid = request.headers.get('x-edu-uid');
     if (mockRole) {
         const roleMapping = {
             'director': 'Director',
@@ -39,9 +40,15 @@ export function parseClientPrincipal(request) {
             'student': 'Alumno'
         };
         const mappedRole = roleMapping[mockRole] || 'Anonymous';
+        const userIdMapping = {
+            'director': 'dir-001',
+            'teacher': 'doc-001',
+            'student': 'alu-001'
+        };
+        const mockUserId = eduUid || userIdMapping[mockRole] || `mock-${mockRole}`;
         
         return {
-            userId: `mock-${mockRole}`,
+            userId: mockUserId,
             userDetails: `Mock ${mappedRole}`,
             userRoles: ['authenticated', mappedRole],
             groups: [],

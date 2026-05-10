@@ -13,6 +13,7 @@ import { normalizeCategorizedError, ErrorCategory } from '../services/error-cate
 import { resolveCorrelationId, buildDependencyHeaders, withCorrelationResponseHeaders } from '../services/correlation.js';
 import { v4 as uuidv4 } from 'uuid';
 import { listMaterialsBySubject } from '../services/state-store.js';
+import { getEnrollment } from '../services/state-store.js';
 const MAX_RAG_CHUNKS = 4;
 const RETRIEVAL_CANDIDATES = 10;
 const MIN_HISTORY_TURNS = 3;
@@ -233,6 +234,22 @@ app.http('rag-query', {
         }
 
         const recentConversationHistory = normalizeConversationHistory(conversationHistory, historyWindowSize);
+
+        // ── 1b. Enrollment access check ──────────────────────────────────
+        const enrollment = await getEnrollment(subjectId, userId).catch(() => null);
+        const principal = parseClientPrincipal(request);
+        const userRoles = principal?.userRoles || [];
+        const isTeacherOrDirector = userRoles.includes('Docente') || userRoles.includes('Director') || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
+        if (!isTeacherOrDirector) {
+            if (!enrollment || enrollment.status !== 'active') {
+                context.log(`[Enrollment] Access denied: userId=${userId}, subjectId=${subjectId}`);
+                return jsonResponse(403, {
+                    error: 'ENROLLMENT_REQUIRED',
+                    message: 'No estás matriculado en esta materia. Contactá a administración.',
+                }, correlationId);
+            }
+        }
+
         const rewrittenQuestion = await rewriteQuestionWithHistory(question, recentConversationHistory, context);
 
         context.log(`Pregunta: "${question}" | Reescrita: "${rewrittenQuestion}" | Materia: ${subjectId} | Clases: ${classIds?.join(',') || 'todas'} | Session: ${sessionId || 'auto'}`);

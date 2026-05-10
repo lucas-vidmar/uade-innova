@@ -9,6 +9,7 @@ import { renderPrivacyModal } from './components/PrivacyModal.js';
 import { inactivityMonitor } from './services/inactivity.js';
 import { processingNotifications } from './services/processing-notifications.js';
 
+
 // Init theme
 themeManager.init();
 
@@ -105,6 +106,7 @@ window.addEventListener('auth:roleChanged', () => handleRoute());
 
 async function bootstrap() {
     await auth.initAuth();
+
     processingNotifications.init();
     inactivityMonitor.init();
     

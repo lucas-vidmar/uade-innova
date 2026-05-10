@@ -25,7 +25,7 @@ export function renderHeader(containerOrTitle, titleOrStats = 'Dashboard', showM
   if (!container) return;
   const user = auth.getUser();
   const activeSubjectId = auth.getActiveSubjectId();
-  const subjects = user.subjects || [];
+  const subjects = auth.getEnrolledSubjects();
   const currentSubject = subjects.find(s => s.id === activeSubjectId) || subjects[0] || { name: 'Materia' };
 
   container.innerHTML = `

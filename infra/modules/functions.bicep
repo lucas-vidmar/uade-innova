@@ -69,6 +69,9 @@ param materialsTableName string = 'materials'
 @description('Table name for class state entities.')
 param classesTableName string = 'classes'
 
+@description('Table name for enrollment entities.')
+param enrollmentsTableName string = 'Enrollments'
+
 // ─── Consumption Plan (Y1 — sin VM quota, serverless real) ───────
 resource consumptionPlan 'Microsoft.Web/serverfarms@2023-01-01' = {
   name: '${functionAppName}-plan'
@@ -184,6 +187,14 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         {
           name: 'AZURE_TABLE_CLASSES'
           value: classesTableName
+        }
+        {
+          name: 'AZURE_TABLE_ENROLLMENTS'
+          value: enrollmentsTableName
+        }
+        {
+          name: 'AZURE_STORAGE_ENROLLMENTS_TABLE'
+          value: enrollmentsTableName
         }
         // Pinecone vector store
         {

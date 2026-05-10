@@ -913,6 +913,7 @@ export const api = {
                     errorMessage = response.statusText || errorMessage;
                 }
                 const apiError = new Error(`Error ${response.status}: ${errorMessage}`);
+                apiError.status = response.status;
                 if (errorCategory) apiError.errorCategory = errorCategory;
                 throw apiError;
             }
@@ -1473,25 +1474,57 @@ export const api = {
             return res.json();
         },
 
-    async getTeacherAiFeedbackAlerts(subjectId, limit = 10) {
-            if (!subjectId) return [];
-            if (USE_MOCK) {
-                await delay(250);
-                return [];
-            }
+async getTeacherAiFeedbackAlerts(subjectId, limit = 10) {
+             if (!subjectId) return [];
+             if (USE_MOCK) {
+                 await delay(250);
+                 return [];
+             }
 
-            try {
-                const params = new URLSearchParams({
-                    subjectId,
-                    limit: String(Math.min(Math.max(Number(limit) || 10, 1), 50)),
-                });
-                const res = await fetchWithTimeout(`${BASE_URL}/teacher/ai-feedback-alerts?${params.toString()}`, { timeout: 3500 });
-                if (!res.ok) return [];
-                const data = await res.json();
-                return Array.isArray(data) ? data : [];
-            } catch (err) {
-                console.error('[API] getTeacherAiFeedbackAlerts failed:', err);
-                return [];
-            }
-        }
-    };
+             try {
+                 const params = new URLSearchParams({
+                     subjectId,
+                     limit: String(Math.min(Math.max(Number(limit) || 10, 1), 50)),
+                 });
+                 const res = await fetchWithTimeout(`${BASE_URL}/teacher/ai-feedback-alerts?${params.toString()}`, { timeout: 3500 });
+                 if (!res.ok) return [];
+                 const data = await res.json();
+                 return Array.isArray(data) ? data : [];
+             } catch (err) {
+                 console.error('[API] getTeacherAiFeedbackAlerts failed:', err);
+                 return [];
+             }
+         },
+
+     async getEnrollments(userId) {
+         if (!userId) return [];
+         try {
+             const res = await fetchWithTimeout(`${BASE_URL}/enrollments?userId=${encodeURIComponent(userId)}`, { timeout: 4000 });
+             if (!res.ok) return [];
+             const data = await res.json();
+             if (data?.success && Array.isArray(data.data)) return data.data;
+             if (Array.isArray(data)) return data;
+             return [];
+         } catch (err) {
+             console.error('[API] getEnrollments failed:', err);
+             return [];
+         }
+     },
+
+     async checkEnrollment(userId, subjectId) {
+         if (!userId || !subjectId) return { enrolled: false, role: null, status: null };
+         try {
+             const res = await fetchWithTimeout(
+                 `${BASE_URL}/enrollments/check?userId=${encodeURIComponent(userId)}&subjectId=${encodeURIComponent(subjectId)}`,
+                 { timeout: 3500 }
+             );
+             if (!res.ok) return { enrolled: false, role: null, status: null };
+             const data = await res.json();
+             if (data?.success && data.data) return data.data;
+             return data || { enrolled: false, role: null, status: null };
+         } catch (err) {
+             console.error('[API] checkEnrollment failed:', err);
+             return { enrolled: false, role: null, status: null };
+         }
+     },
+     };

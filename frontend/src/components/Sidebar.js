@@ -38,7 +38,7 @@ export function renderSidebar() {
   const normalizedPath = currentPath.startsWith('/student/class/') ? '/student/class' : currentPath;
 
   const activeSubjectId = auth.getActiveSubjectId();
-  const subjects = user.subjects || [];
+  const subjects = auth.getEnrolledSubjects();
   const activeSubject = subjects.find(s => s.id === activeSubjectId) || subjects[0] || { name: 'Materia' };
   const displaySubjectName = activeSubject.name.includes('(2026-1)')
     ? activeSubject.name

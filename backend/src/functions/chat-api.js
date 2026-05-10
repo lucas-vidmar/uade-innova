@@ -1,4 +1,5 @@
 import { validateFrontDoorId, parseClientPrincipal, getAuthenticatedUser } from '../services/auth-utils.js';
+import { getEnrollment } from '../services/state-store.js';
 /**
  * chat-api.js — Azure Functions para feedback e historial de chat
  */
@@ -32,6 +33,25 @@ app.http('get-chat-history', {
 
         if (!subjectId) {
             return { status: 400, body: 'Falta subjectId' };
+        }
+
+        // Enrollment access check — students must be enrolled
+        const principal = parseClientPrincipal(request);
+        const userRoles = principal?.userRoles || [];
+        const isTeacherOrDirector = userRoles.includes('Docente') || userRoles.includes('Director') || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
+        if (!isTeacherOrDirector) {
+            const enrollment = await getEnrollment(subjectId, userId).catch(() => null);
+            if (!enrollment || enrollment.status !== 'active') {
+                context.log(`[Enrollment] Chat history denied: userId=${userId}, subjectId=${subjectId}`);
+                return {
+                    status: 403,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        success: false,
+                        error: { code: 'ENROLLMENT_REQUIRED', message: 'No estás matriculado en esta materia. Contactá a administración.' },
+                    }),
+                };
+            }
         }
 
         try {

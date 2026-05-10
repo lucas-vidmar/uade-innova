@@ -10,7 +10,8 @@
         "build": "echo 'No build step needed for JS'",
         "test": "node --experimental-test-module-mocks --test src/**/*.test.js",
         "restore-archive": "node scripts/restore-archive.js",
-        "migrate-state-to-tables": "node scripts/migrate-state-to-tables.js"
+        "migrate-state-to-tables": "node scripts/migrate-state-to-tables.js",
+        "seed-enrollments": "node scripts/seed-enrollments.js"
     },
     "dependencies": {
         "@azure/data-tables": "^13.3.2",
