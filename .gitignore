@@ -51,3 +51,7 @@ apm_modules/
 _bmad/
 _bmad-output/
 .agents/skills/
+
+# Tests
+.playwright-mcp/
+test-results/
