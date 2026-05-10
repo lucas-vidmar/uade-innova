@@ -110,6 +110,7 @@ export async function renderMaterialManager(container) {
                                         <tr>
                                             <th class="mat-col-name">Archivo</th>
                                             <th class="mat-col-type">Tipo</th>
+                                            <th class="mat-col-priority">Prioridad</th>
                                             <th class="mat-col-classes">Clases Asociadas</th>
                                             <th class="mat-col-status">Estado</th>
                                             <th class="mat-col-reviewed">Revisado</th>
@@ -135,6 +136,15 @@ export async function renderMaterialManager(container) {
                                                     >
                                                         <span class="mat-type-pill mat-type-${escapeHtml(mat.type || 'unknown')}">${escapeHtml(typeLabel(mat.type))}</span>
                                                     </span>
+                                                </td>
+                                                <td class="mat-col-priority">
+                                                    <button 
+                                                        class="mat-priority-toggle mat-priority-${mat.priority || (mat.type === 'bibliography' ? 'secondary' : 'primary')}" 
+                                                        data-idx="${i}"
+                                                        title="Click para cambiar prioridad (Primaria: mayor peso en RAG)"
+                                                    >
+                                                        ${(mat.priority || (mat.type === 'bibliography' ? 'secondary' : 'primary')) === 'primary' ? 'Primaria' : 'Secundaria'}
+                                                    </button>
                                                 </td>
                                                 <td class="mat-col-classes">
                                                     <div class="mat-class-pills-wrap" data-idx="${i}">
@@ -374,6 +384,18 @@ export async function renderMaterialManager(container) {
                     const mat = materials[idx];
                     if (!mat) return;
                     updateMaterial(idx, { reviewed: !mat.reviewed });
+                });
+            });
+
+            // Priority toggle
+            container.querySelectorAll('.mat-priority-toggle').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const idx = parseInt(btn.dataset.idx);
+                    const mat = materials[idx];
+                    if (!mat) return;
+                    const currentPriority = mat.priority || (mat.type === 'bibliography' ? 'secondary' : 'primary');
+                    const newPriority = currentPriority === 'primary' ? 'secondary' : 'primary';
+                    updateMaterial(idx, { priority: newPriority });
                 });
             });
 

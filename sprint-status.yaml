@@ -55,7 +55,7 @@ development_status:
   epic-1-retrospective: optional
 
   # Chat RAG y Busqueda
-  epic-2: backlog
+  epic-2: in-progress
   2-154-teacher-override-for-material-priority: backlog
   2-155-backfill-material-priority-for-existing-: backlog
   2-156-reindex-historical-vectors-with-new-clas: backlog

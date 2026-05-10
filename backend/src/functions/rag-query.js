@@ -14,6 +14,7 @@ import { resolveCorrelationId, buildDependencyHeaders, withCorrelationResponseHe
 import { v4 as uuidv4 } from 'uuid';
 import { listMaterialsBySubject } from '../services/state-store.js';
 import { getEnrollment } from '../services/state-store.js';
+import { getMaterialPriority } from '../services/material-classification.js';
 const MAX_RAG_CHUNKS = 4;
 const RETRIEVAL_CANDIDATES = 10;
 const MIN_HISTORY_TURNS = 3;
@@ -80,18 +81,17 @@ function getPriorityWeight(materialPriority) {
     return MATERIAL_PRIORITY_WEIGHT[materialPriority] || 1;
 }
 
-function resolveMaterialPriority(metadata = {}) {
-    if (metadata.materialPriority === 'primary' || metadata.materialPriority === 'secondary') {
-        return metadata.materialPriority;
-    }
-    return metadata.materialType === 'bibliography' ? 'secondary' : 'primary';
+function resolveMaterialPriority(metadata = {}, priorityMap = {}) {
+    const materialId = metadata.materialId;
+    const override = (materialId && priorityMap[materialId]) || metadata.materialPriority;
+    return getMaterialPriority(metadata.materialType, override);
 }
 
-function rankMatches(matches = []) {
+function rankMatches(matches = [], priorityMap = {}) {
     return [...matches]
         .map(match => {
             const materialType = match?.metadata?.materialType;
-            const materialPriority = resolveMaterialPriority(match?.metadata);
+            const materialPriority = resolveMaterialPriority(match?.metadata, priorityMap);
             const baseScore = Number(match?.score || 0);
             const weightedScore = baseScore * getMaterialWeight(materialType) * getPriorityWeight(materialPriority);
             return {
@@ -102,8 +102,8 @@ function rankMatches(matches = []) {
         .sort((a, b) => b.weightedScore - a.weightedScore);
 }
 
-function buildHybridContext(matches = [], maxChunks = MAX_RAG_CHUNKS) {
-    const ranked = rankMatches(matches);
+function buildHybridContext(matches = [], maxChunks = MAX_RAG_CHUNKS, priorityMap = {}) {
+    const ranked = rankMatches(matches, priorityMap);
     if (ranked.length <= maxChunks) return ranked;
 
     const selected = [];
@@ -293,8 +293,17 @@ app.http('rag-query', {
         matches = filterMatchesByTranscriptFocus(matches, transcriptFocus);
 
         // ── 4b. Filtrar materiales no revisados ───────────────────
+        let priorityMap = {};
         try {
             const allMaterials = await listMaterialsBySubject(subjectId);
+            
+            // Construir mapa de prioridades (overrides)
+            allMaterials.forEach(m => {
+                if (m.priority) {
+                    priorityMap[m.materialId || m.id] = m.priority;
+                }
+            });
+
             const reviewedMaterialIds = new Set(
                 allMaterials.filter(m => m.reviewed === true).map(m => m.materialId || m.id)
             );
@@ -308,10 +317,10 @@ app.http('rag-query', {
                 }
             }
         } catch (reviewErr) {
-            context.error('[RAG] Error filtrando por revisión (no bloqueante):', reviewErr);
+            context.error('[RAG] Error obteniendo materiales para filtro/prioridad (no bloqueante):', reviewErr);
         }
 
-        matches = buildHybridContext(matches, MAX_RAG_CHUNKS);
+        matches = buildHybridContext(matches, MAX_RAG_CHUNKS, priorityMap);
         
         const REFUSAL_MESSAGE = "No encontre informacion sobre eso en los materiales seleccionados.";
 
@@ -389,7 +398,7 @@ ${contextText}
             const interactionId = uuidv4();
             const sources = matches.map(m => ({
                 materialType: m.metadata?.materialType,
-                materialPriority: resolveMaterialPriority(m.metadata),
+                materialPriority: resolveMaterialPriority(m.metadata, priorityMap),
                 classIds: m.metadata?.classIds,
                 chunkIndex: m.metadata?.chunkIndex,
                 sourceFilename: m.metadata?.sourceFilename,
@@ -536,7 +545,7 @@ ${contextText}
         // ── 7. Construir respuesta con fuentes ────────────────────
         const sources = matches.map(m => ({
             materialType: m.metadata?.materialType,
-            materialPriority: resolveMaterialPriority(m.metadata),
+            materialPriority: resolveMaterialPriority(m.metadata, priorityMap),
             classIds: m.metadata?.classIds,
             chunkIndex: m.metadata?.chunkIndex,
             sourceFilename: m.metadata?.sourceFilename,

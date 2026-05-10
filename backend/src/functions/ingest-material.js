@@ -6,6 +6,7 @@ import { PassThrough } from 'stream';
 import { uploadFile } from '../services/storage.js';
 import { upsertMaterialState } from '../services/state-store.js';
 import { validateFrontDoorId } from '../services/auth-utils.js';
+import { getMaterialPriority } from '../services/material-classification.js';
 
 app.http('ingest-material', {
     methods: ['POST'],
@@ -40,6 +41,7 @@ app.http('ingest-material', {
                 filename: fileName,
                 status: 'pending',
                 uploadedAt: new Date().toISOString(),
+                priority: getMaterialPriority(materialType),
             };
 
             try {

@@ -1012,6 +1012,7 @@ app.http('update-material', {
             if (body.classIds) updates.classIds = body.classIds;
             if (body.filename) updates.filename = body.filename;
             if (typeof body.reviewed === 'boolean') updates.reviewed = body.reviewed;
+            if (body.priority === 'primary' || body.priority === 'secondary') updates.priority = body.priority;
 
             const updated = await upsertMaterialState({
                 ...existing,

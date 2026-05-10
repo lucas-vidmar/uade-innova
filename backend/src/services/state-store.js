@@ -64,6 +64,7 @@ function toMaterialEntity(material) {
     errorMessage: material.errorMessage,
     chunkCount: typeof material.chunkCount === 'number' ? material.chunkCount : undefined,
     reviewed: material.reviewed === true,
+    priority: material.priority,
   });
 }
 
@@ -96,6 +97,7 @@ function fromMaterialEntity(entity) {
     errorMessage: entity.errorMessage,
     chunkCount: entity.chunkCount,
     reviewed: entity.reviewed === true,
+    priority: entity.priority,
   };
 }
 
