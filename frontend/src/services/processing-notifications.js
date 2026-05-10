@@ -25,32 +25,38 @@ function flushToastBuffer() {
 
     const byStatus = { ready: [], error: [] };
     toastBuffer.forEach((job) => {
-        if (byStatus[job.terminal]) byStatus[job.terminal].push(job);
+        const key = job.terminal === 'ready' || job.terminal === 'error' ? job.terminal : 'error';
+        byStatus[key].push(job);
     });
+
+    const bufferSnapshot = [...toastBuffer];
+    toastBuffer = [];
+    flushTimeoutId = null;
 
     Object.entries(byStatus).forEach(([status, jobs]) => {
         if (jobs.length === 0) return;
-        if (jobs.length === 1) {
-            const job = jobs[0];
-            if (status === 'ready') {
-                toast('success', 'Procesamiento completado', `"${job.filename}" ya está listo para usar.`);
+        try {
+            if (jobs.length === 1) {
+                const job = jobs[0];
+                if (status === 'ready') {
+                    toast('success', 'Procesamiento completado', `"${job.filename}" ya está listo para usar.`);
+                } else {
+                    toast('error', 'Procesamiento con error', `"${job.filename}" terminó con errores. Revisá el material e intentá nuevamente.`);
+                }
             } else {
-                toast('error', 'Procesamiento con error', `"${job.filename}" terminó con errores. Revisá el material e intentá nuevamente.`);
+                const count = jobs.length;
+                const filenames = jobs.map((j) => j.filename);
+                const noun = 'materiales';
+                if (status === 'ready') {
+                    toast('success', `${count} ${noun} procesados correctamente`, '', 5000, filenames);
+                } else {
+                    toast('error', `${count} ${noun} terminaron con errores`, 'Revisá los materiales e intentá nuevamente.', 5000, filenames);
+                }
             }
-        } else {
-            const count = jobs.length;
-            const filenames = jobs.map((j) => j.filename);
-            const noun = count === 1 ? 'material' : 'materiales';
-            if (status === 'ready') {
-                toast('success', `${count} ${noun} procesados correctamente`, '', 5000, filenames);
-            } else {
-                toast('error', `${count} ${noun} terminaron con errores`, 'Revisá los materiales e intentá nuevamente.', 5000, filenames);
-            }
+        } catch (flushErr) {
+            console.error('[ProcessingNotifications] flushToastBuffer toast() failed:', flushErr);
         }
     });
-
-    toastBuffer = [];
-    flushTimeoutId = null;
 }
 
 function scheduleFlush() {
