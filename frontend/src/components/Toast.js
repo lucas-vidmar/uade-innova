@@ -14,15 +14,31 @@ function ensureContainer() {
 
 const icons = { success: '✅', error: '❌', info: 'ℹ️', warning: '⚠️' };
 
-export function toast(type = 'info', title = '', message = '', duration = 4000) {
+function escapeHtml(str) {
+    if (typeof str !== 'string') return '';
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+export function toast(type = 'info', title = '', message = '', duration = 4000, details = []) {
     const container = ensureContainer();
     const el = document.createElement('div');
     el.className = `toast ${type}`;
+
+    const detailsHtml = Array.isArray(details) && details.length > 0
+        ? `<ul class="toast-details">${details.slice(0, 3).map((d) => `<li>${escapeHtml(d)}</li>`).join('')}${details.length > 3 ? `<li>y ${details.length - 3} más...</li>` : ''}</ul>`
+        : '';
+
     el.innerHTML = `
     <span class="toast-icon">${icons[type] || icons.info}</span>
     <div class="toast-body">
       ${title ? `<div class="toast-title">${title}</div>` : ''}
       ${message ? `<div class="toast-msg">${message}</div>` : ''}
+      ${detailsHtml}
     </div>
     <span class="toast-close" id="tc-${Date.now()}">✕</span>
   `;

@@ -15,6 +15,49 @@ let timerId = null;
 let isPolling = false;
 const listeners = new Set();
 
+/* ── Toast deduplication buffer ─────────────────────────── */
+let toastBuffer = [];
+let flushTimeoutId = null;
+const TOAST_FLUSH_DELAY_MS = 3000;
+
+function flushToastBuffer() {
+    if (toastBuffer.length === 0) return;
+
+    const byStatus = { ready: [], error: [] };
+    toastBuffer.forEach((job) => {
+        if (byStatus[job.terminal]) byStatus[job.terminal].push(job);
+    });
+
+    Object.entries(byStatus).forEach(([status, jobs]) => {
+        if (jobs.length === 0) return;
+        if (jobs.length === 1) {
+            const job = jobs[0];
+            if (status === 'ready') {
+                toast('success', 'Procesamiento completado', `"${job.filename}" ya está listo para usar.`);
+            } else {
+                toast('error', 'Procesamiento con error', `"${job.filename}" terminó con errores. Revisá el material e intentá nuevamente.`);
+            }
+        } else {
+            const count = jobs.length;
+            const filenames = jobs.map((j) => j.filename);
+            const noun = count === 1 ? 'material' : 'materiales';
+            if (status === 'ready') {
+                toast('success', `${count} ${noun} procesados correctamente`, '', 5000, filenames);
+            } else {
+                toast('error', `${count} ${noun} terminaron con errores`, 'Revisá los materiales e intentá nuevamente.', 5000, filenames);
+            }
+        }
+    });
+
+    toastBuffer = [];
+    flushTimeoutId = null;
+}
+
+function scheduleFlush() {
+    if (flushTimeoutId) clearTimeout(flushTimeoutId);
+    flushTimeoutId = setTimeout(flushToastBuffer, TOAST_FLUSH_DELAY_MS);
+}
+
 const configuredBaseUrl = (typeof import.meta !== 'undefined' && import.meta.env)
     ? String(import.meta.env.VITE_API_BASE_URL || '').trim()
     : '';
@@ -198,6 +241,8 @@ async function pollStatuses() {
             }
         }
 
+        let bufferWasUpdated = false;
+
         for (const job of trackedJobs) {
             let terminal = null;
             let shouldFallbackToClasses = false;
@@ -242,28 +287,22 @@ async function pollStatuses() {
                 continue;
             }
 
-            if (terminal === 'ready') {
-                toast('success', 'Procesamiento completado', `"${job.filename}" ya está listo para usar.`);
+            if (terminal === 'ready' || terminal === 'error') {
+                toastBuffer.push({ ...job, terminal });
+                bufferWasUpdated = true;
                 notifyListeners({
                     type: 'material-status-terminal',
-                    terminal: 'ready',
+                    terminal,
                     materialId: job.materialId,
                     subjectId: job.subjectId,
                     classIds: [...job.classIds],
                     filename: job.filename,
                 });
-                continue;
             }
+        }
 
-            toast('error', 'Procesamiento con error', `"${job.filename}" terminó con errores. Revisá el material e intentá nuevamente.`);
-            notifyListeners({
-                type: 'material-status-terminal',
-                terminal: 'error',
-                materialId: job.materialId,
-                subjectId: job.subjectId,
-                classIds: [...job.classIds],
-                filename: job.filename,
-            });
+        if (bufferWasUpdated) {
+            scheduleFlush();
         }
 
         trackedJobs = pending;

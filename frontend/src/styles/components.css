@@ -634,6 +634,22 @@
     border-left: 3px solid var(--color-warning);
 }
 
+.toast-details {
+    margin: 4px 0 0 0;
+    padding-left: 16px;
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    max-height: 60px;
+    overflow-y: auto;
+}
+
+.toast-details li {
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 /* ── Slide panel (detail overlay) ───────────────────────── */
 .slide-panel-overlay {
     position: fixed;

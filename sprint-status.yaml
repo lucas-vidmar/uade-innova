@@ -33,7 +33,7 @@
 #   - done: Retrospective has been completed
 
 generated: "2026-05-10 14:14:45"
-last_updated: "2026-05-10 14:14:45"
+last_updated: "2026-05-10 15:30:00"
 project: "UADE Innova Dashboard Educativo"
 project_key: "UADE-EDU"
 tracking_system: "github-issues"
@@ -67,7 +67,7 @@ development_status:
   2-45-context-aware-follow-ups: done
   2-46-hybrid-source-retrieval: done
   2-54-global-search-for-knowledge: done
-  2-98-deduplicate-processing-toasts-for-multi-: backlog
+  2-98-deduplicate-processing-toasts-for-multi-: done
   epic-2-retrospective: optional
 
   # Gestion Academica y Calendario
