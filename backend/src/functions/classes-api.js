@@ -2,7 +2,7 @@ import { app } from '@azure/functions';
 import { loadJson, saveJson, listBlobs, deleteBlob, getTableClient } from '../services/storage.js';
 import { v4 as uuidv4 } from 'uuid';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
-import { listClassesBySubject, listMaterialsBySubject, replaceClassesForSubject, deleteMaterialStateById, getMaterialState, upsertMaterialState, deleteClassesBySubject, deleteMaterialsBySubject, getEnrollmentsByUser } from '../services/state-store.js';
+import { listClassesBySubject, listMaterialsBySubject, replaceClassesForSubject, deleteMaterialStateById, getMaterialState, upsertMaterialState, deleteClassesBySubject, deleteMaterialsBySubject, getEnrollmentsByUser, getEnrollment } from '../services/state-store.js';
 import * as vectorStore from '../services/vector-store.js';
 
 const CONTAINER_CLASSES = process.env.AZURE_STORAGE_CONTAINER_CLASSES || 'classes-config';
@@ -481,6 +481,29 @@ app.http('get-classes', {
         let subjectId = request.params.subjectId || request.query.get('subjectId');
         if (!subjectId || subjectId === 'undefined') return { status: 400, body: JSON.stringify({ error: 'Falta subjectId' }) };
 
+        // Security Check: Enrollment-based access control
+        const principal = parseClientPrincipal(request);
+        const userId = principal?.userId || principal?.oid || 'anonymous';
+        const roles = principal?.userRoles || [];
+        const isDirector = roles.includes('Director');
+
+        if (!isDirector) {
+            try {
+                const enrollment = await getEnrollment(subjectId, userId);
+                if (!enrollment || enrollment.status !== 'active') {
+                    context.warn(`[get-classes] Unauthorized access attempt: User ${userId} is not enrolled in ${subjectId}`);
+                    return {
+                        status: 403,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ error: 'No tienes acceso a esta materia.' })
+                    };
+                }
+            } catch (enrollmentErr) {
+                context.error(`[get-classes] Error verifying enrollment for ${userId} in ${subjectId}:`, enrollmentErr);
+                return { status: 500, body: JSON.stringify({ error: 'Error al verificar permisos de acceso.' }) };
+            }
+        }
+
         try {
             let classesConfig = [];
             let materials = [];
@@ -595,6 +618,29 @@ app.http('get-material-status', {
 
         if (!subjectId || subjectId === 'undefined') {
             return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Falta subjectId' }) };
+        }
+
+        // Security Check: Enrollment-based access control
+        const principal = parseClientPrincipal(request);
+        const userId = principal?.userId || principal?.oid || 'anonymous';
+        const roles = principal?.userRoles || [];
+        const isDirector = roles.includes('Director');
+
+        if (!isDirector) {
+            try {
+                const enrollment = await getEnrollment(subjectId, userId);
+                if (!enrollment || enrollment.status !== 'active') {
+                    context.warn(`[get-material-status] Unauthorized access attempt: User ${userId} is not enrolled in ${subjectId}`);
+                    return {
+                        status: 403,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ error: 'No tienes acceso a este material.' })
+                    };
+                }
+            } catch (enrollmentErr) {
+                context.error(`[get-material-status] Error verifying enrollment for ${userId} in ${subjectId}:`, enrollmentErr);
+                return { status: 500, body: JSON.stringify({ error: 'Error al verificar permisos de acceso.' }) };
+            }
         }
 
         try {

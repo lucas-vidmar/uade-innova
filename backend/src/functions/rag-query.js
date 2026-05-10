@@ -240,6 +240,8 @@ app.http('rag-query', {
         const principal = parseClientPrincipal(request);
         const userRoles = principal?.userRoles || [];
         const isTeacherOrDirector = userRoles.includes('Docente') || userRoles.includes('Director') || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
+
+
         if (!isTeacherOrDirector) {
             if (!enrollment || enrollment.status !== 'active') {
                 context.log(`[Enrollment] Access denied: userId=${userId}, subjectId=${subjectId}`);

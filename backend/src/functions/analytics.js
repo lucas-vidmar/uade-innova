@@ -1,6 +1,7 @@
 import { app } from '@azure/functions';
 import { listBlobs, loadJson } from '../services/storage.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
+import { getEnrollment } from '../services/state-store.js';
 
 const CONTAINER_CHAT = 'chat-logs';
 
@@ -37,10 +38,24 @@ app.http('get-teacher-analytics', {
 
         try {
             const principal = parseClientPrincipal(request);
-            const isAuthorized = principal?.userRoles?.some(role => ['Docente', 'Director'].includes(role)) || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
+            const userId = principal?.userId || principal?.oid || 'anonymous';
+            const roles = principal?.userRoles || [];
+            const isDirector = roles.includes('Director');
+            const isTeacher = roles.includes('Docente');
 
-            if (!isAuthorized) {
-                return { status: 403, body: "Forbidden - Teacher access required" };
+            if (!isDirector) {
+                if (!isTeacher && process.env.AZURE_FUNCTIONS_ENVIRONMENT !== 'Development') {
+                    return { status: 403, body: "Forbidden - Teacher access required" };
+                }
+                
+                // Enrollment check for teachers in production
+                if (process.env.AZURE_FUNCTIONS_ENVIRONMENT !== 'Development') {
+                    const enrollment = await getEnrollment(subjectId, userId);
+                    if (!enrollment || enrollment.role !== 'teacher' || enrollment.status !== 'active') {
+                        context.warn(`[Analytics] Unauthorized access: User ${userId} is not an active teacher for ${subjectId}`);
+                        return { status: 403, body: "Forbidden - You are not assigned to this subject" };
+                    }
+                }
             }
 
             // 1. Listar todos los logs (limitado por prefijo si es posible, o filtrado manual)

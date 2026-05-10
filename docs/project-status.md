@@ -26,3 +26,13 @@
   - Integración del sistema de matriculación en el frontend con caché persistente.
   - Migración y ejecución del script de seeding de matriculaciones de prueba (65 alumnos).
   - Verificación exitosa del filtrado de materias en el dashboard de producción.
+
+## 11 de Mayo, 2026
+
+* **Feature/Story Name**: Hardening de Seguridad y Control de Acceso por Matriculación
+* **Status**: Completed
+* **Business Impact**: Se ha extendido el control de acceso a todos los endpoints críticos del backend (ingesta, analíticas, estados de procesamiento), asegurando que tanto docentes como alumnos solo interactúen con datos de las materias que tienen asignadas, eliminando vulnerabilidades de acceso no autorizado.
+* **Key Milestones**:
+  - Implementación de validación de matriculación en los endpoints de Ingesta, Analíticas y Gestión de Clases.
+  - Protección del endpoint de estado de materiales (#106).
+  - Verificación de roles (Docente/Director) para operaciones administrativas sensibles.

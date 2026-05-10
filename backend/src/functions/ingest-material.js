@@ -4,8 +4,8 @@ import path from 'path';
 import busboy from 'busboy';
 import { PassThrough } from 'stream';
 import { uploadFile } from '../services/storage.js';
-import { upsertMaterialState } from '../services/state-store.js';
-import { validateFrontDoorId } from '../services/auth-utils.js';
+import { upsertMaterialState, getEnrollment } from '../services/state-store.js';
+import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
 import { getMaterialPriority } from '../services/material-classification.js';
 
 app.http('ingest-material', {
@@ -22,6 +22,35 @@ app.http('ingest-material', {
             const { fileBuffer, fileContentType, fileName, classIds, subjectId, materialType } = await parseMultipart(request, context);
             
             context.log(`[Ingest] Multipart parsed successfully: ${fileName} (${fileContentType}), subjectId=${subjectId}, materialType=${materialType}, classIds=${JSON.stringify(classIds)}`);
+
+            // Security Check: Enrollment-based access control
+            const principal = parseClientPrincipal(request);
+            const userId = principal?.userId || principal?.oid || 'anonymous';
+            const roles = principal?.userRoles || [];
+            const isDirector = roles.includes('Director');
+            const isTeacher = roles.includes('Docente');
+
+            if (!isDirector) {
+                try {
+                    const enrollment = await getEnrollment(subjectId, userId);
+                    if (!enrollment || enrollment.role !== 'teacher' || enrollment.status !== 'active') {
+                        context.warn(`[Ingest] Unauthorized upload attempt: User ${userId} is not an active teacher for subject ${subjectId}`);
+                        return {
+                            status: 403,
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ error: 'No tienes permisos para subir material a esta materia. Debes estar asignado como docente.' }),
+                        };
+                    }
+                } catch (enrollmentErr) {
+                    context.error(`[Ingest] Error verifying enrollment for ${userId} in ${subjectId}:`, enrollmentErr);
+                    // Fail secure: if we can't verify enrollment, we block the upload
+                    return {
+                        status: 500,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ error: 'Error al verificar permisos de docente.' }),
+                    };
+                }
+            }
 
             if (!classIds || classIds.length === 0 || !subjectId || !materialType) {
                 context.warn(`[Ingest] Missing required fields: classIds=${classIds?.length}, subjectId=${!!subjectId}, materialType=${!!materialType}`);
