@@ -1,0 +1,175 @@
+# =============================================================================
+# FUENTE DE VERDAD: GitHub Issues (lucas-vidmar/uade-innova)
+# =============================================================================
+# ⚠️  CRÍTICO: Este archivo es un DERIVADO generado automáticamente.
+#     La fuente única de verdad para épicas y user stories son los
+#     GitHub Issues del repositorio. NUNCA editar este archivo manualmente
+#     para reflejar cambios de estado. Usar `bmad-sprint-planning` para
+#     regenerarlo desde GitHub.
+# =============================================================================
+# generated: 2026-05-10 14:14:45
+# last_updated: 2026-05-10 14:14:45
+# project: UADE Innova Dashboard Educativo
+# project_key: UADE-EDU
+# tracking_system: github-issues
+# story_location: github-issues
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+
+generated: "2026-05-10 14:14:45"
+last_updated: "2026-05-10 14:14:45"
+project: "UADE Innova Dashboard Educativo"
+project_key: "UADE-EDU"
+tracking_system: "github-issues"
+story_location: "github-issues"
+# NOTE: Regenerate this file with `bmad-sprint-planning` — do not edit manually
+
+development_status:
+  # Ingesta y Pipeline de Materiales
+  epic-1: done
+  1-1-user-story-teachers-can-upload-class-mat: done
+  1-28-triggered-ingestion: done
+  1-30-sliding-window-chunking: done
+  1-32-vector-metadata-tagging-azure-ai-search: done
+  1-33-material-type-prioritization: done
+  1-34-transcript-cleaning: done
+  1-36-pptx-structure-extraction: done
+  1-39-subject-filtered-retrieval: done
+  1-60-real-time-processing-notifications: done
+  epic-1-retrospective: optional
+
+  # Chat RAG y Busqueda
+  epic-2: backlog
+  2-154-teacher-override-for-material-priority: backlog
+  2-155-backfill-material-priority-for-existing-: backlog
+  2-156-reindex-historical-vectors-with-new-clas: backlog
+  2-160-add-exact-classid-retrieval-filter-path-: backlog
+  2-161-slide-title-metadata-extraction-for-pptx: backlog
+  2-164-featteacher-show-actionable-ingestion-er: backlog
+  2-165-featteacher-sync-ingestion-tracking-stat: backlog
+  2-41-source-only-grounding-mode: done
+  2-45-context-aware-follow-ups: done
+  2-46-hybrid-source-retrieval: done
+  2-54-global-search-for-knowledge: done
+  2-98-deduplicate-processing-toasts-for-multi-: backlog
+  epic-2-retrospective: optional
+
+  # Gestion Academica y Calendario
+  epic-3: backlog
+  3-126-rag-retrieval-mix-telemetry: backlog
+  3-127-configurable-rag-source-weighting-by-sub: backlog
+  3-128-rag-context-diversity-guardrail: backlog
+  3-160-add-exact-classid-retrieval-filter-path-: backlog
+  3-169-context-selection-guardrail-for-large-cl: backlog
+  3-170-track-selectedclasscount-in-rag-telemetr: backlog
+  3-171-improve-empty-class-selection-ux-hint-in: backlog
+  3-55-interactive-class-timeline: done
+  3-56-academic-deadline-management: done
+  3-61-automated-post-class-summary-distributio: done
+  3-62-ai-accuracy--satisfaction-feedback: done
+  3-63-teacher-engagement--feedback-alerts: done
+  3-64-deadline-proximity-alerts: done
+  3-65-director-adoption-telemetry: done
+  3-66-early-warning-pedagogical-alarms: done
+  epic-3-retrospective: optional
+
+  # Observabilidad y Metricas
+  epic-4: backlog
+  4-135-teacher-ai-feedback-alerts-filtering-by-: backlog
+  4-136-ai-feedback-alerts-lifecycle-management: backlog
+  4-137-proactive-escalation-for-repeated-ai-qua: backlog
+  4-72-anomalous-usage-alerts: done
+  4-73-rag-error-categorization: done
+  4-74-end-to-end-distributed-tracing: done
+  4-75-power-bi-analytics-dashboard: done
+  4-76-rag-pipeline-ttft-tracking: done
+  4-77-vector-search-performance-metrics-azure-: done
+  4-78-azure-ai-search-index-health-monitoring: done
+  4-79-cost-per-interaction-dashboard: done
+  epic-4-retrospective: optional
+
+  # Notificaciones y Comunicaciones
+  epic-5: backlog
+  5-103-support-real-time-push-notifications-for: backlog
+  5-104-add-notification-filters-and-pagination: backlog
+  5-105-create-full-notification-history-page-fo: backlog
+  5-113-scope-notifications-by-authenticated-stu: backlog
+  5-133-add-dispatcher-telemetry-for-post-class-: backlog
+  5-134-implement-retry-and-dead-letter-strategy: backlog
+  5-138-high-priority-deadline-escalation-remind: backlog
+  5-139-timezone-aware-deadline-notifications: backlog
+  5-140-deadline-reminder-preferences: backlog
+  5-92-persist-notification-readunread-state-pe: backlog
+  5-93-document-notifications-api-contract-for-: backlog
+  5-94-add-per-notification-quick-actions-and-f: done
+  epic-5-retrospective: optional
+
+  # Infraestructura y Seguridad
+  epic-6: backlog
+  6-141-intervention-signals-from-real-engagemen: backlog
+  6-142-configurable-risk-thresholds-per-subject: backlog
+  6-143-director-intervention-workflow-states-an: backlog
+  6-145-export-anonymized-director-kpi-snapshots: backlog
+  6-157-cost-analytics-by-subject-and-class: backlog
+  6-158-cost-per-interaction-spike-alerts: backlog
+  6-159-director-dashboard-projected-month-end-a: backlog
+  6-16-api-rate-limiting--ddos-protection: done
+  6-176-director-archive-tier-usage-dashboard-by: backlog
+  6-177-retention-compliance-snapshot-api: backlog
+  6-178-director-retention-compliance-evidence-e: backlog
+  6-179-session-metrics-history-pagination-for-l: backlog
+  6-180-director-session-metrics-history-filteri: backlog
+  6-26-sga-api-schema-mapping: done
+  epic-6-retrospective: optional
+
+  # Advanced Observability & FinOps
+  epic-7: backlog
+  7-100-multi-channel-anomalous-usage-notificati: backlog
+  7-101-per-subject-anomalous-token-usage-alerts: backlog
+  7-108-polling-efficiency-telemetry-for-process: backlog
+  7-116-timeout-handling-for-stale-processing-jo: backlog
+  7-120-rag-error-telemetry-by-category: backlog
+  7-121-localized-chat-error-copy-by-errorcatego: backlog
+  7-122-standardize-errorcategory-contract-acros: backlog
+  7-123-w3c-trace-context-propagation: backlog
+  7-124-correlate-custom-telemetry-events-with-r: backlog
+  7-125-centralize-correlation-handling-in-share: backlog
+  7-146-ttft-dashboard-segmentation-by-subject-a: backlog
+  7-147-ttft-sla-anomaly-alerts-using-p95-thresh: backlog
+  7-148-rag-latency-decomposition-network-vs-mod: backlog
+  7-149-persist-vector-health-snapshots-for-tren: backlog
+  7-150-vector-index-fullness-anomaly-alerts: backlog
+  7-151-expose-vector-search-latency-and-failure: backlog
+  7-152-propagate-correlation-id-into-vector-dep: backlog
+  7-153-app-insights-workbook-for-vector-vs-llm-: backlog
+  7-166-sat-significance-guardrails-for-prompt-w: backlog
+  7-167-sat-trend-window-filtering-71430-days: backlog
+  7-168-sat-by-prompt-segmentation-by-subject-an: backlog
+  7-173-scheduled-backup-windows-with-approval-g: backlog
+  7-174-emit-vectorbackuprun-telemetry-for-ops-d: backlog
+  7-175-storage-lifecycle-drift-detection-endpoi: backlog
+  7-99-tiered-token-usage-alerts-warning-at-750: backlog
+  epic-7-retrospective: optional
+
+  # Material Status & API Enhancements
+  epic-9: backlog
+  9-106-material-status-endpoint-authorization-s: backlog
+  9-107-batch-material-status-endpoint-for-notif: backlog
+  9-96-material-status-endpoint-by-materialid: backlog
+  epic-9-retrospective: optional

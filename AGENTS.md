@@ -138,7 +138,46 @@ azure-educational-dashboard/
 
 ---
 
-## **9\. Modelos de Datos (Entidades Clave)**
+## **9\. Tracking de Épicas y User Stories (Fuente de Verdad: GitHub Issues)**
+
+> **⚠️ CRÍTICO — No replicar localmente:** Las épicas y user stories del proyecto se trackean **integramente en GitHub Issues**. No se deben crear ni mantener réplicas locales de épicas, stories, planes de implementación ni walkthroughs en archivos `.md` dentro del repositorio.
+
+### **9.1. Fuente Única de Verdad**
+
+* **Repositorio:** `lucas-vidmar/uade-innova` en GitHub.
+* **Épicas:** Issues con título que comienza con `[Epic X]` (ej: `[Epic 2] Teacher Onboarding Guide`).
+* **User Stories:** Issues con labels `epic-X` que las vinculan a su épica correspondiente.
+* **Estados:** El estado real de cada historia (`OPEN`/`CLOSED`) vive únicamente en GitHub.
+
+### **9.2. Convenciones de Issues**
+
+| Tipo | Patrón de Título | Labels |
+|---|---|---|
+| Épica | `[Epic N] Título descriptivo` | `epic-N` + categoría opcional |
+| User Story | Título descriptivo de la funcionalidad | `epic-N` obligatorio |
+
+### **9.3. Workflow de Sprint**
+
+1. **Consultar estado:** Antes de cualquier análisis de sprint, el agente debe ejecutar `gh issue list` para obtener la lista actualizada de issues desde GitHub.
+2. **No inferir desde archivos locales:** Los archivos en `docs/` (como `us*-implementation-plan.md` o `us*-walkthrough.md`) son **artefactos históricos** y no reflejan el estado actual del backlog. **NUNCA** usarlos para determinar el estado de una historia.
+3. **Sprint status:** El archivo `sprint-status.yaml` se genera automáticamente a partir de los issues de GitHub y se actualiza mediante `bmad-sprint-planning`.
+
+### **9.4. Comandos de Referencia para GitHub**
+
+```bash
+# Listar todas las issues (abiertas y cerradas)
+gh issue list --repo lucas-vidmar/uade-innova --limit 200 --state all --json number,title,state,labels
+
+# Listar issues de una épica específica
+gh issue list --repo lucas-vidmar/uade-innova --label "epic-2" --state all
+
+# Ver detalle de una issue
+gh issue view <number> --repo lucas-vidmar/uade-innova
+```
+
+---
+
+## **10\. Modelos de Datos (Entidades Clave)**
 
 El agente debe usar estas definiciones de tipos para garantizar consistencia entre frontend, backend y Pinecone.
 
@@ -189,7 +228,7 @@ interface PineconeMetadata {
 
 ---
 
-## **10\. Contratos de API (Azure Functions)**
+## **11\. Contratos de API (Azure Functions)**
 
 ### **POST `/api/ingest-material`** — Pipeline de ingesta
 
@@ -252,7 +291,7 @@ interface PineconeMetadata {
 
 ---
 
-## **11\. Variables de Entorno Requeridas**
+## **12\. Variables de Entorno Requeridas**
 
 Estas variables son generadas por `azd provision` y deben estar presentes en `.env.local` (local) y en la configuración de Static Web App / Functions (producción). El agente nunca debe hardcodear estos valores.
 
@@ -283,7 +322,7 @@ AZURE_STATIC_WEB_APP_URI=https://<nombre>.azurestaticapps.net
 
 ---
 
-## **12\. Convenciones de Código**
+## **13\. Convenciones de Código**
 
 * **Lenguaje backend:** TypeScript (Node.js 20) preferido. Python si la librería de parsing lo requiere.
 * **Lenguaje frontend:** HTML + Vanilla JS ó React 18. Sin frameworks CSS (Vanilla CSS con variables CSS).
@@ -296,7 +335,7 @@ AZURE_STATIC_WEB_APP_URI=https://<nombre>.azurestaticapps.net
 
 ---
 
-## **13. Azure Diagram Agent Skill (Draw.io Integration)**
+## **14. Azure Diagram Agent Skill (Draw.io Integration)**
 
 Cuando el usuario solicite diagramas de arquitectura, flujo o red, el agente debe actuar como un experto **Azure Solutions Architect** y utilizar la herramienta `drawio-mcp`.
 
@@ -329,7 +368,7 @@ Invocar `drawio-mcp` para crear el diagrama y guardar el resultado como `.drawio
 
 ---
 
-## **14. Ciclo de Vida de Implementación y Verificación**
+## **15. Ciclo de Vida de Implementación y Verificación**
 
 Para garantizar la calidad y disponibilidad del dashboard, se establece el siguiente flujo obligatorio para cada tarea de implementación:
 
