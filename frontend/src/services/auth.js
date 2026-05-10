@@ -232,7 +232,8 @@ export const auth = {
         try {
             const subjects = await api.getSubjects();
             if (Array.isArray(subjects)) {
-                USERS[role].subjects = subjects;
+                const currentRole = this.getRole();
+                USERS[currentRole].subjects = subjects;
                 
                 const activeId = this.getActiveSubjectId();
                 const enrolledSubjects = this.getEnrolledSubjects();

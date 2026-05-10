@@ -553,6 +553,7 @@ app.http('get-classes', {
                     classIds: targetClasses,
                     reviewed: mat.reviewed === true,
                     chunkCount: mat.chunkCount,
+                    priority: mat.priority,
                 };
 
                 context.log(`[get-classes] Processing material ${matSafe.id} ("${matSafe.filename}") - status: ${matSafe.status}, linked classes: ${targetClasses.join(', ')}`);
