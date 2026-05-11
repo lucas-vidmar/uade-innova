@@ -1,6 +1,7 @@
 import { app } from '@azure/functions';
 import { loadJson, saveJson } from '../services/storage.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
+import { getEnrollment } from '../services/state-store.js';
 
 const CONTAINER_DEADLINES = 'deadlines';
 
@@ -38,9 +39,31 @@ app.http('get-deadlines', {
             return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         }
 
-        const subjectId = request.query.get('subjectId');
         if (!subjectId) {
             return { status: 400, body: JSON.stringify({ error: 'Falta subjectId' }) };
+        }
+
+        // Security Check: Enrollment-based access control
+        const principal = parseClientPrincipal(request);
+        const userId = principal?.userId || principal?.oid || 'anonymous';
+        const roles = principal?.userRoles || [];
+        const isDirector = roles.includes('Director');
+
+        if (!isDirector) {
+            try {
+                const enrollment = await getEnrollment(subjectId, userId);
+                if (!enrollment || enrollment.status !== 'active') {
+                    // Fail secure: block access
+                    return {
+                        status: 403,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ error: 'No tienes acceso a las fechas de esta materia.' })
+                    };
+                }
+            } catch (enrollmentErr) {
+                // Fail secure
+                return { status: 500, body: JSON.stringify({ error: 'Error al verificar permisos de acceso.' }) };
+            }
         }
 
         const deadlines = await loadJson(CONTAINER_DEADLINES, `${subjectId}.json`) || [];
@@ -69,6 +92,25 @@ app.http('save-deadline', {
         }
 
         const subjectId = body.subjectId;
+
+        // Security Check: Enrollment-based access control
+        const userId = principal?.userId || principal?.oid || 'anonymous';
+        const isDirector = principal?.userRoles?.includes('Director');
+
+        if (!isDirector) {
+            try {
+                const enrollment = await getEnrollment(subjectId, userId);
+                if (!enrollment || enrollment.role !== 'teacher' || enrollment.status !== 'active') {
+                    return {
+                        status: 403,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ error: 'No tienes permisos para modificar fechas en esta materia.' })
+                    };
+                }
+            } catch (enrollmentErr) {
+                return { status: 500, body: JSON.stringify({ error: 'Error al verificar permisos de docente.' }) };
+            }
+        }
         const current = await loadJson(CONTAINER_DEADLINES, `${subjectId}.json`) || [];
         const deadline = normalizeDeadline({
             ...body,
@@ -95,9 +137,29 @@ app.http('get-deadline-reminders', {
             return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         }
 
-        const subjectId = request.query.get('subjectId');
         if (!subjectId) {
             return { status: 400, body: JSON.stringify({ error: 'Falta subjectId' }) };
+        }
+
+        // Security Check: Enrollment-based access control
+        const principal = parseClientPrincipal(request);
+        const userId = principal?.userId || principal?.oid || 'anonymous';
+        const roles = principal?.userRoles || [];
+        const isDirector = roles.includes('Director');
+
+        if (!isDirector) {
+            try {
+                const enrollment = await getEnrollment(subjectId, userId);
+                if (!enrollment || enrollment.status !== 'active') {
+                    return {
+                        status: 403,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ error: 'No tienes acceso a los recordatorios de esta materia.' })
+                    };
+                }
+            } catch (enrollmentErr) {
+                return { status: 500, body: JSON.stringify({ error: 'Error al verificar permisos de acceso.' }) };
+            }
         }
 
         const today = request.query.get('today') || getTodayIso();

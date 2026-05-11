@@ -101,7 +101,7 @@ export async function renderClassDetail(container) {
                             <p style="margin:var(--space-1) 0 0 0; font-size:var(--text-xs); color:var(--color-text-secondary);">Generado automáticamente con voz Nova</p>
                         </div>
                         <audio controls style="width:100%; height:40px; border-radius:var(--radius-full);">
-                            <source src="${api.getClassAudioUrl(classId)}" type="audio/mpeg">
+                            <source src="${api.getClassAudioUrl(classId, activeSubjectId)}" type="audio/mpeg">
                             Tu navegador no soporta el elemento de audio.
                         </audio>
                         <div style="font-size:var(--text-xs); color:var(--color-text-secondary); font-style:italic;">

@@ -1,4 +1,4 @@
-import { validateFrontDoorId } from '../services/auth-utils.js';
+import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
 /**
  * get-tasks.js — GET /api/tasks?studentId={id}
  * Retorna las tareas priorizadas del alumno.
@@ -19,6 +19,20 @@ app.http('get-tasks', {
             return {
                 status: 400,
                 body: JSON.stringify({ error: 'Parámetro requerido: studentId' }),
+            };
+        }
+
+        // Security Check: Identity validation
+        const principal = parseClientPrincipal(request);
+        const userId = principal?.userId || principal?.oid || 'anonymous';
+        const roles = principal?.userRoles || [];
+        const isDirector = roles.includes('Director');
+
+        if (!isDirector && studentId !== userId) {
+            return {
+                status: 403,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ error: 'No tienes permiso para ver las tareas de otro estudiante.' })
             };
         }
 

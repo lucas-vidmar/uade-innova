@@ -5,7 +5,8 @@
 import { app } from '@azure/functions';
 import { generateEmbedding } from '../services/ai.js';
 import { querySimilar } from '../services/vector-store.js';
-import { validateFrontDoorId } from '../services/auth-utils.js';
+import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
+import { getEnrollment } from '../services/state-store.js';
 import { resolveCorrelationId, buildDependencyHeaders, withCorrelationResponseHeaders } from '../services/correlation.js';
 
 const MAX_GLOBAL_RESULTS = 12;
@@ -74,6 +75,31 @@ app.http('global-search', {
                 headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
                 body: JSON.stringify({ error: 'Faltan campos requeridos: query, subjectId' }),
             };
+        }
+
+        // Security Check: Enrollment-based access control
+        const principal = parseClientPrincipal(request);
+        const userId = principal?.userId || principal?.oid || 'anonymous';
+        const roles = principal?.userRoles || [];
+        const isDirector = roles.includes('Director');
+
+        if (!isDirector && process.env.AZURE_FUNCTIONS_ENVIRONMENT !== 'Development') {
+            try {
+                const enrollment = await getEnrollment(subjectId, userId);
+                if (!enrollment || enrollment.status !== 'active') {
+                    return {
+                        status: 403,
+                        headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
+                        body: JSON.stringify({ error: 'No tienes acceso a esta materia.' })
+                    };
+                }
+            } catch (err) {
+                return {
+                    status: 500,
+                    headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({ error: 'Error verificando permisos de acceso.' })
+                };
+            }
         }
 
         try {

@@ -690,6 +690,29 @@ app.http('get-material-status-batch', {
             return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'materialIds excede el máximo permitido (50)' }) };
         }
 
+        // Security Check: Enrollment-based access control
+        const principal = parseClientPrincipal(request);
+        const userId = principal?.userId || principal?.oid || 'anonymous';
+        const roles = principal?.userRoles || [];
+        const isDirector = roles.includes('Director');
+
+        if (!isDirector) {
+            try {
+                const enrollment = await getEnrollment(subjectId, userId);
+                if (!enrollment || enrollment.status !== 'active') {
+                    context.warn(`[get-material-status-batch] Unauthorized access attempt: User ${userId} is not enrolled in ${subjectId}`);
+                    return {
+                        status: 403,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ error: 'No tienes acceso a los materiales de esta materia.' })
+                    };
+                }
+            } catch (enrollmentErr) {
+                context.error(`[get-material-status-batch] Error verifying enrollment for ${userId} in ${subjectId}:`, enrollmentErr);
+                return { status: 500, body: JSON.stringify({ error: 'Error al verificar permisos de acceso.' }) };
+            }
+        }
+
         try {
             const results = [];
 
@@ -740,6 +763,27 @@ app.http('save-classes', {
 
         let subjectId = request.params.subjectId || request.query.get('subjectId');
         if (!subjectId || subjectId === 'undefined') return { status: 400, body: JSON.stringify({ error: 'Falta subjectId' }) };
+
+        // Security Check: Enrollment-based access control
+        const userId = principal?.userId || principal?.oid || 'anonymous';
+        const isDirector = principal?.userRoles?.includes('Director');
+
+        if (!isDirector) {
+            try {
+                const enrollment = await getEnrollment(subjectId, userId);
+                if (!enrollment || enrollment.role !== 'teacher' || enrollment.status !== 'active') {
+                    context.warn(`[save-classes] Unauthorized save attempt: User ${userId} is not an active teacher for ${subjectId}`);
+                    return {
+                        status: 403,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ error: 'No tienes permisos para modificar clases en esta materia.' })
+                    };
+                }
+            } catch (enrollmentErr) {
+                context.error(`[save-classes] Error verifying enrollment for ${userId} in ${subjectId}:`, enrollmentErr);
+                return { status: 500, body: JSON.stringify({ error: 'Error al verificar permisos de docente.' }) };
+            }
+        }
 
         try {
             const body = await request.json();

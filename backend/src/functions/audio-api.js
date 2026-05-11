@@ -1,7 +1,8 @@
 import { app } from '@azure/functions';
-import { uploadFile, downloadFile, listBlobs } from '../services/storage.js';
+import { uploadFile, downloadFile, listBlobs, loadJson } from '../services/storage.js';
 import { generateClassAudio } from '../services/ai.js';
-import { loadJson } from '../services/storage.js';
+import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
+import { getEnrollment } from '../services/state-store.js';
 import { resolveCorrelationId, buildDependencyHeaders, withCorrelationResponseHeaders } from '../services/correlation.js';
 
 const CONTAINER_AUDIO = 'class-audio';
@@ -16,12 +17,47 @@ app.http('get-class-audio', {
         const openAiHeaders = buildDependencyHeaders(correlationId);
 
         const classId = request.params.classId;
-        if (!classId) {
+        const subjectId = request.query.get('subjectId');
+        
+        if (!classId || !subjectId) {
             return {
                 status: 400,
                 headers: withCorrelationResponseHeaders(correlationId),
-                body: 'Falta classId'
+                body: 'Faltan parámetros requeridos: classId y subjectId'
             };
+        }
+
+        if (!validateFrontDoorId(request)) {
+            return {
+                status: 403,
+                headers: withCorrelationResponseHeaders(correlationId),
+                body: 'Forbidden - Invalid Front Door ID'
+            };
+        }
+
+        // Security Check: Enrollment-based access control
+        const principal = parseClientPrincipal(request);
+        const userId = principal?.userId || principal?.oid || 'anonymous';
+        const roles = principal?.userRoles || [];
+        const isDirector = roles.includes('Director');
+
+        if (!isDirector && process.env.AZURE_FUNCTIONS_ENVIRONMENT !== 'Development') {
+            try {
+                const enrollment = await getEnrollment(subjectId, userId);
+                if (!enrollment || enrollment.status !== 'active') {
+                    return {
+                        status: 403,
+                        headers: withCorrelationResponseHeaders(correlationId),
+                        body: 'No tienes acceso a los recursos de esta materia.'
+                    };
+                }
+            } catch (err) {
+                return {
+                    status: 500,
+                    headers: withCorrelationResponseHeaders(correlationId),
+                    body: 'Error verificando permisos de acceso.'
+                };
+            }
         }
 
         context.log(`[Trace] Correlation-ID: ${correlationId}`);

@@ -99,9 +99,25 @@ app.http('delete-chat-history', {
     handler: async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         const subjectId = request.query.get('subjectId');
-        const { sanitizedId } = getAuthenticatedUser(request);
+        const { userId, sanitizedId } = getAuthenticatedUser(request);
 
         if (!subjectId) return { status: 400, body: 'Falta subjectId' };
+
+        // Security Check: Enrollment-based access control
+        const principal = parseClientPrincipal(request);
+        const userRoles = principal?.userRoles || [];
+        const isTeacherOrDirector = userRoles.includes('Docente') || userRoles.includes('Director') || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
+
+        if (!isTeacherOrDirector) {
+            try {
+                const enrollment = await getEnrollment(subjectId, userId);
+                if (!enrollment || enrollment.status !== 'active') {
+                    return { status: 403, body: JSON.stringify({ error: 'No tienes acceso a esta materia.' }) };
+                }
+            } catch (err) {
+                return { status: 500, body: JSON.stringify({ error: 'Error verificando permisos.' }) };
+            }
+        }
 
         try {
             const prefix = `${sanitizedId}/${subjectId}/`;
@@ -133,6 +149,23 @@ app.http('chat-feedback', {
             if (!messageId || !subjectId) {
                 return { status: 400, body: 'Faltan campos messageId o subjectId' };
             }
+
+            // Security Check: Enrollment-based access control
+            const principal = parseClientPrincipal(request);
+            const userRoles = principal?.userRoles || [];
+            const isTeacherOrDirector = userRoles.includes('Docente') || userRoles.includes('Director') || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
+
+            if (!isTeacherOrDirector) {
+                try {
+                    const enrollment = await getEnrollment(subjectId, userId);
+                    if (!enrollment || enrollment.status !== 'active') {
+                        return { status: 403, body: JSON.stringify({ error: 'No estás matriculado en esta materia.' }) };
+                    }
+                } catch (err) {
+                    return { status: 500, body: JSON.stringify({ error: 'Error verificando permisos.' }) };
+                }
+            }
+        
 
             const blobPath = `${sanitizedId}/${subjectId}/${messageId}.json`;
             const log = await loadJson(CONTAINER_CHAT, blobPath);
@@ -239,6 +272,21 @@ app.http('teacher-ai-feedback-alerts', {
 
         if (!subjectId) {
             return { status: 400, body: JSON.stringify({ error: 'Falta subjectId' }) };
+        }
+
+        // Security Check: Subject-specific teacher enrollment
+        const userId = principal?.userId || principal?.oid || 'anonymous';
+        const isDirector = principal?.userRoles?.includes('Director');
+
+        if (!isDirector && process.env.AZURE_FUNCTIONS_ENVIRONMENT !== 'Development') {
+            try {
+                const enrollment = await getEnrollment(subjectId, userId);
+                if (!enrollment || enrollment.role !== 'teacher' || enrollment.status !== 'active') {
+                    return { status: 403, body: JSON.stringify({ error: 'No tienes permisos de docente para esta materia.' }) };
+                }
+            } catch (err) {
+                return { status: 500, body: JSON.stringify({ error: 'Error verificando permisos de docente.' }) };
+            }
         }
 
         try {

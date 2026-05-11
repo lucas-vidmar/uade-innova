@@ -1,5 +1,6 @@
 import { app } from '@azure/functions';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
+import { getEnrollment } from '../services/state-store.js';
 import * as notificationStore from '../services/notification-store.js';
 import { trackNotificationInteraction } from '../services/telemetry.js';
 
@@ -95,6 +96,28 @@ app.http('get-notifications', {
 
     const subjectId = request.query.get('subjectId') || null;
     const limit = normalizeLimit(request.query.get('limit'));
+
+    // Security Check: Enrollment-based access control
+    if (subjectId) {
+        const roles = principal?.userRoles || [];
+        const isDirector = roles.includes('Director');
+        if (!isDirector) {
+            try {
+                const enrollment = await getEnrollment(subjectId, userId).catch(() => null);
+                if (!enrollment || enrollment.status !== 'active') {
+                    context.log(`[Enrollment] Notifications access denied: userId=${userId}, subjectId=${subjectId}`);
+                    return {
+                        status: 403,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ error: 'No tienes acceso a las notificaciones de esta materia.' })
+                    };
+                }
+            } catch (err) {
+                return { status: 500, body: JSON.stringify({ error: 'Error verificando permisos.' }) };
+            }
+        }
+    }
+
     let persisted = [];
     if (subjectId) {
       try { persisted = await notificationStore.listNotificationsBySubject(subjectId); } catch (err) { context.error(`[notifications] error loading persisted notifications for ${subjectId}: ${err.message}`); }

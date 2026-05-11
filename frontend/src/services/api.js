@@ -1194,8 +1194,11 @@ export const api = {
             return res.json();
         },
 
-    getClassAudioUrl(classId) {
-            return `${BASE_URL}/class-audio/${classId}`;
+    getClassAudioUrl(classId, subjectId) {
+            const params = new URLSearchParams();
+            if (subjectId) params.set('subjectId', subjectId);
+            const query = params.toString();
+            return `${BASE_URL}/class-audio/${classId}${query ? `?${query}` : ''}`;
         },
 
     async getClassMap(classId) {
