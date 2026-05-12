@@ -246,3 +246,157 @@ export async function deleteVectorsByFilter(filter) {
     console.log(`[VectorStore] Deleting vectors with filter: ${JSON.stringify(filter)}`);
     return await pineconeRequest('/vectors/delete', payload);
 }
+
+async function pineconeGetRequest(path, queryParams = {}) {
+    const { apiKey, host } = assertConfiguration();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+    const url = new URL(`${host}${path}`);
+    for (const [key, value] of Object.entries(queryParams)) {
+        if (Array.isArray(value)) {
+            for (const item of value) {
+                if (item !== undefined && item !== null && item !== '') {
+                    url.searchParams.append(key, item);
+                }
+            }
+        } else if (value !== undefined && value !== null && value !== '') {
+            url.searchParams.append(key, value);
+        }
+    }
+
+    try {
+        const response = await fetch(url.toString(), {
+            method: 'GET',
+            headers: {
+                'Api-Key': apiKey,
+            },
+            signal: controller.signal,
+        });
+
+        const text = await response.text();
+        const body = parseJsonSafely(text);
+
+        if (!response.ok) {
+            const message = body?.message || body?.error || `Pinecone GET request failed: ${response.status}`;
+            const err = new Error(message);
+            err.status = response.status;
+            err.code = body?.code || `HTTP_${response.status}`;
+            err.details = body;
+            throw err;
+        }
+
+        return body;
+    } catch (err) {
+        if (err?.name === 'AbortError') {
+            const timeoutErr = new Error(`Timeout consultando Pinecone en ${path}`);
+            timeoutErr.status = 504;
+            timeoutErr.code = 'PINECONE_TIMEOUT';
+            throw timeoutErr;
+        }
+        console.error(`[VectorStore] Error in pineconeGetRequest (${path}):`, err.message);
+        throw err;
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
+/**
+ * Lista IDs de vectores en el indice con paginacion.
+ * @param {object} options
+ * @param {number} [options.limit=100] - Max IDs per page
+ * @param {string} [options.paginationToken] - Token for next page
+ * @param {string} [options.prefix] - ID prefix filter
+ * @param {string} [options.namespace] - Namespace override
+ * @returns {Promise<{vectorIds: string[], pagination: { next?: string }}>}
+ */
+export async function listVectorIds(options = {}) {
+    const limit = options.limit != null ? Number(options.limit) : 100;
+    const payload = { limit };
+
+    if (options.paginationToken) payload.paginationToken = options.paginationToken;
+    if (options.prefix) payload.prefix = options.prefix;
+
+    const namespace = options.namespace || getNamespace();
+    if (namespace) payload.namespace = namespace;
+
+    console.log(`[VectorStore] Listing vector IDs (limit=${limit}, prefix=${options.prefix || 'none'})...`);
+    const response = await pineconeRequest('/vectors/list', payload);
+
+    const vectorIds = Array.isArray(response?.vectors)
+        ? response.vectors.map(v => v?.id).filter(Boolean)
+        : [];
+
+    return {
+        vectorIds,
+        pagination: response?.pagination || {},
+    };
+}
+
+/**
+ * Obtiene vectores completos (id, values, metadata) por sus IDs.
+ * @param {string[]} ids - Array of vector IDs to fetch
+ * @param {object} [options]
+ * @param {string} [options.namespace] - Namespace override
+ * @returns {Promise<Array<{id: string, values: number[], metadata: object}>>}
+ */
+export async function fetchVectorsByIds(ids, options = {}) {
+    if (!Array.isArray(ids) || ids.length === 0) return [];
+
+    const validIds = ids.filter(id => typeof id === 'string' && id.trim());
+    if (validIds.length === 0) return [];
+
+    if (validIds.length > 1000) {
+        throw new Error(`[VectorStore] fetchVectorsByIds max 1000 IDs per call, received ${validIds.length}`);
+    }
+
+    const namespace = options.namespace || getNamespace();
+    const queryParams = { ids: validIds.map(String) };
+    if (namespace) queryParams.namespace = namespace;
+
+    console.log(`[VectorStore] Fetching ${validIds.length} vectors by ID...`);
+    const response = await pineconeGetRequest('/vectors/fetch', queryParams);
+
+    const vectors = response?.vectors || {};
+    return Object.entries(vectors).map(([id, data]) => ({
+        id: id || data?.id,
+        values: data?.values || [],
+        metadata: normalizeMetadata(data?.metadata),
+    }));
+}
+
+/**
+ * Lista TODOS los IDs de vectores iterando sobre la paginacion.
+ * @param {object} [options]
+ * @param {string} [options.prefix] - ID prefix filter
+ * @param {string} [options.namespace] - Namespace override
+ * @returns {Promise<string[]>}
+ */
+export async function listAllVectorIds(options = {}) {
+    const MAX_PAGES = 1000;
+    const allIds = [];
+    let paginationToken;
+    let pageCount = 0;
+
+    do {
+        const result = await listVectorIds({
+            ...options,
+            paginationToken,
+            limit: 100,
+        });
+
+        allIds.push(...result.vectorIds);
+        paginationToken = result.pagination?.next;
+        pageCount += 1;
+
+        console.log(`[VectorStore] Listed ${allIds.length} IDs so far...`);
+
+        if (pageCount >= MAX_PAGES) {
+            console.warn(`[VectorStore] Reached max pages (${MAX_PAGES}). Stopping pagination.`);
+            break;
+        }
+    } while (paginationToken);
+
+    console.log(`[VectorStore] Listed ${allIds.length} total vector IDs`);
+    return allIds;
+}
