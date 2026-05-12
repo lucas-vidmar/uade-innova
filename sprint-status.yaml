@@ -33,7 +33,7 @@
 #   - done: Retrospective has been completed
 
 generated: "2026-05-10 14:14:45"
-last_updated: "2026-05-11 16:00:00"
+last_updated: "2026-05-12 15:00:00"
 project: "UADE Innova Dashboard Educativo"
 project_key: "UADE-EDU"
 tracking_system: "github-issues"
@@ -59,7 +59,7 @@ development_status:
   2-154-teacher-override-for-material-priority: done
   2-155-backfill-material-priority-for-existing-: done
   2-156-reindex-historical-vectors-with-new-clas: done
-  2-160-add-exact-classid-retrieval-filter-path-: backlog
+  2-160-add-exact-classid-retrieval-filter-path-: in-progress
   2-161-slide-title-metadata-extraction-for-pptx: backlog
   2-164-featteacher-show-actionable-ingestion-er: backlog
   2-165-featteacher-sync-ingestion-tracking-stat: backlog

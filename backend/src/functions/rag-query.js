@@ -180,6 +180,36 @@ function jsonResponse(status, payload, correlationId) {
     };
 }
 
+function buildPineconeFilter(subjectId, classIds, disableBibliographyFallback = false) {
+    if (!classIds || classIds.length === 0 || classIds.includes('all')) {
+        return { subjectId: { $eq: subjectId } };
+    }
+
+    const isSingleClass = classIds.length === 1 && classIds[0] !== 'all';
+
+    const classClause = isSingleClass
+        ? { classId: { $eq: classIds[0] } }
+        : { classIds: { $in: classIds } };
+
+    const clauses = [classClause];
+
+    if (!disableBibliographyFallback) {
+        clauses.push({ materialType: { $eq: 'bibliography' } });
+    }
+
+    return {
+        subjectId: { $eq: subjectId },
+        $or: clauses,
+    };
+}
+
+function resolveFilterType(classIds) {
+    if (!classIds || classIds.length === 0 || classIds.includes('all')) {
+        return 'subject-only';
+    }
+    return classIds.length === 1 ? 'exact-classId' : 'multi-classIds';
+}
+
 function handleErrorResponse(status, message, category, isStream, correlationId) {
     if (isStream) {
         const encoder = new TextEncoder();
@@ -270,17 +300,9 @@ app.http('rag-query', {
         }
 
         // ── 3. Filtro Pinecone por subjectId y classIds ───────────
-        const filter = {
-            subjectId: { $eq: subjectId },
-            $or: [
-                { classIds: { $in: classIds } },
-                { materialType: { $eq: 'bibliography' } }
-            ]
-        };
-        // Si classIds incluye 'all' o está vacío, simplificamos a solo subjectId
-        if (!classIds || classIds.length === 0 || classIds.includes('all')) {
-            delete filter.$or;
-        }
+        const disableBibliographyFallback = process.env.RAG_DISABLE_BIBLIOGRAPHY_FALLBACK === 'true';
+        const filter = buildPineconeFilter(subjectId, classIds, disableBibliographyFallback);
+        const filterType = resolveFilterType(classIds);
 
         // ── 4. Búsqueda de similitud en Pinecone ──────────────────
         let matches;
@@ -454,6 +476,7 @@ ${contextText}
                             promptVersion: promptId,
                             interactionId,
                             firstTokenAt,
+                            filterType,
                         }).catch(err => context.error('[Telemetry] Error emitting RAGInteraction event from stream:', err));
 
 
@@ -542,6 +565,7 @@ ${contextText}
             durationMs,
             promptVersion: promptId,
             interactionId: uuidv4(),
+            filterType,
         }).catch(err => context.error('[Telemetry] Error emitting RAGInteraction event:', err));
 
         // ── 7. Construir respuesta con fuentes ────────────────────

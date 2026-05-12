@@ -69,6 +69,7 @@ export async function trackRAGInteraction({
     promptVersion,
     interactionId,
     firstTokenAt,
+    filterType,
 }) {
     const client = await getClient();
     if (!client) return;
@@ -81,6 +82,7 @@ export async function trackRAGInteraction({
             promptVersion: promptVersion || 'default',
             interactionId: interactionId || 'unknown',
             firstTokenAt: firstTokenAt || null,
+            filterType: filterType || 'unknown',
         },
         measurements: {
             promptTokens: promptTokens || 0,
