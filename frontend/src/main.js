@@ -62,10 +62,20 @@ async function handleRoute() {
     buildShell();
     renderSidebar();
 
-    // Route Guard: Admin paths
-    if (matchedPath.startsWith('/admin') && auth.getRole() !== 'director') {
-        console.warn('[Router] Access Denied to admin path');
-        window.location.hash = `#/${auth.getRole()}/dashboard`;
+    // Route Guard: Role-based access control
+    const expectedRole = matchedPath.split('/')[1]; // "student", "teacher", "director", "admin"
+    const actualRole = auth.getRole();
+
+    const rolePrefixMap = {
+        student: ['student'],
+        teacher: ['teacher'],
+        director: ['director', 'admin'],
+    };
+
+    const allowedPrefixes = rolePrefixMap[actualRole] || ['student'];
+    if (!allowedPrefixes.includes(expectedRole)) {
+        console.warn(`[Router] Access Denied: ${actualRole} cannot access ${matchedPath}`);
+        window.location.hash = `#/${actualRole}/dashboard`;
         return;
     }
 
@@ -115,11 +125,27 @@ async function bootstrap() {
         renderPrivacyModal();
     }
     
-    // Default hash on first load
+    // Default hash on first load — or redirect if hash doesn't match role
     if (!window.location.hash) {
         window.location.hash = `#/${auth.getRole()}/dashboard`;
     } else {
-        handleRoute();
+        // Verify the current hash path matches the authenticated role
+        const hashPath = window.location.hash.replace(/^#/, '').split('?')[0];
+        const hashRole = hashPath.split('/')[1];
+        const actualRole = auth.getRole();
+
+        const rolePrefixMap = {
+            student: ['student'],
+            teacher: ['teacher'],
+            director: ['director', 'admin'],
+        };
+        const allowedPrefixes = rolePrefixMap[actualRole] || ['student'];
+
+        if (!allowedPrefixes.includes(hashRole)) {
+            window.location.hash = `#/${actualRole}/dashboard`;
+        } else {
+            handleRoute();
+        }
     }
 }
 

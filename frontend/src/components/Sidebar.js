@@ -39,10 +39,12 @@ export function renderSidebar() {
 
   const activeSubjectId = auth.getActiveSubjectId();
   const subjects = auth.getEnrolledSubjects();
-  const activeSubject = subjects.find(s => s.id === activeSubjectId) || subjects[0] || { name: 'Materia' };
-  const displaySubjectName = activeSubject.name.includes('(2026-1)')
-    ? activeSubject.name
-    : `${activeSubject.name} (2026-1)`;
+  const activeSubject = subjects.find(s => s.id === activeSubjectId) || subjects[0] || { name: 'Sin materias asignadas', id: null };
+  const displaySubjectName = subjects.length === 0
+    ? 'Sin materias asignadas'
+    : (activeSubject.name.includes('(2026-1)')
+        ? activeSubject.name
+        : `${activeSubject.name} (2026-1)`);
 
   const appEl = document.getElementById('app');
   const existingNav = document.getElementById('top-nav');
