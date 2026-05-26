@@ -5,7 +5,6 @@ import './diagnostic.js';
 import { auth } from './services/auth.js';
 import { themeManager } from './services/theme.js';
 import { renderSidebar } from './components/Sidebar.js';
-import { renderPrivacyModal } from './components/PrivacyModal.js';
 import { inactivityMonitor } from './services/inactivity.js';
 import { processingNotifications } from './services/processing-notifications.js';
 
@@ -119,11 +118,6 @@ async function bootstrap() {
 
     processingNotifications.init();
     inactivityMonitor.init();
-    
-    // Check for privacy consent
-    if (!auth.getConsentAccepted()) {
-        renderPrivacyModal();
-    }
     
     // Default hash on first load — or redirect if hash doesn't match role
     if (!window.location.hash) {

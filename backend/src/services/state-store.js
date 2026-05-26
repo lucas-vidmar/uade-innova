@@ -299,6 +299,19 @@ export async function upsertEnrollment(enrollment) {
   return fromEnrollmentEntity(entity);
 }
 
+export async function getConsentStatus(userId) {
+  if (!userId) return false;
+  try {
+    const table = 'UserConsent';
+    await ensureTable(table);
+    const client = getTableClient(table);
+    const entity = await client.getEntity(userId, 'consent');
+    return entity?.acceptedAt ? true : false;
+  } catch {
+    return false;
+  }
+}
+
 export async function deleteEnrollment(subjectId, userId) {
   if (!subjectId || !userId) return false;
   await ensureTable(ENROLLMENTS_TABLE);

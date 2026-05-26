@@ -13,7 +13,7 @@ import { normalizeCategorizedError, ErrorCategory } from '../services/error-cate
 import { resolveCorrelationId, buildDependencyHeaders, withCorrelationResponseHeaders } from '../services/correlation.js';
 import { v4 as uuidv4 } from 'uuid';
 import { listMaterialsBySubject } from '../services/state-store.js';
-import { getEnrollment } from '../services/state-store.js';
+import { getEnrollment, getConsentStatus } from '../services/state-store.js';
 import { getMaterialPriority } from '../services/material-classification.js';
 const MAX_RAG_CHUNKS = 4;
 const RETRIEVAL_CANDIDATES = 10;
@@ -278,6 +278,19 @@ app.http('rag-query', {
                 return jsonResponse(403, {
                     error: 'ENROLLMENT_REQUIRED',
                     message: 'No estás matriculado en esta materia. Contactá a administración.',
+                }, correlationId);
+            }
+        }
+
+        // ── 1c. AI content consent check ────────────────────────────────
+        if (!isTeacherOrDirector) {
+            const consentAccepted = await getConsentStatus(userId).catch(() => false);
+            if (!consentAccepted) {
+                context.log(`[Consent] Consent required: userId=${userId}`);
+                return jsonResponse(403, {
+                    success: false,
+                    error: { code: 'CONSENT_REQUIRED', message: 'Debés aceptar los términos de uso antes de usar el chat.' },
+                    meta: { timestamp: new Date().toISOString(), requestId: correlationId },
                 }, correlationId);
             }
         }

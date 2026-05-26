@@ -22,3 +22,4 @@ import './functions/process-material.js';
 import './functions/rag-query.js';
 import './functions/post-class-summary-dispatcher.js';
 import './functions/deadline-proximity-dispatcher.js';
+import './functions/consent-api.js';

@@ -1515,19 +1515,71 @@ async getTeacherAiFeedbackAlerts(subjectId, limit = 10) {
      },
 
      async checkEnrollment(userId, subjectId) {
-         if (!userId || !subjectId) return { enrolled: false, role: null, status: null };
-         try {
-             const res = await fetchWithTimeout(
-                 `${BASE_URL}/enrollments/check?userId=${encodeURIComponent(userId)}&subjectId=${encodeURIComponent(subjectId)}`,
-                 { timeout: 3500 }
-             );
-             if (!res.ok) return { enrolled: false, role: null, status: null };
-             const data = await res.json();
-             if (data?.success && data.data) return data.data;
-             return data || { enrolled: false, role: null, status: null };
-         } catch (err) {
-             console.error('[API] checkEnrollment failed:', err);
-             return { enrolled: false, role: null, status: null };
-         }
-     },
-     };
+          if (!userId || !subjectId) return { enrolled: false, role: null, status: null };
+          try {
+              const res = await fetchWithTimeout(
+                  `${BASE_URL}/enrollments/check?userId=${encodeURIComponent(userId)}&subjectId=${encodeURIComponent(subjectId)}`,
+                  { timeout: 3500 }
+              );
+              if (!res.ok) return { enrolled: false, role: null, status: null };
+              const data = await res.json();
+              if (data?.success && data.data) return data.data;
+              return data || { enrolled: false, role: null, status: null };
+          } catch (err) {
+              console.error('[API] checkEnrollment failed:', err);
+              return { enrolled: false, role: null, status: null };
+          }
+      },
+
+    async getTerms() {
+            if (USE_MOCK) {
+                await delay(300);
+                return { content: '# Términos de Uso\n\nTexto de ejemplo para consentimiento.', version: 'v1' };
+            }
+            try {
+                const res = await apiFetch(`${BASE_URL}/terms`);
+                if (!res.ok) return null;
+                const data = await res.json();
+                if (data?.success && data.data) return data.data;
+                return null;
+            } catch (err) {
+                console.error('[API] getTerms failed:', err);
+                return null;
+            }
+        },
+
+    async getConsent() {
+            if (USE_MOCK) {
+                await delay(200);
+                return { accepted: false, acceptedAt: null, version: null };
+            }
+            try {
+                const res = await apiFetch(`${BASE_URL}/consent`);
+                if (!res.ok) return { accepted: false, acceptedAt: null, version: null };
+                const data = await res.json();
+                if (data?.success && data.data) return data.data;
+                return { accepted: false, acceptedAt: null, version: null };
+            } catch (err) {
+                console.error('[API] getConsent failed:', err);
+                return { accepted: false, acceptedAt: null, version: null };
+            }
+        },
+
+    async saveConsent() {
+            if (USE_MOCK) return { saved: true };
+            try {
+                const res = await apiFetch(`${BASE_URL}/consent`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ accepted: true }),
+                });
+                if (!res.ok) return null;
+                const data = await res.json();
+                if (data?.success && data.data) return data.data;
+                return null;
+            } catch (err) {
+                console.error('[API] saveConsent failed:', err);
+                return null;
+            }
+        },
+      };

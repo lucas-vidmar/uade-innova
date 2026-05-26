@@ -4,6 +4,8 @@
 import { api } from './api.js';
 import { enrollments as enrollmentService } from './enrollments.js';
 
+const AI_CONSENT_KEY = 'edu_ai_consent_accepted';
+
 const CORRELATION_HEADER = 'x-correlation-id';
 
 function correlationHeaders() {
@@ -92,6 +94,38 @@ export const auth = {
 
     getConsentAccepted() {
         return localStorage.getItem('edu_consent_accepted') === 'true' || sessionStorage.getItem('edu_consent_accepted') === 'true';
+    },
+
+    getAIConsentAccepted() {
+        try {
+            return localStorage.getItem(AI_CONSENT_KEY) === 'true' || sessionStorage.getItem(AI_CONSENT_KEY) === 'true';
+        } catch {
+            return false;
+        }
+    },
+
+    async acceptAIConsent() {
+        try {
+            await api.saveConsent();
+            try {
+                localStorage.setItem(AI_CONSENT_KEY, 'true');
+            } catch {
+                sessionStorage.setItem(AI_CONSENT_KEY, 'true');
+            }
+            window.dispatchEvent(new CustomEvent('auth:aiConsentAccepted'));
+            return true;
+        } catch (err) {
+            console.error('[Auth] Error saving AI consent:', err);
+            if (window.location.hostname === 'localhost') {
+                try {
+                    localStorage.setItem(AI_CONSENT_KEY, 'true');
+                } catch {
+                    sessionStorage.setItem(AI_CONSENT_KEY, 'true');
+                }
+                return true;
+            }
+            return false;
+        }
     },
 
     async acceptPrivacyPolicy() {
@@ -257,6 +291,21 @@ export const auth = {
             }
         } catch (err) {
             console.error('Error fetching user profile:', err);
+        }
+
+        // Sync AI consent from backend
+        try {
+            const consent = await api.getConsent();
+            if (consent) {
+                const accepted = consent.accepted ? 'true' : 'false';
+                try {
+                    localStorage.setItem(AI_CONSENT_KEY, accepted);
+                } catch {
+                    sessionStorage.setItem(AI_CONSENT_KEY, accepted);
+                }
+            }
+        } catch (err) {
+            console.error('Error fetching AI consent:', err);
         }
 
         return authenticated;

@@ -167,6 +167,12 @@ resource enrollmentsTable 'Microsoft.Storage/storageAccounts/tableServices/table
   name: 'Enrollments'
 }
 
+// ─── Table: UserConsent (AI content consent records) ──────────
+resource userConsentTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-01-01' = {
+  parent: tableService
+  name: 'UserConsent'
+}
+
 // ─── Outputs ───────────────────────────────────────────────────
 @description('The name of the Storage Account.')
 output accountName string = storageAccount.name

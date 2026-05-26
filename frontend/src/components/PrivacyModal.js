@@ -1,83 +1,81 @@
 /* ============================================================
-   PrivacyModal.js — Institutional Data Privacy Modal
+   PrivacyModal.js — AI Content Consent Modal
+   Terms fetched from Blob Storage, checkbox and continue button.
    ============================================================ */
 import { auth } from '../services/auth.js';
+import { api } from '../services/api.js';
 import { toast } from './Toast.js';
 
-/**
- * Renders and manages the Privacy Policy modal.
- * This is a blocking modal that only disappears when the user clicks "Accept".
- */
-export function renderPrivacyModal() {
-    // If already accepted, do nothing
-    if (auth.getConsentAccepted()) return;
-
-    // Check if modal already exists
+export async function renderPrivacyModal(onAccepted) {
+    if (auth.getAIConsentAccepted()) return;
     if (document.getElementById('privacy-modal')) return;
 
     const modalOverlay = document.createElement('div');
     modalOverlay.id = 'privacy-modal';
     modalOverlay.className = 'modal-overlay';
-    modalOverlay.style.zIndex = '9999'; // Ensure it's on top of everything
+    modalOverlay.style.zIndex = '9999';
 
     modalOverlay.innerHTML = `
-        <div class="modal-content animate-in">
+        <div class="modal-content animate-in" style="max-width: 640px;">
             <div class="modal-header">
                 <h2 class="h3" style="margin: 0; display: flex; align-items: center; gap: var(--space-2);">
-                    <span>⚖️</span> Política de Privacidad de Datos
+                    Términos de uso
                 </h2>
             </div>
             
-            <div class="modal-body" style="overflow-y: auto; max-height: 60vh;">
-                <p><strong>Bienvenido a UADE Innova.</strong></p>
-                <p>Para continuar utilizando este dashboard educativo inteligente, es necesario que acepte el tratamiento de sus datos académicos conforme a nuestra política institucional.</p>
+            <div class="modal-body" style="overflow-y: auto; max-height: 50vh;">
+                <div id="terms-content" class="p-4 text-text-secondary text-sm">
+                    <div class="animate-pulse">Cargando términos...</div>
+                </div>
                 
-                <h3 class="h4" style="margin-top: var(--space-4);">1. Información Recopilada</h3>
-                <p>Procesamos información sobre su cursada, incluyendo materiales de clase (transcripciones, presentaciones), tareas y actividades en el chat RAG para personalizar su experiencia de aprendizaje.</p>
-                
-                <h3 class="h4" style="margin-top: var(--space-4);">2. Uso de IA Generativa</h3>
-                <p>Utilizamos modelos de Azure OpenAI para generar resúmenes y responder consultas. Sus datos están protegidos bajo protocolos de seguridad de nivel empresarial (Zero-Trust) y no se utilizan para entrenar modelos públicos externos.</p>
-                
-                <h3 class="h4" style="margin-top: var(--space-4);">3. Sus Derechos</h3>
-                <p>Usted mantiene el derecho de acceso, rectificación y eliminación de sus datos personales conforme a las normativas vigentes en la República Argentina y las políticas internas de UADE.</p>
-                
-                <div class="alert alert-info" style="margin-top: var(--space-4);">
-                    <p style="margin: 0; font-size: 0.9rem;">Al hacer clic en "Aceptar y Continuar", usted confirma que ha leído y acepta los términos anteriores.</p>
+                <div class="mt-4 p-3 bg-surface-2 rounded-xl border border-border">
+                    <label class="flex items-start gap-3 cursor-pointer">
+                        <input type="checkbox" id="consent-checkbox" class="mt-1" style="accent-color: var(--color-accent);">
+                        <span class="text-sm font-medium text-text-primary">
+                            Acepto que mis consultas sean procesadas por IA y almacenadas para mejorar el servicio
+                        </span>
+                    </label>
                 </div>
             </div>
             
             <div class="modal-footer">
-                <button id="privacy-accept-btn" class="btn btn-primary btn-lg">Aceptar y Continuar</button>
+                <button id="consent-continue-btn" class="btn btn-primary btn-lg" disabled>Continuar</button>
             </div>
         </div>
     `;
 
     document.body.appendChild(modalOverlay);
 
-    // Interaction logic
-    const acceptBtn = document.getElementById('privacy-accept-btn');
-    acceptBtn.addEventListener('click', async () => {
-        acceptBtn.disabled = true;
-        acceptBtn.innerHTML = 'Procesando...';
-        
-        const success = await auth.acceptPrivacyPolicy();
-        if (success || window.location.hostname === 'localhost') {
-            if (!success) console.warn('[PrivacyModal] Failed to save consent to API, but continuing in local mode.');
+    const checkbox = document.getElementById('consent-checkbox');
+    const continueBtn = document.getElementById('consent-continue-btn');
+    const termsContent = document.getElementById('terms-content');
+
+    checkbox.addEventListener('change', () => {
+        continueBtn.disabled = !checkbox.checked;
+    });
+
+    continueBtn.addEventListener('click', async () => {
+        continueBtn.disabled = true;
+        continueBtn.innerHTML = 'Procesando...';
+
+        const success = await auth.acceptAIConsent();
+        if (success) {
             modalOverlay.classList.replace('animate-in', 'animate-out');
             setTimeout(() => {
                 modalOverlay.remove();
+                document.body.style.overflow = '';
+                if (onAccepted && typeof onAccepted === 'function' && document.body.contains(modalOverlay)) {
+                    onAccepted();
+                }
             }, 300);
         } else {
-            acceptBtn.disabled = false;
-            acceptBtn.innerHTML = 'Aceptar y Continuar';
+            continueBtn.disabled = false;
+            continueBtn.innerHTML = 'Continuar';
             toast('error', 'Error', 'Hubo un problema al guardar su preferencia. Reintente.');
         }
     });
 
-    // Disable background scrolling while modal is open
     document.body.style.overflow = 'hidden';
-    
-    // Clean up scroll on remove
     const observer = new MutationObserver((mutations) => {
         mutations.forEach((mutation) => {
             mutation.removedNodes.forEach((node) => {
@@ -89,4 +87,35 @@ export function renderPrivacyModal() {
         });
     });
     observer.observe(document.body, { childList: true });
+
+    // Fetch terms from backend
+    try {
+        const terms = await api.getTerms();
+        if (terms && terms.content) {
+            termsContent.innerHTML = renderMarkdown(terms.content);
+        } else {
+            termsContent.innerHTML = '<p class="text-text-muted italic">No se pudieron cargar los términos. Intente nuevamente.</p>';
+        }
+    } catch (err) {
+        console.error('[PrivacyModal] Error fetching terms:', err);
+        termsContent.innerHTML = '<p class="text-text-muted italic">Error al cargar los términos de uso.</p>';
+    }
+}
+
+function renderMarkdown(text) {
+    if (!text) return '';
+    let html = text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/^### (.+)$/gm, '<h3 class="h4 mt-3">$1</h3>')
+        .replace(/^## (.+)$/gm, '<h2 class="h3 mt-4">$1</h2>')
+        .replace(/^# (.+)$/gm, '<h2 class="h3 mt-4">$1</h2>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/^- (.+)$/gm, '<li>$1</li>')
+        .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
+        .replace(/\n\n/g, '</p><p>')
+        .replace(/\n/g, '<br>');
+    return `<p>${html}</p>`;
 }

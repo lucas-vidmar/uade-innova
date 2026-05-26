@@ -5,6 +5,7 @@ import { api } from '../services/api.js';
 import { auth } from '../services/auth.js';
 import { showPromptDialog } from './Dialog.js';
 import { toast } from './Toast.js';
+import { renderPrivacyModal } from './PrivacyModal.js';
 
 const FOLLOW_UP_HISTORY_WINDOW_SIZE = 4;
 
@@ -18,8 +19,34 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
   let transcriptFocus = initialTranscriptFocus;
 
   const container = document.createElement('div');
-  container.className = 'chat-container-card'; // Use the new design system class
+  container.className = 'chat-container-card';
   container.style.height = '100%';
+
+  // Consent gate for students: block chat rendering and show modal
+  if (auth.getRole() === 'student' && !auth.getAIConsentAccepted()) {
+    container.innerHTML = `
+      <div class="flex items-center justify-center h-full p-6">
+        <div class="text-center max-w-md">
+          <div class="mb-4 text-primary">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="mx-auto">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+            </svg>
+          </div>
+          <h3 class="text-lg font-bold text-text-primary mb-2">Aceptá los términos para usar el chat</h3>
+          <p class="text-sm text-text-secondary mb-4">Para poder consultar los materiales de clase, necesitás aceptar los términos de uso y consentimiento de IA.</p>
+          <button id="open-consent-modal-btn" class="btn btn-primary">Aceptar términos</button>
+        </div>
+      </div>
+    `;
+    container.querySelector('#open-consent-modal-btn')?.addEventListener('click', () => {
+      renderPrivacyModal(() => {
+        if (auth.getAIConsentAccepted()) {
+          location.reload();
+        }
+      });
+    });
+    return container;
+  }
 
   const render = () => {
     container.innerHTML = `
