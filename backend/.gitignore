@@ -4,3 +4,4 @@ dist/
 local.settings.json
 .funcignore
 *.js.map
+src/**/host.json
