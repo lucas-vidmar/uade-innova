@@ -7,9 +7,5 @@
       "route": "/login",
       "redirect": "/.auth/login/aad"
     }
-  ],
-  "auth": {
-    "identityProviders": {},
-    "rolesSource": "/api/get-roles?code=UADE-Pilot-Secure-Roles-Secret-2026"
-  }
+  ]
 }
