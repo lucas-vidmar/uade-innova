@@ -337,6 +337,7 @@ function toCorrectionEntity(correction) {
     question: correction.question,
     originalAnswer: correction.originalAnswer,
     correctedAnswer: correction.correctedAnswer || '',
+    explanation: correction.explanation || '',
     status: correction.status || 'pending',
     issueDetail: correction.issueDetail || '',
     classId: correction.classId || '',
@@ -355,6 +356,7 @@ function fromCorrectionEntity(entity) {
     question: entity.question,
     originalAnswer: entity.originalAnswer,
     correctedAnswer: entity.correctedAnswer || '',
+    explanation: entity.explanation || '',
     status: entity.status || 'pending',
     issueDetail: entity.issueDetail || '',
     classId: entity.classId || '',
@@ -407,6 +409,17 @@ export async function getCorrection(subjectId, correctionId) {
     return fromCorrectionEntity(entity);
   } catch {
     return null;
+  }
+}
+
+export async function deletePendingCorrection(correctionId) {
+  if (!correctionId) return;
+  await ensureTable(CORRECTIONS_PENDING_TABLE);
+  const client = getTableClient(CORRECTIONS_PENDING_TABLE);
+  try {
+    await client.deleteEntity('pending', correctionId);
+  } catch (err) {
+    if (err.statusCode !== 404) throw err;
   }
 }
 

@@ -24,6 +24,7 @@ const ROUTES = {
     '/teacher/analytics': () => import('./pages/teacher/Analytics.js').then(m => m.renderTeacherAnalytics),
     '/teacher/materials': () => import('./pages/teacher/MaterialManager.js').then(m => m.renderMaterialManager),
     '/teacher/corrections': () => import('./pages/teacher/CorrectionInbox.js').then(m => m.renderCorrectionInbox),
+    '/teacher/correction': () => import('./pages/teacher/CorrectionDetail.js').then(m => m.renderCorrectionDetail),
     '/director/dashboard': () => import('./pages/director/Dashboard.js').then(m => m.renderDirectorDashboard),
     '/director/classes': () => import('./pages/director/ClassManagement.js').then(m => m.renderClassManagement),
     '/director/subjects': () => import('./pages/director/SubjectManagement.js').then(m => m.renderSubjectManagement),
@@ -57,6 +58,9 @@ async function handleRoute() {
     let matchedPath = fullPath;
     if (fullPath.startsWith('/student/class/')) {
         matchedPath = '/student/class';
+    }
+    if (fullPath.startsWith('/teacher/correction/')) {
+        matchedPath = '/teacher/correction';
     }
 
     buildShell();

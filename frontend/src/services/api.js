@@ -1519,7 +1519,48 @@ async getTeacherAiFeedbackAlerts(subjectId, limit = 10) {
                 console.error('[API] getCorrectionsPending failed:', err);
                 throw err;
             }
-        },
+         },
+
+     async verifyAnswer(payload) {
+             if (USE_MOCK) {
+                 await delay(500);
+                 return { success: true, data: { correctionId: payload.correctionId, status: 'verified' } };
+             }
+             const res = await apiFetch(`${BASE_URL}/corrections-verify`, {
+                 method: 'POST',
+                 headers: { 'Content-Type': 'application/json' },
+                 body: JSON.stringify(payload),
+             });
+             if (!res.ok) {
+                 let message = 'Error al publicar corrección';
+                 try { const err = await res.json(); if (err?.error?.message) message = err.error.message; } catch {}
+                 throw new Error(message);
+             }
+             return res.json();
+         },
+
+     async getCorrection(subjectId, correctionId) {
+             if (USE_MOCK) {
+                 await delay(300);
+                 return {
+                     correctionId,
+                     studentId: 'J.P.',
+                     question: '¿Qué es la arquitectura hexagonal?',
+                     originalAnswer: 'La arquitectura hexagonal es un patrón de diseño de software que separa el dominio de la infraestructura...',
+                     issueDetail: 'La respuesta no menciona puertos y adaptadores',
+                     classId: 'class-03',
+                     status: 'pending',
+                     createdAt: '2026-05-31T10:00:00Z',
+                 };
+             }
+             const params = new URLSearchParams({ subjectId });
+             if (correctionId) params.append('correctionId', correctionId);
+             const res = await fetchWithTimeout(`${BASE_URL}/corrections-pending?${params}`, { timeout: 4000 });
+             if (!res.ok) throw new Error('Error cargando corrección');
+             const json = await res.json();
+             const data = json.data || [];
+             return correctionId ? data.find(c => c.correctionId === correctionId) || null : data;
+         },
 
      async getEnrollments(userId) {
          if (!userId) return [];
