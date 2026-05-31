@@ -5,6 +5,8 @@ const CLASSES_TABLE = process.env.AZURE_TABLE_CLASSES || 'classes';
 const ENROLLMENTS_TABLE = process.env.AZURE_STORAGE_ENROLLMENTS_TABLE
   || process.env.AZURE_TABLE_ENROLLMENTS
   || 'Enrollments';
+const CORRECTIONS_TABLE = process.env.AZURE_TABLE_CORRECTIONS || 'Corrections';
+const CORRECTIONS_PENDING_TABLE = process.env.AZURE_TABLE_CORRECTIONS_PENDING || 'CorrectionsPending';
 
 const ensuredTables = new Set();
 
@@ -322,4 +324,103 @@ export async function deleteEnrollment(subjectId, userId) {
   } catch {
     return false;
   }
+}
+
+// ─── Corrections Operations ───────────────────────────────────
+
+function toCorrectionEntity(correction) {
+  return compactObject({
+    partitionKey: correction.subjectId,
+    rowKey: correction.correctionId,
+    studentId: correction.studentId,
+    teacherId: correction.teacherId || '',
+    question: correction.question,
+    originalAnswer: correction.originalAnswer,
+    correctedAnswer: correction.correctedAnswer || '',
+    status: correction.status || 'pending',
+    issueDetail: correction.issueDetail || '',
+    classId: correction.classId || '',
+    messageId: correction.messageId || '',
+    createdAt: correction.createdAt || new Date().toISOString(),
+    resolvedAt: correction.resolvedAt || '',
+  });
+}
+
+function fromCorrectionEntity(entity) {
+  return {
+    correctionId: entity.rowKey,
+    subjectId: entity.partitionKey,
+    studentId: entity.studentId,
+    teacherId: entity.teacherId || '',
+    question: entity.question,
+    originalAnswer: entity.originalAnswer,
+    correctedAnswer: entity.correctedAnswer || '',
+    status: entity.status || 'pending',
+    issueDetail: entity.issueDetail || '',
+    classId: entity.classId || '',
+    messageId: entity.messageId || '',
+    createdAt: entity.createdAt,
+    resolvedAt: entity.resolvedAt || '',
+  };
+}
+
+function toCorrectionPendingEntity(correction) {
+  return compactObject({
+    partitionKey: 'pending',
+    rowKey: correction.correctionId,
+    subjectId: correction.subjectId,
+    classId: correction.classId || '',
+    teacherId: correction.teacherId || '',
+    createdAt: correction.createdAt || new Date().toISOString(),
+    studentId: correction.studentId,
+    question: correction.question,
+    originalAnswer: correction.originalAnswer,
+    issueDetail: correction.issueDetail || '',
+  });
+}
+
+export async function upsertCorrection(correction) {
+  if (!correction?.subjectId || !correction?.correctionId) {
+    throw new Error('upsertCorrection requires subjectId and correctionId');
+  }
+
+  const main = toCorrectionEntity(correction);
+  const pending = toCorrectionPendingEntity(correction);
+
+  await ensureTable(CORRECTIONS_TABLE);
+  let client = getTableClient(CORRECTIONS_TABLE);
+  await client.upsertEntity(main, 'Replace');
+
+  await ensureTable(CORRECTIONS_PENDING_TABLE);
+  client = getTableClient(CORRECTIONS_PENDING_TABLE);
+  await client.upsertEntity(pending, 'Replace');
+
+  return fromCorrectionEntity(main);
+}
+
+export async function getCorrection(subjectId, correctionId) {
+  if (!subjectId || !correctionId) return null;
+  await ensureTable(CORRECTIONS_TABLE);
+  const client = getTableClient(CORRECTIONS_TABLE);
+  try {
+    const entity = await client.getEntity(subjectId, correctionId);
+    return fromCorrectionEntity(entity);
+  } catch {
+    return null;
+  }
+}
+
+export async function listPendingCorrections(subjectId) {
+  if (!subjectId) return [];
+  await ensureTable(CORRECTIONS_PENDING_TABLE);
+  const client = getTableClient(CORRECTIONS_PENDING_TABLE);
+  const filter = `PartitionKey eq 'pending'`;
+  const all = [];
+  for await (const entity of client.listEntities({ queryOptions: { filter } })) {
+    if (entity.subjectId === subjectId) {
+      all.push(entity);
+    }
+  }
+  all.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  return all.map(fromCorrectionEntity);
 }

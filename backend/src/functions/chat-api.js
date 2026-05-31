@@ -1,5 +1,6 @@
 import { validateFrontDoorId, parseClientPrincipal, getAuthenticatedUser } from '../services/auth-utils.js';
-import { getEnrollment } from '../services/state-store.js';
+import { getEnrollment, upsertCorrection } from '../services/state-store.js';
+import { v4 as uuidv4 } from 'uuid';
 /**
  * chat-api.js — Azure Functions para feedback e historial de chat
  */
@@ -239,6 +240,25 @@ app.http('chat-report-issue', {
             };
 
             await saveJson(CONTAINER_TEACHER_ALERTS, `${subjectId}/${alertId}.json`, alert);
+
+            try {
+              const correctionId = uuidv4().replace(/-/g, '');
+              await upsertCorrection({
+                correctionId,
+                subjectId,
+                classId: log.classId || (Array.isArray(log.classes) ? log.classes[0] : '') || 'unknown',
+                studentId: userId,
+                question: log.question || '',
+                originalAnswer: String(log.answer || '').slice(0, 2000),
+                issueDetail: detail || 'Sin detalle adicional provisto por el alumno.',
+                messageId,
+                status: 'pending',
+                createdAt: now,
+              });
+              context.log(`[chat-report-issue] correction persisted (correctionId=${correctionId})`);
+            } catch (dbErr) {
+              context.error('[chat-report-issue] Failed to persist correction to tables:', dbErr);
+            }
 
             context.log(`[chat-report-issue] issue reported (subject=${subjectId}, messageId=${messageId})`);
 

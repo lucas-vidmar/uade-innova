@@ -1499,6 +1499,28 @@ async getTeacherAiFeedbackAlerts(subjectId, limit = 10) {
              }
          },
 
+    async getCorrectionsPending(subjectId, classId) {
+            if (!subjectId) return [];
+            if (USE_MOCK) {
+                await delay(250);
+                return [];
+            }
+            try {
+                const params = new URLSearchParams({ subjectId });
+                if (classId) params.append('classId', classId);
+                const res = await fetchWithTimeout(`${BASE_URL}/corrections-pending?${params.toString()}`, { timeout: 4000 });
+                if (!res.ok) {
+                    const body = await res.text();
+                    throw new Error(`Server error ${res.status}: ${body}`);
+                }
+                const json = await res.json();
+                return json.data || [];
+            } catch (err) {
+                console.error('[API] getCorrectionsPending failed:', err);
+                throw err;
+            }
+        },
+
      async getEnrollments(userId) {
          if (!userId) return [];
          try {
