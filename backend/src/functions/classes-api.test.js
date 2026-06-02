@@ -30,6 +30,8 @@ mock.module('../services/state-store.js', {
         upsertMaterialState: mock.fn(async () => true),
         deleteClassesBySubject: mock.fn(async () => true),
         deleteMaterialsBySubject: mock.fn(async () => true),
+        getEnrollmentsByUser: mock.fn(async () => []),
+        getEnrollment: mock.fn(async () => null),
     }
 });
 mock.module('uuid', { namedExports: { v4: () => '1234' } });
@@ -45,6 +47,9 @@ mock.module('@azure/functions', {
         }
     }
 });
+
+// Set required env var before importing module that validates it at load time
+process.env.DIRECTOR_BUDGET_MONTHLY_USD = '97.50';
 
 // Import the function under test
 await import('./classes-api.js');
@@ -230,4 +235,197 @@ test('classes-api get-director-powerbi-metrics returns aggregated daily metrics'
     assert.strictEqual(payload.summary.totalInteractions, 4);
     assert.strictEqual(payload.summary.totalCostUsd, 0.000575);
     assert.strictEqual(payload.summary.avgCostPerInteractionUsd, 0.00014375);
+});
+
+test('classes-api get-director-stats returns costBySubject with subject-level breakdown', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+
+    const yesterdayIso = new Date(Date.now() - 86400000).toISOString();
+    const todayIso = new Date().toISOString();
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: async function* () {
+            yield { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', timestamp: yesterdayIso };
+            yield { userId: 'alu-002', promptTokens: 200, completionTokens: 100, totalTokens: 300, subjectId: 'diseno-bd-2026', timestamp: yesterdayIso };
+            yield { userId: 'alu-001', promptTokens: 50, completionTokens: 25, totalTokens: 75, subjectId: 'arq-software-2026', timestamp: todayIso };
+        },
+    }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = { params: {}, query: new Map() };
+
+    const response = await handlers['get-director-stats'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    const payload = JSON.parse(response.body);
+    assert.ok(Array.isArray(payload.costBySubject), 'costBySubject should be an array');
+    assert.ok(payload.costBySubject.length > 0, 'costBySubject should have entries');
+    assert.ok(payload.costBySubject.some(s => s.subjectId === 'arq-software-2026'), 'should include arq-software-2026');
+    assert.ok(payload.costBySubject.some(s => s.subjectId === 'diseno-bd-2026'), 'should include diseno-bd-2026');
+
+    const arq = payload.costBySubject.find(s => s.subjectId === 'arq-software-2026');
+    assert.ok(Array.isArray(arq.dailyCost), 'dailyCost should be an array');
+    assert.ok(arq.dailyCost.length > 0, 'dailyCost should have entries');
+    assert.strictEqual(typeof arq.dailyCost[0].cost, 'number', 'cost should be a number');
+});
+
+test('classes-api get-director-stats returns wausBySubject with weekly user counts', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+
+    const yesterdayIso = new Date(Date.now() - 86400000).toISOString();
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: async function* () {
+            yield { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', timestamp: yesterdayIso };
+            yield { userId: 'alu-002', promptTokens: 200, completionTokens: 100, totalTokens: 300, subjectId: 'arq-software-2026', timestamp: yesterdayIso };
+            yield { userId: 'alu-003', promptTokens: 50, completionTokens: 25, totalTokens: 75, subjectId: 'diseno-bd-2026', timestamp: yesterdayIso };
+        },
+    }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = { params: {}, query: new Map() };
+
+    const response = await handlers['get-director-stats'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    const payload = JSON.parse(response.body);
+    assert.ok(Array.isArray(payload.wausBySubject), 'wausBySubject should be an array');
+    const arq = payload.wausBySubject.find(w => w.subjectId === 'arq-software-2026');
+    assert.ok(arq, 'should include arq-software-2026');
+    assert.strictEqual(typeof arq.currentWeek, 'number', 'currentWeek should be a number');
+});
+
+test('classes-api get-director-stats returns materialUploads with teacher breakdown', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+    const todayIso = new Date().toISOString();
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: async function* () {
+            yield { eventType: 'material-upload', teacherId: 'doc-001', userId: 'doc-001', materialType: 'transcript', filename: 'clase.vtt', subjectId: 'arq-software-2026', timestamp: todayIso };
+            yield { eventType: 'material-upload', teacherId: 'doc-001', userId: 'doc-001', materialType: 'presentation', filename: 'clase.pptx', subjectId: 'arq-software-2026', timestamp: todayIso };
+            yield { eventType: 'material-upload', teacherId: 'doc-002', userId: 'doc-002', materialType: 'notes', filename: 'apuntes.docx', subjectId: 'diseno-bd-2026', timestamp: todayIso };
+        },
+    }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = { params: {}, query: new Map() };
+
+    const response = await handlers['get-director-stats'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    const payload = JSON.parse(response.body);
+    assert.ok(payload.materialUploads, 'materialUploads should exist');
+    assert.ok(Array.isArray(payload.materialUploads.byTeacher), 'byTeacher should be an array');
+    assert.strictEqual(payload.materialUploads.byTeacher.length, 2, 'should have 2 teachers');
+
+    const doc1 = payload.materialUploads.byTeacher.find(t => t.teacherId === 'doc-001');
+    assert.ok(doc1, 'should include doc-001');
+    assert.strictEqual(doc1.transcripts, 1, 'doc-001 should have 1 transcript');
+    assert.strictEqual(doc1.total, 2, 'doc-001 should have 2 total uploads');
+});
+
+test('classes-api get-director-stats returns budget object with projection', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+    const prevBudget = process.env.DIRECTOR_BUDGET_MONTHLY_USD;
+    process.env.DIRECTOR_BUDGET_MONTHLY_USD = '97.50';
+
+    const todayIso = new Date().toISOString();
+    const yesterdayIso = new Date(Date.now() - 86400000).toISOString();
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: async function* () {
+            yield { userId: 'alu-001', promptTokens: 1000, completionTokens: 500, totalTokens: 1500, timestamp: yesterdayIso };
+            yield { userId: 'alu-001', promptTokens: 2000, completionTokens: 1000, totalTokens: 3000, timestamp: todayIso };
+        },
+    }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = { params: {}, query: new Map() };
+
+    const response = await handlers['get-director-stats'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    const payload = JSON.parse(response.body);
+    assert.ok(payload.budget, 'budget object should exist');
+    assert.strictEqual(payload.budget.monthlyLimit, 97.50, 'monthlyLimit should be 97.50');
+    assert.strictEqual(typeof payload.budget.currentSpend, 'number', 'currentSpend should be a number');
+    assert.strictEqual(typeof payload.budget.projectedEndOfMonth, 'number', 'projectedEndOfMonth should be a number');
+    assert.strictEqual(typeof payload.budget.percentUsed, 'number', 'percentUsed should be a number');
+    assert.ok(['none', 'warning', 'critical'].includes(payload.budget.warningLevel), 'warningLevel should be valid');
+
+    process.env.DIRECTOR_BUDGET_MONTHLY_USD = prevBudget;
+});
+
+test('classes-api get-director-stats returns costPerActiveStudent', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+    const todayIso = new Date().toISOString();
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: async function* () {
+            yield { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, timestamp: todayIso };
+            yield { userId: 'alu-002', promptTokens: 200, completionTokens: 100, totalTokens: 300, timestamp: todayIso };
+        },
+    }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = { params: {}, query: new Map() };
+
+    const response = await handlers['get-director-stats'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    const payload = JSON.parse(response.body);
+    assert.strictEqual(typeof payload.costPerActiveStudent, 'number', 'costPerActiveStudent should be a number');
+    assert.ok(payload.costPerActiveStudent >= 0, 'costPerActiveStudent should be >= 0');
+});
+
+test('classes-api get-director-powerbi-metrics returns costBySubject array', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+    const yesterdayIso = new Date(Date.now() - 86400000).toISOString();
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: async function* () {
+            yield { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', timestamp: yesterdayIso };
+        },
+    }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = { params: {}, query: new Map([['days', '3']]) };
+
+    const response = await handlers['get-director-powerbi-metrics'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    const payload = JSON.parse(response.body);
+    assert.ok(Array.isArray(payload.costBySubject), 'costBySubject should be an array');
+    assert.ok(payload.costBySubject.length > 0, 'costBySubject should not be empty');
+
+    const first = payload.costBySubject[0];
+    assert.ok(first.subjectId, 'subjectId should exist');
+    assert.ok(Array.isArray(first.dailyCost), 'dailyCost should be an array');
+    assert.strictEqual(typeof first.dailyCost[0].cost, 'number', 'cost should be a number');
+});
+
+test('classes-api get-director-powerbi-metrics costByClass respects subjectId filter', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+    const yesterdayIso = new Date(Date.now() - 86400000).toISOString();
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: async function* () {
+            yield { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso };
+            yield { userId: 'alu-002', promptTokens: 200, completionTokens: 100, totalTokens: 300, subjectId: 'diseno-bd-2026', classId: 'class-02', timestamp: yesterdayIso };
+            yield { eventType: 'material-upload', teacherId: 'doc-001', subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso };
+        },
+    }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = { params: {}, query: new Map([['subjectId', 'arq-software-2026'], ['days', '3']]) };
+
+    const response = await handlers['get-director-powerbi-metrics'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    const payload = JSON.parse(response.body);
+    assert.ok(Array.isArray(payload.costByClass), 'costByClass should be an array');
+    assert.strictEqual(payload.costByClass.length, 1, 'costByClass should have exactly 1 entry for arq-software-2026');
+    assert.strictEqual(payload.costByClass[0].classId, 'class-01', 'classId should be class-01');
+    assert.ok(payload.costByClass[0].cost > 0, 'cost should be positive');
+    assert.strictEqual(payload.costByClass[0].interactions, 1, 'interactions should exclude material-upload');
 });

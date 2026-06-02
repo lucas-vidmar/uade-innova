@@ -5,6 +5,16 @@ import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-util
 import { listClassesBySubject, listMaterialsBySubject, replaceClassesForSubject, deleteMaterialStateById, getMaterialState, upsertMaterialState, deleteClassesBySubject, deleteMaterialsBySubject, getEnrollmentsByUser, getEnrollment } from '../services/state-store.js';
 import * as vectorStore from '../services/vector-store.js';
 
+const rawBudget = process.env.DIRECTOR_BUDGET_MONTHLY_USD;
+if (!rawBudget) {
+    throw new Error('DIRECTOR_BUDGET_MONTHLY_USD environment variable is required');
+}
+const parsedBudget = Number(rawBudget);
+if (!Number.isFinite(parsedBudget) || parsedBudget <= 0) {
+    throw new Error(`DIRECTOR_BUDGET_MONTHLY_USD must be a positive number, got: ${rawBudget}`);
+}
+const MONTHLY_BUDGET = parsedBudget;
+
 const CONTAINER_CLASSES = process.env.AZURE_STORAGE_CONTAINER_CLASSES || 'classes-config';
 const CONTAINER_PROCESSED = 'processed';
 const SUBJECTS_BLOB = 'subjects.json';
@@ -61,6 +71,14 @@ async function loadSessionMetricsRows(context) {
     }
 }
 
+function createSubjectDailyBucket(date, subjectId) {
+    return {
+        date, subjectId,
+        promptTokens: 0, completionTokens: 0, totalTokens: 0,
+        ragInteractions: 0, _users: new Set(),
+    };
+}
+
 async function computeDirectorMetrics(context, requestedDays = POWERBI_DEFAULT_DAYS) {
     const days = Math.min(Math.max(Number(requestedDays) || POWERBI_DEFAULT_DAYS, 1), 90);
     const rows = await loadSessionMetricsRows(context);
@@ -72,6 +90,12 @@ async function computeDirectorMetrics(context, requestedDays = POWERBI_DEFAULT_D
 
     const buckets = new Map();
     const uniqueUsersWindow = new Set();
+
+    const subjectBuckets = new Map();
+    const materialUploadsByTeacher = {};
+
+    const subjectNames = {};
+
     for (let i = 0; i < days; i++) {
         const date = new Date(start);
         date.setUTCDate(start.getUTCDate() + i);
@@ -79,15 +103,37 @@ async function computeDirectorMetrics(context, requestedDays = POWERBI_DEFAULT_D
         buckets.set(iso, createDailyBucket(iso));
     }
 
+    const uploadCounts = { transcript: 'transcripts', presentation: 'presentations', notes: 'notes', bibliography: 'bibliography' };
+
     for (const row of rows) {
         const iso = toIsoDate(row?.timestamp);
         if (!iso || !buckets.has(iso)) continue;
+
+        const eventType = String(row?.eventType || '').trim();
+        const isUpload = eventType === 'material-upload';
+
+        if (isUpload) {
+            const teacherId = safeObjectKey(String(row?.teacherId || row?.userId || 'unknown').trim());
+            const mt = String(row?.materialType || 'unknown').trim();
+            if (!materialUploadsByTeacher[teacherId]) {
+                materialUploadsByTeacher[teacherId] = { teacherId, transcripts: 0, presentations: 0, notes: 0, bibliography: 0, total: 0 };
+            }
+            const key = uploadCounts[mt];
+            if (key) materialUploadsByTeacher[teacherId][key] += 1;
+            materialUploadsByTeacher[teacherId].total += 1;
+            continue;
+        }
+
+        // Only aggregate cost for rows with token data (RAG interactions)
+        const hasTokens = Number(row?.promptTokens || 0) > 0 || Number(row?.completionTokens || 0) > 0;
+        if (!hasTokens) continue;
 
         const bucket = buckets.get(iso);
         const promptTokens = Number(row?.promptTokens || 0);
         const completionTokens = Number(row?.completionTokens || 0);
         const totalTokens = Number(row?.totalTokens || 0);
         const userId = String(row?.userId || '').trim();
+        const subjectId = String(row?.subjectId || '').trim();
 
         bucket.promptTokens += Number.isFinite(promptTokens) ? promptTokens : 0;
         bucket.completionTokens += Number.isFinite(completionTokens) ? completionTokens : 0;
@@ -96,6 +142,21 @@ async function computeDirectorMetrics(context, requestedDays = POWERBI_DEFAULT_D
         if (userId && userId !== 'anonymous') {
             bucket._users.add(userId);
             uniqueUsersWindow.add(userId);
+        }
+
+        if (subjectId) {
+            const safeSubjectId = safeObjectKey(subjectId);
+            subjectNames[safeSubjectId] = row?.subjectName || subjectId;
+            const subKey = `${iso}::${safeSubjectId}`;
+            if (!subjectBuckets.has(subKey)) {
+                subjectBuckets.set(subKey, createSubjectDailyBucket(iso, safeSubjectId));
+            }
+            const sb = subjectBuckets.get(subKey);
+            sb.promptTokens += Number.isFinite(promptTokens) ? promptTokens : 0;
+            sb.completionTokens += Number.isFinite(completionTokens) ? completionTokens : 0;
+            sb.totalTokens += Number.isFinite(totalTokens) ? totalTokens : 0;
+            sb.ragInteractions += 1;
+            if (userId && userId !== 'anonymous') sb._users.add(userId);
         }
     }
 
@@ -125,6 +186,46 @@ async function computeDirectorMetrics(context, requestedDays = POWERBI_DEFAULT_D
         ? Math.round(((latest.totalCost - previous.totalCost) / previous.totalCost) * 100)
         : (latest.totalCost > 0 ? 100 : 0);
 
+    const subjectGroups = new Map();
+    for (const [key, sb] of subjectBuckets) {
+        const sid = sb.subjectId;
+        if (!subjectGroups.has(sid)) subjectGroups.set(sid, []);
+        subjectGroups.get(sid).push({
+            date: sb.date,
+            cost: Number((computeInputCost(sb.promptTokens) + computeOutputCost(sb.completionTokens)).toFixed(6)),
+            ragInteractions: sb.ragInteractions,
+        });
+    }
+
+    const costBySubject = Array.from(subjectGroups.entries()).map(([sid, dailyCosts]) => ({
+        subjectId: sid,
+        subjectName: subjectNames[sid] || sid,
+        dailyCost: dailyCosts.sort((a, b) => a.date.localeCompare(b.date)),
+    }));
+
+    const now = new Date();
+    const weekStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - now.getUTCDay()));
+    const weekStartIso = toIsoDate(weekStart);
+
+    const prevWeekStart = new Date(weekStart);
+    prevWeekStart.setUTCDate(prevWeekStart.getUTCDate() - 7);
+    const prevWeekStartIso = toIsoDate(prevWeekStart);
+
+    const wausBySubject = {};
+    for (const [key, sb] of subjectBuckets) {
+        const sid = safeObjectKey(sb.subjectId);
+        if (!wausBySubject[sid]) {
+            wausBySubject[sid] = { subjectId: sid, subjectName: subjectNames[sid] || sid, currentWeek: new Set(), previousWeek: new Set() };
+        }
+        if (sb.date >= weekStartIso) {
+            sb._users.forEach(u => wausBySubject[sid].currentWeek.add(u));
+        } else if (sb.date >= prevWeekStartIso && sb.date < weekStartIso) {
+            sb._users.forEach(u => wausBySubject[sid].previousWeek.add(u));
+        }
+    }
+
+    const byTeacher = Object.values(materialUploadsByTeacher);
+
     return {
         updatedAt: new Date().toISOString(),
         windowDays: days,
@@ -143,7 +244,86 @@ async function computeDirectorMetrics(context, requestedDays = POWERBI_DEFAULT_D
             ragInteractions: `${ragDelta >= 0 ? '+' : ''}${ragDelta}%`,
             cost: `${costDelta >= 0 ? '+' : ''}${costDelta}%`,
         },
+        costBySubject,
+        wausBySubject: Object.values(wausBySubject).map(w => ({
+            subjectId: w.subjectId,
+            subjectName: w.subjectName,
+            currentWeek: w.currentWeek.size,
+            previousWeek: w.previousWeek.size,
+        })),
+        materialUploads: {
+            byTeacher,
+        },
+        _rawRows: rows,
     };
+}
+
+function computeBudgetProjection(daily) {
+    const now = new Date();
+    const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const year = todayUtc.getUTCFullYear();
+    const month = todayUtc.getUTCMonth();
+    const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+    const daysElapsed = todayUtc.getUTCDate();
+    const daysRemaining = daysInMonth - daysElapsed;
+
+    let currentMonthSpend = 0;
+    const monthStartIso = `${String(year).padStart(4, '0')}-${String(month + 1).padStart(2, '0')}`;
+    for (const d of daily) {
+        if (d.date.startsWith(monthStartIso)) {
+            currentMonthSpend += d.totalCost;
+        }
+    }
+
+    const avgDailyCost = currentMonthSpend / Math.max(daysElapsed, 1);
+
+    // Weekend-aware projection: count weekdays and weekends separately
+    let weekdayRemaining = 0;
+    let weekendRemaining = 0;
+    for (let i = 1; i <= daysRemaining; i++) {
+        const checkDate = new Date(Date.UTC(year, month, daysElapsed + i));
+        const dayOfWeek = checkDate.getUTCDay();
+        if (dayOfWeek === 0 || dayOfWeek === 6) {
+            weekendRemaining++;
+        } else {
+            weekdayRemaining++;
+        }
+    }
+
+    // Weekend activity is ~60% of weekday (0.6 factor)
+    const WEEKEND_ACTIVITY_FACTOR = 0.6;
+    const projectedRemaining = (weekdayRemaining * avgDailyCost) + (weekendRemaining * avgDailyCost * WEEKEND_ACTIVITY_FACTOR);
+    const projectedEndOfMonth = currentMonthSpend + projectedRemaining;
+
+    const percentUsed = (projectedEndOfMonth / MONTHLY_BUDGET) * 100;
+    const remainingBudget = Math.max(0, MONTHLY_BUDGET - currentMonthSpend);
+
+    return {
+        monthlyLimit: MONTHLY_BUDGET,
+        currentSpend: Number(currentMonthSpend.toFixed(6)),
+        projectedEndOfMonth: Number(projectedEndOfMonth.toFixed(6)),
+        remainingBudget: Number(remainingBudget.toFixed(6)),
+        percentUsed: Number(percentUsed.toFixed(1)),
+        warningLevel: percentUsed >= 95 ? 'critical' : percentUsed >= 80 ? 'warning' : 'none',
+    };
+}
+
+function computeCostSpikeAlert(daily) {
+    if (daily.length < 8) return null;
+    const today = daily[daily.length - 1];
+    const sevenDaySlice = daily.slice(daily.length - 8, daily.length - 1);
+    const avgCost = sevenDaySlice.reduce((sum, d) => sum + d.avgCostPerInteraction, 0) / sevenDaySlice.length;
+    if (avgCost <= 0 || today.avgCostPerInteraction <= avgCost * 2) return null;
+    const delta = Math.round(((today.avgCostPerInteraction - avgCost) / avgCost) * 100);
+    return { detected: true, delta, todayAvg: today.avgCostPerInteraction, sevenDayAvg: avgCost };
+}
+
+function safeObjectKey(key) {
+    if (typeof key !== 'string') return String(key || '');
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+        return `_${key}`;
+    }
+    return key;
 }
 
 function normalizeStringArray(value) {
@@ -308,7 +488,7 @@ app.http('get-subjects', {
                 filteredSubjects = allSubjects.filter(s => !s.group || groups.includes(s.group));
             }
         } catch (enrollmentErr) {
-            context.warn(`[get-subjects] Enrollment lookup failed, falling back to group filtering: ${enrollmentErr.message}`);
+            context.log.warn(`[get-subjects] Enrollment lookup failed, falling back to group filtering: ${enrollmentErr.message}`);
             // Fallback: group-based filtering
             if (principal && !isTeacher && !isDirector) {
                 filteredSubjects = allSubjects.filter(s => !s.group || groups.includes(s.group));
@@ -334,7 +514,7 @@ app.http('save-subject', {
 
         const principal = parseClientPrincipal(request);
         if (!canManageSubjects(principal)) {
-            context.warn(`Unauthorized attempt to save subject. User: ${principal?.userDetails || 'Anonymous'}. Roles: ${principal?.userRoles?.join(',') || 'None'}`);
+            context.log.warn(`Unauthorized attempt to save subject. User: ${principal?.userDetails || 'Anonymous'}. Roles: ${principal?.userRoles?.join(',') || 'None'}`);
             return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Director access required' }) };
         }
 
@@ -388,7 +568,7 @@ app.http('delete-subject', {
 
         const principal = parseClientPrincipal(request);
         if (!canManageSubjects(principal)) {
-            context.warn(`Unauthorized attempt to delete subject ${subjectId || 'unknown'}. User: ${principal?.userDetails || 'Anonymous'}. Roles: ${principal?.userRoles?.join(',') || 'None'}`);
+            context.log.warn(`Unauthorized attempt to delete subject ${subjectId || 'unknown'}. User: ${principal?.userDetails || 'Anonymous'}. Roles: ${principal?.userRoles?.join(',') || 'None'}`);
             return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Director access required' }) };
         }
 
@@ -491,7 +671,7 @@ app.http('get-classes', {
             try {
                 const enrollment = await getEnrollment(subjectId, userId);
                 if (!enrollment || enrollment.status !== 'active') {
-                    context.warn(`[get-classes] Unauthorized access attempt: User ${userId} is not enrolled in ${subjectId}`);
+                    context.log.warn(`[get-classes] Unauthorized access attempt: User ${userId} is not enrolled in ${subjectId}`);
                     return {
                         status: 403,
                         headers: { 'Content-Type': 'application/json' },
@@ -553,7 +733,7 @@ app.http('get-classes', {
             context.log(`[get-classes] Joining ${classesConfig.length} classes with ${materials.length} materials for subject ${subjectId}`);
 
             const resultClasses = classesConfig.map(c => {
-                if (!c.date) context.warn(`[get-classes] Class ${c.id} ("${c.title}") is missing the date field.`);
+                if (!c.date) context.log.warn(`[get-classes] Class ${c.id} ("${c.title}") is missing the date field.`);
                 return { 
                     ...c, 
                     materials: [], 
@@ -587,7 +767,7 @@ app.http('get-classes', {
                         cls.materials.push(matSafe);
                         context.log(`[get-classes]   -> Successfully linked material ${matSafe.id} to class ${cid}`);
                     } else {
-                        context.warn(`[get-classes]   -> Warning: Material ${matSafe.id} refers to non-existent class ${cid}`);
+                        context.log.warn(`[get-classes]   -> Warning: Material ${matSafe.id} refers to non-existent class ${cid}`);
                     }
                 }
             }
@@ -630,7 +810,7 @@ app.http('get-material-status', {
             try {
                 const enrollment = await getEnrollment(subjectId, userId);
                 if (!enrollment || enrollment.status !== 'active') {
-                    context.warn(`[get-material-status] Unauthorized access attempt: User ${userId} is not enrolled in ${subjectId}`);
+                    context.log.warn(`[get-material-status] Unauthorized access attempt: User ${userId} is not enrolled in ${subjectId}`);
                     return {
                         status: 403,
                         headers: { 'Content-Type': 'application/json' },
@@ -700,7 +880,7 @@ app.http('get-material-status-batch', {
             try {
                 const enrollment = await getEnrollment(subjectId, userId);
                 if (!enrollment || enrollment.status !== 'active') {
-                    context.warn(`[get-material-status-batch] Unauthorized access attempt: User ${userId} is not enrolled in ${subjectId}`);
+                    context.log.warn(`[get-material-status-batch] Unauthorized access attempt: User ${userId} is not enrolled in ${subjectId}`);
                     return {
                         status: 403,
                         headers: { 'Content-Type': 'application/json' },
@@ -772,7 +952,7 @@ app.http('save-classes', {
             try {
                 const enrollment = await getEnrollment(subjectId, userId);
                 if (!enrollment || enrollment.role !== 'teacher' || enrollment.status !== 'active') {
-                    context.warn(`[save-classes] Unauthorized save attempt: User ${userId} is not an active teacher for ${subjectId}`);
+                    context.log.warn(`[save-classes] Unauthorized save attempt: User ${userId} is not an active teacher for ${subjectId}`);
                     return {
                         status: 403,
                         headers: { 'Content-Type': 'application/json' },
@@ -932,6 +1112,12 @@ app.http('get-director-stats', {
 
         context.log('get-director-stats triggered');
         const metrics = await computeDirectorMetrics(context, POWERBI_DEFAULT_DAYS);
+        const budget = computeBudgetProjection(metrics.daily);
+        const spikeAlert = computeCostSpikeAlert(metrics.daily);
+        const uniqueActiveUsers = metrics.totals.uniqueActiveUsers;
+        const currentPeriodCost = metrics.totals.totalCost;
+        const costPerActiveStudent = uniqueActiveUsers > 0 ? Number((currentPeriodCost / uniqueActiveUsers).toFixed(6)) : 0;
+
         const MOCK_STATS = {
             dau: metrics.latest.dau,
             dauDelta: metrics.deltas.dau,
@@ -962,6 +1148,12 @@ app.http('get-director-stats', {
                 windowDays: metrics.windowDays,
                 updatedAt: metrics.updatedAt,
             },
+            costBySubject: metrics.costBySubject,
+            wausBySubject: metrics.wausBySubject,
+            materialUploads: metrics.materialUploads,
+            budget,
+            spikeAlert,
+            costPerActiveStudent,
         };
         return { 
             status: 200, 
@@ -987,7 +1179,33 @@ app.http('get-director-powerbi-metrics', {
         }
 
         const days = request.query.get('days') || POWERBI_DEFAULT_DAYS;
+        const subjectId = request.query.get('subjectId') || '';
         const metrics = await computeDirectorMetrics(context, days);
+        const budget = computeBudgetProjection(metrics.daily);
+
+        let costByClass = [];
+        if (subjectId) {
+            const classGroups = {};
+            for (const row of metrics._rawRows || []) {
+                const sId = String(row?.subjectId || '').trim();
+                if (sId !== subjectId) continue;
+                const eventType = String(row?.eventType || '').trim();
+                if (eventType === 'material-upload') continue;
+                const hasTokens = Number(row?.promptTokens || 0) > 0 || Number(row?.completionTokens || 0) > 0;
+                if (!hasTokens) continue;
+                const cId = safeObjectKey(String(row?.classId || 'unknown').trim());
+                const cost = computeInputCost(Number(row?.promptTokens || 0)) + computeOutputCost(Number(row?.completionTokens || 0));
+                if (!classGroups[cId]) classGroups[cId] = { classId: cId, cost: 0, interactions: 0 };
+                classGroups[cId].cost += cost;
+                classGroups[cId].interactions += 1;
+            }
+            costByClass = Object.values(classGroups).map(c => ({
+                classId: c.classId,
+                cost: Number(c.cost.toFixed(6)),
+                interactions: c.interactions,
+            }));
+        }
+
         return {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
@@ -1015,6 +1233,9 @@ app.http('get-director-powerbi-metrics', {
                 updatedAt: metrics.updatedAt,
                 windowDays: metrics.windowDays,
                 daily: metrics.daily,
+                costBySubject: metrics.costBySubject,
+                costByClass,
+                projectedEndOfMonth: budget.projectedEndOfMonth,
             }),
         };
     }

@@ -52,7 +52,7 @@ app.http('get-teacher-analytics', {
                 if (process.env.AZURE_FUNCTIONS_ENVIRONMENT !== 'Development') {
                     const enrollment = await getEnrollment(subjectId, userId);
                     if (!enrollment || enrollment.role !== 'teacher' || enrollment.status !== 'active') {
-                        context.warn(`[Analytics] Unauthorized access: User ${userId} is not an active teacher for ${subjectId}`);
+                        context.log.warn(`[Analytics] Unauthorized access: User ${userId} is not an active teacher for ${subjectId}`);
                         return { status: 403, body: "Forbidden - You are not assigned to this subject" };
                     }
                 }

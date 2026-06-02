@@ -3,10 +3,12 @@ import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import busboy from 'busboy';
 import { PassThrough } from 'stream';
-import { uploadFile } from '../services/storage.js';
+import { uploadFile, saveMetricsToTable } from '../services/storage.js';
 import { upsertMaterialState, getEnrollment } from '../services/state-store.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
 import { getMaterialPriority } from '../services/material-classification.js';
+
+const SESSION_METRICS_TABLE = 'SessionMetrics';
 
 app.http('ingest-material', {
     methods: ['POST'],
@@ -34,7 +36,7 @@ app.http('ingest-material', {
                 try {
                     const enrollment = await getEnrollment(subjectId, userId);
                     if (!enrollment || enrollment.role !== 'teacher' || enrollment.status !== 'active') {
-                        context.warn(`[Ingest] Unauthorized upload attempt: User ${userId} is not an active teacher for subject ${subjectId}`);
+                        context.log.warn(`[Ingest] Unauthorized upload attempt: User ${userId} is not an active teacher for subject ${subjectId}`);
                         return {
                             status: 403,
                             headers: { 'Content-Type': 'application/json' },
@@ -53,7 +55,7 @@ app.http('ingest-material', {
             }
 
             if (!classIds || classIds.length === 0 || !subjectId || !materialType) {
-                context.warn(`[Ingest] Missing required fields: classIds=${classIds?.length}, subjectId=${!!subjectId}, materialType=${!!materialType}`);
+                context.log.warn(`[Ingest] Missing required fields: classIds=${classIds?.length}, subjectId=${!!subjectId}, materialType=${!!materialType}`);
                 return {
                     status: 400,
                     headers: { 'Content-Type': 'application/json' },
@@ -101,6 +103,23 @@ app.http('ingest-material', {
                     blobUrl,
                     status: 'processing'
                 });
+
+                try {
+                    await saveMetricsToTable(SESSION_METRICS_TABLE, {
+                        partitionKey: new Date().toISOString().slice(0, 10),
+                        rowKey: `${userId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                        eventType: 'material-upload',
+                        userId,
+                        teacherId: userId,
+                        subjectId,
+                        classId: classIds[0] || '',
+                        materialType,
+                        filename: fileName,
+                        timestamp: new Date().toISOString()
+                    });
+                } catch (metricsErr) {
+                    context.log.warn(`[Ingest] Non-fatal error writing material upload metric: ${metricsErr.message}`);
+                }
 
                 return {
                     status: 202,

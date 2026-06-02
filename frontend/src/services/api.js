@@ -216,6 +216,23 @@ const MOCK_DIRECTOR_STATS = {
         { name: 'Ing. de Software I', rate: 63 },
         { name: 'Sistemas Distribuidos', rate: 44 },
     ],
+    costBySubject: [
+        { subjectId: 'arq-software-2026', subjectName: 'Arq. de Software', dailyCost: [{ date: '2026-05-25', cost: 0.0023, ragInteractions: 12 }, { date: '2026-05-26', cost: 0.0018, ragInteractions: 9 }] },
+        { subjectId: 'diseno-bd-2026', subjectName: 'Diseño de BD', dailyCost: [{ date: '2026-05-25', cost: 0.0015, ragInteractions: 8 }, { date: '2026-05-26', cost: 0.0020, ragInteractions: 11 }] },
+    ],
+    wausBySubject: [
+        { subjectId: 'arq-software-2026', subjectName: 'Arq. de Software', currentWeek: 24, previousWeek: 20 },
+        { subjectId: 'diseno-bd-2026', subjectName: 'Diseño de BD', currentWeek: 18, previousWeek: 22 },
+    ],
+    materialUploads: {
+        byTeacher: [
+            { teacherId: 'doc-001', transcripts: 4, presentations: 3, notes: 2, bibliography: 1, total: 10 },
+            { teacherId: 'doc-002', transcripts: 2, presentations: 5, notes: 1, bibliography: 0, total: 8 },
+        ],
+    },
+    budget: { monthlyLimit: 97.50, currentSpend: 45.32, projectedEndOfMonth: 82.15, remainingBudget: 52.18, percentUsed: 84.3, warningLevel: 'warning' },
+    spikeAlert: null,
+    costPerActiveStudent: 0.87,
 };
 
 const MOCK_TEACHER_ANALYTICS = {
