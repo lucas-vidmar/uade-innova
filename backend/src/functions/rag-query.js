@@ -439,6 +439,7 @@ ${contextText}
                 classIds: m.metadata?.classIds,
                 chunkIndex: m.metadata?.chunkIndex,
                 sourceFilename: m.metadata?.sourceFilename,
+                slideTitle: m.metadata?.slideTitle,
                 score: Math.round(m.score * 100) / 100,
             }));
 
@@ -588,6 +589,7 @@ ${contextText}
             classIds: m.metadata?.classIds,
             chunkIndex: m.metadata?.chunkIndex,
             sourceFilename: m.metadata?.sourceFilename,
+            slideTitle: m.metadata?.slideTitle,
             score: Math.round(m.score * 100) / 100,
         }));
 

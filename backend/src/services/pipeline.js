@@ -2,7 +2,7 @@
  * services/pipeline.js — Orquestador del pipeline de RAG
  * Procesa un material (buffer + metadata) y lo indexa en Pinecone.
  */
-import { parseFile, chunkText, cleanText, extractTranscriptTimeline } from './parser.js';
+import { parseFile, chunkText, cleanText, extractTranscriptTimeline, extractPptxSlideTitles } from './parser.js';
 import { generateEmbeddingsBatch, generateClassSummary, generateClassMap } from './ai.js';
 import { upsertChunks, getIndexStats } from './vector-store.js';
 import { saveJson, loadJson } from './storage.js';
@@ -23,10 +23,11 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
     let totalTokens = 0;
     const lectureDateIso = new Date().toISOString();
     const openAiHeaders = buildDependencyHeaders(correlationId);
+    const mt = (materialType || '').toLowerCase();
 
     try {
         let extractedTimeline = null;
-        if (materialType === 'transcript') {
+        if (mt === 'transcript') {
             extractedTimeline = extractTranscriptTimeline(fileBuffer, fileContentType, fileName);
             context.log(`[Pipeline] Timeline detectada: ${extractedTimeline.markers.length} hit-points, ${extractedTimeline.sections.length} secciones`);
         }
@@ -35,6 +36,17 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
         context.log(`[Pipeline] Parseando archivo: ${fileName} (${fileContentType})`);
         const text = await parseFile(fileBuffer, fileContentType, fileName);
         context.log(`[Pipeline] Texto extraído: ${text.length} caracteres`);
+
+        // 1b. Extraer títulos de diapositiva si es presentación (Story 2.161)
+        let slideTitles = null;
+        if (mt === 'presentation') {
+            try {
+                slideTitles = extractPptxSlideTitles(fileBuffer);
+                context.log(`[Pipeline] Títulos extraídos: ${Object.keys(slideTitles || {}).length} diapositivas con título`);
+            } catch (titleErr) {
+                context.log.warn(`[Pipeline] No se pudieron extraer títulos (no bloqueante): ${titleErr.message}`);
+            }
+        }
 
         // 2. Dividir en chunks
         const chunks = chunkText(text, 512, 50);
@@ -46,6 +58,7 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
 
         // 3. Generar embeddings en batches y preparar vectores para Pinecone
         const vectors = [];
+        let lastSlideNumber = null;
         for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
             const currentBatch = chunks.slice(i, i + BATCH_SIZE);
             context.log(`[Pipeline] Vectorizando batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(chunks.length / BATCH_SIZE)} (${currentBatch.length} chunks)...`);
@@ -55,21 +68,29 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
 
             embeddings.forEach((embedding, index) => {
                 const chunkIndex = i + index;
+                const metadata = {
+                    subjectId,
+                    classId: classIds?.[0] || null,
+                    classIds,
+                    materialId,
+                    materialType,
+                    materialPriority: getMaterialPriority(mt),
+                    chunkIndex,
+                    sourceFilename: fileName,
+                    lectureDate: lectureDateIso,
+                    text: currentBatch[index],
+                };
+                // Adjuntar título de diapositiva si está disponible (Story 2.161)
+                const slideNumber = resolveSlideNumber(currentBatch[index]);
+                if (slideNumber !== null) lastSlideNumber = slideNumber;
+                const slideTitle = slideTitles?.[lastSlideNumber];
+                if (slideTitle) {
+                    metadata.slideTitle = slideTitle;
+                }
                 vectors.push({
                     id: `${materialId}-chunk-${chunkIndex}`,
                     values: embedding,
-                    metadata: {
-                        subjectId,
-                        classId: classIds?.[0] || null,
-                        classIds,
-                        materialId,
-                        materialType,
-                        materialPriority: getMaterialPriority(materialType),
-                        chunkIndex,
-                        sourceFilename: fileName,
-                        lectureDate: lectureDateIso,
-                        text: currentBatch[index],
-                    },
+                    metadata,
                 });
             });
         }
@@ -85,12 +106,11 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
             const stats = await getIndexStats();
             context.log(`[Pinecone Health] Index: ${vectorIndexName || 'n/a'} | totalVectorCount: ${stats.totalVectorCount} | indexFullness: ${(stats.indexFullness * 100).toFixed(2)}%`);
         } catch (statsErr) {
-            const warn = typeof context.warn === 'function' ? context.warn.bind(context) : context.log.bind(context);
-            warn(`[Pinecone Health] No se pudo obtener stats del índice: ${statsErr.message}`);
+            context.log.warn(`[Pinecone Health] No se pudo obtener stats del índice: ${statsErr.message}`);
         }
 
         // 5. Generar resumen y mapa conceptual si es un tipo de material rico en texto
-        if (materialType === 'transcript' || materialType === 'notes') {
+        if (mt === 'transcript' || mt === 'notes') {
             context.log(`[Pipeline] Generando activos IA (resumen y mapa) para material ${materialId}...`);
             try {
                 // Ejecutamos en paralelo para optimizar tiempo
@@ -155,7 +175,7 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
         });
         context.log(`[Pipeline] Estado guardado: processed/${materialId}.json (ready)`);
 
-        if (materialType === 'transcript' && extractedTimeline) {
+        if (mt === 'transcript' && extractedTimeline) {
             for (const classId of classIds) {
                 const timelineBlob = `${classId}.json`;
                 const existingTimeline = await loadJson('class-timelines', timelineBlob) || {
@@ -247,4 +267,16 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
             context.error('[Pipeline] No se pudo guardar el estado de error:', saveErr);
         }
     }
+}
+
+/**
+ * Extrae el número de diapositiva del marcador [Diapositiva N] en un chunk.
+ * @param {string} chunkText
+ * @returns {number|null}
+ */
+function resolveSlideNumber(chunkText) {
+    if (!chunkText) return null;
+    const match = chunkText.match(/\[Diapositiva (\d+)\]/);
+    if (!match) return null;
+    return Number(match[1]);
 }

@@ -335,6 +335,66 @@ function extractPptxText(buffer) {
     }
 }
 
+/**
+ * Extrae un mapping de { slideNumber: titleText } desde un buffer PPTX.
+ * Detecta placeholders de título (type="title" o type="ctrTitle") en cada diapositiva.
+ * Solo extrae texto del shape que contiene el placeholder de título, ignorando body text.
+ * @param {Buffer} buffer - Buffer del archivo PPTX
+ * @returns {object} - Mapa { slideNumber: titleText }
+ */
+export function extractPptxSlideTitles(buffer) {
+    try {
+        const zip = new AdmZip(buffer);
+        const slideEntries = zip
+            .getEntries()
+            .filter(e => e.entryName.match(/^ppt\/slides\/slide\d+\.xml$/))
+            .sort((a, b) => extractSlideNumber(a.entryName) - extractSlideNumber(b.entryName));
+
+        const titleMap = {};
+        slideEntries.forEach((entry, index) => {
+            const xml = entry.getData().toString('utf-8');
+            const slideNumber = index + 1;
+
+            // Split into individual shapes (<p:sp ...>...</p:sp>)
+            const shapeRegex = /<p:sp\b[^>]*>[\s\S]*?<\/p:sp>/gi;
+            const shapes = [...xml.matchAll(shapeRegex)].map(m => m[0]);
+
+            for (const shape of shapes) {
+                const phRegex = /<p:ph\b([^>]*)>/i;
+                const phMatch = shape.match(phRegex);
+                if (!phMatch) continue;
+                const phAttrs = phMatch[1];
+                const phTypeMatch = phAttrs.match(/\btype=(?:"([^"]*)"|'([^']*)')/i);
+                const phType = phTypeMatch?.[1] || phTypeMatch?.[2];
+                const isTitle = !phType || phType === 'title' || phType === 'ctrTitle';
+                if (!isTitle) continue;
+
+                // Extract <a:t> text from the title shape only
+                const aTextMatches = [...shape.matchAll(/<a:t[^>]*>([^<]*)<\/a:t>/g)];
+                const titleText = aTextMatches
+                    .map(m => decodeXmlEntities(m[1]))
+                    .join(' ')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+
+                if (titleText) {
+                    titleMap[slideNumber] = titleText.slice(0, 256);
+                }
+                break; // Only one title per slide
+            }
+        });
+
+        return titleMap;
+    } catch (err) {
+        throw new CategorizedError(`Error extrayendo titulos de PPTX: ${err.message}`, {
+            errorCategory: ErrorCategory.PARSING,
+            code: err?.code || 'PPTX_TITLE_EXTRACT_ERROR',
+            status: 400,
+            cause: err,
+        });
+    }
+}
+
 function extractSlideNumber(entryName = '') {
     const match = String(entryName).match(/slide(\d+)\.xml$/);
     return Number.parseInt(match?.[1] || '0', 10);

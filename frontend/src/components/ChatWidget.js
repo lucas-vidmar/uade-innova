@@ -133,9 +133,9 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
             ${msg.sources?.length > 0 ? `
               <div class="chat-sources flex flex-wrap gap-2">
                 ${deduplicateSources(msg.sources).map(s => `
-                  <span class="source-chip bg-surface border border-border px-2 py-1 rounded text-[10px] flex items-center gap-1" title="${s.sourceFilename}">
+                  <span class="source-chip bg-surface border border-border px-2 py-1 rounded text-[10px] flex items-center gap-1" title="${s.slideTitle ? `${escapeHtml(s.slideTitle)} (${escapeHtml(s.sourceFilename)})` : escapeHtml(s.sourceFilename)}">
                     ${materialIcon(s.materialType)}
-                    <span class="truncate max-w-[120px]">${s.sourceFilename}</span>
+                    <span class="truncate max-w-[120px]">${escapeHtml(s.slideTitle || s.sourceFilename)}</span>
                   </span>
                 `).join('')}
               </div>
@@ -307,9 +307,9 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
               <div class="chat-sources">
                 <span class="chat-sources-label">Fuentes:</span>
                 ${deduplicateSources(assistantMsg.sources).map(s => `
-                  <span class="source-chip" title="${s.sourceFilename}">
+                  <span class="source-chip" title="${s.slideTitle ? `${escapeHtml(s.slideTitle)} (${escapeHtml(s.sourceFilename)})` : escapeHtml(s.sourceFilename)}">
                     ${materialIcon(s.materialType)}
-                    ${s.sourceFilename}
+                    ${escapeHtml(s.slideTitle || s.sourceFilename)}
                   </span>
                 `).join('')}
               </div>
@@ -440,7 +440,7 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
     if (!Array.isArray(sources)) return [];
     const seen = new Set();
     return sources.filter(s => {
-      const key = s.sourceFilename || s.materialId || JSON.stringify(s);
+      const key = `${s.sourceFilename}|${s.chunkIndex ?? ''}` || s.materialId || JSON.stringify(s);
       if (seen.has(key)) return false;
       seen.add(key);
       return true;

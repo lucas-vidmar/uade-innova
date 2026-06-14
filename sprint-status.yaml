@@ -7,8 +7,8 @@
 #     para reflejar cambios de estado. Usar `bmad-sprint-planning` para
 #     regenerarlo desde GitHub.
 # =============================================================================
-# generated: 2026-05-10 14:14:45
-# last_updated: 2026-05-10 14:14:45
+# generated: 2026-06-05
+# last_updated: 2026-06-05
 # project: UADE Innova Dashboard Educativo
 # project_key: UADE-EDU
 # tracking_system: github-issues
@@ -32,8 +32,8 @@
 #   - optional: Can be completed but not required
 #   - done: Retrospective has been completed
 
-generated: "2026-05-10 14:14:45"
-last_updated: "2026-05-12 15:00:00"
+generated: "2026-06-05"
+last_updated: "2026-06-14"
 project: "UADE Innova Dashboard Educativo"
 project_key: "UADE-EDU"
 tracking_system: "github-issues"
@@ -59,8 +59,8 @@ development_status:
   2-154-teacher-override-for-material-priority: done
   2-155-backfill-material-priority-for-existing-: done
   2-156-reindex-historical-vectors-with-new-clas: done
-  2-160-add-exact-classid-retrieval-filter-path-: in-progress
-  2-161-slide-title-metadata-extraction-for-pptx: backlog
+  2-160-add-exact-classid-retrieval-filter-path-: done
+  2-161-slide-title-metadata-extraction-for-pptx: in-progress
   2-164-featteacher-show-actionable-ingestion-er: backlog
   2-165-featteacher-sync-ingestion-tracking-stat: backlog
   2-41-source-only-grounding-mode: done
@@ -75,7 +75,7 @@ development_status:
   3-126-rag-retrieval-mix-telemetry: backlog
   3-127-configurable-rag-source-weighting-by-sub: backlog
   3-128-rag-context-diversity-guardrail: backlog
-  3-160-add-exact-classid-retrieval-filter-path-: backlog
+  3-160-add-exact-classid-retrieval-filter-path-: done
   3-169-context-selection-guardrail-for-large-cl: backlog
   3-170-track-selectedclasscount-in-rag-telemetr: backlog
   3-171-improve-empty-class-selection-ux-hint-in: backlog
@@ -91,7 +91,7 @@ development_status:
 
   # Observabilidad y Metricas
   epic-4: backlog
-  4-135-teacher-ai-feedback-alerts-filtering-by-: backlog
+  4-135-teacher-ai-feedback-alerts-filtering-by-: done
   4-136-ai-feedback-alerts-lifecycle-management: backlog
   4-137-proactive-escalation-for-repeated-ai-qua: backlog
   4-72-anomalous-usage-alerts: done
@@ -126,9 +126,9 @@ development_status:
   6-142-configurable-risk-thresholds-per-subject: backlog
   6-143-director-intervention-workflow-states-an: backlog
   6-145-export-anonymized-director-kpi-snapshots: backlog
-  6-157-cost-analytics-by-subject-and-class: backlog
-  6-158-cost-per-interaction-spike-alerts: backlog
-  6-159-director-dashboard-projected-month-end-a: backlog
+  6-157-cost-analytics-by-subject-and-class: done
+  6-158-cost-per-interaction-spike-alerts: done
+  6-159-director-dashboard-projected-month-end-a: done
   6-16-api-rate-limiting--ddos-protection: done
   6-176-director-archive-tier-usage-dashboard-by: backlog
   6-177-retention-compliance-snapshot-api: backlog

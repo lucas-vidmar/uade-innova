@@ -77,6 +77,12 @@ const telemetryMocks = {
     trackRAGInteraction: mock.fn(async () => {}),
 };
 
+const stateStoreMocks = {
+    getEnrollment: mock.fn(async () => ({ status: 'active' })),
+    getConsentStatus: mock.fn(async () => true),
+    listMaterialsBySubject: mock.fn(async () => []),
+};
+
 // Mock dependencies
 mock.module('../services/ai.js', { namedExports: openaiMocks });
 mock.module('../services/vector-store.js', { namedExports: vectorStoreMocks });
@@ -84,6 +90,7 @@ mock.module('../services/storage.js', { namedExports: storageMocks });
 mock.module('../services/prompts.js', { namedExports: promptsMocks });
 mock.module('../services/auth-utils.js', { namedExports: authUtilsMocks });
 mock.module('../services/telemetry.js', { namedExports: telemetryMocks });
+mock.module('../services/state-store.js', { namedExports: stateStoreMocks });
 
 // Mock @azure/functions to capture the handler
 let capturedHandler;
@@ -484,4 +491,75 @@ test('rag-query should expose material priority in returned sources', async () =
     const body = JSON.parse(response.body);
     assert.strictEqual(body.sources[0].materialPriority, 'primary');
     assert.strictEqual(body.sources[1].materialPriority, 'secondary');
+});
+
+test('rag-query should include slideTitle in sources when metadata contains it', async () => {
+    vectorStoreMocks.querySimilar.mock.mockImplementationOnce(async () => [
+        {
+            id: 'ppt-chunk-1',
+            score: 0.95,
+            metadata: {
+                sourceFilename: 'clase.pptx',
+                text: '[Diapositiva 1]\nArquitectura Hexagonal',
+                materialType: 'presentation',
+                materialPriority: 'secondary',
+                slideTitle: 'Arquitectura Hexagonal',
+                classIds: ['class1'],
+                chunkIndex: 0,
+            },
+        },
+    ]);
+
+    const mockContext = {
+        log: mock.fn(),
+        error: mock.fn(),
+    };
+
+    const mockRequest = {
+        json: async () => ({
+            question: 'Explicame la arquitectura',
+            subjectId: 'materia1',
+            classIds: ['class1'],
+        }),
+        user: { id: 'test-user' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.sources[0].slideTitle, 'Arquitectura Hexagonal');
+});
+
+test('rag-query should not break when slideTitle is missing in metadata', async () => {
+    vectorStoreMocks.querySimilar.mock.mockImplementationOnce(async () => [
+        {
+            id: 'note-1',
+            score: 0.9,
+            metadata: {
+                sourceFilename: 'apuntes.md',
+                text: 'Contenido de apuntes',
+                materialType: 'notes',
+                materialPriority: 'primary',
+                classIds: ['class1'],
+                chunkIndex: 0,
+            },
+        },
+    ]);
+
+    const mockContext = {
+        log: mock.fn(),
+        error: mock.fn(),
+    };
+
+    const mockRequest = {
+        json: async () => ({
+            question: 'Que dicen los apuntes?',
+            subjectId: 'materia1',
+            classIds: ['class1'],
+        }),
+        user: { id: 'test-user' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.sources[0].slideTitle, undefined);
 });

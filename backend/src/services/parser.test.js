@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { chunkText, cleanTranscript, cleanText, extractTranscriptTimeline, parseFile } from './parser.js';
+import { chunkText, cleanTranscript, cleanText, extractTranscriptTimeline, parseFile, extractPptxSlideTitles } from './parser.js';
 import { getEncoding } from 'js-tiktoken';
 import AdmZip from 'adm-zip';
 
@@ -196,4 +196,117 @@ test('parseFile includes slide tag even when slide has no extractable text', asy
 
     assert.match(parsed, /\[Diapositiva 1\]/);
     assert.match(parsed, /\[Diapositiva 2\]/);
+});
+
+// ─── extractPptxSlideTitles tests ──────────────────────────────────────
+
+function buildTitleSlideXml(titleText, titleType = 'title') {
+    return `<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:sp>
+    <p:nvSpPr>
+      <p:cNvPr id="2" name="Title 1"/>
+      <p:nvPr>
+        <p:ph type="${titleType}"/>
+      </p:nvPr>
+    </p:nvSpPr>
+    <p:txBody>
+      <a:bodyPr/>
+      <a:lstStyle/>
+      <a:p>
+        <a:r>
+          <a:t>${titleText}</a:t>
+        </a:r>
+      </a:p>
+    </p:txBody>
+  </p:sp>
+  <p:sp>
+    <p:nvSpPr>
+      <p:cNvPr id="3" name="Content Placeholder 2"/>
+      <p:nvPr>
+        <p:ph type="body"/>
+      </p:nvPr>
+    </p:nvSpPr>
+    <p:txBody>
+      <a:p>
+        <a:r>
+          <a:t>Body text that must NOT appear in title</a:t>
+        </a:r>
+      </a:p>
+    </p:txBody>
+  </p:sp>
+</p:sld>`;
+}
+
+function buildNoTitleSlideXml() {
+    return `<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:sp>
+    <p:nvSpPr>
+      <p:cNvPr id="3" name="Content Placeholder 2"/>
+      <p:nvPr>
+        <p:ph type="body"/>
+      </p:nvPr>
+    </p:nvSpPr>
+    <p:txBody>
+      <a:p>
+        <a:r>
+          <a:t>Slide with no title</a:t>
+        </a:r>
+      </a:p>
+    </p:txBody>
+  </p:sp>
+</p:sld>`;
+}
+
+test('extractPptxSlideTitles extracts title from type="title" placeholder', () => {
+    const buffer = buildPptxBuffer([
+        { slideNumber: 1, xml: buildTitleSlideXml('Arquitectura Hexagonal', 'title') },
+    ]);
+    const titles = extractPptxSlideTitles(buffer);
+    assert.deepStrictEqual(titles, { 1: 'Arquitectura Hexagonal' });
+});
+
+test('extractPptxSlideTitles extracts title from type="ctrTitle" placeholder', () => {
+    const buffer = buildPptxBuffer([
+        { slideNumber: 1, xml: buildTitleSlideXml('Bienvenidos', 'ctrTitle') },
+    ]);
+    const titles = extractPptxSlideTitles(buffer);
+    assert.deepStrictEqual(titles, { 1: 'Bienvenidos' });
+});
+
+test('extractPptxSlideTitles omits slides with no title placeholder', () => {
+    const buffer = buildPptxBuffer([
+        { slideNumber: 1, xml: buildTitleSlideXml('Titulo', 'title') },
+        { slideNumber: 2, xml: buildNoTitleSlideXml() },
+    ]);
+    const titles = extractPptxSlideTitles(buffer);
+    assert.deepStrictEqual(titles, { 1: 'Titulo' });
+});
+
+test('extractPptxSlideTitles decodes XML entities in titles', () => {
+    const buffer = buildPptxBuffer([
+        { slideNumber: 1, xml: buildTitleSlideXml('Arquitectura &amp; Patrones', 'title') },
+    ]);
+    const titles = extractPptxSlideTitles(buffer);
+    assert.strictEqual(titles[1], 'Arquitectura & Patrones');
+});
+
+test('extractPptxSlideTitles does NOT include body text as title', () => {
+    const buffer = buildPptxBuffer([
+        { slideNumber: 1, xml: buildTitleSlideXml('Solo Titulo', 'title') },
+    ]);
+    const titles = extractPptxSlideTitles(buffer);
+    assert.strictEqual(titles[1], 'Solo Titulo');
+    assert.ok(!Object.values(titles).some(v => v.includes('Body text')));
+});
+
+test('extractPptxSlideTitles handles mixed slides with and without titles', () => {
+    const buffer = buildPptxBuffer([
+        { slideNumber: 1, xml: buildTitleSlideXml('Introduccion', 'title') },
+        { slideNumber: 2, xml: buildNoTitleSlideXml() },
+        { slideNumber: 3, xml: buildTitleSlideXml('Conclusion', 'title') },
+    ]);
+    const titles = extractPptxSlideTitles(buffer);
+    assert.strictEqual(titles[1], 'Introduccion');
+    assert.strictEqual(titles[3], 'Conclusion');
+    assert.strictEqual(Object.keys(titles).length, 2);
 });

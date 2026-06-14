@@ -9,7 +9,8 @@ const parserMocks = {
     extractTranscriptTimeline: mock.fn(() => ({
         sections: [{ id: 'sec-001', startSecond: 0, endSecond: 60, timestampLabel: '00:00:00', text: 'mock section' }],
         markers: [{ id: 'mk-001', sectionId: 'sec-001', startSecond: 0, endSecond: 60, iconType: 'question', label: 'mock marker' }],
-    }))
+    })),
+    extractPptxSlideTitles: mock.fn(() => ({})),
 };
 
 const openaiMocks = {
@@ -157,4 +158,80 @@ test('runPipeline should index required metadata including classId and ISO lectu
     const parsedLectureDate = Date.parse(firstMetadata.lectureDate);
     assert.ok(Number.isFinite(parsedLectureDate), 'lectureDate should be parseable date');
     assert.strictEqual(new Date(firstMetadata.lectureDate).toISOString(), firstMetadata.lectureDate, 'lectureDate should be ISO 8601');
+});
+
+test('runPipeline attaches slideTitle to vector metadata for presentation materials', async () => {
+    vectorStoreMocks.upsertChunks.mock.resetCalls();
+
+    // Configurar mocks para simular una presentación con títulos
+    parserMocks.chunkText.mock.mockImplementation(() => [
+        '[Diapositiva 1]\nArquitectura Hexagonal: conceptos clave',
+        '[Diapositiva 1]\nDefinición y principios',
+    ]);
+    parserMocks.extractPptxSlideTitles.mock.mockImplementation(() => ({
+        1: 'Arquitectura Hexagonal',
+    }));
+
+    const mockContext = {
+        log: mock.fn(),
+        warn: mock.fn(),
+        error: mock.fn(),
+    };
+
+    await runPipeline({
+        fileBuffer: Buffer.from('fake-pptx'),
+        fileContentType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        fileName: 'clase.pptx',
+        classIds: ['class-pptx-01'],
+        subjectId: 'subject-pptx-01',
+        materialType: 'presentation',
+        materialId: 'mat-pptx-01',
+        blobUrl: 'http://test',
+    }, mockContext);
+
+    assert.strictEqual(vectorStoreMocks.upsertChunks.mock.callCount(), 1, 'Should upsert vectors once');
+    const vectors = vectorStoreMocks.upsertChunks.mock.calls[0].arguments[0];
+    assert.ok(Array.isArray(vectors) && vectors.length > 0, 'Should send at least one vector');
+
+    // Verificar que extractPptxSlideTitles fue llamado
+    const titleFnCalls = parserMocks.extractPptxSlideTitles.mock.calls;
+    assert.strictEqual(titleFnCalls.length, 1, 'extractPptxSlideTitles should be called for presentation');
+
+    // Verificar que slideTitle está presente en los vectores
+    for (const vector of vectors) {
+        assert.strictEqual(vector.metadata.slideTitle, 'Arquitectura Hexagonal',
+            `Vector ${vector.id} should have slideTitle`);
+    }
+
+    const errorCalls = mockContext.error.mock.calls;
+    assert.strictEqual(errorCalls.length, 0, 'No errors should be logged');
+});
+
+test('runPipeline does not include slideTitle for non-presentation materials', async () => {
+    vectorStoreMocks.upsertChunks.mock.resetCalls();
+    parserMocks.chunkText.mock.mockImplementation(() => ['chunk 1', 'chunk 2']);
+    parserMocks.extractPptxSlideTitles.mock.mockImplementation(() => ({}));
+
+    const mockContext = {
+        log: mock.fn(),
+        warn: mock.fn(),
+        error: mock.fn(),
+    };
+
+    await runPipeline({
+        fileBuffer: Buffer.from('test'),
+        fileContentType: 'text/plain',
+        fileName: 'notes.txt',
+        classIds: ['class-notes-01'],
+        subjectId: 'subject-notes-01',
+        materialType: 'notes',
+        materialId: 'mat-notes-01',
+        blobUrl: 'http://test',
+    }, mockContext);
+
+    const vectors = vectorStoreMocks.upsertChunks.mock.calls[0].arguments[0];
+    for (const vector of vectors) {
+        assert.strictEqual(vector.metadata.slideTitle, undefined,
+            `Vector ${vector.id} should NOT have slideTitle for non-presentation`);
+    }
 });
