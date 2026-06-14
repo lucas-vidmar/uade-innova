@@ -1,6 +1,6 @@
 import { app } from '@azure/functions';
 import { getIndexStats } from '../services/vector-store.js';
-import { validateFrontDoorId } from '../services/auth-utils.js';
+import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
 
 app.http('vector-health', {
     methods: ['GET'],
@@ -9,6 +9,13 @@ app.http('vector-health', {
     handler: async (request, context) => {
         if (!validateFrontDoorId(request)) {
             return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+        }
+
+        // Restrict to authenticated users (teachers and directors)
+        const principal = parseClientPrincipal(request);
+        const roles = principal?.userRoles || [];
+        if (!roles.includes('Docente') && !roles.includes('Director') && !roles.includes('authenticated')) {
+            return { status: 403, body: JSON.stringify({ error: 'Forbidden - Authentication required' }) };
         }
 
         try {

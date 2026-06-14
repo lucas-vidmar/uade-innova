@@ -98,6 +98,9 @@ var workbookName = guid(resourceGroup().id, 'cost-per-interaction-workbook')
 var anomalousUsageAlertName = 'alert-anomalous-token-usage-${take(resourceToken, 8)}'
 var anomalousUsageActionGroupName = 'ag-token-usage-${take(resourceToken, 8)}'
 
+// SWA hostname follows the pattern: <name>.azurestaticapps.net
+var expectedCorsOrigin = 'https://${staticWebAppName}.azurestaticapps.net'
+
 // Storage account: max 24 chars, no hyphens
 var safeStorageName = take(replace(storageAccountName, '-', ''), 24)
 
@@ -150,8 +153,6 @@ module keyVault './modules/keyvault.bicep' = {
   }
 }
 
-
-
 // ─── Module: Azure Functions (Consumption Plan — sin VM quota) ────
 // Plan Y1/Dynamic: pago por ejecución, escala a 0, sin reserva de VM.
 module functions './modules/functions.bicep' = {
@@ -163,7 +164,6 @@ module functions './modules/functions.bicep' = {
     storageAccountName: safeStorageName
     appInsightsConnectionString: appInsights.outputs.connectionString
     openAiEndpoint: openAi.outputs.endpoint
-    openAiAccountId: openAi.outputs.accountId
     openAiChatDeployment: openAi.outputs.chatDeploymentName
     openAiEmbeddingDeployment: openAi.outputs.embeddingDeploymentName
     openAiTtsDeployment: openAi.outputs.ttsDeploymentName
@@ -178,6 +178,7 @@ module functions './modules/functions.bicep' = {
     classesTableName: storage.outputs.classesTableName
     enrollmentsTableName: storage.outputs.enrollmentsTableName
     storageAccountId: storage.outputs.accountId
+    allowedCorsOrigin: expectedCorsOrigin
     tags: tags
   }
 }

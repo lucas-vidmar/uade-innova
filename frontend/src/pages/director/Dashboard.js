@@ -45,7 +45,7 @@ export async function renderDirectorDashboard(container) {
 
     container.innerHTML = `
     ${budget.warningLevel && budget.warningLevel !== 'none' ? `
-      <div class="${budgetBannerClass}" style="padding:var(--space-4);margin-bottom:var(--space-6);border-radius:var(--radius-md);font-weight:600;display:flex;align-items:center;gap:var(--space-3)">
+      <div class="${budgetBannerClass}" style="padding:var(--space-4);margin-bottom:var(--space-6);border-radius:var(--radius-md);font-weight:600;display:flex;align-items:center;gap:var(--space-3);background:${budget.warningLevel === 'critical' ? 'var(--color-error-bg, #fef2f2)' : 'var(--color-warning-bg, #fffbeb)'};color:${budget.warningLevel === 'critical' ? 'var(--color-error, #dc2626)' : 'var(--color-warning, #d97706)'};border:1px solid ${budget.warningLevel === 'critical' ? 'var(--color-error, #dc2626)' : 'var(--color-warning, #d97706)'}">
         <span>${budgetIcon}</span>
         <span>${budgetText}</span>
       </div>
@@ -141,7 +141,7 @@ export async function renderDirectorDashboard(container) {
           <tbody id="teacher-uploads-body">
             ${materialUploads.byTeacher.sort((a, b) => b.total - a.total).map(t => `
               <tr>
-                <td><strong>${t.teacherId}</strong></td>
+                <td><strong>${escapeHtml(t.teacherId)}</strong></td>
                 <td>${t.transcripts}</td>
                 <td>${t.presentations}</td>
                 <td>${t.notes}</td>
@@ -255,15 +255,24 @@ export async function renderDirectorDashboard(container) {
     }
 
     // Window resize handler for charts
+    if (window._dashboardResizeHandler) {
+        window.removeEventListener('resize', window._dashboardResizeHandler);
+    }
     let resizeTimer;
-    const onResize = () => {
+    window._dashboardResizeHandler = () => {
         clearTimeout(resizeTimer);
         resizeTimer = setTimeout(() => {
             if (costBySubject.length > 0) renderCostLineChart(costBySubject);
             if (wausBySubject.length > 0) renderWausBarChart(wausBySubject);
         }, 200);
     };
-    window.addEventListener('resize', onResize);
+    window.addEventListener('resize', window._dashboardResizeHandler);
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = String(str || '');
+    return div.innerHTML;
 }
 
 const CHART_COLORS = ['#0077AB', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#38bdf8', '#ec4899'];
@@ -419,8 +428,8 @@ function renderWausBarChart(wausBySubject) {
     const H = canvas.height / dpr;
 
     const data = wausBySubject;
-    const barGap = 16;
-    const barW = Math.max(16, ((W - 50 - 20 - (data.length - 1) * barGap) / data.length));
+    const barGap = data.length > 10 ? 6 : data.length > 5 ? 10 : 16;
+    const barW = Math.max(8, ((W - 50 - 20 - (data.length - 1) * barGap) / data.length));
     const maxVal = Math.max(...data.map(d => d.currentWeek), 1);
 
     ctx.clearRect(0, 0, W, H);
@@ -431,7 +440,8 @@ function renderWausBarChart(wausBySubject) {
 
         // Current week bar only
         const currH = (d.currentWeek / maxVal) * (H - padT - padB);
-        ctx.fillStyle = 'var(--color-accent)';
+        const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() || '#6366f1';
+        ctx.fillStyle = accentColor;
         ctx.fillRect(groupX, H - padB - currH, barW, currH);
 
         // Value on top of bar

@@ -15,6 +15,10 @@ param tenantId string = subscription().tenantId
 @description('Tags to apply to the resource.')
 param tags object = {}
 
+@secure()
+@description('Secret value for SWA_ROLES_SECRET — used to validate Static Web App role tokens. Auto-generated on each deployment. Override to set a specific value.')
+param swaRolesSecret string = newGuid()
+
 // ─── Key Vault ───────────────────────────────────────────────────
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: name
@@ -58,6 +62,18 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
 //   }
 // }
 
+// ─── SWA_ROLES_SECRET ──────────────────────────────────────────
+resource swaRolesSecretResource 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'SWA-ROLES-SECRET'
+  properties: {
+    value: swaRolesSecret
+  }
+}
+
+// ─── AZURE_STORAGE_ACCESS_KEY (populated at deploy-time by functions.bicep) ──
+// The secret resource is created in functions.bicep where listKeys() resolves.
+
 // ─── Outputs ───────────────────────────────────────────────────
 @description('The name of the Key Vault.')
 output keyVaultName string = keyVault.name
@@ -67,3 +83,6 @@ output keyVaultUri string = keyVault.properties.vaultUri
 
 @description('The resource ID of the Key Vault.')
 output keyVaultId string = keyVault.id
+
+@description('The name of the SWA_ROLES_SECRET secret.')
+output swaRolesSecretName string = swaRolesSecretResource.name

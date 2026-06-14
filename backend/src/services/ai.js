@@ -3,30 +3,51 @@
  * Maneja embeddings vía Azure OpenAI y generación de texto vía DeepSeek V4 Flash.
  */
 import { AzureOpenAI, OpenAI } from 'openai';
+import { DefaultAzureCredential, getBearerTokenProvider } from '@azure/identity';
 import { CategorizedError, ErrorCategory } from './error-categories.js';
+
+const AOAI_TOKEN_SCOPE = 'https://cognitiveservices.azure.com/.default';
 
 let _embeddingClient = null;
 let _chatClient = null;
+let _tokenProvider = null;
+
+function getTokenProvider() {
+    if (!_tokenProvider) {
+        const credential = new DefaultAzureCredential();
+        _tokenProvider = getBearerTokenProvider(credential, AOAI_TOKEN_SCOPE);
+    }
+    return _tokenProvider;
+}
+
+function createAzureOpenAIClient(azureAdTokenProvider) {
+    return new AzureOpenAI({
+        endpoint: process.env.AZURE_OPENAI_ENDPOINT,
+        apiKey: process.env.AZURE_OPENAI_KEY || process.env.AZURE_OPENAI_API_KEY || undefined,
+        azureADTokenProvider: azureAdTokenProvider,
+        apiVersion: '2024-08-01-preview',
+    });
+}
 
 /**
  * Cliente para Embeddings (Azure OpenAI)
- * Mantenemos text-embedding-3-small por consistencia en Pinecone.
+ * Uses Managed Identity (DefaultAzureCredential) when no API key is set.
  */
 function getEmbeddingClient() {
     if (!_embeddingClient) {
         const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
-        const apiKey = process.env.AZURE_OPENAI_KEY || process.env.AZURE_OPENAI_API_KEY;
-
-        if (!endpoint || !apiKey) {
-            throw new Error('Azure OpenAI configuration (endpoint/key) is missing for embeddings.');
+        if (!endpoint) {
+            throw new Error('AZURE_OPENAI_ENDPOINT is required for embeddings.');
         }
 
-        _embeddingClient = new AzureOpenAI({
-            endpoint,
-            apiKey,
-            apiVersion: '2024-08-01-preview',
-        });
-        console.log('[AI] Embedding Client (Azure OpenAI) initialized');
+        const apiKey = process.env.AZURE_OPENAI_KEY || process.env.AZURE_OPENAI_API_KEY;
+        if (apiKey) {
+            _embeddingClient = new AzureOpenAI({ endpoint, apiKey, apiVersion: '2024-08-01-preview' });
+            console.log('[AI] Embedding Client (Azure OpenAI + API Key) initialized');
+        } else {
+            _embeddingClient = createAzureOpenAIClient(getTokenProvider());
+            console.log('[AI] Embedding Client (Azure OpenAI + Managed Identity) initialized');
+        }
     }
     return _embeddingClient;
 }
@@ -34,10 +55,10 @@ function getEmbeddingClient() {
 /**
  * Cliente para Generación (Azure AI Foundry - DeepSeek)
  * DeepSeek V4 Flash es compatible con la API de OpenAI.
+ * Falls back to Azure OpenAI with Managed Identity if DeepSeek is not configured.
  */
 function getChatClient() {
     if (!_chatClient) {
-        // Preferimos DeepSeek si está configurado
         const dsEndpoint = process.env.AI_FOUNDRY_DEEPSEEK_ENDPOINT;
         const dsKey = process.env.AI_FOUNDRY_DEEPSEEK_KEY;
 
@@ -48,20 +69,19 @@ function getChatClient() {
             });
             console.log('[AI] Chat Client (DeepSeek V4 Flash via Foundry) initialized');
         } else {
-            // Fallback a Azure OpenAI si no hay DeepSeek (para retrocompatibilidad)
             const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
-            const apiKey = process.env.AZURE_OPENAI_KEY || process.env.AZURE_OPENAI_API_KEY;
-            
-            if (!endpoint || !apiKey) {
+            if (!endpoint) {
                 throw new Error('No valid AI Chat configuration found (DeepSeek or Azure OpenAI).');
             }
 
-            _chatClient = new AzureOpenAI({
-                endpoint,
-                apiKey,
-                apiVersion: '2024-08-01-preview',
-            });
-            console.log('[AI] Chat Client (Azure OpenAI Fallback) initialized');
+            const apiKey = process.env.AZURE_OPENAI_KEY || process.env.AZURE_OPENAI_API_KEY;
+            if (apiKey) {
+                _chatClient = new AzureOpenAI({ endpoint, apiKey, apiVersion: '2024-08-01-preview' });
+                console.log('[AI] Chat Client (Azure OpenAI Fallback + API Key) initialized');
+            } else {
+                _chatClient = createAzureOpenAIClient(getTokenProvider());
+                console.log('[AI] Chat Client (Azure OpenAI Fallback + Managed Identity) initialized');
+            }
         }
     }
     return _chatClient;
@@ -202,12 +222,16 @@ export async function generateClassMap(text, options = {}) {
  * DeepSeek no suele tener TTS, mantenemos Azure OpenAI.
  */
 export async function generateClassAudio(text, voice = 'nova', options = {}) {
-    // Para TTS siempre usamos Azure OpenAI (o el cliente que lo soporte)
-    // Forzamos el uso de un cliente AzureOpenAI si es posible
     const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
+    if (!endpoint) throw new Error('AZURE_OPENAI_ENDPOINT is required for TTS.');
+
     const apiKey = process.env.AZURE_OPENAI_KEY || process.env.AZURE_OPENAI_API_KEY;
-    
-    const ttsClient = new AzureOpenAI({ endpoint, apiKey, apiVersion: '2024-08-01-preview' });
+    let ttsClient;
+    if (apiKey) {
+        ttsClient = new AzureOpenAI({ endpoint, apiKey, apiVersion: '2024-08-01-preview' });
+    } else {
+        ttsClient = createAzureOpenAIClient(getTokenProvider());
+    }
 
     const response = await ttsClient.audio.speech.create(
         {

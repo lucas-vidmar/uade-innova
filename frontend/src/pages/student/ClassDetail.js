@@ -76,7 +76,7 @@ export async function renderClassDetail(container) {
                     </div>
                     <div class="map-container" id="mermaid-container" style="padding:var(--space-6);overflow:hidden;background:var(--color-bg-alt);border-radius:var(--radius-lg)">
                         ${mapData?.mapCode ? 
-                            `<pre class="mermaid" style="background:transparent;border:none;padding:0;text-align:center;margin:0">${mapData.mapCode}</pre>` : 
+                            `<pre class="mermaid" style="background:transparent;border:none;padding:0;text-align:center;margin:0">${escapeHtml(mapData.mapCode)}</pre>` : 
                             '<div class="empty-state" style="padding:20px;text-align:center"><p>El mapa conceptual se está generando o no hay suficiente contenido aún.</p></div>'}
                     </div>
                     ${mapData?.mapCode ? `

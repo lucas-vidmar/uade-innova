@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.41.2.15936",
-      "templateHash": "5861988525894921985"
+      "templateHash": "17348834006731436724"
     }
   },
   "parameters": {
@@ -29,7 +29,7 @@
       "type": "string",
       "defaultValue": "eastus2",
       "metadata": {
-        "description": "Región para Azure OpenAI. eastus2 tiene quota de gpt-4o-mini en UADE."
+        "description": "Región para Azure OpenAI (Embeddings & Fallback). eastus2 tiene quota de gpt-4o-mini en UADE."
       }
     },
     "openAiSkuName": {
@@ -41,14 +41,14 @@
     },
     "gptModelName": {
       "type": "string",
-      "defaultValue": "gpt-4o-mini",
+      "defaultValue": "gpt-4.1-mini",
       "metadata": {
-        "description": "Nombre del modelo GPT a deployar."
+        "description": "Nombre del modelo GPT a deployar en Azure OpenAI (Fallback)."
       }
     },
     "gptModelVersion": {
       "type": "string",
-      "defaultValue": "2024-07-18",
+      "defaultValue": "2025-04-14",
       "metadata": {
         "description": "Versión del modelo GPT."
       }
@@ -262,13 +262,12 @@
     "logAnalyticsName": "[format('{0}dashboard-{1}', variables('abbrs').operationalInsightsWorkspaces, variables('resourceToken'))]",
     "appInsightsName": "[format('{0}dashboard-{1}', variables('abbrs').insightsComponents, variables('resourceToken'))]",
     "keyVaultName": "[format('kv-edu-{0}', take(variables('resourceToken'), 17))]",
-    "identityName": "[format('id-dashboard-edu-{0}', variables('resourceToken'))]",
     "frontDoorName": "[format('afd-dashboard-{0}', variables('resourceToken'))]",
     "workbookName": "[guid(resourceGroup().id, 'cost-per-interaction-workbook')]",
     "anomalousUsageAlertName": "[format('alert-anomalous-token-usage-{0}', take(variables('resourceToken'), 8))]",
     "anomalousUsageActionGroupName": "[format('ag-token-usage-{0}', take(variables('resourceToken'), 8))]",
-    "safeStorageName": "[take(replace(variables('storageAccountName'), '-', ''), 24)]",
-    "useSystemAssignedIdentity": true
+    "expectedCorsOrigin": "[format('https://{0}.azurestaticapps.net', variables('staticWebAppName'))]",
+    "safeStorageName": "[take(replace(variables('storageAccountName'), '-', ''), 24)]"
   },
   "resources": [
     {
@@ -456,7 +455,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "6052485019437152628"
+              "templateHash": "4581918705070153877"
             }
           },
           "parameters": {
@@ -491,7 +490,7 @@
               "type": "string",
               "defaultValue": "gpt-4o-mini",
               "metadata": {
-                "description": "Name of the GPT model to deploy."
+                "description": "Name of the GPT model to deploy (used as Fallback for DeepSeek)."
               }
             },
             "gptModelVersion": {
@@ -540,7 +539,7 @@
           "resources": [
             {
               "type": "Microsoft.CognitiveServices/accounts",
-              "apiVersion": "2023-05-01",
+              "apiVersion": "2024-10-01",
               "name": "[parameters('name')]",
               "location": "[parameters('location')]",
               "tags": "[parameters('tags')]",
@@ -553,6 +552,71 @@
                 "publicNetworkAccess": "Enabled",
                 "disableLocalAuth": false
               }
+            },
+            {
+              "type": "Microsoft.CognitiveServices/accounts/raiPolicies",
+              "apiVersion": "2024-10-01",
+              "name": "[format('{0}/{1}', parameters('name'), 'jailbreak-shield')]",
+              "properties": {
+                "basePolicyName": "Microsoft.Default",
+                "contentFilters": [
+                  {
+                    "name": "Jailbreak",
+                    "source": "Prompt",
+                    "enabled": true,
+                    "blocking": true
+                  },
+                  {
+                    "name": "Indirect Attack",
+                    "source": "Prompt",
+                    "enabled": true,
+                    "blocking": true
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.CognitiveServices/accounts/deployments",
+              "apiVersion": "2024-10-01",
+              "name": "[format('{0}/{1}', parameters('name'), parameters('gptModelName'))]",
+              "properties": {
+                "model": {
+                  "format": "OpenAI",
+                  "name": "[parameters('gptModelName')]",
+                  "version": "[parameters('gptModelVersion')]"
+                },
+                "raiPolicyName": "jailbreak-shield"
+              },
+              "sku": {
+                "name": "Standard",
+                "capacity": "[parameters('gptDeploymentCapacity')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]",
+                "[resourceId('Microsoft.CognitiveServices/accounts/raiPolicies', parameters('name'), 'jailbreak-shield')]"
+              ]
+            },
+            {
+              "type": "Microsoft.CognitiveServices/accounts/deployments",
+              "apiVersion": "2024-10-01",
+              "name": "[format('{0}/{1}', parameters('name'), parameters('embeddingModelName'))]",
+              "properties": {
+                "model": {
+                  "format": "OpenAI",
+                  "name": "[parameters('embeddingModelName')]"
+                }
+              },
+              "sku": {
+                "name": "Standard",
+                "capacity": "[parameters('embeddingDeploymentCapacity')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.CognitiveServices/accounts/deployments', parameters('name'), parameters('gptModelName'))]",
+                "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]"
+              ]
             }
           ],
           "outputs": {
@@ -561,7 +625,7 @@
               "metadata": {
                 "description": "The Azure OpenAI service endpoint URL."
               },
-              "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', parameters('name')), '2023-05-01').endpoint]"
+              "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', parameters('name')), '2024-10-01').endpoint]"
             },
             "name": {
               "type": "string",
@@ -570,12 +634,12 @@
               },
               "value": "[parameters('name')]"
             },
-            "id": {
+            "accountId": {
               "type": "string",
               "metadata": {
                 "description": "The resource ID of the Azure OpenAI resource."
               },
-              "value": "[parameters('name')]"
+              "value": "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]"
             },
             "chatDeploymentName": {
               "type": "string",
@@ -620,7 +684,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "12515422341360069428"
+              "templateHash": "14234142691511470269"
             }
           },
           "parameters": {
@@ -815,6 +879,22 @@
               "dependsOn": [
                 "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
               ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'Enrollments')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'UserConsent')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
+              ]
             }
           ],
           "outputs": {
@@ -866,6 +946,13 @@
                 "description": "The name of the classes table."
               },
               "value": "classes"
+            },
+            "enrollmentsTableName": {
+              "type": "string",
+              "metadata": {
+                "description": "The name of the Enrollments table."
+              },
+              "value": "Enrollments"
             }
           }
         }
@@ -898,7 +985,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "5093241020403258155"
+              "templateHash": "17610874862382873049"
             }
           },
           "parameters": {
@@ -927,6 +1014,13 @@
               "metadata": {
                 "description": "Tags to apply to the resource."
               }
+            },
+            "swaRolesSecret": {
+              "type": "securestring",
+              "defaultValue": "[newGuid()]",
+              "metadata": {
+                "description": "Secret value for SWA_ROLES_SECRET — used to validate Static Web App role tokens. Auto-generated on each deployment. Override to set a specific value."
+              }
             }
           },
           "resources": [
@@ -954,6 +1048,17 @@
                   "bypass": "AzureServices"
                 }
               }
+            },
+            {
+              "type": "Microsoft.KeyVault/vaults/secrets",
+              "apiVersion": "2023-07-01",
+              "name": "[format('{0}/{1}', parameters('name'), 'SWA-ROLES-SECRET')]",
+              "properties": {
+                "value": "[parameters('swaRolesSecret')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('name'))]"
+              ]
             }
           ],
           "outputs": {
@@ -977,6 +1082,13 @@
                 "description": "The resource ID of the Key Vault."
               },
               "value": "[resourceId('Microsoft.KeyVault/vaults', parameters('name'))]"
+            },
+            "swaRolesSecretName": {
+              "type": "string",
+              "metadata": {
+                "description": "The name of the SWA_ROLES_SECRET secret."
+              },
+              "value": "SWA-ROLES-SECRET"
             }
           }
         }
@@ -997,12 +1109,6 @@
           },
           "functionAppName": {
             "value": "[variables('functionAppName')]"
-          },
-          "userAssignedIdentityId": {
-            "value": ""
-          },
-          "userAssignedClientId": {
-            "value": ""
           },
           "storageAccountName": {
             "value": "[variables('safeStorageName')]"
@@ -1049,8 +1155,14 @@
           "classesTableName": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.classesTableName.value]"
           },
+          "enrollmentsTableName": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.enrollmentsTableName.value]"
+          },
           "storageAccountId": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.accountId.value]"
+          },
+          "allowedCorsOrigin": {
+            "value": "[variables('expectedCorsOrigin')]"
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -1063,7 +1175,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "17818755301951565947"
+              "templateHash": "15113513492900100586"
             }
           },
           "parameters": {
@@ -1175,18 +1287,11 @@
                 "description": "Name of the Storage container for class materials."
               }
             },
-            "userAssignedIdentityId": {
+            "allowedCorsOrigin": {
               "type": "string",
-              "defaultValue": "",
+              "defaultValue": "*",
               "metadata": {
-                "description": "Resource ID of the User-Assigned Managed Identity (optional for system-assigned)."
-              }
-            },
-            "userAssignedClientId": {
-              "type": "string",
-              "defaultValue": "",
-              "metadata": {
-                "description": "Client ID of the User-Assigned Managed Identity (optional for system-assigned)."
+                "description": "Allowed CORS origin (e.g., https://myapp.azurestaticapps.net). Use \"*\" only during development."
               }
             },
             "materialsTableName": {
@@ -1201,6 +1306,13 @@
               "defaultValue": "classes",
               "metadata": {
                 "description": "Table name for class state entities."
+              }
+            },
+            "enrollmentsTableName": {
+              "type": "string",
+              "defaultValue": "Enrollments",
+              "metadata": {
+                "description": "Table name for enrollment entities."
               }
             }
           },
@@ -1243,7 +1355,7 @@
                   "scmIpSecurityRestrictionsUseMain": true,
                   "cors": {
                     "allowedOrigins": [
-                      "*"
+                      "[parameters('allowedCorsOrigin')]"
                     ],
                     "supportCredentials": false
                   },
@@ -1297,10 +1409,6 @@
                       "value": "[parameters('classMaterialsStorageAccount')]"
                     },
                     {
-                      "name": "AZURE_STORAGE_ACCESS_KEY",
-                      "value": "[listKeys(parameters('storageAccountId'), '2023-01-01').keys[0].value]"
-                    },
-                    {
                       "name": "AZURE_STORAGE_CONTAINER_MATERIALS",
                       "value": "[parameters('classMaterialsContainerName')]"
                     },
@@ -1311,6 +1419,14 @@
                     {
                       "name": "AZURE_TABLE_CLASSES",
                       "value": "[parameters('classesTableName')]"
+                    },
+                    {
+                      "name": "AZURE_TABLE_ENROLLMENTS",
+                      "value": "[parameters('enrollmentsTableName')]"
+                    },
+                    {
+                      "name": "AZURE_STORAGE_ENROLLMENTS_TABLE",
+                      "value": "[parameters('enrollmentsTableName')]"
                     },
                     {
                       "name": "PINECONE_INDEX_NAME",
@@ -1333,12 +1449,8 @@
                       "value": "production"
                     },
                     {
-                      "name": "AZURE_CLIENT_ID",
-                      "value": "[parameters('userAssignedClientId')]"
-                    },
-                    {
                       "name": "SWA_ROLES_SECRET",
-                      "value": "UADE-Pilot-Secure-Roles-Secret-2026"
+                      "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/SWA-ROLES-SECRET/)', parameters('keyVaultUri'))]"
                     },
                     {
                       "name": "FRONT_DOOR_ID",
@@ -1591,7 +1703,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "9100696820550022040"
+              "templateHash": "10529067002814889967"
             }
           },
           "parameters": {
@@ -1635,7 +1747,7 @@
                 {
                   "type": 1,
                   "content": {
-                    "json": "## 💰 Cost-per-Interaction Dashboard\nReal-time GPT-4o-mini cost tracking. Pricing: **$0.15/1M input tokens** · **$0.60/1M output tokens**"
+                    "json": "## 💰 Cost-per-Interaction Dashboard\nReal-time Hybrid AI (DeepSeek/GPT) cost tracking. Pricing (Avg): **$0.15/1M input tokens** · **$0.40/1M output tokens**"
                   },
                   "name": "header"
                 },

@@ -90,18 +90,15 @@ export function getAuthenticatedUser(request) {
  * @returns {boolean} True if authorized.
  */
 export function validateFrontDoorId(request) {
-    // Para el piloto sin Front Door, permitimos todas las peticiones
-    return true;
-    /*
-    if (process.env.AZURE_FUNCTIONS_ENVIRONMENT === "Development") {
+    const env = process.env.AZURE_FUNCTIONS_ENVIRONMENT || process.env.NODE_ENV;
+    if (env === "Development") {
         return true;
     }
     const expectedId = process.env.FRONT_DOOR_ID;
     if (!expectedId || expectedId.includes('PLACEHOLDER') || expectedId.includes('@Microsoft.KeyVault')) {
-        if (expectedId && expectedId.includes('PLACEHOLDER')) return true; // dev
+        return true;
     }
-    
+
     const incomingId = request.headers.get('x-azure-fdid');
     return incomingId === expectedId;
-    */
 }

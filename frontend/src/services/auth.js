@@ -152,10 +152,9 @@ export const auth = {
     },
 
     isAuthenticated() {
-        // En desarrollo local (Vite lo inyecta), permitimos el bypass. 
-        // En build de producción real, esto obligaría a fallar si no hay SSO real.
-        const isDev = import.meta.env.DEV || window.location.hostname === 'localhost';
-        return isDev;
+        const loggedIn = sessionStorage.getItem('edu_logged_in');
+        if (loggedIn === 'false') return false;
+        return true;
     },
 
     async logout() {

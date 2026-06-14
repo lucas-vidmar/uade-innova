@@ -269,7 +269,7 @@ app.http('rag-query', {
         const enrollment = await getEnrollment(subjectId, userId).catch(() => null);
         const principal = parseClientPrincipal(request);
         const userRoles = principal?.userRoles || [];
-        const isTeacherOrDirector = userRoles.includes('Docente') || userRoles.includes('Director') || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
+        const isTeacherOrDirector = userRoles.includes('Docente') || userRoles.includes('Director');
 
 
         if (!isTeacherOrDirector) {

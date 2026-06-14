@@ -36,10 +36,13 @@ function withCorrelationHeaders(headers = {}) {
     if (!normalized.has(CORRELATION_HEADER)) {
         normalized.set(CORRELATION_HEADER, nextCorrelationId());
     }
-    
-    // Add mock role header for demo/mock authorization in backend
-    const mockRole = sessionStorage.getItem('edu_role') || 'student';
-    normalized.set('x-mock-role', mockRole);
+
+    // Only send mock role header in local development (no real SWA auth)
+    const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (isLocalDev) {
+        const mockRole = sessionStorage.getItem('edu_role') || 'student';
+        normalized.set('x-mock-role', mockRole);
+    }
     
     return normalized;
 }

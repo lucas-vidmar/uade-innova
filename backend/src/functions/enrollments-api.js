@@ -11,13 +11,11 @@ function jsonResponse(status, payload) {
 }
 
 function isTeacherOrDirector(principal) {
-  return process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development'
-    || principal?.userRoles?.some(r => ['Docente', 'Director'].includes(r));
+  return principal?.userRoles?.some(r => ['Docente', 'Director'].includes(r));
 }
 
 function isDirector(principal) {
-  return process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development'
-    || principal?.userRoles?.includes('Director');
+  return principal?.userRoles?.includes('Director');
 }
 
 // ── GET /api/enrollments?userId={userId} ───────────────────────
@@ -33,14 +31,14 @@ app.http('get-enrollments', {
     const roles = principal?.userRoles || [];
     const isTeacher = roles.includes('Docente');
     const isDir = roles.includes('Director');
-    const isDev = process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
+    const isDev = false;
 
     const userId = request.query.get('userId');
     const subjectId = request.query.get('subjectId');
 
     if (subjectId && userId) {
       // Permission check: Director/Teacher or the user themselves
-      if (!isDir && !isTeacher && authenticatedUserId !== userId && !isDev) {
+      if (!isDir && !isTeacher && authenticatedUserId !== userId) {
         return jsonResponse(403, { success: false, error: { code: 'FORBIDDEN', message: 'Solo puedes ver tus propias inscripciones.' } });
       }
 
@@ -56,7 +54,7 @@ app.http('get-enrollments', {
 
     if (subjectId) {
       // Permission check: Only Director/Teacher can list enrollments of a subject
-      if (!isDir && !isTeacher && !isDev) {
+      if (!isDir && !isTeacher) {
         return jsonResponse(403, { success: false, error: { code: 'FORBIDDEN', message: 'Solo docentes o directores pueden ver la lista de inscriptos.' } });
       }
 
@@ -73,7 +71,7 @@ app.http('get-enrollments', {
     }
 
     // Permission check: Director/Teacher or the user themselves
-    if (!isDir && !isTeacher && authenticatedUserId !== userId && !isDev) {
+    if (!isDir && !isTeacher && authenticatedUserId !== userId) {
       return jsonResponse(403, { success: false, error: { code: 'FORBIDDEN', message: 'Solo puedes ver tus propias inscripciones.' } });
     }
 
@@ -99,8 +97,6 @@ app.http('check-enrollment', {
     const roles = principal?.userRoles || [];
     const isTeacher = roles.includes('Docente');
     const isDir = roles.includes('Director');
-    const isDev = process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
-
     const userId = request.query.get('userId');
     const subjectId = request.query.get('subjectId');
 
@@ -109,7 +105,7 @@ app.http('check-enrollment', {
     }
 
     // Permission check: Director/Teacher or the user themselves
-    if (!isDir && !isTeacher && authenticatedUserId !== userId && !isDev) {
+    if (!isDir && !isTeacher && authenticatedUserId !== userId) {
       return jsonResponse(403, { success: false, error: { code: 'FORBIDDEN', message: 'Solo puedes verificar tu propia inscripción.' } });
     }
 

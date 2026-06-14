@@ -18,7 +18,7 @@ app.http('manage-get-users', {
             const principal = parseClientPrincipal(request);
             
             // Security Verification: Must be Director
-            const isDirector = principal?.userRoles?.includes('Director') || process.env.AZURE_FUNCTIONS_ENVIRONMENT === "Development";
+            const isDirector = principal?.userRoles?.includes('Director');
 
             if (!isDirector) {
                 return { status: 403, body: "Forbidden - Administrator access required" };

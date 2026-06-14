@@ -254,7 +254,6 @@ async function computeDirectorMetrics(context, requestedDays = POWERBI_DEFAULT_D
         materialUploads: {
             byTeacher,
         },
-        _rawRows: rows,
     };
 }
 
@@ -275,7 +274,7 @@ function computeBudgetProjection(daily) {
         }
     }
 
-    const avgDailyCost = currentMonthSpend / Math.max(daysElapsed, 1);
+    const avgDailyCost = currentMonthSpend > 0 ? currentMonthSpend / Math.max(daysElapsed, 1) : 0;
 
     // Weekend-aware projection: count weekdays and weekends separately
     let weekdayRemaining = 0;
@@ -295,7 +294,7 @@ function computeBudgetProjection(daily) {
     const projectedRemaining = (weekdayRemaining * avgDailyCost) + (weekendRemaining * avgDailyCost * WEEKEND_ACTIVITY_FACTOR);
     const projectedEndOfMonth = currentMonthSpend + projectedRemaining;
 
-    const percentUsed = (projectedEndOfMonth / MONTHLY_BUDGET) * 100;
+    const percentUsed = MONTHLY_BUDGET > 0 ? (projectedEndOfMonth / MONTHLY_BUDGET) * 100 : 0;
     const remainingBudget = Math.max(0, MONTHLY_BUDGET - currentMonthSpend);
 
     return {
@@ -312,10 +311,13 @@ function computeCostSpikeAlert(daily) {
     if (daily.length < 8) return null;
     const today = daily[daily.length - 1];
     const sevenDaySlice = daily.slice(daily.length - 8, daily.length - 1);
-    const avgCost = sevenDaySlice.reduce((sum, d) => sum + d.avgCostPerInteraction, 0) / sevenDaySlice.length;
-    if (avgCost <= 0 || today.avgCostPerInteraction <= avgCost * 2) return null;
-    const delta = Math.round(((today.avgCostPerInteraction - avgCost) / avgCost) * 100);
-    return { detected: true, delta, todayAvg: today.avgCostPerInteraction, sevenDayAvg: avgCost };
+    const validDays = sevenDaySlice.filter(d => Number.isFinite(d.avgCostPerInteraction));
+    const avgCost = validDays.length > 0 ? validDays.reduce((sum, d) => sum + d.avgCostPerInteraction, 0) / validDays.length : 0;
+    const todayCost = today.avgCostPerInteraction || 0;
+    const MIN_COST_THRESHOLD = 0.0001;
+    if (avgCost < MIN_COST_THRESHOLD || todayCost <= avgCost * 2) return null;
+    const delta = Math.round(((todayCost - avgCost) / avgCost) * 100);
+    return { detected: true, delta, todayAvg: todayCost, sevenDayAvg: avgCost };
 }
 
 function safeObjectKey(key) {

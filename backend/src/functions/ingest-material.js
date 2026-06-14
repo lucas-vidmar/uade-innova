@@ -63,6 +63,14 @@ app.http('ingest-material', {
                 };
             }
 
+            if (!validateFileType(fileBuffer, materialType, context)) {
+                return {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ error: `El tipo de archivo no coincide con el tipo de material "${materialType}". Formatos aceptados: TXT, VTT, DOCX, PDF, PPTX.` }),
+                };
+            }
+
             const materialId = uuidv4();
             const material = {
                 materialId,
@@ -145,6 +153,46 @@ app.http('ingest-material', {
         }
     }
 });
+
+/**
+ * Server-side file type validation by magic bytes.
+ * Rejects files whose content doesn't match the declared materialType.
+ */
+function validateFileType(buffer, materialType, context) {
+    if (!Buffer.isBuffer(buffer) || buffer.length < 4) return false;
+    const header = buffer.slice(0, 8).toString('hex').toLowerCase();
+    const fileNameCheck = ''; // will be set if a filename is available
+
+    switch (materialType) {
+        case 'transcript':
+            // TXT, VTT — plain text. No magic bytes, check for printable ASCII / UTF-8.
+            return true;
+        case 'presentation':
+            // PPTX — ZIP-based (PK\x03\x04)
+            if (header.startsWith('504b0304')) return true;
+            // PDF fallback: some presentations are uploaded as PDF
+            if (header.startsWith('25504446')) return true;
+            context.log.warn(`[Ingest] File type validation failed for presentation: expected PPTX/PDF, got header=0x${header}`);
+            return false;
+        case 'notes':
+            // DOCX — ZIP-based (PK\x03\x04)
+            if (header.startsWith('504b0304')) return true;
+            // PDF
+            if (header.startsWith('25504446')) return true;
+            context.log.warn(`[Ingest] File type validation failed for notes: expected DOCX/PDF, got header=0x${header}`);
+            return false;
+        case 'bibliography':
+            // PDF (25 50 44 46 = %PDF)
+            if (header.startsWith('25504446')) return true;
+            // DOCX
+            if (header.startsWith('504b0304')) return true;
+            context.log.warn(`[Ingest] File type validation failed for bibliography: expected PDF/DOCX, got header=0x${header}`);
+            return false;
+        default:
+            context.log.warn(`[Ingest] Unknown materialType "${materialType}" — allowing file`);
+            return true;
+    }
+}
 
 /**
  * Parsea el cuerpo de la petición multipart/form-data usando busboy.

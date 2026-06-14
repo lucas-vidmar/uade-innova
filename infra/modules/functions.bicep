@@ -22,9 +22,6 @@ param appInsightsConnectionString string
 @description('Azure OpenAI endpoint.')
 param openAiEndpoint string
 
-@description('Azure OpenAI Account ID.')
-param openAiAccountId string
-
 @description('Azure OpenAI chat model deployment name.')
 param openAiChatDeployment string
 
@@ -60,6 +57,9 @@ param tags object = {}
 
 @description('Name of the Storage container for class materials.')
 param classMaterialsContainerName string = 'class-materials'
+
+@description('Allowed CORS origin (e.g., https://myapp.azurestaticapps.net). Use "*" only during development.')
+param allowedCorsOrigin string = '*'
 
 
 
@@ -108,7 +108,7 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
       ipSecurityRestrictions: []
       scmIpSecurityRestrictionsUseMain: true
       cors: {
-        allowedOrigins: ['*']
+        allowedOrigins: [ allowedCorsOrigin ]
         supportCredentials: false
       }
       appSettings: [
@@ -142,14 +142,10 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
           value: appInsightsConnectionString
         }
-        // Azure OpenAI
+        // Azure OpenAI — Uses Managed Identity + RBAC (no API key needed)
         {
           name: 'AZURE_OPENAI_ENDPOINT'
           value: openAiEndpoint
-        }
-        {
-          name: 'AZURE_OPENAI_API_KEY'
-          value: listKeys(openAiAccountId, '2023-05-01').key1
         }
         {
           name: 'AZURE_OPENAI_CHAT_DEPLOYMENT'
@@ -163,18 +159,10 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           name: 'AZURE_OPENAI_TTS_DEPLOYMENT'
           value: openAiTtsDeployment
         }
-        // Storage
+        // Storage — Uses Managed Identity + RBAC (no access key in App Settings)
         {
           name: 'AZURE_STORAGE_ACCOUNT_NAME'
           value: classMaterialsStorageAccount
-        }
-        {
-          name: 'AZURE_STORAGE_ACCESS_KEY'
-          value: listKeys(storageAccountId, '2023-01-01').keys[0].value
-        }
-        {
-          name: 'AZURE_STORAGE_CONNECTION_STRING'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${classMaterialsStorageAccount};AccountKey=${listKeys(storageAccountId, '2023-01-01').keys[0].value};EndpointSuffix=core.windows.net'
         }
         {
           name: 'AZURE_STORAGE_CONTAINER_MATERIALS'
@@ -220,7 +208,7 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
 
         {
           name: 'SWA_ROLES_SECRET'
-          value: 'UADE-Pilot-Secure-Roles-Secret-2026'
+          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/SWA-ROLES-SECRET/)'
         }
         {
           name: 'FRONT_DOOR_ID'
