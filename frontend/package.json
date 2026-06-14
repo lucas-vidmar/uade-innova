@@ -8,7 +8,8 @@
         "start": "swa start",
         "build": "vite build",
         "preview": "vite preview",
-        "test:e2e": "playwright test"
+        "test:e2e": "playwright test",
+        "postinstall": "playwright install --with-deps chromium"
     },
     "devDependencies": {
         "@playwright/test": "^1.53.1",
