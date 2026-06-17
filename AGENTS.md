@@ -368,7 +368,39 @@ Invocar `drawio-mcp` para crear el diagrama y guardar el resultado como `.drawio
 
 ---
 
-## **15. Ciclo de Vida de Implementación y Verificación**
+## **15. CI/CD — Deployment Tokens (Workaround mientras no hay RBAC)**
+
+Actualmente el CI/CD usa **SWA deployment token** + **Function App publish profile** porque el Service Principal no tiene RBAC en el RG (falta permiso Owner para asignarlo).
+
+### **15.1. Workarounds Técnicos**
+
+| Componente | Método | Token/Secret |
+|---|---|---|
+| Frontend (SWA) | `Azure/static-web-apps-deploy@v1` | `AZURE_STATIC_WEB_APPS_API_TOKEN` |
+| Backend (Functions) | `Azure/functions-action@v1` | `AZURE_FUNCTIONAPP_PUBLISH_PROFILE` |
+
+### **15.2. ⚠ Deuda Técnica — Migrar a OIDC + azd**
+
+Cuando se tenga acceso Owner en el RG (`RG_UADE_INNOVA_DEV`), migrar a:
+
+```bash
+# 1. Asignar Contributor al SP existente
+az role assignment create \
+  --assignee 09abbcbe-e229-499b-8d94-4bea1f9eab3e \
+  --role Contributor \
+  --scope /subscriptions/e581a4ea-1c70-477b-9258-98a51fac57cf/resourceGroups/RG_UADE_INNOVA_DEV
+
+# 2. Crear federated credentials en el SP para main y staging
+#    (Entra ID → App registrations → func-dashboard-ingest-... → Certificates & secrets → Federated credentials)
+
+# 3. Actualizar secrets de GitHub:
+#    - Eliminar: AZURE_STATIC_WEB_APPS_API_TOKEN, AZURE_FUNCTIONAPP_PUBLISH_PROFILE
+#    - Setear:   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, AZURE_ENV_NAME, AZURE_LOCATION
+```
+
+Luego revertir los workflows a usar `azure/login@v2` + `azd deploy`.
+
+## **16. Ciclo de Vida de Implementación y Verificación**
 
 Para garantizar la calidad y disponibilidad del dashboard, se establece el siguiente flujo obligatorio para cada tarea de implementación:
 

@@ -1,3 +1,12 @@
+# ──────────────────────────────────────────────────────────────────
+# Production Deployment — Deploys on push to main (PR merge)
+# Uses SWA deployment token + Function App publish profile
+# (no Azure RBAC / OIDC required)
+#
+# ⚠ TODO: Migrate to OIDC + azd when RBAC permissions are granted
+#   (see AGENTS.md section 15)
+# ──────────────────────────────────────────────────────────────────
+
 name: Deploy to Production
 
 on:
@@ -6,16 +15,11 @@ on:
   workflow_dispatch:
 
 permissions:
-  id-token: write
   contents: read
 
 env:
-  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-  AZURE_ENV_NAME: ${{ secrets.AZURE_ENV_NAME }}
-  AZURE_LOCATION: ${{ secrets.AZURE_LOCATION }}
-  AZURE_DEV_COLLECT_TELEMETRY: no
+  AZURE_FUNCTIONAPP_NAME: func-dashboard-ingest-q47bia47kk3na
+  AZURE_STATIC_WEB_APP_NAME: stapp-dashboard-q47bia47kk3na
 
 jobs:
   secrets-check:
@@ -24,8 +28,8 @@ jobs:
       - name: Validate required secrets
         run: |
           MISSING=""
-          for secret in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_ENV_NAME AZURE_LOCATION; do
-            if [ -z "${!secret}" ]; then
+          for secret in AZURE_STATIC_WEB_APPS_API_TOKEN AZURE_FUNCTIONAPP_PUBLISH_PROFILE; do
+            if [ -z "$(echo ${{ secrets[secret] }})" ]; then
               MISSING="$MISSING $secret"
             fi
           done
@@ -35,24 +39,78 @@ jobs:
           fi
           echo "All required secrets are present"
 
-  deploy:
+  backend-tests:
     needs: secrets-check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - name: Run backend unit tests
+        run: npm test
+
+  frontend-tests:
+    needs: secrets-check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Run Playwright E2E tests
+        run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-production
+          path: frontend/test-results/
+          retention-days: 7
+
+  deploy:
+    needs: [backend-tests, frontend-tests]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install azd
-        uses: Azure/setup-azd@v2
-      - name: Log in to Azure
-        uses: azure/login@v2
+
+      - name: Deploy Frontend to Azure Static Web Apps
+        uses: Azure/static-web-apps-deploy@v1
         with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
-      - name: Deploy to Production
-        run: azd deploy --no-prompt
-        env:
-          AZURE_ENV_NAME: ${{ env.AZURE_ENV_NAME }}
-          AZURE_LOCATION: ${{ env.AZURE_LOCATION }}
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          action: upload
+          skip_app_build: false
+          app_location: /frontend
+          output_location: dist
+
+      - name: Setup Node.js for backend deploy
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci --omit=dev
+
+      - name: Deploy Backend to Azure Functions
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
+          package: backend
+          publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
 
   smoke-test:
     needs: deploy
@@ -60,9 +118,9 @@ jobs:
     steps:
       - name: Wait for deployment to settle
         run: sleep 30
-      - name: Smoke test Functions
+      - name: Smoke test Functions endpoint
         run: |
-          FUNC_URL="https://func-dashboard-ingest-q47bia47kk3na.azurewebsites.net/api/hello"
+          FUNC_URL="https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net/api/hello"
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$FUNC_URL" || echo "000")
           if [ "$STATUS" != "200" ]; then
             echo "::error::Production health check returned $STATUS"
