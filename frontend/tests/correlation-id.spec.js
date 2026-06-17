@@ -7,6 +7,7 @@ test('student chat request sends x-correlation-id header', async ({ page, browse
     sessionStorage.setItem('edu_role', 'student');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');
+    sessionStorage.setItem('edu_ai_consent_accepted', 'true');
   });
 
   await page.route('**/api/classes?**', async route => {
@@ -38,6 +39,9 @@ test('student chat request sends x-correlation-id header', async ({ page, browse
   });
 
   await page.goto('/#/student/dashboard');
+  await expect(page.locator('#chat-input')).toBeVisible();
+  await page.locator('.source-pill').first().click();
+  await expect(page.locator('.source-pill.active')).toBeVisible();
   await page.locator('#chat-input').fill('Que es arquitectura hexagonal?');
   await page.locator('#chat-send').click();
 

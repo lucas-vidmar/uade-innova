@@ -74,9 +74,11 @@ export const auth = {
     },
 
     getActiveSubjectId() {
+        const storedSubjectId = sessionStorage.getItem('edu_active_subject');
+        if (storedSubjectId) return storedSubjectId;
         const user = this.getUser();
         if (!user.subjects || user.subjects.length === 0) return null;
-        return sessionStorage.getItem('edu_active_subject') || user.subjects[0].id;
+        return user.subjects[0].id;
     },
 
     setActiveSubjectId(subjectId) {

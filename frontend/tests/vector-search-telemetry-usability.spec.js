@@ -11,6 +11,7 @@ test('student chat remains usable while vector retrieval telemetry is active', a
     sessionStorage.setItem('edu_role', 'student');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');
+    sessionStorage.setItem('edu_ai_consent_accepted', 'true');
     sessionStorage.setItem('edu_logged_in', 'true');
   });
 
@@ -51,6 +52,8 @@ test('student chat remains usable while vector retrieval telemetry is active', a
   await page.goto('/#/student/dashboard');
 
   await expect(page.locator('#chat-input')).toBeVisible();
+  await page.locator('.source-pill').first().click();
+  await expect(page.locator('.source-pill.active')).toBeVisible();
   await page.locator('#chat-input').fill('Explicame arquitectura hexagonal');
   await page.locator('#chat-send').click();
 

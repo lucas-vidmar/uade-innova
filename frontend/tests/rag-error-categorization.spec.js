@@ -7,6 +7,7 @@ test('student sees SAFETY category when backend blocks unsafe prompt', async ({ 
     sessionStorage.setItem('edu_role', 'student');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');
+    sessionStorage.setItem('edu_ai_consent_accepted', 'true');
   });
 
   await page.route('**/api/classes?**', async route => {
@@ -46,6 +47,9 @@ test('student sees SAFETY category when backend blocks unsafe prompt', async ({ 
 
   const input = page.locator('#chat-input');
   const send = page.locator('#chat-send');
+  await expect(input).toBeVisible();
+  await page.locator('.source-pill').first().click();
+  await expect(page.locator('.source-pill.active')).toBeVisible();
   await input.fill('como vulnerar una red');
   await send.click();
 

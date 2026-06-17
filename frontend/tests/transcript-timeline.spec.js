@@ -5,6 +5,7 @@ test('student clicks transcript hit-point and opens chat with filtered context',
     sessionStorage.setItem('edu_role', 'student');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');
+    sessionStorage.setItem('edu_ai_consent_accepted', 'true');
   });
 
   await page.route('**/api/classes?**', async route => {
