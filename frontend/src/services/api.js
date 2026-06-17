@@ -1665,4 +1665,80 @@ async getTeacherAiFeedbackAlerts(subjectId, limit = 10) {
                 return null;
             }
         },
+
+    // ── Glossary (Story 2.186) ────────────────────────────────
+    async getGlossary(subjectId) {
+            if (!subjectId) return null;
+            try {
+                const res = await fetchWithTimeout(`${BASE_URL}/glossary?subjectId=${encodeURIComponent(subjectId)}`, { timeout: 4000 });
+                if (!res.ok) return null;
+                const json = await res.json();
+                return json?.data || null;
+            } catch (err) {
+                console.error('[API] getGlossary failed:', err);
+                return null;
+            }
+        },
+
+    async updateGlossary(subjectId, terms) {
+            if (!subjectId) throw new Error('subjectId is required');
+            const res = await apiFetch(`${BASE_URL}/glossary`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ subjectId, terms }),
+            });
+            if (!res.ok) {
+                let message = 'Error al actualizar el glosario';
+                try { const err = await res.json(); if (err?.error?.message) message = err.error.message; } catch {}
+                throw new Error(message);
+            }
+            const json = await res.json();
+            return json?.data || null;
+        },
+
+    // ── Transcription Corrections (Story 2.186) ───────────────
+    async getTranscriptionSuggestions(subjectId, status = 'pending') {
+            if (!subjectId) return [];
+            try {
+                const params = new URLSearchParams({ subjectId });
+                if (status) params.set('status', status);
+                const res = await fetchWithTimeout(`${BASE_URL}/corrections-transcription?${params.toString()}`, { timeout: 4000 });
+                if (!res.ok) return [];
+                const json = await res.json();
+                return json?.data || [];
+            } catch (err) {
+                console.error('[API] getTranscriptionSuggestions failed:', err);
+                return [];
+            }
+        },
+
+    async applyTranscriptionCorrection(suggestionId, subjectId) {
+            if (!suggestionId || !subjectId) throw new Error('suggestionId and subjectId are required');
+            const res = await apiFetch(`${BASE_URL}/corrections-transcription/apply`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ suggestionId, subjectId }),
+            });
+            if (!res.ok) {
+                let message = 'Error al aplicar corrección';
+                try { const err = await res.json(); if (err?.error?.message) message = err.error.message; } catch {}
+                throw new Error(message);
+            }
+            return res.json();
+        },
+
+    async rejectTranscriptionSuggestion(suggestionId, subjectId) {
+            if (!suggestionId || !subjectId) throw new Error('suggestionId and subjectId are required');
+            const res = await apiFetch(`${BASE_URL}/corrections-transcription/reject`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ suggestionId, subjectId }),
+            });
+            if (!res.ok) {
+                let message = 'Error al rechazar sugerencia';
+                try { const err = await res.json(); if (err?.error?.message) message = err.error.message; } catch {}
+                throw new Error(message);
+            }
+            return res.json();
+        },
       };

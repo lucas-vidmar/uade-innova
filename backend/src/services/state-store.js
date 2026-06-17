@@ -7,6 +7,7 @@ const ENROLLMENTS_TABLE = process.env.AZURE_STORAGE_ENROLLMENTS_TABLE
   || 'Enrollments';
 const CORRECTIONS_TABLE = process.env.AZURE_TABLE_CORRECTIONS || 'Corrections';
 const CORRECTIONS_PENDING_TABLE = process.env.AZURE_TABLE_CORRECTIONS_PENDING || 'CorrectionsPending';
+const TRANSCRIPTION_CORRECTIONS_TABLE = process.env.AZURE_TABLE_TRANSCRIPTION_CORRECTIONS || 'TranscriptionCorrections';
 
 const ensuredTables = new Set();
 
@@ -436,4 +437,42 @@ export async function listPendingCorrections(subjectId) {
   }
   all.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
   return all.map(fromCorrectionEntity);
+}
+
+// ─── Transcription Corrections Operations ─────────────────────
+
+export async function listTranscriptionSuggestions(subjectId, statusFilter = 'all') {
+  if (!subjectId) return [];
+  await ensureTable(TRANSCRIPTION_CORRECTIONS_TABLE);
+  const client = getTableClient(TRANSCRIPTION_CORRECTIONS_TABLE);
+  const filter = `PartitionKey eq '${escapeODataValue(subjectId)}'`;
+  const all = [];
+  for await (const entity of client.listEntities({ queryOptions: { filter } })) {
+    if (statusFilter === 'all' || entity.status === statusFilter) {
+      all.push(entity);
+    }
+  }
+  all.sort((a, b) => new Date(b.detectedAt || 0) - new Date(a.detectedAt || 0));
+  return all;
+}
+
+export async function getTranscriptionSuggestion(subjectId, suggestionId) {
+  if (!subjectId || !suggestionId) return null;
+  await ensureTable(TRANSCRIPTION_CORRECTIONS_TABLE);
+  const client = getTableClient(TRANSCRIPTION_CORRECTIONS_TABLE);
+  try {
+    return await client.getEntity(subjectId, suggestionId);
+  } catch {
+    return null;
+  }
+}
+
+export async function updateTranscriptionSuggestion(subjectId, suggestionId, updates) {
+  if (!subjectId || !suggestionId) throw new Error('subjectId and suggestionId are required');
+  await ensureTable(TRANSCRIPTION_CORRECTIONS_TABLE);
+  const client = getTableClient(TRANSCRIPTION_CORRECTIONS_TABLE);
+  const entity = await client.getEntity(subjectId, suggestionId);
+  const merged = { ...entity, ...updates };
+  await client.upsertEntity(merged, 'Replace');
+  return merged;
 }

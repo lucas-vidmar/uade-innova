@@ -25,3 +25,9 @@ import './functions/deadline-proximity-dispatcher.js';
 import './functions/consent-api.js';
 import './functions/corrections/get-pending-reports/index.js';
 import './functions/corrections/verify-answer/index.js';
+// Transcription correction with glossary (Story 2.186)
+import './functions/glossary/get-glossary/index.js';
+import './functions/glossary/update-glossary/index.js';
+import './functions/corrections-transcription/get-suggestions/index.js';
+import './functions/corrections-transcription/apply-correction/index.js';
+import './functions/corrections-transcription/reject-suggestion/index.js';

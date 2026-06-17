@@ -25,6 +25,9 @@ const ROUTES = {
     '/teacher/materials': () => import('./pages/teacher/MaterialManager.js').then(m => m.renderMaterialManager),
     '/teacher/corrections': () => import('./pages/teacher/CorrectionInbox.js').then(m => m.renderCorrectionInbox),
     '/teacher/correction': () => import('./pages/teacher/CorrectionDetail.js').then(m => m.renderCorrectionDetail),
+    '/teacher/glossary': () => import('./pages/teacher/GlossaryManager.js').then(m => m.renderGlossaryManager),
+    '/teacher/transcription-corrections': () => import('./pages/teacher/TranscriptionCorrections.js').then(m => m.renderTranscriptionCorrections),
+    '/teacher/transcription-correction': () => import('./pages/teacher/TranscriptionCorrectionDetail.js').then(m => m.renderTranscriptionCorrectionDetail),
     '/director/dashboard': () => import('./pages/director/Dashboard.js').then(m => m.renderDirectorDashboard),
     '/director/classes': () => import('./pages/director/ClassManagement.js').then(m => m.renderClassManagement),
     '/director/subjects': () => import('./pages/director/SubjectManagement.js').then(m => m.renderSubjectManagement),
@@ -61,6 +64,9 @@ async function handleRoute() {
     }
     if (fullPath.startsWith('/teacher/correction/')) {
         matchedPath = '/teacher/correction';
+    }
+    if (fullPath.startsWith('/teacher/transcription-correction/')) {
+        matchedPath = '/teacher/transcription-correction';
     }
 
     buildShell();

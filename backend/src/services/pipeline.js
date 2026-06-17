@@ -10,6 +10,7 @@ import { upsertMaterialState } from './state-store.js';
 import { trackIngestionInteraction } from './telemetry.js';
 import { buildDependencyHeaders } from './correlation.js';
 import { getMaterialPriority } from './material-classification.js';
+import { detectGlossaryErrors } from './transcription-corrector.js';
 
 const CONTAINER_PROCESSED = 'processed';
 const CONTAINER_SUMMARIES = 'class-summaries';
@@ -45,6 +46,18 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
                 context.log(`[Pipeline] Títulos extraídos: ${Object.keys(slideTitles || {}).length} diapositivas con título`);
             } catch (titleErr) {
                 context.log.warn(`[Pipeline] No se pudieron extraer títulos (no bloqueante): ${titleErr.message}`);
+            }
+        }
+
+        // 1c. Detectar errores de glosario en transcripciones (Story 2.186)
+        if (mt === 'transcript') {
+            try {
+                const suggestions = await detectGlossaryErrors(subjectId, text, materialId, classIds?.[0], context);
+                if (suggestions.length > 0) {
+                    context.log(`[Pipeline] Glosario: ${suggestions.length} error(es) detectado(s) en transcripción ${materialId}`);
+                }
+            } catch (glossaryErr) {
+                context.log.warn(`[Pipeline] Detección de glosario falló (no bloqueante): ${glossaryErr.message}`);
             }
         }
 

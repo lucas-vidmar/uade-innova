@@ -33,7 +33,7 @@
 #   - done: Retrospective has been completed
 
 generated: "2026-06-05"
-last_updated: "2026-06-14"
+last_updated: "2026-06-17"
 project: "UADE Innova Dashboard Educativo"
 project_key: "UADE-EDU"
 tracking_system: "github-issues"
@@ -60,7 +60,9 @@ development_status:
   2-155-backfill-material-priority-for-existing-: done
   2-156-reindex-historical-vectors-with-new-clas: done
   2-160-add-exact-classid-retrieval-filter-path-: done
-  2-161-slide-title-metadata-extraction-for-pptx: in-progress
+  2-161-slide-title-metadata-extraction-for-pptx: done
+  2-186-transcription-correction-with-glossary: done
+  2-187-teacher-onboarding-guide: ready-for-dev
   2-164-featteacher-show-actionable-ingestion-er: backlog
   2-165-featteacher-sync-ingestion-tracking-stat: backlog
   2-41-source-only-grounding-mode: done
@@ -71,7 +73,7 @@ development_status:
   epic-2-retrospective: optional
 
   # Gestion Academica y Calendario
-  epic-3: backlog
+  epic-3: in-progress
   3-126-rag-retrieval-mix-telemetry: backlog
   3-127-configurable-rag-source-weighting-by-sub: backlog
   3-128-rag-context-diversity-guardrail: backlog
@@ -79,6 +81,11 @@ development_status:
   3-169-context-selection-guardrail-for-large-cl: backlog
   3-170-track-selectedclasscount-in-rag-telemetr: backlog
   3-171-improve-empty-class-selection-ux-hint-in: backlog
+  3-188-response-rating-thumbs-up-down: backlog
+  3-189-save-conversation-threads: backlog
+  3-190-report-incorrect-rag-response: backlog
+  3-191-source-transparency-in-rag-responses: backlog
+  3-192-student-onboarding-guide: backlog
   3-55-interactive-class-timeline: done
   3-56-academic-deadline-management: done
   3-61-automated-post-class-summary-distributio: done
@@ -90,7 +97,7 @@ development_status:
   epic-3-retrospective: optional
 
   # Observabilidad y Metricas
-  epic-4: backlog
+  epic-4: in-progress
   4-135-teacher-ai-feedback-alerts-filtering-by-: done
   4-136-ai-feedback-alerts-lifecycle-management: backlog
   4-137-proactive-escalation-for-repeated-ai-qua: backlog
@@ -105,7 +112,7 @@ development_status:
   epic-4-retrospective: optional
 
   # Notificaciones y Comunicaciones
-  epic-5: backlog
+  epic-5: in-progress
   5-103-support-real-time-push-notifications-for: backlog
   5-104-add-notification-filters-and-pagination: backlog
   5-105-create-full-notification-history-page-fo: backlog
@@ -118,10 +125,11 @@ development_status:
   5-92-persist-notification-readunread-state-pe: backlog
   5-93-document-notifications-api-contract-for-: backlog
   5-94-add-per-notification-quick-actions-and-f: done
+  5-193-teacher-material-upload-reminders: backlog
   epic-5-retrospective: optional
 
   # Infraestructura y Seguridad
-  epic-6: backlog
+  epic-6: in-progress
   6-141-intervention-signals-from-real-engagemen: backlog
   6-142-configurable-risk-thresholds-per-subject: backlog
   6-143-director-intervention-workflow-states-an: backlog
