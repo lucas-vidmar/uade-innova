@@ -1,11 +1,9 @@
-# ──────────────────────────────────────────────────────────────────
-# Production Deployment — Deploys on push to main (PR merge)
-# Uses SWA deployment token + Function App publish profile
-# (no Azure RBAC / OIDC required)
+# Production Deployment
+# Deploys on push to main (PR merge)
+# Uses SWA deployment token + Function App publish profile (no RBAC)
 #
-# ⚠ TODO: Migrate to OIDC + azd when RBAC permissions are granted
-#   (see AGENTS.md section 15)
-# ──────────────────────────────────────────────────────────────────
+# TODO: Migrate to OIDC + azd when RBAC permissions are granted
+# (see AGENTS.md section 15)
 
 name: Deploy to Production
 
