@@ -6,6 +6,8 @@ import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
 import { toast } from '../../components/Toast.js';
 import { showPromptDialog } from '../../components/Dialog.js';
+import { OnboardingEngine, isOnboardingCompleted } from '../../services/onboarding.js';
+import { TEACHER_ONBOARDING_STEPS } from './OnboardingSteps.js';
 
 export async function renderTeacherDashboard(container) {
   renderHeader('Mis Cátedras');
@@ -198,6 +200,14 @@ export async function renderTeacherDashboard(container) {
   if (deadlines.length > 0) {
     console.debug('[Teacher Dashboard] Deadlines cargados:', deadlines.length);
   }
+
+  /* ── Onboarding trigger (first login) ───────────────── */
+  requestAnimationFrame(() => {
+    if (!isOnboardingCompleted()) {
+      const engine = new OnboardingEngine({ role: 'teacher', steps: TEACHER_ONBOARDING_STEPS });
+      engine.start();
+    }
+  });
 }
 
 function icon(name) {

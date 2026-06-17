@@ -328,6 +328,17 @@ svg {
   animation: pulse 1.5s ease-in-out infinite;
 }
 
+/* ── Onboarding Highlight ─────────────────────────────────── */
+.onboarding-highlight {
+  position: relative;
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 16px rgba(12, 96, 153, 0.35);
+  border-radius: var(--radius-sm);
+  transition: outline-color 0.2s ease, box-shadow 0.2s ease;
+  z-index: 10001;
+}
+
 /* ── Layout Shell ────────────────────────────────────────── */
 #app {
   display: flex;

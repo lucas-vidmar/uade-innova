@@ -4,6 +4,8 @@
 import { auth } from '../services/auth.js';
 import { api } from '../services/api.js';
 import { toast } from './Toast.js';
+import { OnboardingEngine, resetOnboarding } from '../services/onboarding.js';
+import { TEACHER_ONBOARDING_STEPS } from '../pages/teacher/OnboardingSteps.js';
 
 const NAV = {
   student: [
@@ -78,6 +80,14 @@ export function renderSidebar() {
             </a>
           `;
         }).join('')}
+
+        ${user.role === 'teacher' ? `
+          <div class="left-nav-divider"></div>
+          <button class="left-nav-link left-nav-link--help" id="nav-teacher-onboarding-desktop" type="button">
+            ${getIcon('help')}
+            <span class="left-nav-label">Guía de inicio</span>
+          </button>
+        ` : ''}
       </nav>
     </aside>
 
@@ -179,6 +189,13 @@ export function renderSidebar() {
           </a>
         `;
       }).join('')}
+
+      ${user.role === 'teacher' ? `
+        <button class="mobile-bottom-link mobile-bottom-link--help" id="nav-teacher-onboarding-mobile" type="button">
+          ${getIcon('help')}
+          <span>Guía de inicio</span>
+        </button>
+      ` : ''}
     </nav>
   `;
 
@@ -236,6 +253,20 @@ export function renderSidebar() {
       auth.mockLoginAs(role);
       window.location.hash = `#/${role}/dashboard`;
       window.location.reload();
+    });
+  });
+
+  /* ── Onboarding re-trigger (Guía de inicio) ──────────── */
+  const onboardingBtns = [
+    document.getElementById('nav-teacher-onboarding-desktop'),
+    document.getElementById('nav-teacher-onboarding-mobile'),
+  ].filter(Boolean);
+
+  onboardingBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      resetOnboarding();
+      const engine = new OnboardingEngine({ role: 'teacher', steps: TEACHER_ONBOARDING_STEPS });
+      engine.start();
     });
   });
 
@@ -468,6 +499,7 @@ function getIcon(icon) {
     alert: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.86 1.82 18a2 2 0 0 0 1.72 3h16.92a2 2 0 0 0 1.72-3L13.7 3.86a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
     edit: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>',
     book: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5A2.5 2.5 0 0 1 4 19.5Z"/><path d="M8 7h8"/><path d="M8 11h6"/><path d="M8 15h4"/></svg>',
+    help: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>',
   };
 
   return icons[icon] || icons.home;

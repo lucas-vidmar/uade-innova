@@ -800,3 +800,220 @@
 .top-nav-grid > :last-child {
     justify-self: end;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Onboarding Overlay — guided tour UI
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Backdrop ──────────────────────────────────────────── */
+.onboarding-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: rgba(6, 27, 44, 0.75);
+    backdrop-filter: blur(4px);
+    animation: fadeIn 0.25s ease;
+}
+
+/* ── Tooltip card ──────────────────────────────────────── */
+.onboarding-tooltip {
+    position: absolute;
+    z-index: 10000;
+    width: 360px;
+    max-width: calc(100vw - var(--space-8));
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-xl), var(--shadow-glow);
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.onboarding-tooltip--visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.onboarding-tooltip-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.onboarding-step-indicator {
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.onboarding-close-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-md);
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.onboarding-close-btn:hover {
+    background: var(--color-surface-2);
+    color: var(--color-text-primary);
+}
+
+.onboarding-tooltip-body {
+    padding: var(--space-4);
+}
+
+.onboarding-step-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    margin-bottom: var(--space-3);
+    border-radius: var(--radius-md);
+    background: var(--color-accent-glow);
+}
+
+.onboarding-step-title {
+    font-size: var(--font-size-lg);
+    font-weight: 700;
+    margin-bottom: var(--space-2);
+    color: var(--color-text-primary);
+}
+
+.onboarding-step-desc {
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+    color: var(--color-text-secondary);
+}
+
+.onboarding-step-location {
+    margin-top: var(--space-3);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    padding: var(--space-2);
+    background: var(--color-surface-2);
+    border-radius: var(--radius-sm);
+}
+
+.onboarding-tooltip-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-3) var(--space-4);
+    border-top: 1px solid var(--color-border);
+    gap: var(--space-2);
+}
+
+.onboarding-btn {
+    min-width: 100px;
+    justify-content: center;
+}
+
+.onboarding-btn-next {
+    background: var(--gradient-brand);
+    color: #fff;
+    border: none;
+}
+
+.onboarding-btn-next:hover {
+    opacity: 0.95;
+}
+
+.onboarding-btn-prev {
+    background: transparent;
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-border);
+}
+
+.onboarding-btn-prev:hover {
+    background: var(--color-surface-2);
+    color: var(--color-text-primary);
+}
+
+/* ── Mobile: full-screen ───────────────────────────────── */
+.onboarding-tooltip--mobile {
+    position: fixed;
+    inset: auto var(--space-4) var(--space-4) var(--space-4);
+    top: auto;
+    left: var(--space-4);
+    width: auto;
+    max-width: none;
+    transform: translateY(20px);
+    border-radius: var(--radius-xl);
+}
+
+.onboarding-tooltip--mobile.onboarding-tooltip--visible {
+    transform: translateY(0);
+}
+
+/* ── Arrow pseudo-elements (desktop) ───────────────────── */
+.onboarding-tooltip--bottom::before,
+.onboarding-tooltip--top::before,
+.onboarding-tooltip--left::before,
+.onboarding-tooltip--right::before {
+    content: '';
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    transform: rotate(45deg);
+    z-index: -1;
+}
+
+.onboarding-tooltip--bottom::before {
+    top: -7px;
+    left: 50%;
+    margin-left: -6px;
+    border-right: none;
+    border-bottom: none;
+}
+
+.onboarding-tooltip--top::before {
+    bottom: -7px;
+    left: 50%;
+    margin-left: -6px;
+    border-left: none;
+    border-top: none;
+}
+
+.onboarding-tooltip--left::before {
+    right: -7px;
+    top: 50%;
+    margin-top: -6px;
+    border-right: none;
+    border-top: none;
+}
+
+.onboarding-tooltip--right::before {
+    left: -7px;
+    top: 50%;
+    margin-top: -6px;
+    border-left: none;
+    border-bottom: none;
+}
+
+@media (max-width: 640px) {
+    .onboarding-tooltip--mobile {
+        bottom: 0;
+        left: 0;
+        right: 0;
+        border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+        max-height: 70vh;
+        overflow-y: auto;
+    }
+}
