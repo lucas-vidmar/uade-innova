@@ -227,6 +227,7 @@ async function computeDirectorMetrics(context, requestedDays = POWERBI_DEFAULT_D
     const byTeacher = Object.values(materialUploadsByTeacher);
 
     return {
+        _rawRows: rows,
         updatedAt: new Date().toISOString(),
         windowDays: days,
         daily,

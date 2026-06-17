@@ -36,11 +36,24 @@ const vectorStoreMocks = {
 
 const authUtilsMocks = {
     validateFrontDoorId: mock.fn(() => true),
+    parseClientPrincipal: mock.fn(() => ({ userId: 'alu-001', userRoles: ['Alumno'] })),
+};
+
+const stateStoreMocks = {
+    getEnrollment: mock.fn(async () => ({ status: 'active', role: 'student' })),
+};
+
+const correlationMocks = {
+    resolveCorrelationId: mock.fn((request) => request?.headers?.get?.('x-correlation-id') || 'test-correlation-id'),
+    buildDependencyHeaders: mock.fn((cid) => ({ 'x-correlation-id': cid })),
+    withCorrelationResponseHeaders: mock.fn((cid, headers) => ({ ...headers, 'x-correlation-id': cid })),
 };
 
 mock.module('../services/ai.js', { namedExports: openaiMocks });
 mock.module('../services/vector-store.js', { namedExports: vectorStoreMocks });
 mock.module('../services/auth-utils.js', { namedExports: authUtilsMocks });
+mock.module('../services/state-store.js', { namedExports: stateStoreMocks });
+mock.module('../services/correlation.js', { namedExports: correlationMocks });
 
 let capturedHandler;
 mock.module('@azure/functions', {

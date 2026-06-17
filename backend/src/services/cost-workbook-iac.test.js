@@ -12,8 +12,8 @@ async function readRepoFile(relativePath) {
 test('workbook defines required cost-per-interaction pricing formulas', async () => {
   const workbookContent = await readRepoFile('infra/modules/workbook.bicep');
 
-  assert.match(workbookContent, /\$0\.15 \/ 1M/);
-  assert.match(workbookContent, /\$0\.60 \/ 1M/);
+  assert.match(workbookContent, /\$0\.15\/1M/);
+  assert.match(workbookContent, /\$0\.60\/1M/);
   assert.match(workbookContent, /0\.00000015/);
   assert.match(workbookContent, /0\.0000006/);
   assert.match(workbookContent, /AvgCostPerInteraction/);

@@ -11,6 +11,7 @@ const vectorStoreMocks = {
 
 const authUtilsMocks = {
     validateFrontDoorId: mock.fn(() => true),
+    parseClientPrincipal: mock.fn(() => ({ userId: 'test-user', userRoles: ['Director'] })),
 };
 
 mock.module('../services/vector-store.js', { namedExports: vectorStoreMocks });

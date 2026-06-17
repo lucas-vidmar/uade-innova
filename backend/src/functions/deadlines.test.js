@@ -4,6 +4,15 @@ import assert from 'node:assert';
 const storageMocks = {
     loadJson: mock.fn(async () => []),
     saveJson: mock.fn(async () => true),
+    getTableClient: mock.fn(() => ({
+        createTable: mock.fn(async () => {}),
+        listEntities: mock.fn(() => ({
+            [Symbol.asyncIterator]: async function* () { yield* []; }
+        })),
+        upsertEntity: mock.fn(async () => {}),
+        getEntity: mock.fn(async () => ({})),
+        deleteEntity: mock.fn(async () => {})
+    })),
 };
 
 const authMocks = {
@@ -11,8 +20,13 @@ const authMocks = {
     parseClientPrincipal: mock.fn(() => ({ userRoles: ['Docente'], userDetails: 'teacher@uade.edu' })),
 };
 
+const stateStoreMocks = {
+    getEnrollment: mock.fn(async () => ({ status: 'active', role: 'teacher' })),
+};
+
 mock.module('../services/storage.js', { namedExports: storageMocks });
 mock.module('../services/auth-utils.js', { namedExports: authMocks });
+mock.module('../services/state-store.js', { namedExports: stateStoreMocks });
 
 let savedHandler;
 let remindersHandler;

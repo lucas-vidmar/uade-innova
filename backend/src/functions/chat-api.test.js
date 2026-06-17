@@ -46,8 +46,14 @@ const storageMocks = {
     getTableClient: mock.fn(() => ({})),
 };
 
+const stateStoreMocks = {
+    getEnrollment: mock.fn(async () => ({ status: 'active', role: 'teacher' })),
+    upsertCorrection: mock.fn(async () => true),
+};
+
 mock.module('../services/auth-utils.js', { namedExports: authMocks });
 mock.module('../services/storage.js', { namedExports: storageMocks });
+mock.module('../services/state-store.js', { namedExports: stateStoreMocks });
 
 const handlers = {};
 mock.module('@azure/functions', {

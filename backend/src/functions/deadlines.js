@@ -39,6 +39,8 @@ app.http('get-deadlines', {
             return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         }
 
+        const subjectId = request.query.get('subjectId');
+
         if (!subjectId) {
             return { status: 400, body: JSON.stringify({ error: 'Falta subjectId' }) };
         }
@@ -136,6 +138,8 @@ app.http('get-deadline-reminders', {
         if (!validateFrontDoorId(request)) {
             return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         }
+
+        const subjectId = request.query.get('subjectId');
 
         if (!subjectId) {
             return { status: 400, body: JSON.stringify({ error: 'Falta subjectId' }) };

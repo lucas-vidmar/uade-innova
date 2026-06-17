@@ -25,12 +25,16 @@ const stateStoreMocks = {
     upsertMaterialState: mock.fn(async () => true),
     deleteClassesBySubject: mock.fn(async () => true),
     deleteMaterialsBySubject: mock.fn(async () => true),
+    getEnrollment: mock.fn(async () => ({ status: 'active', role: 'student' })),
+    getEnrollmentsByUser: mock.fn(async () => []),
 };
 
 mock.module('../services/auth-utils.js', { namedExports: authUtilsMocks });
 mock.module('../services/storage.js', { namedExports: storageMocks });
 mock.module('../services/state-store.js', { namedExports: stateStoreMocks });
 mock.module('uuid', { namedExports: { v4: () => '1234' } });
+
+process.env.DIRECTOR_BUDGET_MONTHLY_USD = '97.50';
 
 const handlers = {};
 mock.module('@azure/functions', {

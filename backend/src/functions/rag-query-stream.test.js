@@ -63,12 +63,19 @@ const telemetryMocks = {
     trackRAGInteraction: mock.fn(async () => {}),
 };
 
+const stateStoreMocks = {
+    getEnrollment: mock.fn(async () => ({ status: 'active', role: 'student' })),
+    getConsentStatus: mock.fn(async () => true),
+    listMaterialsBySubject: mock.fn(async () => []),
+};
+
 mock.module('../services/ai.js', { namedExports: openaiMocks });
 mock.module('../services/vector-store.js', { namedExports: vectorStoreMocks });
 mock.module('../services/storage.js', { namedExports: storageMocks });
 mock.module('../services/prompts.js', { namedExports: promptsMocks });
 mock.module('../services/auth-utils.js', { namedExports: authUtilsMocks });
 mock.module('../services/telemetry.js', { namedExports: telemetryMocks });
+mock.module('../services/state-store.js', { namedExports: stateStoreMocks });
 
 let capturedHandler;
 mock.module('@azure/functions', {

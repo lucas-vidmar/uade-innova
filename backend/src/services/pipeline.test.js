@@ -98,8 +98,11 @@ test('runPipeline should continue when index health stats retrieval fails', asyn
         throw new Error('stats unavailable');
     });
 
+    const logWarn = mock.fn();
+    const logFn = mock.fn();
+    logFn.warn = logWarn;
     const mockContext = {
-        log: mock.fn(),
+        log: logFn,
         warn: mock.fn(),
         error: mock.fn()
     };
@@ -115,7 +118,7 @@ test('runPipeline should continue when index health stats retrieval fails', asyn
         blobUrl: 'http://test'
     }, mockContext);
 
-    const warnCalls = mockContext.warn.mock.calls;
+    const warnCalls = mockContext.log.warn.mock.calls;
     const warningLogged = warnCalls.some((call) =>
         call.arguments?.[0]?.includes('No se pudo obtener stats del índice')
     );

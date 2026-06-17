@@ -3,8 +3,8 @@ import assert from 'node:assert';
 
 const authUtilsMocks = {
     validateFrontDoorId: mock.fn(() => true),
-    parseClientPrincipal: mock.fn(() => null),
-    getAuthenticatedUser: mock.fn(() => ({ userId: 'test-user', sanitizedId: 'test_user', principal: null, role: 'Anonymous' })),
+    parseClientPrincipal: mock.fn(() => ({ userId: 'alu-001', userRoles: ['Docente'] })),
+    getAuthenticatedUser: mock.fn(() => ({ userId: 'alu-001', sanitizedId: 'alu_001', principal: { userId: 'alu-001', userRoles: ['Docente'] }, role: 'Docente' })),
 };
 
 const stateStoreMocks = {

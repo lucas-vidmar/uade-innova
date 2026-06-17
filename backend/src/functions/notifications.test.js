@@ -15,9 +15,14 @@ const telemetryMocks = {
     trackNotificationInteraction: mock.fn(async () => {}),
 };
 
+const stateStoreMocks = {
+    getEnrollment: mock.fn(async () => ({ status: 'active', role: 'student' })),
+};
+
 mock.module('../services/auth-utils.js', { namedExports: authMocks });
 mock.module('../services/notification-store.js', { namedExports: notificationStoreMocks });
 mock.module('../services/telemetry.js', { namedExports: telemetryMocks });
+mock.module('../services/state-store.js', { namedExports: stateStoreMocks });
 
 const handlers = {};
 mock.module('@azure/functions', {

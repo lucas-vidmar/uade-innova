@@ -56,6 +56,7 @@ const telemetryMocks = {
 
 const stateStoreMocks = {
     getEnrollment: mock.fn(async () => ({ status: 'active', role: 'student' })),
+    getConsentStatus: mock.fn(async () => true),
     listMaterialsBySubject: mock.fn(async () => []),
 };
 
