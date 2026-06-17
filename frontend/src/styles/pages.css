@@ -3250,6 +3250,37 @@
     color: #757575;
 }
 
+.mat-error-message {
+    margin-top: 4px;
+    font-size: 0.72rem;
+    color: #b71c1c;
+    max-width: 280px;
+    word-break: break-word;
+    line-height: 1.3;
+}
+
+.mat-btn-reprocess {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.75rem;
+    padding: 3px 10px;
+    border: 1px solid #e53935;
+    color: #e53935;
+    background: transparent;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+}
+.mat-btn-reprocess:hover {
+    background: #e53935;
+    color: #fff;
+}
+.mat-btn-reprocess:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 /* ── Priority toggle ──────────── */
 .mat-priority-toggle {
     display: inline-flex;

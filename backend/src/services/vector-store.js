@@ -221,6 +221,16 @@ export async function querySimilarWithTelemetry(embedding, filter, topK = 5, dep
     }
 }
 
+/**
+ * Elimina todos los vectores asociados a un materialId.
+ */
+export async function deleteVectorsByMaterialId(materialId) {
+    if (!materialId || typeof materialId !== 'string' || !materialId.trim()) {
+        throw new Error('[VectorStore] deleteVectorsByMaterialId requiere un materialId valido');
+    }
+    return deleteVectorsByFilter({ materialId: { "$eq": materialId.trim() } });
+}
+
 export async function getIndexStats() {
     const stats = await pineconeRequest('/describe_index_stats', {});
     return {

@@ -41,7 +41,9 @@ function flushToastBuffer() {
                 if (status === 'ready') {
                     toast('success', 'Procesamiento completado', `"${job.filename}" ya está listo para usar.`);
                 } else {
-                    toast('error', 'Procesamiento con error', `"${job.filename}" terminó con errores. Revisá el material e intentá nuevamente.`);
+                    const details = job.errorMessage ? ` Motivo: ${job.errorMessage}` : '';
+                    console.error(`[ProcessingNotifications] Error en "${job.filename}":${details}`);
+                    toast('error', 'Procesamiento con error', `"${job.filename}" terminó con errores.${details || ' Revisá el material e intentá nuevamente.'}`);
                 }
             } else {
                 const count = jobs.length;
@@ -50,7 +52,12 @@ function flushToastBuffer() {
                 if (status === 'ready') {
                     toast('success', `${count} ${noun} procesados correctamente`, '', 5000, filenames);
                 } else {
-                    toast('error', `${count} ${noun} terminaron con errores`, 'Revisá los materiales e intentá nuevamente.', 5000, filenames);
+                    const firstMsg = jobs.find(j => j.errorMessage)?.errorMessage;
+                    const msg = firstMsg ? `Ejemplo: ${firstMsg}` : 'Revisá los materiales e intentá nuevamente.';
+                    jobs.forEach(j => {
+                        if (j.errorMessage) console.error(`[ProcessingNotifications] Error en "${j.filename}": ${j.errorMessage}`);
+                    });
+                    toast('error', `${count} ${noun} terminaron con errores`, msg, 5000, filenames);
                 }
             }
         } catch (flushErr) {

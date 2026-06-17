@@ -14,7 +14,9 @@ const storageMocks = {
     listBlobs: mock.fn(async () => []),
     getTableClient: mock.fn(() => ({
         listEntities: async function* () { }
-    }))
+    })),
+    uploadFile: mock.fn(async () => true),
+    downloadFile: mock.fn(async () => null),
 };
 
 // Mock dependencies

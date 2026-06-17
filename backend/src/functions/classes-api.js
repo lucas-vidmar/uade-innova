@@ -1,5 +1,5 @@
 import { app } from '@azure/functions';
-import { loadJson, saveJson, listBlobs, deleteBlob, getTableClient } from '../services/storage.js';
+import { loadJson, saveJson, listBlobs, deleteBlob, uploadFile, getTableClient } from '../services/storage.js';
 import { v4 as uuidv4 } from 'uuid';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { listClassesBySubject, listMaterialsBySubject, replaceClassesForSubject, deleteMaterialStateById, getMaterialState, upsertMaterialState, deleteClassesBySubject, deleteMaterialsBySubject, getEnrollmentsByUser, getEnrollment } from '../services/state-store.js';
@@ -1285,6 +1285,93 @@ app.http('delete-material', {
             return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: `No se pudo borrar el material: ${err.message}` }) };
         }
     }
+});
+
+// ── POST /api/materials/{materialId}/reprocess ─────────────────────────
+// Re-intenta procesar un material que falló
+app.http('reprocess-material', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'materials/{materialId}/reprocess',
+    handler: async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+        const principal = parseClientPrincipal(request);
+        const isAuthorized = !principal
+            || principal?.userRoles?.some(role => ['Docente', 'Director'].includes(role))
+            || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
+        if (!isAuthorized) {
+            return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Teacher access required' }) };
+        }
+
+        const materialId = request.params.materialId;
+        const subjectId = request.query.get('subjectId');
+        if (!subjectId) {
+            return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'subjectId es requerido' }) };
+        }
+
+        try {
+            const material = await getMaterialState(subjectId, materialId);
+            if (!material) {
+                return { status: 404, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Material no encontrado' }) };
+            }
+
+            if (material.status !== 'error') {
+                return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Solo se pueden reprocesar materiales con estado "error"' }) };
+            }
+
+            // 1. Eliminar vectores existentes en Pinecone
+            try {
+                await vectorStore.deleteVectorsByMaterialId(materialId);
+                context.log(`[Reprocess] Vectores eliminados para ${materialId}`);
+            } catch (vErr) {
+                context.error(`[Reprocess] Error eliminando vectores de ${materialId}:`, vErr);
+            }
+
+            // 2. Eliminar blob de procesado anterior
+            try {
+                await deleteBlob(CONTAINER_PROCESSED, `${materialId}.json`);
+            } catch (bErr) {
+                context.error(`[Reprocess] Error eliminando blob procesado para ${materialId}:`, bErr);
+            }
+
+            // 3. Re-subir blob original para re-triggerear el pipeline
+            const containerName = process.env.AZURE_STORAGE_CONTAINER_MATERIALS || 'class-materials';
+            const classId = Array.isArray(material.classIds) && material.classIds.length > 0 ? material.classIds[0] : 'unknown';
+            const blobName = `${classId}/${materialId}-${material.filename || 'file'}`;
+            const originalBlobUrl = material.blobUrl;
+
+            if (originalBlobUrl) {
+                try {
+                    const response = await fetch(originalBlobUrl);
+                    if (response.ok) {
+                        const buffer = Buffer.from(await response.arrayBuffer());
+                        const contentType = response.headers.get('content-type') || 'application/octet-stream';
+                        await uploadFile(containerName, blobName, buffer, contentType);
+                        context.log(`[Reprocess] Blob re-subido para ${materialId}`);
+                    }
+                } catch (fetchErr) {
+                    context.error(`[Reprocess] Error re-subiendo blob para ${materialId}:`, fetchErr);
+                }
+            }
+
+            // 4. Resetear estado
+            const updated = await upsertMaterialState({
+                ...material,
+                status: 'pending',
+                errorMessage: '',
+                processedAt: undefined,
+            }, 'Merge');
+
+            return {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ success: true, material: updated }),
+            };
+        } catch (err) {
+            context.error(err);
+            return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: `No se pudo reprocesar el material: ${err.message}` }) };
+        }
+    },
 });
 
 // ── PATCH /api/materials/{materialId} ────────────────────────────────────

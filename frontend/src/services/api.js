@@ -847,6 +847,35 @@ export const api = {
         return res.json();
     },
 
+    async reprocessMaterial(materialId, subjectId) {
+        if (USE_MOCK) {
+            await delay(600);
+            return { success: true };
+        }
+        const res = await apiFetch(`${BASE_URL}/materials/${encodeURIComponent(materialId)}/reprocess?subjectId=${encodeURIComponent(subjectId)}`, {
+            method: 'POST',
+        });
+
+        if (!res.ok) {
+            let message = `Error ${res.status}: no se pudo reprocesar el material`;
+            try {
+                const contentType = res.headers.get('content-type') || '';
+                if (contentType.includes('application/json')) {
+                    const err = await res.json();
+                    if (err?.error) message = err.error;
+                } else {
+                    const text = await res.text();
+                    if (text) message = text;
+                }
+            } catch {
+                // no-op
+            }
+            throw new Error(message);
+        }
+
+        return res.json();
+    },
+
     async ragQuery({ question, classIds, subjectId, conversationHistory = [], historyWindowSize = 4, transcriptFocus = null }) {
         if (USE_MOCK) {
             await delay(1200);
