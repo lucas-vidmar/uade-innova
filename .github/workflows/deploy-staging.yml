@@ -27,13 +27,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Validate required secrets
+        env:
+          SWA_TOKEN: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          FUNC_PUBLISH_PROFILE: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
         run: |
           MISSING=""
-          for secret in AZURE_STATIC_WEB_APPS_API_TOKEN AZURE_FUNCTIONAPP_PUBLISH_PROFILE; do
-            if [ -z "$(echo ${{ secrets[secret] }})" ]; then
-              MISSING="$MISSING $secret"
-            fi
-          done
+          [ -z "$SWA_TOKEN" ] && MISSING="$MISSING AZURE_STATIC_WEB_APPS_API_TOKEN"
+          [ -z "$FUNC_PUBLISH_PROFILE" ] && MISSING="$MISSING AZURE_FUNCTIONAPP_PUBLISH_PROFILE"
           if [ -n "$MISSING" ]; then
             echo "::error::Missing required secrets:$MISSING"
             exit 1
@@ -91,8 +91,7 @@ jobs:
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
           action: upload
-          skip_app_build: false
-          app_location: /frontend
+          app_location: frontend
           output_location: dist
 
       - name: Setup Node.js for backend deploy
