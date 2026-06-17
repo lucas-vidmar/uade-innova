@@ -9,18 +9,38 @@ test('teacher can create a deadline and student sees it on dashboard and calenda
     sessionStorage.setItem('edu_consent_accepted', 'true');
   });
 
+  const DEADLINE_DATA = [
+    { id: 'deadline-001', title: 'Final Project', description: 'Entrega final del proyecto integrador.', subjectId: 'arq-software-2026', classId: 'class-14', dueDate: '2026-03-30', notifyOnDayBefore: true, notifyOnDayOf: true },
+  ];
+
+  await page.route('**/api/enrollments**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) });
+  });
+
+  await page.route('**/api/sga/tasks**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+
+  await page.route('**/api/tasks**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+
+  await page.route('**/api/chat-history?**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+
+  await page.route('**/api/notifications?**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+
   await page.route('**/api/classes?**', async route => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify([
-        { id: 'class-14', subjectId: 'arq-software-2026', title: 'Clase 14 — Integración', date: '2026-04-30', topics: [], materials: [], summaryReady: true },
+        { id: 'class-14', subjectId: 'arq-software-2026', title: 'Clase 14 — Integración', date: '2026-03-30', topics: [], materials: [], summaryReady: true },
       ]),
     });
-  });
-
-  await page.route('**/api/deadlines?**', async route => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
   });
 
   await page.route('**/api/deadlines', async route => {
@@ -34,10 +54,10 @@ test('teacher can create a deadline and student sees it on dashboard and calenda
       });
       return;
     }
-    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(DEADLINE_DATA) });
   });
 
-  await page.route('**/api/deadline-reminders?**', async route => {
+  await page.route('**/api/deadline-reminders', async route => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
 
@@ -45,18 +65,20 @@ test('teacher can create a deadline and student sees it on dashboard and calenda
   await page.locator('#deadline-title').fill('Final Project');
   await page.locator('#deadline-description').fill('Entrega final del proyecto integrador.');
   await page.locator('#deadline-class').selectOption('class-14');
-  await page.locator('#deadline-date').fill('2026-04-30');
+  await page.locator('#deadline-date').fill('2026-03-30');
   await page.locator('#deadline-save').click();
 
   expect(requests.length).toBe(1);
   expect(requests[0].title).toBe('Final Project');
   expect(requests[0].classId).toBe('class-14');
 
-  await page.addInitScript(() => {
+  await page.evaluate(() => {
     sessionStorage.setItem('edu_role', 'student');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');
+    sessionStorage.setItem('edu_logged_in', 'true');
   });
+  await page.goto('/#/student/calendar');
 
   await page.route('**/api/tasks?**', async route => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
@@ -66,17 +88,7 @@ test('teacher can create a deadline and student sees it on dashboard and calenda
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
 
-  await page.route('**/api/deadlines?**', async route => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify([
-        { id: 'deadline-001', title: 'Final Project', description: 'Entrega final del proyecto integrador.', subjectId: 'arq-software-2026', classId: 'class-14', dueDate: '2026-04-30', notifyOnDayBefore: true, notifyOnDayOf: true },
-      ]),
-    });
-  });
-
-  await page.route('**/api/deadline-reminders?**', async route => {
+  await page.route(url => url.pathname === '/api/deadline-reminders', async route => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -86,9 +98,9 @@ test('teacher can create a deadline and student sees it on dashboard and calenda
     });
   });
 
-  await page.goto('/#/student/dashboard');
-  await expect(page.locator('.class-list-item')).toContainText('Final Project');
-
   await page.goto('/#/student/calendar');
   await expect(page.locator('.cal-deadline-dot')).toHaveCount(1);
+
+  await page.locator('.cal-cell[data-has-class="true"]').first().click();
+  await expect(page.locator('.class-list-item')).toContainText('Final Project');
 });

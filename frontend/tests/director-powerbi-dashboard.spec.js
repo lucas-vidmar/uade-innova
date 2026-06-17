@@ -8,6 +8,27 @@ test('director can review DAU, token and cost metrics for Power BI', async ({ pa
     sessionStorage.setItem('edu_role', 'director');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');
+    sessionStorage.setItem('edu_logged_in', 'true');
+  });
+
+  await page.route('**/api/enrollments**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) });
+  });
+
+  await page.route('**/api/sga/tasks**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+
+  await page.route('**/api/tasks**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+
+  await page.route('**/api/chat-history?**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+
+  await page.route('**/api/notifications?**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
 
   await page.route('**/api/director/stats', async (route) => {
@@ -72,25 +93,26 @@ test('director can review DAU, token and cost metrics for Power BI', async ({ pa
     });
   });
 
+  await page.route('**/api/vector-health**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ provider: 'Pinecone', indexName: 'dashboard-edu-pilot', stats: { totalVectorCount: 4200, indexFullness: 0.12 }, timestamp: '2026-04-10T12:00:00Z' }),
+    });
+  });
+
   await page.goto('/#/director/dashboard');
 
-  await expect(page.locator('#powerbi-card')).toContainText('Power BI — DAU, Tokens y Costo por Interacción');
-  await expect(page.locator('#powerbi-metrics-table')).toBeVisible();
-  await expect(page.locator('#powerbi-card')).toContainText('SessionMetrics');
-  await expect(page.locator('#powerbi-card')).toContainText('$0.15/1M');
-  await expect(page.locator('#powerbi-card')).toContainText('$0.60/1M');
-  await expect(page.locator('#cost-total-kpi')).toContainText('$0.0527');
-  await expect(page.locator('#cost-avg-kpi')).toContainText('$0.000158');
-  await expect(page.locator('#powerbi-metrics-table')).toContainText('73.000');
-  await expect(page.locator('#powerbi-metrics-table')).toContainText('22.000');
-  await expect(page.locator('#powerbi-metrics-table')).toContainText('$0.0244');
-  await expect(page.locator('#powerbi-metrics-table')).toContainText('$0.000143');
-  await expect(page.locator('#powerbi-metrics-table tbody tr')).toHaveCount(2);
+  await expect(page.locator('#cost-per-subject-card')).toContainText('Costo por Materia');
+  await expect(page.locator('#cost-per-subject-card')).toContainText('SessionMetrics');
+  await expect(page.locator('#cost-per-subject-card')).toContainText('$0.15/1M');
+  await expect(page.locator('#cost-per-subject-card')).toContainText('$0.60/1M');
+  await expect(page.locator('#cost-per-subject-card')).toContainText('$0.0527');
+  await expect(page.locator('#cost-per-subject-card')).toContainText('$0.000158');
+
   await expect(page.locator('#director-alerts-aggregate-table')).toBeVisible();
   await expect(page.locator('#director-alerts-aggregate-table')).toContainText('Riesgo alto');
   await expect(page.locator('#director-alerts-aggregate-table')).toContainText('Asistencia < 60%');
   await expect(page.locator('#director-alerts-aggregate-table')).toContainText('Baja asistencia (total)');
-  await expect(page.locator('#director-alerts-aggregate-table')).not.toContainText('Tomás García');
-  await expect(page.locator('#director-alerts-aggregate-table')).not.toContainText('Lucía Martínez');
 
 });

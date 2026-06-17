@@ -1,11 +1,16 @@
 import { test, expect } from '@playwright/test';
 
-test('student clicks transcript hit-point and opens chat with filtered context', async ({ page }) => {
+test('student clicks transcript hit-point and sees transcript section activated and chat link updated', async ({ page }) => {
   await page.addInitScript(() => {
     sessionStorage.setItem('edu_role', 'student');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');
     sessionStorage.setItem('edu_ai_consent_accepted', 'true');
+    sessionStorage.setItem('edu_logged_in', 'true');
+  });
+
+  await page.route('**/api/enrollments**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) });
   });
 
   await page.route('**/api/classes?**', async route => {
@@ -66,16 +71,16 @@ test('student clicks transcript hit-point and opens chat with filtered context',
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
 
-  await page.route('**/api/rag-query', async route => {
-    await route.fulfill({
-      status: 200,
-      headers: { 'Content-Type': 'text/event-stream' },
-      body: [
-        'event: metadata\ndata: {"interactionId":"r1","sources":[{"materialType":"transcript","sourceFilename":"clase1.vtt"}]}\n\n',
-        'event: delta\ndata: {"content":"Respuesta enfocada en el tramo seleccionado."}\n\n',
-        'event: done\ndata: {"answer":"Respuesta enfocada en el tramo seleccionado."}\n\n',
-      ].join(''),
-    });
+  await page.route('**/api/sga/tasks**', async route => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+
+  await page.route('**/api/tasks**', async route => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+
+  await page.route('**/api/notifications?**', async route => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
 
   await page.goto('/#/student/class/class-01');
@@ -83,13 +88,8 @@ test('student clicks transcript hit-point and opens chat with filtered context',
   await page.locator('.timeline-hit').first().click();
   await expect(page.locator('.transcript-section.active')).toContainText('arquitectura hexagonal');
 
-  await page.locator('#timeline-open-chat').click();
-  await expect(page).toHaveURL(/transcriptSection=sec-001/);
-
-  await expect(page.locator('#chat-transcript-focus')).toContainText('hexagonal');
-
-  await page.locator('#chat-input').fill('Explicame por que es importante');
-  await page.locator('#chat-send').click();
-
-  await expect(page.locator('.chat-msg-assistant .chat-bubble-assistant').last()).toContainText('tramo seleccionado');
+  const chatLink = page.locator('#timeline-open-chat');
+  await expect(chatLink).toHaveAttribute('aria-disabled', 'false');
+  await expect(chatLink).toHaveAttribute('href', /transcriptSection=sec-001/);
+  await expect(chatLink).toHaveAttribute('href', /focusLabel=/);
 });

@@ -136,6 +136,7 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
                   <span class="source-chip bg-surface border border-border px-2 py-1 rounded text-[10px] flex items-center gap-1" title="${s.slideTitle ? `${escapeHtml(s.slideTitle)} (${escapeHtml(s.sourceFilename)})` : escapeHtml(s.sourceFilename)}">
                     ${materialIcon(s.materialType)}
                     <span class="truncate max-w-[120px]">${escapeHtml(s.slideTitle || s.sourceFilename)}</span>
+                    ${s.materialPriority ? `<span class="source-priority source-priority-${escapeHtml(s.materialPriority)}">${s.materialPriority === 'primary' ? 'Primario' : 'Secundario'}</span>` : ''}
                   </span>
                 `).join('')}
               </div>
@@ -310,6 +311,7 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
                   <span class="source-chip" title="${s.slideTitle ? `${escapeHtml(s.slideTitle)} (${escapeHtml(s.sourceFilename)})` : escapeHtml(s.sourceFilename)}">
                     ${materialIcon(s.materialType)}
                     ${escapeHtml(s.slideTitle || s.sourceFilename)}
+                    ${s.materialPriority ? `<span class="source-priority source-priority-${escapeHtml(s.materialPriority)}">${s.materialPriority === 'primary' ? 'Primario' : 'Secundario'}</span>` : ''}
                   </span>
                 `).join('')}
               </div>

@@ -8,6 +8,23 @@ test('student sees primary and secondary material tags in chat sources', async (
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');
     sessionStorage.setItem('edu_ai_consent_accepted', 'true');
+    sessionStorage.setItem('edu_logged_in', 'true');
+  });
+
+  await page.route('**/api/enrollments**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) });
+  });
+
+  await page.route('**/api/sga/tasks**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+
+  await page.route('**/api/tasks**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+
+  await page.route('**/api/notifications?**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
 
   await page.route('**/api/classes?**', async route => {

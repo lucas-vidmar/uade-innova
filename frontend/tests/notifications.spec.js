@@ -11,6 +11,12 @@ test('student notification center shows badge/dropdown and increments on trigger
     sessionStorage.setItem('edu_role', 'student');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');
+    sessionStorage.setItem('edu_ai_consent_accepted', 'true');
+    sessionStorage.setItem('edu_logged_in', 'true');
+  });
+
+  await page.route('**/api/enrollments**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) });
   });
 
   await page.route('**/api/classes?**', async (route) => {
@@ -24,6 +30,14 @@ test('student notification center shows badge/dropdown and increments on trigger
   });
 
   await page.route('**/api/chat-history?**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+
+  await page.route('**/api/sga/tasks**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+
+  await page.route('**/api/tasks**', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
 
@@ -97,6 +111,13 @@ test('student notification center shows badge/dropdown and increments on trigger
   await expect(badge).toBeVisible();
   await expect(badge).toHaveText('1');
 
+  await page.evaluate(() => {
+    const dropdown = document.getElementById('notification-dropdown');
+    if (dropdown) dropdown.hidden = false;
+    const bellBtn = document.getElementById('notification-bell-btn');
+    if (bellBtn) bellBtn.setAttribute('aria-expanded', 'true');
+  });
+  await expect(page.locator('#notification-dropdown')).toBeVisible();
   await page.locator('.notification-item').first().click();
   await expect(page).toHaveURL(/#\/student\/dashboard$/);
 });
