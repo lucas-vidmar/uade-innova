@@ -14,18 +14,24 @@ const openaiMocks = {
 };
 
 const vectorStoreMocks = {
-    querySimilar: mock.fn(async () => [
-        {
-            score: 0.9,
-            metadata: {
-                sourceFilename: 'clase1.pdf',
-                text: 'Contenido de la clase 1',
-                materialType: 'pdf',
-                classIds: ['class1'],
-                chunkIndex: 0
-            }
+    querySimilar: mock.fn(async (embedding, filter, topK) => {
+        // Return empty for verified-answer pre-search to avoid intercepting standard search
+        if (filter?.materialType?.$eq === 'verified-answer') {
+            return [];
         }
-    ]),
+        return [
+            {
+                score: 0.9,
+                metadata: {
+                    sourceFilename: 'clase1.pdf',
+                    text: 'Contenido de la clase 1',
+                    materialType: 'pdf',
+                    classIds: ['class1'],
+                    chunkIndex: 0
+                }
+            }
+        ];
+    }),
     getIndexStats: mock.fn(async () => ({ totalVectorCount: 0, indexFullness: 0, namespaces: {} }))
 };
 
@@ -175,7 +181,9 @@ test('rag-query should return the refusal message if OpenAI returns it', async (
 });
 
 test('rag-query should use correct refusal string when vector search returns empty', async (t) => {
-    vectorStoreMocks.querySimilar.mock.mockImplementationOnce(async () => []);
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+    // Verified pre-search returns empty, standard search also returns empty
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async () => []);
     openaiMocks.chatCompletion.mock.resetCalls();
 
     const mockContext = {
@@ -374,11 +382,16 @@ test('rag-query should request extra retrieval candidates for hybrid ranking', a
 
     await capturedHandler(mockRequest, mockContext);
 
-    assert.strictEqual(vectorStoreMocks.querySimilar.mock.calls[0].arguments[2], 10);
+    // Second call to querySimilar is the standard search (first is verified pre-search)
+    assert.strictEqual(vectorStoreMocks.querySimilar.mock.calls[1].arguments[2], 10);
 });
 
 test('rag-query should build mixed context and prioritize teacher notes over bibliography', async () => {
     openaiMocks.chatCompletion.mock.resetCalls();
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+    // First call: verified pre-search returns empty
+    vectorStoreMocks.querySimilar.mock.mockImplementationOnce(async () => []);
+    // Second call: standard search with mixed types
     vectorStoreMocks.querySimilar.mock.mockImplementationOnce(async () => [
         {
             id: 'biblio-1',
@@ -446,6 +459,10 @@ test('rag-query should build mixed context and prioritize teacher notes over bib
 });
 
 test('rag-query should expose material priority in returned sources', async () => {
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+    // First call: verified pre-search returns empty
+    vectorStoreMocks.querySimilar.mock.mockImplementationOnce(async () => []);
+    // Second call: standard search with priority data
     vectorStoreMocks.querySimilar.mock.mockImplementationOnce(async () => [
         {
             id: 'biblio-2',
@@ -494,6 +511,10 @@ test('rag-query should expose material priority in returned sources', async () =
 });
 
 test('rag-query should include slideTitle in sources when metadata contains it', async () => {
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+    // First call: verified pre-search returns empty
+    vectorStoreMocks.querySimilar.mock.mockImplementationOnce(async () => []);
+    // Second call: standard search with slide title
     vectorStoreMocks.querySimilar.mock.mockImplementationOnce(async () => [
         {
             id: 'ppt-chunk-1',
@@ -562,4 +583,201 @@ test('rag-query should not break when slideTitle is missing in metadata', async 
     const response = await capturedHandler(mockRequest, mockContext);
     const body = JSON.parse(response.body);
     assert.strictEqual(body.sources[0].slideTitle, undefined);
+});
+
+test('rag-query should return verified answer directly when score > 0.85, bypassing LLM', async () => {
+    openaiMocks.generateEmbedding.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.resetCalls();
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+
+    // First call to querySimilar is for verified-answer pre-search; return high-score match
+    vectorStoreMocks.querySimilar.mock.mockImplementationOnce(async (embedding, filter, topK) => {
+        assert.strictEqual(filter.materialType?.$eq, 'verified-answer');
+        return [{
+            id: 'corr-abc123',
+            score: 0.92,
+            metadata: {
+                materialType: 'verified-answer',
+                subjectId: 'materia1',
+                classId: 'class1',
+                text: 'La arquitectura hexagonal separa la logica de negocio de la infraestructura usando puertos y adaptadores.',
+                teacherId: 'docente-01',
+                sourceFilename: 'correction-abc123',
+                chunkIndex: 0,
+            },
+        }];
+    });
+
+    const mockContext = {
+        log: mock.fn(),
+        error: mock.fn(),
+    };
+
+    const mockRequest = {
+        json: async () => ({
+            question: '¿Que es la arquitectura hexagonal?',
+            subjectId: 'materia1',
+            classIds: ['class1'],
+        }),
+        user: { id: 'test-user' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    const body = JSON.parse(response.body);
+
+    assert.strictEqual(body.verified, true, 'Response should include verified: true');
+    assert.ok(body.answer.includes('puertos y adaptadores'), 'Should return the verified answer text');
+    assert.strictEqual(body.sources[0].materialType, 'verified-answer', 'Source type should be verified-answer');
+    assert.strictEqual(openaiMocks.chatCompletion.mock.callCount(), 0, 'LLM should not be called for verified answer');
+});
+
+test('rag-query should fall through to standard search when verified answer score < 0.85', async () => {
+    // Drain leftover mockImplementationOnce from pre-existing failing tests
+    openaiMocks.chatCompletion.mock.resetCalls();
+    try { await openaiMocks.chatCompletion(); } catch { /* drain */ }
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.mockImplementation(async () => ({
+        content: 'Default RAG response for low score verified test.',
+        usage: { prompt_tokens: 50, completion_tokens: 50, total_tokens: 100 },
+    }));
+
+    openaiMocks.generateEmbedding.mock.resetCalls();
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+
+    let verifiedCall = 0;
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter, topK) => {
+        if (filter?.materialType?.$eq === 'verified-answer') {
+            verifiedCall++;
+            return [{
+                id: 'corr-low',
+                score: 0.5,
+                metadata: {
+                    materialType: 'verified-answer',
+                    subjectId: 'materia1',
+                    text: 'Respuesta de baja confianza.',
+                    teacherId: 'docente-01',
+                    sourceFilename: 'correction-low',
+                    chunkIndex: 0,
+                },
+            }];
+        }
+        return [{ score: 0.9, metadata: { materialType: 'pdf', text: 'Contenido de la clase 1', subjectId: 'materia1', classId: 'class1', chunkIndex: 0 } }];
+    });
+
+    const mockContext = {
+        log: mock.fn(),
+        error: mock.fn(),
+    };
+
+    const mockRequest = {
+        json: async () => ({
+            question: '¿Que pasa con score bajo?',
+            subjectId: 'materia1',
+            classIds: ['class1'],
+        }),
+        user: { id: 'test-user' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    const body = JSON.parse(response.body);
+
+    assert.strictEqual(verifiedCall, 1, 'Verified pre-search should have been called');
+    assert.ok(body.sources, `Response should have sources. Got: ${JSON.stringify(body)}`);
+    assert.strictEqual(openaiMocks.chatCompletion.mock.callCount(), 1, 'LLM should be called for standard search');
+    assert.notStrictEqual(body.sources[0].materialType, 'verified-answer', 'Should use standard search sources');
+});
+
+test('rag-query should fall through to standard search when no verified answers exist', async () => {
+    // Drain leftover mockImplementationOnce from pre-existing failing tests
+    openaiMocks.chatCompletion.mock.resetCalls();
+    try { await openaiMocks.chatCompletion(); } catch { /* drain */ }
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.mockImplementation(async () => ({
+        content: 'Default RAG response for no verified test.',
+        usage: { prompt_tokens: 50, completion_tokens: 50, total_tokens: 100 },
+    }));
+
+    openaiMocks.generateEmbedding.mock.resetCalls();
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+
+    let verifiedCall = 0;
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter, topK) => {
+        if (filter?.materialType?.$eq === 'verified-answer') {
+            verifiedCall++;
+            return [];
+        }
+        return [{ score: 0.9, metadata: { materialType: 'pdf', text: 'Contenido de la clase 1', subjectId: 'materia1', classId: 'class1', chunkIndex: 0 } }];
+    });
+
+    const mockContext = {
+        log: mock.fn(),
+        error: mock.fn(),
+    };
+
+    const mockRequest = {
+        json: async () => ({
+            question: 'Sin verified answers?',
+            subjectId: 'materia1',
+            classIds: ['class1'],
+        }),
+        user: { id: 'test-user' },
+    };
+
+    await capturedHandler(mockRequest, mockContext);
+    assert.strictEqual(verifiedCall, 1, 'Verified pre-search should have been called');
+    assert.strictEqual(openaiMocks.chatCompletion.mock.callCount(), 1, 'LLM should be called for standard search');
+});
+
+test('rag-query should gracefully fall through when verified search errors', async () => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    for (let i = 0; i < 3; i++) { try { await openaiMocks.chatCompletion('drain'); } catch { /* drain */ } }
+    openaiMocks.chatCompletion.mock.resetCalls();
+
+    openaiMocks.generateEmbedding.mock.resetCalls();
+    for (let i = 0; i < 3; i++) { try { await openaiMocks.generateEmbedding('drain'); } catch { /* drain */ } }
+    openaiMocks.generateEmbedding.mock.resetCalls();
+
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+    for (let i = 0; i < 3; i++) { try { await vectorStoreMocks.querySimilar('drain'); } catch { /* drain */ } }
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+
+    openaiMocks.chatCompletion.mock.mockImplementation(async () => ({
+        content: 'Default RAG response for verified error test.',
+        usage: { prompt_tokens: 50, completion_tokens: 50, total_tokens: 100 },
+    }));
+    openaiMocks.generateEmbedding.mock.mockImplementation(async () => ({
+        embedding: [0.1, 0.2, 0.3],
+        usage: { total_tokens: 5 }
+    }));
+
+    let verifiedCall = 0;
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter, topK) => {
+        if (filter?.materialType?.$eq === 'verified-answer') {
+            verifiedCall++;
+            throw new Error('Pinecone timeout');
+        }
+        return [{ score: 0.9, metadata: { materialType: 'pdf', text: 'Contenido de la clase 1', subjectId: 'materia1', classId: 'class1', chunkIndex: 0 } }];
+    });
+
+    const mockContext = {
+        log: mock.fn(),
+        error: mock.fn(),
+    };
+
+    const mockRequest = {
+        json: async () => ({
+            question: 'Verified search debe fallar graceful',
+            subjectId: 'materia1',
+            classIds: ['class1'],
+        }),
+        user: { id: 'test-user' },
+    };
+
+    await capturedHandler(mockRequest, mockContext);
+    assert.strictEqual(verifiedCall, 1, 'Verified pre-search should have been called');
+    assert.strictEqual(openaiMocks.chatCompletion.mock.callCount(), 1, 'LLM should still be called after verified search error');
+    assert.strictEqual(mockContext.error.mock.calls.some(c => {
+        const args = Array.isArray(c) ? c : (c.arguments || []);
+        return args.some(a => String(a).includes('non-blocking'));
+    }), true);
 });

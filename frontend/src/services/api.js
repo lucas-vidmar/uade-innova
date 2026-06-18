@@ -883,10 +883,11 @@ export const api = {
             await delay(1200);
             const q = question.toLowerCase();
             const match = MOCK_RAG_RESPONSES.find(r => r.question.some(kw => q.includes(kw)));
-            return match || {
+            const response = match || {
                 answer: `Basándome en las clases seleccionadas (${classIds.length} clase${classIds.length !== 1 ? 's' : ''}), no encontré una respuesta específica para tu consulta sobre "${question}". Sin embargo, te recomiendo revisar los apuntes de las clases sobre patrones arquitectónicos y el resumen de la Clase 1.`,
                 sources: [],
             };
+            return { ...response, verified: response.verified || false };
         }
         try {
             const res = await apiFetch(`${BASE_URL}/rag-query`, {
@@ -924,7 +925,8 @@ export const api = {
                     sources: [
                         { materialType: 'transcript', sourceFilename: 'clase3_transcript.txt', classId: 'class-03' },
                         { materialType: 'presentation', sourceFilename: 'clase3_slides.pdf', classId: 'class-03' }
-                    ]
+                    ],
+                    verified: false,
                 });
                 const mockText = "Esta es una respuesta simulada por stream. La arquitectura hexagonal permite desacoplar la lógica de negocio de los detalles técnicos.";
                 const words = mockText.split(' ');

@@ -317,6 +317,64 @@ app.http('rag-query', {
         const filter = buildPineconeFilter(subjectId, classIds, disableBibliographyFallback);
         const filterType = resolveFilterType(classIds);
 
+        // ── 3b. Verified-answer-first pre-search ──────────────────
+        const VERIFIED_SCORE_THRESHOLD = 0.85;
+        const verifiedFilter = {
+            subjectId: { $eq: subjectId },
+            materialType: { $eq: 'verified-answer' },
+        };
+
+        let verifiedMatch = null;
+        let verifiedAnswerText = '';
+
+        try {
+            const verifiedMatches = await querySimilar(questionEmbedding, verifiedFilter, 5);
+            const topVerified = verifiedMatches[0];
+            if (topVerified && topVerified.score > VERIFIED_SCORE_THRESHOLD) {
+                verifiedMatch = topVerified;
+                verifiedAnswerText = topVerified.metadata?.text || topVerified.metadata?.correctedAnswer || '';
+                context.log(`[RAG] Verified answer match (score=${topVerified.score.toFixed(3)}) — bypassing LLM`);
+            }
+        } catch (err) {
+            context.error('[RAG] Error in verified-answer pre-search (non-blocking):', err);
+        }
+
+        if (verifiedMatch && verifiedAnswerText) {
+            context.log('[RAG] Returning verified answer — skipping standard search and LLM');
+            const verifiedSources = [{
+                materialType: 'verified-answer',
+                classId: verifiedMatch.metadata?.classId,
+                chunkIndex: 0,
+                sourceFilename: verifiedMatch.metadata?.sourceFilename || '',
+                score: Math.round(verifiedMatch.score * 100) / 100,
+            }];
+            const interactionId = uuidv4();
+
+            if (stream) {
+                const responseStream = new ReadableStream({
+                    start(controller) {
+                        const encoder = new TextEncoder();
+                        controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ interactionId, sources: verifiedSources, verified: true, verifiedBy: verifiedMatch.metadata?.teacherId })}\n\n`));
+                        controller.enqueue(encoder.encode(`event: delta\ndata: ${JSON.stringify({ content: verifiedAnswerText })}\n\n`));
+                        controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ answer: verifiedAnswerText })}\n\n`));
+                        controller.close();
+                    }
+                });
+                return {
+                    status: 200,
+                    headers: {
+                        'Content-Type': 'text/event-stream',
+                        'Cache-Control': 'no-cache',
+                        'Connection': 'keep-alive',
+                        ...withCorrelationResponseHeaders(correlationId),
+                    },
+                    body: responseStream,
+                };
+            }
+
+            return jsonResponse(200, { id: interactionId, answer: verifiedAnswerText, sources: verifiedSources, verified: true, verifiedBy: verifiedMatch.metadata?.teacherId }, correlationId);
+        }
+
         // ── 4. Búsqueda de similitud en Pinecone ──────────────────
         let matches;
         try {

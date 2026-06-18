@@ -137,6 +137,12 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         <div class="chat-msg-body flex-1 overflow-hidden">
           <div class="chat-bubble chat-bubble-assistant leading-relaxed">${renderMarkdown(msg.content)}</div>
           
+          ${msg.verified ? `
+          <div class="verified-badge" style="display:flex;align-items:center;gap:4px;padding:4px 10px;margin-bottom:8px;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.2);border-radius:var(--radius-md);color:var(--color-success);font-size:12px;font-weight:600;">
+            ✅ Respuesta verificada por el docente
+          </div>
+          ` : ''}
+          
           <div class="chat-msg-footer mt-3 flex justify-between items-end gap-4">
             ${msg.sources?.length > 0 ? `
               <div class="chat-sources flex flex-wrap gap-2">
@@ -310,6 +316,7 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
 
         if (type === 'metadata') {
           assistantMsg.sources = data.sources || [];
+          assistantMsg.verified = data.verified || false;
           const footerEl = msgEl.querySelector('.chat-msg-footer');
           if (footerEl && assistantMsg.sources.length > 0) {
             footerEl.innerHTML = `
@@ -331,6 +338,16 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
             `;
             bindFeedbackEvents(footerEl);
             bindReportIssueEvents(footerEl);
+          }
+          if (data.verified) {
+            const badgeEl = document.createElement('div');
+            badgeEl.className = 'verified-badge';
+            badgeEl.style.cssText = 'display:flex;align-items:center;gap:4px;padding:4px 10px;margin-bottom:8px;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.2);border-radius:var(--radius-md);color:var(--color-success);font-size:12px;font-weight:600;';
+            badgeEl.innerHTML = '✅ Respuesta verificada por el docente';
+            const bubbleEl = msgEl.querySelector('.chat-bubble-assistant');
+            if (bubbleEl) {
+              bubbleEl.parentElement.insertBefore(badgeEl, bubbleEl);
+            }
           }
         } else if (type === 'delta') {
           assistantMsg.content += data.content;
@@ -442,6 +459,7 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
       presentation: 'presentation',
       notes: 'notes',
       bibliography: 'book',
+      'verified-answer': 'verified',
     };
     return icon(map[type] || 'document');
   };
@@ -465,7 +483,8 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
       document: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>',
       presentation: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>',
       notes: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 3h16v18H4z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>',
-      book: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>',
+       book: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>',
+       verified: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
     };
 
     return `<span class="ui-icon" aria-hidden="true">${icons[name] || icons.document}</span>`;
