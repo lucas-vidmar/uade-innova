@@ -61,6 +61,30 @@ resource classMaterialsContainer 'Microsoft.Storage/storageAccounts/blobServices
   }
 }
 
+// ─── Container: glossary-files (subject-specific technical glossaries) ───
+resource glossaryFilesContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
+  parent: blobService
+  name: 'glossary-files'
+  properties: {
+    publicAccess: 'None'
+    metadata: {
+      purpose: 'Subject-specific technical glossary JSON files for transcription correction'
+    }
+  }
+}
+
+// ─── Container: summaries (AI-generated class summaries) ───
+resource summariesContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
+  parent: blobService
+  name: 'summaries'
+  properties: {
+    publicAccess: 'None'
+    metadata: {
+      purpose: 'AI-generated and teacher-validated class summaries'
+    }
+  }
+}
+
 // ─── Container: processed (chunk JSON + embeddings metadata) ───
 resource processedContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
   parent: blobService
@@ -178,6 +202,17 @@ resource ingestionQueue 'Microsoft.Storage/storageAccounts/queueServices/queues@
   }
 }
 
+// ─── Queue: notification-queue (async notification dispatch) ────
+resource notificationQueue 'Microsoft.Storage/storageAccounts/queueServices/queues@2023-01-01' = {
+  parent: queueService
+  name: 'notification-queue'
+  properties: {
+    metadata: {
+      purpose: 'Async notification dispatch for reminders, alerts, and updates'
+    }
+  }
+}
+
 // ─── Table: Enrollments (subject-to-user enrollment tracking) ───
 resource enrollmentsTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-01-01' = {
   parent: tableService
@@ -188,6 +223,42 @@ resource enrollmentsTable 'Microsoft.Storage/storageAccounts/tableServices/table
 resource userConsentTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-01-01' = {
   parent: tableService
   name: 'UserConsent'
+}
+
+// ─── Table: Corrections (teacher-verified answer corrections) ──
+resource correctionsTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-01-01' = {
+  parent: tableService
+  name: 'Corrections'
+}
+
+// ─── Table: CorrectionsPending (pending correction index) ──────
+resource correctionsPendingTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-01-01' = {
+  parent: tableService
+  name: 'CorrectionsPending'
+}
+
+// ─── Table: Conversations (saved student chat threads) ─────────
+resource conversationsTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-01-01' = {
+  parent: tableService
+  name: 'Conversations'
+}
+
+// ─── Table: ConversationRatings (thumbs up/down per message) ───
+resource conversationRatingsTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-01-01' = {
+  parent: tableService
+  name: 'ConversationRatings'
+}
+
+// ─── Table: NotificationPreferences (per-user notification settings) ─
+resource notificationPreferencesTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-01-01' = {
+  parent: tableService
+  name: 'NotificationPreferences'
+}
+
+// ─── Table: UserEvents (user activity & intervention events) ────
+resource userEventsTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-01-01' = {
+  parent: tableService
+  name: 'UserEvents'
 }
 
 // ─── Outputs ───────────────────────────────────────────────────
@@ -206,6 +277,12 @@ output classMaterialsContainerName string = classMaterialsContainer.name
 @description('The name of the processed container.')
 output processedContainerName string = processedContainer.name
 
+@description('The name of the glossary-files container.')
+output glossaryFilesContainerName string = glossaryFilesContainer.name
+
+@description('The name of the summaries container.')
+output summariesContainerName string = summariesContainer.name
+
 @description('The name of the materials table.')
 output materialsTableName string = materialsTable.name
 
@@ -215,5 +292,29 @@ output classesTableName string = classesTable.name
 @description('The name of the Enrollments table.')
 output enrollmentsTableName string = enrollmentsTable.name
 
+@description('The name of the UserConsent table.')
+output userConsentTableName string = userConsentTable.name
+
+@description('The name of the Corrections table.')
+output correctionsTableName string = correctionsTable.name
+
+@description('The name of the CorrectionsPending table.')
+output correctionsPendingTableName string = correctionsPendingTable.name
+
+@description('The name of the Conversations table.')
+output conversationsTableName string = conversationsTable.name
+
+@description('The name of the ConversationRatings table.')
+output conversationRatingsTableName string = conversationRatingsTable.name
+
+@description('The name of the NotificationPreferences table.')
+output notificationPreferencesTableName string = notificationPreferencesTable.name
+
+@description('The name of the UserEvents table.')
+output userEventsTableName string = userEventsTable.name
+
 @description('The name of the ingestion tasks queue.')
 output ingestionQueueName string = ingestionQueue.name
+
+@description('The name of the notification queue.')
+output notificationQueueName string = notificationQueue.name

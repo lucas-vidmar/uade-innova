@@ -75,6 +75,36 @@ param classesTableName string = 'classes'
 @description('Table name for enrollment entities.')
 param enrollmentsTableName string = 'Enrollments'
 
+@description('Table name for user consent records.')
+param userConsentTableName string = 'UserConsent'
+
+@description('Table name for verified answer corrections.')
+param correctionsTableName string = 'Corrections'
+
+@description('Table name for pending correction index.')
+param correctionsPendingTableName string = 'CorrectionsPending'
+
+@description('Table name for saved conversation threads.')
+param conversationsTableName string = 'Conversations'
+
+@description('Table name for conversation ratings.')
+param conversationRatingsTableName string = 'ConversationRatings'
+
+@description('Table name for notification preferences.')
+param notificationPreferencesTableName string = 'NotificationPreferences'
+
+@description('Table name for user activity events.')
+param userEventsTableName string = 'UserEvents'
+
+@description('Name of the glossary-files blob container.')
+param glossaryFilesContainerName string = 'glossary-files'
+
+@description('Name of the summaries blob container.')
+param summariesContainerName string = 'summaries'
+
+@description('Name of the notification dispatch queue.')
+param notificationQueueName string = 'notification-queue'
+
 // ─── Consumption Plan (Y1 — sin VM quota, serverless real) ───────
 resource consumptionPlan 'Microsoft.Web/serverfarms@2023-01-01' = {
   name: '${functionAppName}-plan'
@@ -221,6 +251,48 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         {
           name: 'AZURE_STORAGE_QUEUE_INGESTION'
           value: ingestionQueueName
+        }
+        {
+          name: 'AZURE_STORAGE_QUEUE_NOTIFICATION'
+          value: notificationQueueName
+        }
+        // Table names for Epics 3-7
+        {
+          name: 'AZURE_TABLE_USER_CONSENT'
+          value: userConsentTableName
+        }
+        {
+          name: 'AZURE_TABLE_CORRECTIONS'
+          value: correctionsTableName
+        }
+        {
+          name: 'AZURE_TABLE_CORRECTIONS_PENDING'
+          value: correctionsPendingTableName
+        }
+        {
+          name: 'AZURE_TABLE_CONVERSATIONS'
+          value: conversationsTableName
+        }
+        {
+          name: 'AZURE_TABLE_CONVERSATION_RATINGS'
+          value: conversationRatingsTableName
+        }
+        {
+          name: 'AZURE_TABLE_NOTIFICATION_PREFERENCES'
+          value: notificationPreferencesTableName
+        }
+        {
+          name: 'AZURE_TABLE_USER_EVENTS'
+          value: userEventsTableName
+        }
+        // Blob container names
+        {
+          name: 'AZURE_STORAGE_CONTAINER_GLOSSARY'
+          value: glossaryFilesContainerName
+        }
+        {
+          name: 'AZURE_STORAGE_CONTAINER_SUMMARIES'
+          value: summariesContainerName
         }
       ]
     }

@@ -153,6 +153,14 @@ module keyVault './modules/keyvault.bicep' = {
   }
 }
 
+// ─── Storage Connection String in Key Vault ────────────────────
+resource storageConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  name: '${keyVaultName}/AZURE-STORAGE-CONNECTION-STRING'
+  properties: {
+    value: 'DefaultEndpointsProtocol=https;AccountName=${storage.outputs.accountName};AccountKey=${listKeys(storage.outputs.accountId, '2023-01-01').keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
+  }
+}
+
 // ─── Module: Azure Functions (Consumption Plan — sin VM quota) ────
 // Plan Y1/Dynamic: pago por ejecución, escala a 0, sin reserva de VM.
 module functions './modules/functions.bicep' = {
@@ -179,6 +187,16 @@ module functions './modules/functions.bicep' = {
     enrollmentsTableName: storage.outputs.enrollmentsTableName
     storageAccountId: storage.outputs.accountId
     ingestionQueueName: storage.outputs.ingestionQueueName
+    userConsentTableName: storage.outputs.userConsentTableName
+    correctionsTableName: storage.outputs.correctionsTableName
+    correctionsPendingTableName: storage.outputs.correctionsPendingTableName
+    conversationsTableName: storage.outputs.conversationsTableName
+    conversationRatingsTableName: storage.outputs.conversationRatingsTableName
+    notificationPreferencesTableName: storage.outputs.notificationPreferencesTableName
+    userEventsTableName: storage.outputs.userEventsTableName
+    glossaryFilesContainerName: storage.outputs.glossaryFilesContainerName
+    summariesContainerName: storage.outputs.summariesContainerName
+    notificationQueueName: storage.outputs.notificationQueueName
     allowedCorsOrigin: expectedCorsOrigin
     tags: tags
   }
