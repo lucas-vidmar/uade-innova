@@ -1452,6 +1452,16 @@ export const api = {
             return res.json();
         },
 
+    async sendChatRating({ sessionId, messageId, subjectId, rating, comment }) {
+            if (USE_MOCK) return { success: true };
+            const res = await apiFetch(`${BASE_URL}/chat-rate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionId, messageId, subjectId, rating, comment: comment || '' })
+            });
+            return res.json();
+        },
+
     async reportChatIssue({ messageId, subjectId, issueDetail }) {
             if (USE_MOCK) return { success: true, alertId: `ai-issue-${messageId || Date.now()}` };
             const res = await apiFetch(`${BASE_URL}/chat-report-issue`, {

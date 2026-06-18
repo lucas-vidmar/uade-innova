@@ -396,8 +396,26 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         if (!messageId || btn.classList.contains('active')) return;
         btn.parentElement.querySelectorAll('.feedback-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
+
+        let comment = '';
+        if (type === 'negative') {
+          comment = (await showPromptDialog({
+            title: '¿Qué esperabas?',
+            label: 'Decinos qué faltó o qué esperabas de la respuesta (opcional)',
+            placeholder: 'Ej: esperaba que mencione el patrón Observer...',
+            confirmText: 'Enviar',
+            cancelText: 'No, gracias',
+            required: false,
+          })) || '';
+        }
+
         try {
-          await api.sendChatFeedback({ messageId, subjectId, isPositive: type === 'positive' });
+          await Promise.all([
+            api.sendChatFeedback({ messageId, subjectId, isPositive: type === 'positive' }),
+            api.sendChatRating({ sessionId: currentSessionId, messageId, subjectId, rating: type, comment }),
+          ]);
+          const msg = messages.find((item) => item.id === messageId);
+          if (msg) { msg.feedback = type; msg.rated = true; }
         } catch (err) { console.error('Error sending feedback:', err); }
       });
     });

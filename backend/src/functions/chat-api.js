@@ -1,11 +1,11 @@
 import { validateFrontDoorId, parseClientPrincipal, getAuthenticatedUser } from '../services/auth-utils.js';
-import { getEnrollment, upsertCorrection } from '../services/state-store.js';
+import { getEnrollment, upsertCorrection, RATINGS_TABLE } from '../services/state-store.js';
 import { v4 as uuidv4 } from 'uuid';
 /**
  * chat-api.js — Azure Functions para feedback e historial de chat
  */
 import { app } from '@azure/functions';
-import { saveJson, loadJson, listBlobs, deleteBlob } from '../services/storage.js';
+import { saveJson, loadJson, listBlobs, deleteBlob, getTableClient } from '../services/storage.js';
 
 const CONTAINER_CHAT = 'chat-logs';
 const CONTAINER_TEACHER_ALERTS = 'teacher-alerts';
@@ -188,6 +188,71 @@ app.http('chat-feedback', {
         } catch (err) {
             context.error('Error procesando feedback:', err);
             return { status: 500, body: 'Error interno' };
+        }
+    }
+});
+
+// ── POST /api/chat-rate ──────────────────────────────────────────────
+app.http('chat-rate', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'chat-rate',
+    handler: async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+        try {
+            const { sessionId, messageId, subjectId, rating, comment } = await request.json();
+            const { userId, sanitizedId } = getAuthenticatedUser(request);
+
+            if (!sessionId || !messageId || !subjectId || !rating) {
+                return { status: 400, body: JSON.stringify({ error: 'Faltan campos requeridos: sessionId, messageId, subjectId, rating' }) };
+            }
+
+            if (!['positive', 'negative'].includes(rating)) {
+                return { status: 400, body: JSON.stringify({ error: 'rating debe ser "positive" o "negative"' }) };
+            }
+
+            const principal = parseClientPrincipal(request);
+            const userRoles = principal?.userRoles || [];
+            const isTeacherOrDirector = userRoles.includes('Docente') || userRoles.includes('Director') || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
+
+            if (!isTeacherOrDirector) {
+                try {
+                    const enrollment = await getEnrollment(subjectId, userId);
+                    if (!enrollment || enrollment.status !== 'active') {
+                        return { status: 403, body: JSON.stringify({ error: 'No estás matriculado en esta materia.' }) };
+                    }
+                } catch (err) {
+                    return { status: 500, body: JSON.stringify({ error: 'Error verificando permisos.' }) };
+                }
+            }
+
+            const tableClient = getTableClient(RATINGS_TABLE);
+            try {
+                await tableClient.createTable();
+            } catch (createErr) {
+                if (createErr.statusCode !== 409) throw createErr;
+            }
+
+            await tableClient.upsertEntity({
+                partitionKey: sessionId,
+                rowKey: messageId,
+                userId,
+                subjectId,
+                rating,
+                comment: comment || '',
+                createdAt: new Date().toISOString(),
+            }, 'Merge');
+
+            context.log(`[chat-rate] Rating saved: sessionId=${sessionId}, messageId=${messageId}, rating=${rating}, userId=${sanitizedId}`);
+
+            return {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ success: true })
+            };
+        } catch (err) {
+            context.error('Error guardando rating:', err);
+            return { status: 500, body: JSON.stringify({ error: 'Error interno' }) };
         }
     }
 });

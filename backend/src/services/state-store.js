@@ -8,6 +8,7 @@ const ENROLLMENTS_TABLE = process.env.AZURE_STORAGE_ENROLLMENTS_TABLE
 const CORRECTIONS_TABLE = process.env.AZURE_TABLE_CORRECTIONS || 'Corrections';
 const CORRECTIONS_PENDING_TABLE = process.env.AZURE_TABLE_CORRECTIONS_PENDING || 'CorrectionsPending';
 const TRANSCRIPTION_CORRECTIONS_TABLE = process.env.AZURE_TABLE_TRANSCRIPTION_CORRECTIONS || 'TranscriptionCorrections';
+export const RATINGS_TABLE = process.env.AZURE_TABLE_CONVERSATION_RATINGS || 'ConversationRatings';
 
 const ensuredTables = new Set();
 
