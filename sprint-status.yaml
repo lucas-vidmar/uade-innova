@@ -142,7 +142,7 @@ development_status:
   6-177-retention-compliance-snapshot-api: backlog
   6-178-director-retention-compliance-evidence-e: backlog
   6-179-session-metrics-history-pagination-for-l: backlog
-  6-180-director-session-metrics-history-filteri: backlog
+  6-180-director-session-metrics-history-filteri: review
   6-26-sga-api-schema-mapping: done
   epic-6-retrospective: optional
 

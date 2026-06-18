@@ -1567,3 +1567,52 @@ app.http('update-material-text', {
         }
     }
 });
+
+// ── GET /api/director/session-metrics-history ─────────────────────────
+// Devuelve el histórico de sesiones (sin eventType material-upload).
+// Acepta subjectId opcional para filtrar por materia.
+app.http('get-director-session-metrics-history', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'director/session-metrics-history',
+    handler: async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+
+        const principal = parseClientPrincipal(request);
+        const isAuthorized = principal?.userRoles?.some(role => ['Director'].includes(role)) || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
+        if (!isAuthorized) {
+            return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Director access required' }) };
+        }
+
+        const subjectId = (request.query.get('subjectId') || '').trim();
+        const rows = await loadSessionMetricsRows(context);
+
+        const history = [];
+        for (const row of rows) {
+            const eventType = String(row?.eventType || '').trim();
+            if (eventType === 'material-upload') continue;
+
+            if (subjectId) {
+                const sId = String(row?.subjectId || '').trim();
+                if (sId !== subjectId) continue;
+            }
+
+            const entry = {
+                timestamp: row.timestamp || row.Timestamp || '',
+                subjectId: row.subjectId || '',
+                classId: row.classId || '',
+                promptTokens: Number(row.promptTokens || 0),
+                completionTokens: Number(row.completionTokens || 0),
+                totalTokens: Number(row.totalTokens || 0),
+                sessionId: row.sessionId || '',
+            };
+            history.push(entry);
+        }
+
+        return {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ history, total: history.length }),
+        };
+    }
+});

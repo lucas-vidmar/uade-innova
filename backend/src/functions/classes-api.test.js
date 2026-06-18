@@ -431,3 +431,165 @@ test('classes-api get-director-powerbi-metrics costByClass respects subjectId fi
     assert.ok(payload.costByClass[0].cost > 0, 'cost should be positive');
     assert.strictEqual(payload.costByClass[0].interactions, 1, 'interactions should exclude material-upload');
 });
+
+test('classes-api get-director-session-metrics-history returns all rows when no subjectId', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+    const yesterdayIso = new Date(Date.now() - 86400000).toISOString();
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: async function* () {
+            yield { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso };
+            yield { userId: 'alu-002', promptTokens: 200, completionTokens: 100, totalTokens: 300, subjectId: 'diseno-bd-2026', classId: 'class-02', timestamp: yesterdayIso };
+        },
+    }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = { params: {}, query: new Map() };
+
+    const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    const payload = JSON.parse(response.body);
+    assert.ok(Array.isArray(payload.history), 'history should be an array');
+    assert.strictEqual(payload.total, 2, 'should return 2 rows');
+    assert.strictEqual(payload.history[0].subjectId, 'arq-software-2026');
+    assert.strictEqual(payload.history[1].subjectId, 'diseno-bd-2026');
+    assert.strictEqual(payload.history[0].userId, undefined, 'should not expose userId');
+});
+
+test('classes-api get-director-session-metrics-history filters by subjectId', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+    const yesterdayIso = new Date(Date.now() - 86400000).toISOString();
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: async function* () {
+            yield { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso };
+            yield { userId: 'alu-002', promptTokens: 200, completionTokens: 100, totalTokens: 300, subjectId: 'diseno-bd-2026', classId: 'class-02', timestamp: yesterdayIso };
+        },
+    }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = { params: {}, query: new Map([['subjectId', 'arq-software-2026']]) };
+
+    const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    const payload = JSON.parse(response.body);
+    assert.strictEqual(payload.total, 1, 'should return 1 row');
+    assert.strictEqual(payload.history[0].subjectId, 'arq-software-2026');
+});
+
+test('classes-api get-director-session-metrics-history returns empty for non-existent subjectId', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+    const yesterdayIso = new Date(Date.now() - 86400000).toISOString();
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: async function* () {
+            yield { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso };
+        },
+    }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = { params: {}, query: new Map([['subjectId', 'nonexistent']]) };
+
+    const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    const payload = JSON.parse(response.body);
+    assert.strictEqual(payload.total, 0, 'should return 0 rows');
+    assert.strictEqual(payload.history.length, 0);
+});
+
+test('classes-api get-director-session-metrics-history excludes material-upload events', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+    const yesterdayIso = new Date(Date.now() - 86400000).toISOString();
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: async function* () {
+            yield { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso };
+            yield { eventType: 'material-upload', teacherId: 'doc-001', subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso };
+        },
+    }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = { params: {}, query: new Map() };
+
+    const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    const payload = JSON.parse(response.body);
+    assert.strictEqual(payload.total, 1, 'should exclude material-upload event');
+    assert.strictEqual(payload.history[0].promptTokens, 100);
+});
+
+test('classes-api get-director-session-metrics-history returns empty array when no data', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: async function* () {},
+    }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = { params: {}, query: new Map() };
+
+    const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    const payload = JSON.parse(response.body);
+    assert.strictEqual(payload.total, 0);
+    assert.strictEqual(payload.history.length, 0);
+});
+
+test('classes-api get-director-session-metrics-history returns 403 for non-Director role', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = { params: {}, query: new Map() };
+
+    const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 403);
+
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.error, 'Forbidden - Director access required');
+
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+});
+
+test('classes-api get-director-session-metrics-history returns 403 when Front Door validation fails', async () => {
+    authUtilsMocks.validateFrontDoorId.mock.mockImplementation(() => false);
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = { params: {}, query: new Map() };
+
+    const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 403);
+
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.error, 'Forbidden - Invalid Front Door ID');
+
+    authUtilsMocks.validateFrontDoorId.mock.mockImplementation(() => true);
+});
+
+test('classes-api get-director-session-metrics-history trims whitespace from subjectId query param', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+    const yesterdayIso = new Date(Date.now() - 86400000).toISOString();
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: async function* () {
+            yield { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso };
+            yield { userId: 'alu-002', promptTokens: 200, completionTokens: 100, totalTokens: 300, subjectId: 'diseno-bd-2026', classId: 'class-02', timestamp: yesterdayIso };
+        },
+    }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = { params: {}, query: new Map([['subjectId', '  arq-software-2026  ']]) };
+
+    const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    const payload = JSON.parse(response.body);
+    assert.strictEqual(payload.total, 1, 'should match after trimming whitespace');
+    assert.strictEqual(payload.history[0].subjectId, 'arq-software-2026');
+});
