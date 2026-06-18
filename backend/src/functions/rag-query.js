@@ -453,13 +453,14 @@ app.http('rag-query', {
 
         // ── 6. Construir prompt RAG ───────────────────────────────
         const contextText = matches
-            .map((m) => {
+            .map((m, i) => {
+                const n = i + 1;
                 const filename = m.metadata?.sourceFilename || 'desconocido';
                 const materialType = m.metadata?.materialType || 'material';
                 const chunkIndex = Number.isInteger(m.metadata?.chunkIndex) ? m.metadata.chunkIndex : '';
-                const header = `<chunk archivo="${filename}" tipo="${materialType}" indice="${chunkIndex}">`;
+                const header = `<chunk indice="${n}" archivo="${filename}" tipo="${materialType}" chunkIndex="${chunkIndex}">`;
                 const body = `${m.metadata?.text || ''}`;
-                return `${header}\n${body}\n</chunk>`;
+                return `[${n}] ${header}\n${body}\n</chunk>`;
             })
             .join('\n\n');
 
@@ -499,6 +500,8 @@ ${contextText}
                 sourceFilename: m.metadata?.sourceFilename,
                 slideTitle: m.metadata?.slideTitle,
                 score: Math.round(m.score * 100) / 100,
+                text: m.metadata?.text || '',
+                materialId: m.metadata?.materialId || '',
             }));
 
             const responseStream = new ReadableStream({
@@ -649,6 +652,8 @@ ${contextText}
             sourceFilename: m.metadata?.sourceFilename,
             slideTitle: m.metadata?.slideTitle,
             score: Math.round(m.score * 100) / 100,
+            text: m.metadata?.text || '',
+            materialId: m.metadata?.materialId || '',
         }));
 
         // ── 8. Guardar log de interacción (HU#62) ─────────────────

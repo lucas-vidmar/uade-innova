@@ -132,6 +132,28 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
     </div>
   `;
 
+  const hasCitations = (content) => /\[\d+\]/.test(content || '');
+
+  const renderFuentesSection = (sources) => {
+    if (!sources || sources.length === 0) return '';
+    const deduped = deduplicateSources(sources);
+    return `
+      <div class="fuentes-section" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border-color, rgba(128,128,128,0.2));">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted, #888);margin-bottom:6px;">Fuentes</div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          ${deduped.map((s, i) => `
+            <button class="fuentes-item citation-ref" data-source-index="${i + 1}" style="display:inline-flex;align-items:center;gap:6px;background:none;border:none;padding:3px 6px;border-radius:4px;cursor:pointer;font-size:12px;text-align:left;color:var(--text-primary, inherit);transition:background 0.15s;" title="Ver fragmento">
+              <span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--color-primary, #0066cc);color:#fff;font-size:10px;font-weight:700;flex-shrink:0;">${i + 1}</span>
+              ${materialIcon(s.materialType)}
+              <span class="truncate" style="max-width:160px;">${escapeHtml(s.slideTitle || s.sourceFilename)}</span>
+              ${s.materialPriority ? `<span class="source-priority source-priority-${escapeHtml(s.materialPriority)}" style="font-size:9px;">${s.materialPriority === 'primary' ? 'Primario' : 'Secundario'}</span>` : ''}
+            </button>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  };
+
   const renderMessage = (msg) => {
     if (msg.role === 'user') {
       return `
@@ -140,10 +162,12 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         </div>
       `;
     }
+    const contentHtml = renderMarkdown(msg.content);
+    const showFuentes = hasCitations(msg.content) && msg.sources?.length > 0;
     return `
       <div class="chat-msg chat-msg-assistant received animate-fade ${msg.id === highlightMessageId ? 'highlight-msg' : ''}" id="msg-${msg.id || ''}">
         <div class="chat-msg-body flex-1 overflow-hidden">
-          <div class="chat-bubble chat-bubble-assistant leading-relaxed">${renderMarkdown(msg.content)}</div>
+          <div class="chat-bubble chat-bubble-assistant leading-relaxed">${contentHtml}</div>
           
           ${msg.verified ? `
           <div class="verified-badge" style="display:flex;align-items:center;gap:4px;padding:4px 10px;margin-bottom:8px;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.2);border-radius:var(--radius-md);color:var(--color-success);font-size:12px;font-weight:600;">
@@ -151,6 +175,8 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
           </div>
           ` : ''}
           
+          ${showFuentes ? renderFuentesSection(msg.sources) : ''}
+
           <div class="chat-msg-footer mt-3 flex justify-between items-end gap-4">
             ${msg.sources?.length > 0 ? `
               <div class="chat-sources flex flex-wrap gap-2">
@@ -281,6 +307,29 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
       if (onNewChat) onNewChat({ newSessionId: currentSessionId, previousSessionId });
     });
 
+    // Citation click (event delegation)
+    const msgArea = container.querySelector('#chat-messages');
+    if (msgArea) {
+      msgArea.addEventListener('click', (e) => {
+        const citationEl = e.target.closest('.citation-ref');
+        if (!citationEl) return;
+        const sourceIndex = parseInt(citationEl.dataset.sourceIndex, 10);
+        if (!sourceIndex || Number.isNaN(sourceIndex)) return;
+
+        const msgEl = citationEl.closest('[id^="msg-"]');
+        if (!msgEl) return;
+        const msgId = msgEl.id.replace('msg-', '');
+        const msg = messages.find(m => m.id === msgId);
+        if (!msg || !msg.sources || msg.sources.length === 0) return;
+
+        const sources = deduplicateSources(msg.sources);
+        const source = sources[sourceIndex - 1];
+        if (!source) return;
+
+        showCitationModal(source);
+      });
+    }
+
     // Send
     const sendBtn = container.querySelector('#chat-send');
     const input = container.querySelector('#chat-input');
@@ -376,6 +425,19 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
  else if (type === 'done') {
           assistantMsg.content = data.answer;
           assistantMsg.streaming = false;
+          const msgEl = getMsgEl();
+          if (msgEl && hasCitations(data.answer) && assistantMsg.sources?.length > 0) {
+            const body = msgEl.querySelector('.chat-msg-body');
+            const verifiedBadge = body?.querySelector('.verified-badge');
+            const fuentesDiv = document.createElement('div');
+            fuentesDiv.innerHTML = renderFuentesSection(assistantMsg.sources);
+            if (verifiedBadge) {
+              verifiedBadge.after(fuentesDiv.firstElementChild);
+            } else {
+              const bubble = body?.querySelector('.chat-bubble-assistant');
+              if (bubble) bubble.after(fuentesDiv.firstElementChild);
+            }
+          }
         }
       });
     } catch (err) {
@@ -504,6 +566,69 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
     });
   };
 
+  const showCitationModal = (source) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-content" style="max-width:600px;width:92%;">
+        <div class="modal-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+          <h3 class="h4" style="margin:0;display:flex;align-items:center;gap:8px;">
+            ${materialIcon(source.materialType)}
+            ${escapeHtml(source.slideTitle || source.sourceFilename)}
+          </h3>
+          <button type="button" class="btn btn-ghost btn-sm dialog-close" aria-label="Cerrar">✕</button>
+        </div>
+        <div class="modal-body">
+          <div style="margin-bottom:12px;display:flex;flex-wrap:wrap;gap:8px;font-size:12px;color:var(--text-muted,#888);">
+            <span>${materialIcon(source.materialType)} ${escapeHtml(source.materialType)}</span>
+            <span>· Chunk ${source.chunkIndex ?? '—'}</span>
+            <span>· ${escapeHtml(source.sourceFilename)}</span>
+            ${source.score ? `<span>· Relevancia: ${(source.score * 100).toFixed(0)}%</span>` : ''}
+          </div>
+          ${source.text ? `
+            <div style="background:var(--surface-2,#f5f5f5);border:1px solid var(--border-color, rgba(128,128,128,0.15));border-radius:8px;padding:16px;max-height:300px;overflow-y:auto;font-size:14px;line-height:1.6;white-space:pre-wrap;">${escapeHtml(source.text)}</div>
+          ` : `
+            <p style="color:var(--text-muted,#888);font-style:italic;">Texto del fragmento no disponible</p>
+          `}
+          <div style="margin-top:16px;">
+            <button type="button" class="btn btn-primary citation-download-btn" data-material-id="${escapeHtml(source.materialId || '')}" style="${!source.materialId ? 'opacity:0.5;cursor:not-allowed;' : ''}" ${!source.materialId ? 'disabled' : ''}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="display:inline;margin-right:6px;vertical-align:middle;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Descargar material completo
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const cleanup = () => overlay.remove();
+
+    overlay.querySelector('.dialog-close')?.addEventListener('click', cleanup);
+    overlay.addEventListener('click', (event) => { if (event.target === overlay) cleanup(); });
+    overlay.addEventListener('keydown', (event) => { if (event.key === 'Escape') cleanup(); });
+
+    const downloadBtn = overlay.querySelector('.citation-download-btn');
+    if (downloadBtn && !downloadBtn.disabled) {
+      downloadBtn.addEventListener('click', async () => {
+        const materialId = downloadBtn.dataset.materialId;
+        if (!materialId) return;
+        try {
+          const { downloadUrl, filename } = await api.getMaterialDownloadUrl(subjectId, materialId);
+          const a = document.createElement('a');
+          a.href = downloadUrl;
+          a.download = filename || 'material';
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          a.click();
+          toast('success', 'Descarga iniciada', filename || '');
+        } catch (err) {
+          toast('error', 'No se pudo descargar', err?.message || 'Intentá nuevamente.');
+        }
+      });
+    }
+
+    document.body.appendChild(overlay);
+  };
+
   const bindReportIssueEvents = (parent) => {
     parent.querySelectorAll('.report-issue-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -591,6 +716,7 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
 
   const renderMarkdown = (text) => {
     return text
+      .replace(/\[(\d+)\]/g, '<sup class="citation-ref" data-source-index="$1" style="color:var(--color-primary,#0066cc);cursor:pointer;font-weight:700;">[$1]</sup>')
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.+?)\*/g, '<em>$1</em>')
       .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')

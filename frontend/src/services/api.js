@@ -1866,4 +1866,15 @@ async getTeacherAiFeedbackAlerts(subjectId, limit = 10) {
             }
             return res.json();
         },
+
+    async getMaterialDownloadUrl(subjectId, materialId) {
+            if (!subjectId || !materialId) throw new Error('subjectId and materialId are required');
+            const res = await apiFetch(`${BASE_URL}/material-download?subjectId=${encodeURIComponent(subjectId)}&materialId=${encodeURIComponent(materialId)}`);
+            if (!res.ok) {
+                let message = 'Error al obtener URL de descarga';
+                try { const err = await res.json(); if (err?.error) message = err.error; } catch {}
+                throw new Error(message);
+            }
+            return res.json();
+        },
       };
