@@ -6,6 +6,10 @@ import { auth } from './auth.js';
 import { toast } from '../components/Toast.js';
 
 const STORAGE_KEY = 'uade.processing.tracked-jobs';
+const BROADCAST_CHANNEL_NAME = 'uade-processing-sync';
+const DEDUP_QUEUE_MAX = 100;
+const SESSION_BROADCAST_KEY = 'uade.processing.seen-broadcasts';
+const BROADCAST_KEY = 'uade.processing.last-broadcast';
 const POLL_INTERVAL_MS = Number(globalThis?.__UADE_PROCESSING_POLL_MS) > 0
     ? Number(globalThis.__UADE_PROCESSING_POLL_MS)
     : 8000;
@@ -14,6 +18,135 @@ let trackedJobs = loadTrackedJobs();
 let timerId = null;
 let isPolling = false;
 const listeners = new Set();
+
+/* ── Cross-tab broadcast sync ──────────────────────────── */
+let broadcastChannel = null;
+let dedupQueue = new Set();
+let broadcastCounter = 0;
+
+function loadDedupQueue() {
+    try {
+        const stored = sessionStorage.getItem(SESSION_BROADCAST_KEY);
+        if (stored) {
+            const parsed = JSON.parse(stored);
+            return new Set(Array.isArray(parsed) ? parsed : []);
+        }
+    } catch (_) {}
+    return new Set();
+}
+
+function persistDedupQueue() {
+    try {
+        sessionStorage.setItem(SESSION_BROADCAST_KEY, JSON.stringify([...dedupQueue]));
+    } catch (_) {}
+}
+
+function trimDedupQueue() {
+    if (dedupQueue.size > DEDUP_QUEUE_MAX) {
+        const entries = [...dedupQueue];
+        dedupQueue = new Set(entries.slice(-DEDUP_QUEUE_MAX));
+    }
+}
+
+function generateBroadcastId() {
+    return `bc-${++broadcastCounter}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function handleBroadcast(data) {
+    if (!data || !data.broadcastId || !data.materialId) return;
+    if (dedupQueue.has(data.broadcastId)) return;
+
+    dedupQueue.add(data.broadcastId);
+    trimDedupQueue();
+    persistDedupQueue();
+
+    const { materialId, subjectId, terminal, filename, classIds } = data;
+    const idx = trackedJobs.findIndex(
+        (j) => j.materialId === materialId && j.subjectId === subjectId
+    );
+    if (idx === -1) return;
+
+    const [job] = trackedJobs.splice(idx, 1);
+
+    const bufIdx = toastBuffer.findIndex(
+        (j) => j.materialId === materialId && j.subjectId === subjectId
+    );
+    if (bufIdx !== -1) toastBuffer.splice(bufIdx, 1);
+
+    persistTrackedJobs();
+
+    notifyListeners({
+        type: 'material-status-terminal',
+        terminal,
+        materialId,
+        subjectId,
+        classIds: Array.isArray(classIds) ? classIds : [...(job.classIds || [])],
+        filename: filename || job.filename,
+        source: 'cross-tab',
+    });
+
+    const displayFilename = filename || job.filename || 'Material';
+    if (terminal === 'ready') {
+        toast('success', 'Procesamiento completado', `"${displayFilename}" ya está listo para usar.`);
+    } else {
+        toast('error', 'Procesamiento con error', `"${displayFilename}" terminó con errores. Revisá el material e intentá nuevamente.`);
+    }
+
+    stopPollingIfIdle();
+}
+
+function handleStorageEvent(event) {
+    if (event.key && event.key.startsWith(BROADCAST_KEY + '.') && event.newValue) {
+        try {
+            const data = JSON.parse(event.newValue);
+            handleBroadcast(data);
+        } catch (_) {}
+    }
+}
+
+function broadcastTerminal(job, terminal) {
+    const payload = {
+        broadcastId: generateBroadcastId(),
+        materialId: job.materialId,
+        subjectId: job.subjectId,
+        classIds: job.classIds || [],
+        filename: job.filename || 'Material',
+        terminal,
+        timestamp: Date.now(),
+    };
+
+    const storageKey = `${BROADCAST_KEY}.${payload.broadcastId}`;
+    try {
+        localStorage.setItem(storageKey, JSON.stringify(payload));
+        setTimeout(() => {
+            try { localStorage.removeItem(storageKey); } catch (_) {}
+        }, 5000);
+    } catch (_) {}
+
+    if (broadcastChannel) {
+        broadcastChannel.postMessage(payload);
+    }
+}
+
+let broadcastSyncInitialized = false;
+
+function initBroadcastSync() {
+    if (broadcastSyncInitialized) return;
+    broadcastSyncInitialized = true;
+
+    dedupQueue = loadDedupQueue();
+
+    try {
+        broadcastChannel = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
+        broadcastChannel.onmessage = (event) => {
+            handleBroadcast(event.data);
+        };
+    } catch (_) {
+        console.log('[ProcessingNotifications] BroadcastChannel not available, falling back to storage events');
+    }
+
+    window.addEventListener('storage', handleStorageEvent);
+}
 
 /* ── Toast deduplication buffer ─────────────────────────── */
 let toastBuffer = [];
@@ -256,7 +389,8 @@ async function pollStatuses() {
 
         let bufferWasUpdated = false;
 
-        for (const job of trackedJobs) {
+        const jobsSnapshot = [...trackedJobs];
+        for (const job of jobsSnapshot) {
             let terminal = null;
             let shouldFallbackToClasses = false;
 
@@ -311,6 +445,7 @@ async function pollStatuses() {
                     classIds: [...job.classIds],
                     filename: job.filename,
                 });
+                broadcastTerminal(job, terminal);
             }
         }
 
@@ -329,6 +464,7 @@ async function pollStatuses() {
 export const processingNotifications = {
     init() {
         trackedJobs = normalizeTrackedJobs(loadTrackedJobs());
+        initBroadcastSync();
 
         const activeSubjectId = auth.getActiveSubjectId();
         if (activeSubjectId) {
