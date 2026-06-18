@@ -57,6 +57,21 @@ async function apiFetch(resource, options = {}) {
 const LOCAL_SUBJECTS_KEY = 'uade.local.subjects';
 const LOCAL_CLASSES_KEY = 'uade.local.classes-by-subject';
 
+function seedDemoData() {
+    const demoSubjects = [
+        { id: 'arq-soft-2026', name: 'Arquitectura de Software 2026', track: 'Tecnicatura', professors: ['Dr. García'] },
+        { id: 'ing-datos-2026', name: 'Ingeniería de Datos 2026', track: 'Tecnicatura', professors: ['Ing. López'] },
+    ];
+    setLocalSubjects(demoSubjects);
+    const now = new Date();
+    const demoClasses = [
+        { id: 'class-01', title: 'Clase 1 - Introducción', date: new Date(now.getTime() - 7 * 86400000).toISOString().split('T')[0], topics: ['Fundamentos', 'Historia'], materials: [] },
+        { id: 'class-02', title: 'Clase 2 - Patrones de Diseño', date: new Date(now.getTime() - 3 * 86400000).toISOString().split('T')[0], topics: ['Patrones GoF', 'Arquitectura'], materials: [] },
+        { id: 'class-03', title: 'Clase 3 - Hexagonal', date: now.toISOString().split('T')[0], topics: ['Puertos y Adaptadores', 'Dominio'], materials: [] },
+    ];
+    demoSubjects.forEach(s => setLocalClasses(s.id, demoClasses));
+}
+
 function readLocalJson(key, fallbackValue) {
     try {
         const raw = window.localStorage.getItem(key);
@@ -665,6 +680,10 @@ export const api = {
     async getSubjects() {
         if (USE_MOCK) {
             await delay(400);
+            const existing = getLocalSubjects();
+            if (existing.length === 0) {
+                seedDemoData();
+            }
             return mergeSubjectsWithLocal([]);
         }
         try {
@@ -1627,6 +1646,13 @@ async getTeacherAiFeedbackAlerts(subjectId, limit = 10) {
 
      async getEnrollments(userId) {
          if (!userId) return [];
+         if (USE_MOCK) {
+             await delay(200);
+             return [
+                 { subjectId: 'arq-soft-2026', role: 'student', status: 'active' },
+                 { subjectId: 'ing-datos-2026', role: 'student', status: 'active' },
+             ];
+         }
          try {
              const res = await fetchWithTimeout(`${BASE_URL}/enrollments?userId=${encodeURIComponent(userId)}`, { timeout: 4000 });
              if (!res.ok) return [];
