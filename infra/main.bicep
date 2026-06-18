@@ -109,8 +109,9 @@ var workbookName = guid(resourceGroup().id, 'cost-per-interaction-workbook')
 var anomalousUsageAlertName = 'alert-anomalous-token-usage-${take(resourceToken, 8)}'
 var anomalousUsageActionGroupName = 'ag-token-usage-${take(resourceToken, 8)}'
 
-// SWA hostname follows the pattern: <name>.azurestaticapps.net
-var expectedCorsOrigin = 'https://${staticWebAppName}.azurestaticapps.net'
+// SWA hostname is randomly generated (e.g., agreeable-beach-..., not the resource name).
+// Use "*" during development; override in main.parameters.json for production.
+var allowedCorsOrigins = ['*']
 
 // Storage account: max 24 chars, no hyphens
 var safeStorageName = take(replace(storageAccountName, '-', ''), 24)
@@ -215,7 +216,7 @@ module functions './modules/functions.bicep' = {
     glossaryFilesContainerName: storage.outputs.glossaryFilesContainerName
     summariesContainerName: storage.outputs.summariesContainerName
     notificationQueueName: storage.outputs.notificationQueueName
-    allowedCorsOrigin: expectedCorsOrigin
+    allowedCorsOrigins: allowedCorsOrigins
     tags: tags
   }
 }

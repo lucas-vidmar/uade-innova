@@ -3,7 +3,7 @@
    Contracts follow AGENTS.md section 10
    ============================================================ */
 
-const USE_MOCK = false;
+const USE_MOCK = true;
 const configuredBaseUrl = (typeof import.meta !== 'undefined' && import.meta.env)
     ? String(import.meta.env.VITE_API_BASE_URL || '').trim()
     : '';

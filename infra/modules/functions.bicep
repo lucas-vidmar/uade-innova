@@ -61,8 +61,8 @@ param classMaterialsContainerName string = 'class-materials'
 @description('Name of the ingestion tasks queue for Queue-triggered functions.')
 param ingestionQueueName string = 'ingestion-tasks'
 
-@description('Allowed CORS origin (e.g., https://myapp.azurestaticapps.net). Use "*" only during development.')
-param allowedCorsOrigin string = '*'
+@description('List of allowed CORS origins (e.g., ["https://myapp.azurestaticapps.net"]). Default "*" allows all origins during development.')
+param allowedCorsOrigins array = ['*']
 
 
 
@@ -141,7 +141,7 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
       ipSecurityRestrictions: []
       scmIpSecurityRestrictionsUseMain: true
       cors: {
-        allowedOrigins: [ allowedCorsOrigin ]
+        allowedOrigins: allowedCorsOrigins
         supportCredentials: false
       }
       appSettings: [
