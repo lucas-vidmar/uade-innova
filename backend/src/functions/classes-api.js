@@ -1304,6 +1304,9 @@ app.http('reprocess-material', {
         }
 
         const materialId = request.params.materialId;
+        if (!materialId || typeof materialId !== 'string' || !materialId.trim()) {
+            return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'materialId es requerido' }) };
+        }
         const subjectId = request.query.get('subjectId');
         if (!subjectId) {
             return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'subjectId es requerido' }) };
@@ -1355,11 +1358,11 @@ app.http('reprocess-material', {
             }
 
             // 4. Resetear estado
+            delete material.processedAt;
             const updated = await upsertMaterialState({
                 ...material,
                 status: 'pending',
                 errorMessage: '',
-                processedAt: undefined,
             }, 'Merge');
 
             return {

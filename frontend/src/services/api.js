@@ -848,6 +848,8 @@ export const api = {
     },
 
     async reprocessMaterial(materialId, subjectId) {
+        if (!materialId) throw new Error('materialId es requerido');
+        if (!subjectId) throw new Error('subjectId es requerido');
         if (USE_MOCK) {
             await delay(600);
             return { success: true };
