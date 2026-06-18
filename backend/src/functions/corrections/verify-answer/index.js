@@ -202,6 +202,7 @@ app.http('verify-answer', {
             subjectId,
             classId: correction.classId,
             originalQuestion: correction.question,
+            text: correctedAnswer.trim(),
             teacherId: userId,
             sourceFilename: `correction-${correctionId}`,
             lectureDate: now,
