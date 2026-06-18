@@ -172,7 +172,7 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.53l1.6-7A2 2 0 0 1 5.77 3H17a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-4l-.5 1c-.9 1.8-1.8 3-3.5 3-1.1 0-2-1.1-2-2.5 0-1 .3-1.5 1-2.38Z"/></svg>
               </button>
               <button class="report-issue-btn ${msg.issueReported ? 'active' : ''}" data-message-id="${msg.id || ''}" title="Reportar problema" ${msg.issueReported ? 'disabled' : ''}>
-                ${msg.issueReported ? '✅ Reportado' : '⚠️ Report Issue'}
+                ${msg.issueReported ? '✅ Reportado' : 'Reportar respuesta incorrecta'}
               </button>
             </div>
           </div>
@@ -233,35 +233,7 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
     });
 
     // Report issue
-    container.querySelectorAll('.report-issue-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const messageId = btn.dataset.messageId;
-        if (!messageId || btn.disabled) return;
-
-        const issueDetail = await showPromptDialog({
-          title: 'Reportar problema en respuesta IA',
-          label: '¿Qué estuvo mal o qué faltó?',
-          placeholder: 'Ej: la respuesta confunde microservicios con SOA...',
-          confirmText: 'Reportar',
-          cancelText: 'Cancelar',
-          required: false,
-        });
-        if (issueDetail === null) return;
-
-        try {
-          await api.reportChatIssue({ messageId, subjectId, issueDetail });
-          const msg = messages.find((item) => item.id === messageId);
-          if (msg) msg.issueReported = true;
-          btn.disabled = true;
-          btn.classList.add('active');
-          btn.textContent = '✅ Reportado';
-          toast('success', 'Reporte enviado', 'Tu reporte fue enviado y el docente recibió una alerta.');
-        } catch (err) {
-          console.error('Error reporting issue:', err);
-          toast('error', 'No se pudo reportar', err?.message || 'Intentá nuevamente en unos segundos.');
-        }
-      });
-    });
+    bindReportIssueEvents(container);
 
     // Save conversation
     container.querySelector('#chat-save')?.addEventListener('click', async () => {
@@ -377,7 +349,7 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
               <div class="chat-feedback-btns" data-message-id="${assistantMsg.id}">
                 <button class="feedback-btn" data-type="positive" title="Útil">👍</button>
                 <button class="feedback-btn" data-type="negative" title="No es útil">👎</button>
-                <button class="report-issue-btn" data-message-id="${assistantMsg.id}" title="Reportar problema">⚠️ Report Issue</button>
+                <button class="report-issue-btn" data-message-id="${assistantMsg.id}" title="Reportar problema">Reportar respuesta incorrecta</button>
               </div>
             `;
             bindFeedbackEvents(footerEl);
@@ -465,30 +437,95 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
     });
   };
 
+  const showReportModal = ({ title, question, answer }) => {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal-content" style="max-width:560px;width:92%;">
+          <div class="modal-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+            <h3 class="h4" style="margin:0;">${escapeHtml(title)}</h3>
+            <button type="button" class="btn btn-ghost btn-sm dialog-close" aria-label="Cerrar">✕</button>
+          </div>
+          <div class="modal-body">
+            <div style="margin-bottom:16px;">
+              <label class="form-label" style="font-weight:600;">Tu pregunta</label>
+              <div class="chat-bubble chat-bubble-user" style="margin-top:4px;white-space:pre-wrap;font-size:14px;">${escapeHtml(question)}</div>
+            </div>
+            <div style="margin-bottom:16px;">
+              <label class="form-label" style="font-weight:600;">Respuesta de IA</label>
+              <div class="chat-bubble chat-bubble-assistant" style="margin-top:4px;max-height:180px;overflow-y:auto;white-space:pre-wrap;font-size:14px;">${escapeHtml(answer)}</div>
+            </div>
+            <div>
+              <label class="form-label" for="report-detail-input">¿Qué esperabas?</label>
+              <textarea id="report-detail-input" class="form-input" style="min-height:80px;resize:vertical;" placeholder="Ej: la respuesta no coincide con el material de la clase"></textarea>
+              <p id="report-detail-error" style="display:none;margin-top:6px;color:var(--color-error);font-size:13px;"></p>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-ghost dialog-cancel">Cancelar</button>
+            <button type="button" class="btn btn-primary dialog-confirm" id="report-submit-btn" disabled>Enviar reporte</button>
+          </div>
+        </div>
+      `;
+
+      const textarea = overlay.querySelector('#report-detail-input');
+      const errorEl = overlay.querySelector('#report-detail-error');
+      const submitBtn = overlay.querySelector('#report-submit-btn');
+
+      const cleanup = (result) => { overlay.remove(); resolve(result); };
+
+      textarea.addEventListener('input', () => {
+        submitBtn.disabled = (textarea.value || '').trim().length < 10;
+        errorEl.style.display = 'none';
+      });
+
+      overlay.querySelector('.dialog-close')?.addEventListener('click', () => cleanup(null));
+      overlay.querySelector('.dialog-cancel')?.addEventListener('click', () => cleanup(null));
+      overlay.addEventListener('click', (event) => { if (event.target === overlay) cleanup(null); });
+
+      submitBtn.addEventListener('click', () => {
+        const val = (textarea.value || '').trim();
+        if (val.length < 10) {
+          errorEl.textContent = 'Debe tener al menos 10 caracteres.';
+          errorEl.style.display = 'block';
+          textarea.focus();
+          return;
+        }
+        cleanup(val);
+      });
+
+      textarea.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') cleanup(null);
+      });
+
+      document.body.appendChild(overlay);
+      setTimeout(() => textarea.focus(), 100);
+    });
+  };
+
   const bindReportIssueEvents = (parent) => {
     parent.querySelectorAll('.report-issue-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
         const messageId = btn.dataset.messageId;
         if (!messageId || btn.disabled) return;
 
-        const issueDetail = await showPromptDialog({
-          title: 'Reportar problema en respuesta IA',
-          label: '¿Qué estuvo mal o qué faltó?',
-          placeholder: 'Ej: la respuesta no coincide con el material de la clase',
-          confirmText: 'Reportar',
-          cancelText: 'Cancelar',
-          required: false,
-        });
-        if (issueDetail === null) return;
+        const msg = messages.find(m => m.id === messageId);
+        const msgIndex = messages.indexOf(msg);
+        const userMsg = msgIndex > 0 ? messages[msgIndex - 1] : null;
+        const question = userMsg?.role === 'user' ? userMsg.content : '';
+        const answer = msg?.content || '';
+
+        const issueDetail = await showReportModal({ title: 'Reportar respuesta incorrecta', question, answer });
+        if (!issueDetail) return;
 
         try {
           await api.reportChatIssue({ messageId, subjectId, issueDetail });
-          const msg = messages.find((item) => item.id === messageId);
           if (msg) msg.issueReported = true;
           btn.disabled = true;
           btn.classList.add('active');
           btn.textContent = '✅ Reportado';
-          toast('success', 'Reporte enviado', 'Tu reporte fue enviado y el docente recibió una alerta.');
+          toast('success', 'Reporte enviado', 'Tu reporte fue registrado. El docente recibió una alerta.');
         } catch (err) {
           console.error('Error reporting issue:', err);
           toast('error', 'No se pudo reportar', err?.message || 'Intentá nuevamente en unos segundos.');
