@@ -13,10 +13,12 @@ export class OnboardingOverlay {
   }
 
   show() {
+    if (!this.steps?.length) return;
     this._createBackdrop();
     this.renderStep(0);
     window.addEventListener('resize', this._onResize);
     document.addEventListener('keydown', this._handleKeyDown);
+    this.backdropEl?.addEventListener('click', () => this.engine.skip());
   }
 
   renderStep(index) {
@@ -50,7 +52,7 @@ export class OnboardingOverlay {
 
   /* ── Tooltip DOM ───────────────────────────────────────── */
   _createTooltip(step, index) {
-    const isMobile = window.innerWidth < 768;
+    const isMobile = window.innerWidth < 640;
     const isLast = this.engine.isLastStep;
     const el = document.createElement('div');
     el.className = `onboarding-tooltip ${isMobile ? 'onboarding-tooltip--mobile' : `onboarding-tooltip--${step.position || 'bottom'}`}`;
@@ -85,13 +87,13 @@ export class OnboardingOverlay {
   /* ── Positioning ───────────────────────────────────────── */
   _reposition(step) {
     if (!this.tooltipEl) return;
-    const targetSel = step?.targetSelector || this.engine.currentStep?.targetSelector;
+    const isMobile = window.innerWidth < 640;
+    const stepData = step || this.engine.currentStep;
+    const targetSel = isMobile && stepData?.targetSelectorMobile ? stepData.targetSelectorMobile : (stepData?.targetSelector || this.engine.currentStep?.targetSelector);
     if (!targetSel) return;
     const target = document.querySelector(targetSel);
     if (!target) return;
-    const isMobile = window.innerWidth < 768;
     if (isMobile) return;
-    const stepData = step || this.engine.currentStep;
     const position = stepData?.position || 'bottom';
     const targetRect = target.getBoundingClientRect();
     const tooltipRect = this.tooltipEl.getBoundingClientRect();
@@ -122,16 +124,18 @@ export class OnboardingOverlay {
     left = Math.max(gap, Math.min(left, window.innerWidth - tooltipRect.width - gap));
 
     this.tooltipEl.style.top = `${top + window.scrollY}px`;
-    this.tooltipEl.style.left = `${left}px`;
+    this.tooltipEl.style.left = `${left + window.scrollX}px`;
   }
 
   /* ── Highlight ─────────────────────────────────────────── */
   _highlightTarget(step) {
-    if (step.targetSelector) {
-      const target = document.querySelector(step.targetSelector);
+    const isMobile = window.innerWidth < 640;
+    const sel = isMobile && step.targetSelectorMobile ? step.targetSelectorMobile : step.targetSelector;
+    if (sel) {
+      const target = document.querySelector(sel);
       if (target) {
         target.classList.add('onboarding-highlight');
-        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }
     }
   }

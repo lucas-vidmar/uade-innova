@@ -203,7 +203,7 @@ export async function renderTeacherDashboard(container) {
 
   /* ── Onboarding trigger (first login) ───────────────── */
   requestAnimationFrame(() => {
-    if (!isOnboardingCompleted()) {
+    if (!isOnboardingCompleted('teacher')) {
       const engine = new OnboardingEngine({ role: 'teacher', steps: TEACHER_ONBOARDING_STEPS });
       engine.start();
     }

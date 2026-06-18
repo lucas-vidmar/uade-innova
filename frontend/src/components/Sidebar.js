@@ -264,7 +264,7 @@ export function renderSidebar() {
 
   onboardingBtns.forEach(btn => {
     btn.addEventListener('click', () => {
-      resetOnboarding();
+      resetOnboarding('teacher');
       const engine = new OnboardingEngine({ role: 'teacher', steps: TEACHER_ONBOARDING_STEPS });
       engine.start();
     });

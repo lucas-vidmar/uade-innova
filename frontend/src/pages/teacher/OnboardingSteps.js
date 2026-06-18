@@ -4,9 +4,10 @@
 
 /**
  * Step schema:
- *   { id, title, description, targetSelector?, sectionName?, position?, icon? }
+ *   { id, title, description, targetSelector?, targetSelectorMobile?, sectionName?, position?, icon? }
  *
- * targetSelector — CSS selector for the element to highlight.
+ * targetSelector — CSS selector for the element to highlight (desktop).
+ * targetSelectorMobile — CSS selector for mobile fallback (optional).
  * sectionName   — displayed on mobile when positional arrows can't be used.
  * position      — arrow position relative to target: 'top' | 'bottom' | 'left' | 'right'.
  * icon          — optional inline SVG shown at top of each step card.
@@ -25,6 +26,7 @@ export const TEACHER_ONBOARDING_STEPS = [
     title: 'Panel de control',
     description: 'Acá podés ver tus materias y clases. Cada clase muestra el estado de sus materiales para que sepas qué falta cargar.',
     targetSelector: '#nav-teacher-dashboard-desktop',
+    targetSelectorMobile: '#nav-teacher-dashboard-mobile',
     sectionName: 'Panel de control (menú lateral izquierdo)',
     position: 'right',
     icon: ICONS.dashboard,
@@ -34,6 +36,7 @@ export const TEACHER_ONBOARDING_STEPS = [
     title: 'Carga de materiales',
     description: 'Clickeá "Cargar Materiales" para subir transcripciones, presentaciones, apuntes o bibliografía para cada clase.',
     targetSelector: '#nav-teacher-upload-desktop',
+    targetSelectorMobile: '#nav-teacher-upload-mobile',
     sectionName: 'Cargar Materiales (menú lateral izquierdo)',
     position: 'right',
     icon: ICONS.upload,
@@ -43,6 +46,7 @@ export const TEACHER_ONBOARDING_STEPS = [
     title: 'Correcciones de transcripción',
     description: 'Revisá las transcripciones automáticas en "Correcciones de Transcripción". El sistema sugiere correcciones basadas en el glosario técnico.',
     targetSelector: '#nav-teacher-transcription-corrections-desktop',
+    targetSelectorMobile: '#nav-teacher-transcription-corrections-mobile',
     sectionName: 'Correcciones de Transcripción (menú lateral izquierdo)',
     position: 'right',
     icon: ICONS.corrections,
@@ -52,6 +56,7 @@ export const TEACHER_ONBOARDING_STEPS = [
     title: 'Prioridad de materiales',
     description: 'Configurá la prioridad de tus materiales desde "Gestión de Materiales" para que el chat use primero los mejores recursos.',
     targetSelector: '#nav-teacher-materials-desktop',
+    targetSelectorMobile: '#nav-teacher-materials-mobile',
     sectionName: 'Gestión de Materiales (menú lateral izquierdo)',
     position: 'right',
     icon: ICONS.materials,
