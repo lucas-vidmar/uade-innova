@@ -68,6 +68,14 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         </div>
       </div>
 
+      <!-- Empty class selection hint -->
+      ${selectedClassIds.length === 0 ? `
+        <div class="chat-empty-hint">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span>Seleccioná al menos una clase de las fuentes de consulta para hacer preguntas.</span>
+        </div>
+      ` : ''}
+
       <!-- Messages -->
       <div class="chat-messages-area" id="chat-messages">
         ${messages.length === 0 ? renderWelcome() : messages.map(renderMessage).join('')}

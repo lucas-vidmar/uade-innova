@@ -250,6 +250,21 @@ body.top-nav-mobile-open .top-nav-mobile {
   box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 15%, transparent);
 }
 
+.chat-empty-hint {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  margin: 0 var(--space-4);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 15%, transparent);
+  border-radius: var(--radius-md);
+  color: var(--color-primary);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  animation: fadeIn 0.3s ease;
+}
+
 .chat-chips-container {
   display: flex;
   flex-wrap: wrap;
