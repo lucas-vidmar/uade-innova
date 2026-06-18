@@ -1501,6 +1501,62 @@ export const api = {
             return res.json();
         },
 
+    async saveConversation({ conversationId, subjectId, messages }) {
+            if (USE_MOCK) {
+                await delay(300);
+                return { success: true, conversationId };
+            }
+            const res = await apiFetch(`${BASE_URL}/conversations/${encodeURIComponent(conversationId)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ subjectId, messages }),
+            });
+            if (!res.ok) {
+                let message = `Error ${res.status}: no se pudo guardar la conversación`;
+                try { const err = await res.json(); if (err?.error) message = err.error; } catch {}
+                throw new Error(message);
+            }
+            return res.json();
+        },
+
+    async listConversations(subjectId) {
+            if (USE_MOCK) { await delay(300); return []; }
+            try {
+                const res = await fetchWithTimeout(`${BASE_URL}/conversations?subjectId=${encodeURIComponent(subjectId)}`, { timeout: 4000 });
+                if (!res.ok) return [];
+                const data = await res.json();
+                return Array.isArray(data) ? data : [];
+            } catch (err) {
+                console.error('[API] listConversations failed:', err);
+                return [];
+            }
+        },
+
+    async getConversation(conversationId, subjectId) {
+            if (USE_MOCK) { await delay(300); return null; }
+            try {
+                const res = await fetchWithTimeout(`${BASE_URL}/conversations/${encodeURIComponent(conversationId)}?subjectId=${encodeURIComponent(subjectId)}`, { timeout: 4000 });
+                if (!res.ok) return null;
+                return res.json();
+            } catch (err) {
+                console.error('[API] getConversation failed:', err);
+                return null;
+            }
+        },
+
+    async deleteConversation(conversationId, subjectId) {
+            if (USE_MOCK) { await delay(200); return { success: true }; }
+            const res = await apiFetch(`${BASE_URL}/conversations/${encodeURIComponent(conversationId)}?subjectId=${encodeURIComponent(subjectId)}`, {
+                method: 'DELETE',
+            });
+            if (!res.ok) {
+                let message = `Error ${res.status}: no se pudo eliminar la conversación`;
+                try { const err = await res.json(); if (err?.error) message = err.error; } catch {}
+                throw new Error(message);
+            }
+            return res.json();
+        },
+
     async updateMaterial(subjectId, materialId, updates) {
             if (!subjectId || !materialId) throw new Error('subjectId y materialId son requeridos');
             const res = await apiFetch(`${BASE_URL}/materials/${encodeURIComponent(materialId)}`, {

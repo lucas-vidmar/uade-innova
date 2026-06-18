@@ -9,6 +9,7 @@ const CORRECTIONS_TABLE = process.env.AZURE_TABLE_CORRECTIONS || 'Corrections';
 const CORRECTIONS_PENDING_TABLE = process.env.AZURE_TABLE_CORRECTIONS_PENDING || 'CorrectionsPending';
 const TRANSCRIPTION_CORRECTIONS_TABLE = process.env.AZURE_TABLE_TRANSCRIPTION_CORRECTIONS || 'TranscriptionCorrections';
 export const RATINGS_TABLE = process.env.AZURE_TABLE_CONVERSATION_RATINGS || 'ConversationRatings';
+export const CONVERSATIONS_TABLE = process.env.AZURE_TABLE_CONVERSATIONS || 'Conversations';
 
 const ensuredTables = new Set();
 
@@ -476,4 +477,135 @@ export async function updateTranscriptionSuggestion(subjectId, suggestionId, upd
   const merged = { ...entity, ...updates };
   await client.upsertEntity(merged, 'Replace');
   return merged;
+}
+
+// ─── Conversations Operations (Story 3.2b) ─────────────────
+
+const MAX_TS = 8640000000000000;
+
+function toConversationRowKey(conversationId, timestamp) {
+  const ts = timestamp ? new Date(timestamp).getTime() : Date.now();
+  const inverted = (MAX_TS - ts).toString().padStart(16, '0');
+  return `${inverted}${conversationId}`;
+}
+
+function fromConversationRowKey(rowKey) {
+  return rowKey.substring(16);
+}
+
+function toConversationEntity(conversation) {
+  const messages = Array.isArray(conversation.messages) ? conversation.messages : [];
+  const firstQuestion = messages.find((m) => m.role === 'user')?.content || '';
+  return compactObject({
+    partitionKey: conversation.userId,
+    rowKey: toConversationRowKey(conversation.conversationId, conversation.lastMessageAt),
+    subjectId: conversation.subjectId,
+    messages: JSON.stringify(messages),
+    createdAt: conversation.createdAt || new Date().toISOString(),
+    lastMessageAt: conversation.lastMessageAt || new Date().toISOString(),
+    messageCount: messages.length,
+    firstQuestion: firstQuestion.slice(0, 200),
+  });
+}
+
+function fromConversationEntity(entity) {
+  let messages = [];
+  try {
+    messages = typeof entity.messages === 'string' ? JSON.parse(entity.messages) : (entity.messages || []);
+  } catch {
+    messages = [];
+  }
+  return {
+    conversationId: fromConversationRowKey(entity.rowKey),
+    userId: entity.partitionKey,
+    subjectId: entity.subjectId,
+    messages,
+    createdAt: entity.createdAt,
+    lastMessageAt: entity.lastMessageAt,
+    messageCount: entity.messageCount || 0,
+    firstQuestion: entity.firstQuestion || '',
+  };
+}
+
+export async function saveConversation(conversation) {
+  if (!conversation?.userId || !conversation?.conversationId || !conversation?.subjectId) {
+    throw new Error('saveConversation requires userId, conversationId, and subjectId');
+  }
+
+  await ensureTable(CONVERSATIONS_TABLE);
+  const client = getTableClient(CONVERSATIONS_TABLE);
+  const entity = toConversationEntity(conversation);
+  await client.upsertEntity(entity, 'Replace');
+  return fromConversationEntity(entity);
+}
+
+export async function getConversation(userId, conversationId) {
+  if (!userId || !conversationId) return null;
+
+  await ensureTable(CONVERSATIONS_TABLE);
+  const client = getTableClient(CONVERSATIONS_TABLE);
+
+  try {
+    const entities = client.listEntities({
+      queryOptions: {
+        filter: `PartitionKey eq '${escapeODataValue(userId)}'`,
+      },
+    });
+
+    for await (const entity of entities) {
+      if (fromConversationRowKey(entity.rowKey) === conversationId) {
+        return fromConversationEntity(entity);
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export async function listConversationsByUser(userId, subjectId) {
+  if (!userId) return [];
+
+  await ensureTable(CONVERSATIONS_TABLE);
+  const client = getTableClient(CONVERSATIONS_TABLE);
+
+  const filter = `PartitionKey eq '${escapeODataValue(userId)}'`;
+  const all = [];
+  try {
+    for await (const entity of client.listEntities({ queryOptions: { filter } })) {
+      if (!subjectId || entity.subjectId === subjectId) {
+        all.push(fromConversationEntity(entity));
+      }
+    }
+  } catch {
+    return [];
+  }
+
+  all.sort((a, b) => new Date(b.lastMessageAt || 0) - new Date(a.lastMessageAt || 0));
+  return all;
+}
+
+export async function deleteConversation(userId, conversationId) {
+  if (!userId || !conversationId) return false;
+
+  await ensureTable(CONVERSATIONS_TABLE);
+  const client = getTableClient(CONVERSATIONS_TABLE);
+
+  try {
+    const entities = client.listEntities({
+      queryOptions: {
+        filter: `PartitionKey eq '${escapeODataValue(userId)}'`,
+      },
+    });
+
+    for await (const entity of entities) {
+      if (fromConversationRowKey(entity.rowKey) === conversationId) {
+        await client.deleteEntity(entity.partitionKey, entity.rowKey);
+        return true;
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
 }

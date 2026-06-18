@@ -54,6 +54,14 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
       <div class="chat-sources-bar">
         <div class="chat-sources-top">
           <span class="chat-sources-label">Fuentes de consulta:</span>
+          <button class="chat-new-btn" id="chat-save" title="Guardar conversación" style="${messages.length === 0 ? 'display:none' : ''}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            <span>Guardar</span>
+          </button>
+          <button class="chat-new-btn" id="chat-saved-list" title="Mis conversaciones guardadas">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            <span>Guardadas</span>
+          </button>
           <button class="chat-new-btn" id="chat-clear" title="Nuevo chat">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             <span>Nuevo chat</span>
@@ -252,6 +260,42 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
           console.error('Error reporting issue:', err);
           toast('error', 'No se pudo reportar', err?.message || 'Intentá nuevamente en unos segundos.');
         }
+      });
+    });
+
+    // Save conversation
+    container.querySelector('#chat-save')?.addEventListener('click', async () => {
+      if (messages.length === 0) return;
+      const msgCount = messages.filter((m) => m.role === 'user' || m.role === 'assistant').length;
+      try {
+        await api.saveConversation({
+          conversationId: currentSessionId,
+          subjectId,
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+        });
+        toast('success', 'Conversación guardada', `Se guardaron ${msgCount} mensajes.`);
+      } catch (err) {
+        toast('error', 'No se pudo guardar', err?.message || 'Intentá nuevamente.');
+      }
+    });
+
+    // Saved conversations list
+    container.querySelector('#chat-saved-list')?.addEventListener('click', async () => {
+      const { renderSavedConversationsModal } = await import('./SavedConversationsModal.js');
+      renderSavedConversationsModal({
+        subjectId,
+        onLoad: async (conversation) => {
+          messages = conversation.messages.map((m) => {
+            const msg = { role: m.role, content: m.content };
+            if (m.role === 'assistant') {
+              msg.id = 'ai-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+              msg.sources = [];
+            }
+            return msg;
+          });
+          currentSessionId = conversation.conversationId;
+          render();
+        },
       });
     });
 
