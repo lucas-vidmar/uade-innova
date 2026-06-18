@@ -179,5 +179,6 @@ development_status:
   epic-9: in-progress
   9-106-material-status-endpoint-authorization-s: done
   9-107-batch-material-status-endpoint-for-notif: backlog
+  9-3-timer-and-queue-trigger-configuration: done
   9-96-material-status-endpoint-by-materialid: backlog
   epic-9-retrospective: optional
