@@ -19,6 +19,17 @@ param tags object = {}
 @description('Secret value for SWA_ROLES_SECRET — used to validate Static Web App role tokens. Auto-generated on each deployment. Override to set a specific value.')
 param swaRolesSecret string = newGuid()
 
+@secure()
+@description('Client ID of the Entra ID app registration for Microsoft Graph API (Teams notifications).')
+param graphApiClientId string
+
+@secure()
+@description('Client secret of the Entra ID app registration for Microsoft Graph API.')
+param graphApiClientSecret string
+
+@description('Tenant ID for Microsoft Graph API. Defaults to the subscription\'s tenant ID.')
+param graphApiTenantId string = subscription().tenantId
+
 // ─── Key Vault ───────────────────────────────────────────────────
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: name
@@ -68,6 +79,33 @@ resource swaRolesSecretResource 'Microsoft.KeyVault/vaults/secrets@2023-07-01' =
   name: 'SWA-ROLES-SECRET'
   properties: {
     value: swaRolesSecret
+  }
+}
+
+// ─── GRAPH-API-CLIENT-ID ──────────────────────────────────────
+resource graphApiClientIdSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'GRAPH-API-CLIENT-ID'
+  properties: {
+    value: graphApiClientId
+  }
+}
+
+// ─── GRAPH-API-CLIENT-SECRET ──────────────────────────────────
+resource graphApiClientSecretSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'GRAPH-API-CLIENT-SECRET'
+  properties: {
+    value: graphApiClientSecret
+  }
+}
+
+// ─── GRAPH-API-TENANT-ID ──────────────────────────────────────
+resource graphApiTenantIdSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'GRAPH-API-TENANT-ID'
+  properties: {
+    value: graphApiTenantId
   }
 }
 

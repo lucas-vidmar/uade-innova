@@ -247,6 +247,19 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           name: 'FRONT_DOOR_ID'
           value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/FRONT-DOOR-ID/)'
         }
+        // Graph API (Teams notifications)
+        {
+          name: 'GRAPH_API_CLIENT_ID'
+          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/GRAPH-API-CLIENT-ID/)'
+        }
+        {
+          name: 'GRAPH_API_CLIENT_SECRET'
+          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/GRAPH-API-CLIENT-SECRET/)'
+        }
+        {
+          name: 'GRAPH_API_TENANT_ID'
+          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/GRAPH-API-TENANT-ID/)'
+        }
         // Storage Queue for async processing
         {
           name: 'AZURE_STORAGE_QUEUE_INGESTION'

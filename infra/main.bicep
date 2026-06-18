@@ -75,6 +75,17 @@ param budgetAmount int = 100
 @description('Lista de correos para notificaciones de presupuesto.')
 param notificationEmail string = ''
 
+@secure()
+@description('Client ID of the Entra ID app registration for Microsoft Graph API (Teams notifications).')
+param graphApiClientId string
+
+@secure()
+@description('Client secret of the Entra ID app registration for Microsoft Graph API.')
+param graphApiClientSecret string
+
+@description('Tenant ID for Microsoft Graph API. Defaults to the subscription\'s tenant ID.')
+param graphApiTenantId string = subscription().tenantId
+
 // ─── Variables & naming ──────────────────────────────────────────
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
@@ -150,6 +161,9 @@ module keyVault './modules/keyvault.bicep' = {
     location: location
     name: keyVaultName
     tags: tags
+    graphApiClientId: graphApiClientId
+    graphApiClientSecret: graphApiClientSecret
+    graphApiTenantId: graphApiTenantId
   }
 }
 
