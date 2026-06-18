@@ -7,6 +7,8 @@ import { renderHeader } from '../../components/Header.js';
 import { renderBottomNav } from '../../components/BottomNav.js';
 import { createChatWidget } from '../../components/ChatWidget.js';
 import { toast } from '../../components/Toast.js';
+import { OnboardingEngine, isOnboardingCompleted } from '../../services/onboarding.js';
+import { STUDENT_ONBOARDING_STEPS } from './OnboardingSteps.js';
 
 function renderSearchResult(result, classesById) {
   const materialIcon = {
@@ -432,6 +434,12 @@ export async function renderStudentDashboard(container) {
       onMessageSent: handleMessageSent,
     });
     chatMount.appendChild(chatWidget);
+    requestAnimationFrame(() => {
+      if (!isOnboardingCompleted('student') && auth.getAIConsentAccepted()) {
+        const engine = new OnboardingEngine({ role: 'student', steps: STUDENT_ONBOARDING_STEPS });
+        engine.start();
+      }
+    });
     updateHistorySidebar(history);
     if (selectedSessionId) {
       window.history.replaceState(null, '', '#/student/dashboard');

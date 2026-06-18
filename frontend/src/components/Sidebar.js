@@ -6,6 +6,7 @@ import { api } from '../services/api.js';
 import { toast } from './Toast.js';
 import { OnboardingEngine, resetOnboarding } from '../services/onboarding.js';
 import { TEACHER_ONBOARDING_STEPS } from '../pages/teacher/OnboardingSteps.js';
+import { STUDENT_ONBOARDING_STEPS } from '../pages/student/OnboardingSteps.js';
 
 const NAV = {
   student: [
@@ -81,9 +82,9 @@ export function renderSidebar() {
           `;
         }).join('')}
 
-        ${user.role === 'teacher' ? `
+        ${user.role === 'teacher' || user.role === 'student' ? `
           <div class="left-nav-divider"></div>
-          <button class="left-nav-link left-nav-link--help" id="nav-teacher-onboarding-desktop" type="button">
+          <button class="left-nav-link left-nav-link--help" id="nav-${user.role}-onboarding-desktop" type="button">
             ${getIcon('help')}
             <span class="left-nav-label">Guía de inicio</span>
           </button>
@@ -190,8 +191,8 @@ export function renderSidebar() {
         `;
       }).join('')}
 
-      ${user.role === 'teacher' ? `
-        <button class="mobile-bottom-link mobile-bottom-link--help" id="nav-teacher-onboarding-mobile" type="button">
+      ${user.role === 'teacher' || user.role === 'student' ? `
+        <button class="mobile-bottom-link mobile-bottom-link--help" id="nav-${user.role}-onboarding-mobile" type="button">
           ${getIcon('help')}
           <span>Guía de inicio</span>
         </button>
@@ -257,15 +258,17 @@ export function renderSidebar() {
   });
 
   /* ── Onboarding re-trigger (Guía de inicio) ──────────── */
+  const role = user.role;
+  const steps = role === 'student' ? STUDENT_ONBOARDING_STEPS : TEACHER_ONBOARDING_STEPS;
   const onboardingBtns = [
-    document.getElementById('nav-teacher-onboarding-desktop'),
-    document.getElementById('nav-teacher-onboarding-mobile'),
+    document.getElementById(`nav-${role}-onboarding-desktop`),
+    document.getElementById(`nav-${role}-onboarding-mobile`),
   ].filter(Boolean);
 
   onboardingBtns.forEach(btn => {
     btn.addEventListener('click', () => {
-      resetOnboarding('teacher');
-      const engine = new OnboardingEngine({ role: 'teacher', steps: TEACHER_ONBOARDING_STEPS });
+      resetOnboarding(role);
+      const engine = new OnboardingEngine({ role, steps });
       engine.start();
     });
   });
