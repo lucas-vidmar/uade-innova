@@ -168,10 +168,14 @@ module keyVault './modules/keyvault.bicep' = {
 }
 
 // ─── Storage Connection String in Key Vault ────────────────────
+resource existingStorageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' existing = {
+  name: safeStorageName
+}
+
 resource storageConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   name: '${keyVaultName}/AZURE-STORAGE-CONNECTION-STRING'
   properties: {
-    value: 'DefaultEndpointsProtocol=https;AccountName=${storage.outputs.accountName};AccountKey=${listKeys(storage.outputs.accountId, '2023-01-01').keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
+    value: 'DefaultEndpointsProtocol=https;AccountName=${existingStorageAccount.name};AccountKey=${existingStorageAccount.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
   }
 }
 
