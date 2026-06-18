@@ -58,6 +58,9 @@ param tags object = {}
 @description('Name of the Storage container for class materials.')
 param classMaterialsContainerName string = 'class-materials'
 
+@description('Name of the ingestion tasks queue for Queue-triggered functions.')
+param ingestionQueueName string = 'ingestion-tasks'
+
 @description('Allowed CORS origin (e.g., https://myapp.azurestaticapps.net). Use "*" only during development.')
 param allowedCorsOrigin string = '*'
 
@@ -213,6 +216,11 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         {
           name: 'FRONT_DOOR_ID'
           value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/FRONT-DOOR-ID/)'
+        }
+        // Storage Queue for async processing
+        {
+          name: 'AZURE_STORAGE_QUEUE_INGESTION'
+          value: ingestionQueueName
         }
       ]
     }

@@ -178,6 +178,7 @@ module functions './modules/functions.bicep' = {
     classesTableName: storage.outputs.classesTableName
     enrollmentsTableName: storage.outputs.enrollmentsTableName
     storageAccountId: storage.outputs.accountId
+    ingestionQueueName: storage.outputs.ingestionQueueName
     allowedCorsOrigin: expectedCorsOrigin
     tags: tags
   }

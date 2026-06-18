@@ -161,6 +161,23 @@ resource classesTable 'Microsoft.Storage/storageAccounts/tableServices/tables@20
   name: 'classes'
 }
 
+// ─── Queue Service ──────────────────────────────────────────────
+resource queueService 'Microsoft.Storage/storageAccounts/queueServices@2023-01-01' = {
+  parent: storageAccount
+  name: 'default'
+}
+
+// ─── Queue: ingestion-tasks (async processing pipeline) ─────────
+resource ingestionQueue 'Microsoft.Storage/storageAccounts/queueServices/queues@2023-01-01' = {
+  parent: queueService
+  name: 'ingestion-tasks'
+  properties: {
+    metadata: {
+      purpose: 'Async ingestion processing tasks for Queue-triggered functions'
+    }
+  }
+}
+
 // ─── Table: Enrollments (subject-to-user enrollment tracking) ───
 resource enrollmentsTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-01-01' = {
   parent: tableService
@@ -197,3 +214,6 @@ output classesTableName string = classesTable.name
 
 @description('The name of the Enrollments table.')
 output enrollmentsTableName string = enrollmentsTable.name
+
+@description('The name of the ingestion tasks queue.')
+output ingestionQueueName string = ingestionQueue.name
