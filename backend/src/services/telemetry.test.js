@@ -12,7 +12,7 @@ import assert from 'node:assert';
 // Ensure connection string is absent so the module initializes in no-op mode
 delete process.env.APPLICATIONINSIGHTS_CONNECTION_STRING;
 
-const { trackRAGInteraction, trackUserLogin } = await import('../services/telemetry.js');
+const { trackRAGInteraction, trackUserLogin, trackPollingEvent } = await import('../services/telemetry.js');
 
 // ── No-op behavior when connection string is missing ─────────────────────────
 
@@ -80,6 +80,50 @@ test('trackUserLogin handles missing roles property without throwing', async () 
     await assert.doesNotReject(() =>
         trackUserLogin({
             userId: 'user-003',
+        })
+    );
+});
+
+// ── PollingEvent (Issue #108) ───────────────────────────────────────
+
+test('trackPollingEvent is a no-op when APPLICATIONINSIGHTS_CONNECTION_STRING is not set', async () => {
+    await assert.doesNotReject(() =>
+        trackPollingEvent({
+            eventType: 'material_status_batch_success',
+            subjectId: 'arq-software-2026',
+            materialCount: 5,
+            latencyMs: 120,
+        })
+    );
+});
+
+test('trackPollingEvent handles all event types without throwing', async () => {
+    const types = [
+        'material_status_batch_success',
+        'material_status_batch_get_success',
+        'material_status_single_success',
+        'classes_fallback',
+        'per_item_fallback',
+        'polling_error',
+    ];
+    for (const eventType of types) {
+        await assert.doesNotReject(() =>
+            trackPollingEvent({
+                eventType,
+                subjectId: 'arq-software-2026',
+                materialCount: 3,
+                latencyMs: 200,
+                errorMessage: eventType === 'polling_error' ? 'Something went wrong' : undefined,
+            })
+        );
+    }
+});
+
+test('trackPollingEvent handles missing subjectId gracefully', async () => {
+    await assert.doesNotReject(() =>
+        trackPollingEvent({
+            eventType: 'classes_fallback',
+            materialCount: 1,
         })
     );
 });

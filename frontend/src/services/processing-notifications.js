@@ -313,6 +313,24 @@ function notifyListeners(event) {
     });
 }
 
+/* ── Polling telemetry reporter (fire-and-forget) ────────── */
+function _emitPollingTelemetry(event) {
+    try {
+        const payload = Array.isArray(event) ? event : [event];
+        const url = `${MATERIAL_STATUS_BASE_URL}/telemetry/polling`;
+        if (navigator.sendBeacon) {
+            navigator.sendBeacon(url, JSON.stringify({ events: payload }));
+        } else {
+            fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ events: payload }),
+                keepalive: true,
+            }).catch(() => {});
+        }
+    } catch (_) {}
+}
+
 function resolveTerminalStatusForJob(job, classes) {
     const classesList = Array.isArray(classes) ? classes : [];
     const matchingMaterials = [];
@@ -386,15 +404,29 @@ async function pollStatuses() {
         const batchStatusByKey = new Map();
         for (const [subjectId, indexes] of jobIndexesBySubject.entries()) {
             const materialIds = indexes.map((index) => trackedJobs[index].materialId);
+            const t0 = performance.now();
             try {
                 const batch = await fetchMaterialStatusBatch(subjectId, materialIds);
                 const results = Array.isArray(batch?.results) ? batch.results : [];
+                const latencyMs = Math.round(performance.now() - t0);
                 results.forEach((result) => {
                     if (!result?.materialId) return;
                     batchStatusByKey.set(`${subjectId}::${result.materialId}`, result);
                 });
+                _emitPollingTelemetry({
+                    eventType: 'material_status_batch_success',
+                    subjectId,
+                    materialCount: materialIds.length,
+                    latencyMs,
+                });
             } catch (batchErr) {
                 console.error('[ProcessingNotifications] poll getMaterialStatusBatch failed, fallback to per-item:', batchErr);
+                _emitPollingTelemetry({
+                    eventType: 'per_item_fallback',
+                    subjectId,
+                    materialCount: materialIds.length,
+                    errorMessage: batchErr.message,
+                });
             }
         }
 
@@ -411,6 +443,13 @@ async function pollStatuses() {
                 const displayFilename = job.filename || 'Material';
                 toast('warning', 'Tiempo de espera agotado', `"${displayFilename}" está demorando más de lo esperado. Revisá el estado del material en la tabla o intentá la carga nuevamente.`, 8000);
                 console.warn(`[ProcessingNotifications] Job expired for "${displayFilename}" (trackedAt=${job.trackedAt}, pollCount=${job.pollCount})`);
+                _emitPollingTelemetry({
+                    eventType: 'polling_error',
+                    subjectId: job.subjectId,
+                    materialCount: 1,
+                    errorMessage: `Job expired after ${job.pollCount} polls`,
+                    endpoint: 'expired',
+                });
                 const expiredIndex = trackedJobs.findIndex(
                     (j) => j.materialId === job.materialId && j.subjectId === job.subjectId
                 );
@@ -452,14 +491,31 @@ async function pollStatuses() {
             } catch (statusErr) {
                 console.error('[ProcessingNotifications] poll getMaterialStatus failed, fallback to classes:', statusErr);
                 shouldFallbackToClasses = true;
+                _emitPollingTelemetry({
+                    eventType: 'per_item_fallback',
+                    subjectId: job.subjectId,
+                    materialCount: 1,
+                    errorMessage: statusErr.message,
+                });
             }
 
             if (!terminal && shouldFallbackToClasses) {
                 try {
                     const classes = await api.getClasses(job.subjectId);
                     terminal = resolveTerminalStatusForJob(job, Array.isArray(classes) ? classes : []);
+                    _emitPollingTelemetry({
+                        eventType: 'classes_fallback',
+                        subjectId: job.subjectId,
+                        materialCount: 1,
+                    });
                 } catch (err) {
                     console.error('[ProcessingNotifications] poll getClasses failed:', err);
+                    _emitPollingTelemetry({
+                        eventType: 'polling_error',
+                        subjectId: job.subjectId,
+                        errorMessage: err.message,
+                        endpoint: 'getClasses',
+                    });
                 }
             }
 

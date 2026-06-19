@@ -298,6 +298,50 @@ export async function trackRAGError({
 }
 
 /**
+ * Tracks processing-notification polling telemetry for measuring
+ * material-status endpoint load reduction and reliability.
+ *
+ * Emitted by both backend material-status handlers and the frontend
+ * processing-notifications service (via POST /api/telemetry/polling).
+ *
+ * @param {object} params
+ * @param {string} params.eventType      - One of: material_status_batch_success,
+ *   material_status_batch_get_success, material_status_single_success,
+ *   classes_fallback, per_item_fallback, polling_error
+ * @param {string} [params.subjectId]    - Subject identifier for aggregation
+ * @param {number} [params.materialCount]- Number of materials in the poll batch
+ * @param {number} [params.latencyMs]    - Wall-clock duration of the poll operation
+ * @param {string} [params.errorMessage] - Truncated error message (max 500 chars)
+ * @param {string} [params.endpoint]     - Which HTTP endpoint was called
+ */
+export async function trackPollingEvent({
+    eventType,
+    subjectId,
+    materialCount,
+    latencyMs,
+    errorMessage,
+    endpoint,
+}) {
+    const client = await getClient();
+    if (!client) return;
+
+    client.trackEvent({
+        name: 'PollingEvent',
+        properties: {
+            eventType: eventType || 'unknown',
+            subjectId: subjectId || 'unknown',
+            endpoint: endpoint || 'unknown',
+            errorMessage: errorMessage ? String(errorMessage).slice(0, 500) : '',
+            pollSource: typeof window !== 'undefined' ? 'frontend' : 'backend',
+        },
+        measurements: {
+            materialCount: Math.max(0, Number(materialCount) || 0),
+            latencyMs: Math.max(0, Number(latencyMs) || 0),
+        },
+    });
+}
+
+/**
  * Tracks notification-center interactions (quick actions/read acknowledgements).
  *
  * @param {object} params

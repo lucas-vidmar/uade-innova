@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { listClassesBySubject, listMaterialsBySubject, replaceClassesForSubject, deleteMaterialStateById, getMaterialState, upsertMaterialState, deleteClassesBySubject, deleteMaterialsBySubject, getEnrollmentsByUser, getEnrollment } from '../services/state-store.js';
 import * as vectorStore from '../services/vector-store.js';
+import { trackPollingEvent } from '../services/telemetry.js';
 
 const rawBudget = process.env.DIRECTOR_BUDGET_MONTHLY_USD;
 if (!rawBudget) {
@@ -868,6 +869,11 @@ app.http('get-material-status', {
             const material = await getMaterialBySubjectAndId(subjectId, materialId, context);
 
             if (!material) {
+                trackPollingEvent({
+                    eventType: 'material_status_single_success',
+                    subjectId,
+                    materialCount: 0,
+                });
                 return {
                     status: 404,
                     headers: { 'Content-Type': 'application/json' },
@@ -875,6 +881,11 @@ app.http('get-material-status', {
                 };
             }
 
+            trackPollingEvent({
+                eventType: 'material_status_single_success',
+                subjectId,
+                materialCount: 1,
+            });
             return {
                 status: 200,
                 headers: { 'Content-Type': 'application/json' },
@@ -882,6 +893,12 @@ app.http('get-material-status', {
             };
         } catch (err) {
             context.error(err);
+            trackPollingEvent({
+                eventType: 'polling_error',
+                subjectId,
+                errorMessage: err.message,
+                endpoint: 'get-material-status',
+            });
             return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Error interno' }) };
         }
     },
@@ -936,6 +953,7 @@ app.http('get-material-status-batch', {
 
         try {
             const results = [];
+            let foundCount = 0;
 
             for (const materialId of materialIds) {
                 const material = await getMaterialBySubjectAndId(subjectId, materialId, context);
@@ -951,8 +969,15 @@ app.http('get-material-status-batch', {
                     status: normalizeMaterialStatus(material.status),
                     material,
                 });
+                foundCount++;
             }
 
+            trackPollingEvent({
+                eventType: 'material_status_batch_get_success',
+                subjectId,
+                materialCount: foundCount,
+                endpoint: 'get-material-status-batch',
+            });
             return {
                 status: 200,
                 headers: { 'Content-Type': 'application/json' },
@@ -960,6 +985,13 @@ app.http('get-material-status-batch', {
             };
         } catch (err) {
             context.error(err);
+            trackPollingEvent({
+                eventType: 'polling_error',
+                subjectId,
+                materialCount: materialIds.length,
+                errorMessage: err.message,
+                endpoint: 'get-material-status-batch',
+            });
             return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Error interno' }) };
         }
     },
@@ -1021,6 +1053,7 @@ app.http('post-material-status-batch', {
 
         try {
             const results = [];
+            let foundCount = 0;
 
             for (const materialId of materialIds) {
                 const material = await getMaterialBySubjectAndId(subjectId, materialId, context);
@@ -1036,8 +1069,15 @@ app.http('post-material-status-batch', {
                     status: normalizeMaterialStatus(material.status),
                     material,
                 });
+                foundCount++;
             }
 
+            trackPollingEvent({
+                eventType: 'material_status_batch_success',
+                subjectId,
+                materialCount: foundCount,
+                endpoint: 'post-material-status-batch',
+            });
             return {
                 status: 200,
                 headers: { 'Content-Type': 'application/json' },
@@ -1045,6 +1085,13 @@ app.http('post-material-status-batch', {
             };
         } catch (err) {
             context.error(err);
+            trackPollingEvent({
+                eventType: 'polling_error',
+                subjectId,
+                materialCount: materialIds.length,
+                errorMessage: err.message,
+                endpoint: 'post-material-status-batch',
+            });
             return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Error interno' }) };
         }
     },

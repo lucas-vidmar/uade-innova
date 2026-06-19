@@ -81,6 +81,59 @@ customEvents
 | order by timestamp desc
 ```
 
+## Polling Efficiency (Processing Notifications)
+
+Monitor material-status endpoint adoption and reliability. High `classes_fallback` ratio indicates the batch endpoint is not meeting polling needs.
+
+```kusto
+// Weekly polling efficiency summary
+customEvents
+| where name == "PollingEvent"
+| where timestamp > ago(7d)
+| summarize
+    TotalEvents = count(),
+    // Endpoint usage breakdown
+    BatchSuccess = countif(customDimensions.eventType == "material_status_batch_success"),
+    BatchGetSuccess = countif(customDimensions.eventType == "material_status_batch_get_success"),
+    PerItemFallback = countif(customDimensions.eventType == "per_item_fallback"),
+    ClassesFallback = countif(customDimensions.eventType == "classes_fallback"),
+    PollingErrors = countif(customDimensions.eventType == "polling_error"),
+    // Latency metrics
+    AvgLatencyMs = avg(todouble(customMeasurements.latencyMs)),
+    P95LatencyMs = percentile(todouble(customMeasurements.latencyMs), 95),
+    // Material volume
+    TotalMaterials = sum(todouble(customMeasurements.materialCount))
+| extend
+    MaterialStatusPct = round((BatchSuccess + BatchGetSuccess) * 100.0 / TotalEvents, 1),
+    ClassesFallbackPct = round(ClassesFallback * 100.0 / TotalEvents, 1),
+    ErrorPct = round(PollingErrors * 100.0 / TotalEvents, 1)
+| project
+    TotalEvents,
+    MaterialStatusPct,
+    ClassesFallbackPct,
+    ErrorPct,
+    PerItemFallback,
+    AvgLatencyMs,
+    P95LatencyMs,
+    TotalMaterials
+```
+
+```kusto
+// Per-subject breakdown for weekly review
+customEvents
+| where name == "PollingEvent"
+| where timestamp > ago(7d)
+| summarize
+    Events = count(),
+    BatchSuccess = countif(customDimensions.eventType == "material_status_batch_success"),
+    ClassesFallback = countif(customDimensions.eventType == "classes_fallback"),
+    Errors = countif(customDimensions.eventType == "polling_error"),
+    AvgLatencyMs = avg(todouble(customMeasurements.latencyMs))
+    by subjectId = tostring(customDimensions.subjectId)
+| extend FallbackPct = round(ClassesFallback * 100.0 / Events, 1)
+| order by Events desc
+```
+
 ## Ingestion Failures
 
 ```kusto
