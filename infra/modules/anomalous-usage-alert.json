@@ -1,0 +1,213 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.41.2.15936",
+      "templateHash": "679000521931157415"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure region for monitor resources."
+      }
+    },
+    "workspaceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the Log Analytics Workspace connected to App Insights."
+      }
+    },
+    "notificationEmail": {
+      "type": "string",
+      "metadata": {
+        "description": "Email destination for alert notifications."
+      }
+    },
+    "scheduledQueryRuleName": {
+      "type": "string",
+      "defaultValue": "alert-anomalous-token-usage",
+      "metadata": {
+        "description": "Name of the scheduled query alert rule."
+      }
+    },
+    "actionGroupName": {
+      "type": "string",
+      "defaultValue": "ag-anomalous-token-usage",
+      "metadata": {
+        "description": "Name of the action group that sends email notifications."
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Tags to apply to resources."
+      }
+    },
+    "subjectTokenThreshold": {
+      "type": "int",
+      "defaultValue": 500000,
+      "metadata": {
+        "description": "Threshold for per-subject token anomaly alert (tokens per userId+subjectId over 24h)."
+      }
+    }
+  },
+  "variables": {
+    "tokenThreshold": 1000000
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Insights/actionGroups",
+      "apiVersion": "2023-01-01",
+      "name": "[parameters('actionGroupName')]",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "groupShortName": "TokenAlert",
+        "enabled": true,
+        "emailReceivers": [
+          {
+            "name": "operations-email",
+            "emailAddress": "[parameters('notificationEmail')]",
+            "useCommonAlertSchema": true
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-12-01",
+      "name": "[parameters('scheduledQueryRuleName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "Triggers when a single user exceeds 1,000,000 tokens over the last 24 hours.",
+        "displayName": "Anomalous token usage (>1M tokens / 24h per user)",
+        "severity": 2,
+        "enabled": true,
+        "scopes": [
+          "[parameters('workspaceId')]"
+        ],
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT24H",
+        "criteria": {
+          "allOf": [
+            {
+              "query": "let ragFromCustomEvents =\ncustomEvents\n| where name == \"RAGInteraction\"\n| project timestamp, userId=tostring(customDimensions.userId), totalTokens=todouble(customMeasurements.totalTokens);\nlet ragFromAppEvents =\nAppEvents\n| where Name == \"RAGInteraction\"\n| project timestamp=TimeGenerated, userId=tostring(Properties.userId), totalTokens=todouble(Measurements.totalTokens);\nunion isfuzzy=true ragFromCustomEvents, ragFromAppEvents\n| where timestamp >= ago(24h)\n| where isnotempty(userId)\n| summarize tokens24h = sum(coalesce(totalTokens, 0.0)) by userId\n| where tokens24h > 1000000\n| project userId, tokens24h\n",
+              "timeAggregation": "Count",
+              "operator": "GreaterThanOrEqual",
+              "threshold": 1,
+              "dimensions": [
+                {
+                  "name": "userId",
+                  "operator": "Include",
+                  "values": [
+                    "*"
+                  ]
+                }
+              ],
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 1,
+                "minFailingPeriodsToAlert": 1
+              }
+            }
+          ]
+        },
+        "autoMitigate": true,
+        "muteActionsDuration": "PT1H",
+        "actions": {
+          "actionGroups": [
+            "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-12-01",
+      "name": "[format('{0}-per-subject', parameters('scheduledQueryRuleName'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "[format('Triggers when a user exceeds {0} tokens in a single subject over the last 24 hours.', parameters('subjectTokenThreshold'))]",
+        "displayName": "[format('Per-subject anomalous token usage (>{0} tokens / 24h per subject+user)', parameters('subjectTokenThreshold'))]",
+        "severity": 2,
+        "enabled": true,
+        "scopes": [
+          "[parameters('workspaceId')]"
+        ],
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT24H",
+        "criteria": {
+          "allOf": [
+            {
+              "query": "let ragFromCustomEvents =\ncustomEvents\n| where name == \"RAGInteraction\"\n| project timestamp, userId=tostring(customDimensions.userId), subjectId=tostring(customDimensions.subjectId), totalTokens=todouble(customMeasurements.totalTokens);\nlet ragFromAppEvents =\nAppEvents\n| where Name == \"RAGInteraction\"\n| project timestamp=TimeGenerated, userId=tostring(Properties.userId), subjectId=tostring(Properties.subjectId), totalTokens=todouble(Measurements.totalTokens);\nunion isfuzzy=true ragFromCustomEvents, ragFromAppEvents\n| where timestamp >= ago(24h)\n| where isnotempty(userId) and isnotempty(subjectId)\n| summarize tokens24h = sum(coalesce(totalTokens, 0.0)) by userId, subjectId\n| where tokens24h > ${subjectTokenThreshold}\n| project userId, subjectId, tokens24h\n",
+              "timeAggregation": "Count",
+              "operator": "GreaterThanOrEqual",
+              "threshold": 1,
+              "dimensions": [
+                {
+                  "name": "userId",
+                  "operator": "Include",
+                  "values": [
+                    "*"
+                  ]
+                },
+                {
+                  "name": "subjectId",
+                  "operator": "Include",
+                  "values": [
+                    "*"
+                  ]
+                }
+              ],
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 1,
+                "minFailingPeriodsToAlert": 1
+              }
+            }
+          ]
+        },
+        "autoMitigate": true,
+        "muteActionsDuration": "PT1H",
+        "actions": {
+          "actionGroups": [
+            "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "actionGroupId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+    },
+    "scheduledQueryRuleId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Insights/scheduledQueryRules', parameters('scheduledQueryRuleName'))]"
+    },
+    "perSubjectScheduledQueryRuleId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Insights/scheduledQueryRules', format('{0}-per-subject', parameters('scheduledQueryRuleName')))]"
+    },
+    "threshold": {
+      "type": "int",
+      "value": "[variables('tokenThreshold')]"
+    },
+    "subjectTokenThresholdValue": {
+      "type": "int",
+      "value": "[parameters('subjectTokenThreshold')]"
+    }
+  }
+}

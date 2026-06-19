@@ -259,6 +259,7 @@ module anomalousUsageAlert './modules/anomalous-usage-alert.bicep' = if (!empty(
     notificationEmail: notificationEmail
     scheduledQueryRuleName: anomalousUsageAlertName
     actionGroupName: anomalousUsageActionGroupName
+    subjectTokenThreshold: 500000
     tags: tags
   }
 }

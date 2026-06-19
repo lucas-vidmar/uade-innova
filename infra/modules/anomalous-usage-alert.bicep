@@ -21,6 +21,9 @@ param actionGroupName string = 'ag-anomalous-token-usage'
 @description('Tags to apply to resources.')
 param tags object = {}
 
+@description('Threshold for per-subject token anomaly alert (tokens per userId+subjectId over 24h).')
+param subjectTokenThreshold int = 500000
+
 var tokenThreshold = 1000000
 
 resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
@@ -76,6 +79,78 @@ union isfuzzy=true ragFromCustomEvents, ragFromAppEvents
           timeAggregation: 'Count'
           operator: 'GreaterThanOrEqual'
           threshold: 1
+          dimensions: [
+            {
+              name: 'userId'
+              operator: 'Include'
+              values: ['*']
+            }
+          ]
+          failingPeriods: {
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
+          }
+        }
+      ]
+    }
+    autoMitigate: true
+    muteActionsDuration: 'PT1H'
+    actions: {
+      actionGroups: [
+        actionGroup.id
+      ]
+    }
+  }
+}
+
+resource perSubjectUsageRule 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = {
+  name: '${scheduledQueryRuleName}-per-subject'
+  location: location
+  tags: tags
+  properties: {
+    description: 'Triggers when a user exceeds ${subjectTokenThreshold} tokens in a single subject over the last 24 hours.'
+    displayName: 'Per-subject anomalous token usage (>${subjectTokenThreshold} tokens / 24h per subject+user)'
+    severity: 2
+    enabled: true
+    scopes: [
+      workspaceId
+    ]
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT24H'
+    criteria: {
+      allOf: [
+        {
+          query: '''
+let ragFromCustomEvents =
+customEvents
+| where name == "RAGInteraction"
+| project timestamp, userId=tostring(customDimensions.userId), subjectId=tostring(customDimensions.subjectId), totalTokens=todouble(customMeasurements.totalTokens);
+let ragFromAppEvents =
+AppEvents
+| where Name == "RAGInteraction"
+| project timestamp=TimeGenerated, userId=tostring(Properties.userId), subjectId=tostring(Properties.subjectId), totalTokens=todouble(Measurements.totalTokens);
+union isfuzzy=true ragFromCustomEvents, ragFromAppEvents
+| where timestamp >= ago(24h)
+| where isnotempty(userId) and isnotempty(subjectId)
+| summarize tokens24h = sum(coalesce(totalTokens, 0.0)) by userId, subjectId
+| where tokens24h > ${subjectTokenThreshold}
+| project userId, subjectId, tokens24h
+'''
+          timeAggregation: 'Count'
+          operator: 'GreaterThanOrEqual'
+          threshold: 1
+          dimensions: [
+            {
+              name: 'userId'
+              operator: 'Include'
+              values: ['*']
+            }
+            {
+              name: 'subjectId'
+              operator: 'Include'
+              values: ['*']
+            }
+          ]
           failingPeriods: {
             numberOfEvaluationPeriods: 1
             minFailingPeriodsToAlert: 1
@@ -95,4 +170,6 @@ union isfuzzy=true ragFromCustomEvents, ragFromAppEvents
 
 output actionGroupId string = actionGroup.id
 output scheduledQueryRuleId string = anomalousUsageRule.id
+output perSubjectScheduledQueryRuleId string = perSubjectUsageRule.id
 output threshold int = tokenThreshold
+output subjectTokenThresholdValue int = subjectTokenThreshold
