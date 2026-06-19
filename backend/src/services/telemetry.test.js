@@ -27,6 +27,7 @@ test('trackRAGInteraction is a no-op when APPLICATIONINSIGHTS_CONNECTION_STRING 
             durationMs: 1500,
             promptVersion: 'v1',
             interactionId: 'test-interaction-id',
+            correlationId: 'abc-123.trace',
         })
     );
 });

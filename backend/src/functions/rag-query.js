@@ -643,6 +643,7 @@ ${contextText}
                             filterType,
                             selectedClassCount,
                             sourceMix: resolveSourceMix(sources),
+                            correlationId,
                         }).catch(err => context.error('[Telemetry] Error emitting RAGInteraction event from stream:', err));
 
 
@@ -736,6 +737,7 @@ ${contextText}
             filterType,
             selectedClassCount: resolveSelectedClassCount(classIds),
             sourceMix,
+            correlationId,
         }).catch(err => context.error('[Telemetry] Error emitting RAGInteraction event:', err));
 
         // ── 7. Construir respuesta con fuentes ────────────────────

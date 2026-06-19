@@ -235,7 +235,8 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
             materialType,
             totalTokens,
             durationMs: Date.now() - startTime,
-            status: 'success'
+            status: 'success',
+            correlationId,
         }).catch(e => context.error('[Telemetry] Error logging IngestionInteraction success:', e));
 
     } catch (err) {
@@ -264,7 +265,8 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
             materialType,
             totalTokens,
             durationMs: Date.now() - startTime,
-            status: 'error'
+            status: 'error',
+            correlationId,
         }).catch(e => context.error('[Telemetry] Error logging IngestionInteraction failure:', e));
 
         try {

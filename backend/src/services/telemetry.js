@@ -59,6 +59,7 @@ async function getClient() {
  * @param {string} [params.firstTokenAt]    - ISO timestamp when first SSE token was emitted
  * @param {number} [params.selectedClassCount] - Number of unique classes selected for context
  * @param {string} [params.sourceMix] - Classification of material types used in the response (e.g. 'notes+bibliography', 'notes-only', 'mixed-other')
+ * @param {string} [params.correlationId] - Trace correlation ID for joining with request telemetry in KQL
  */
 export async function trackRAGInteraction({
     userId,
@@ -74,6 +75,7 @@ export async function trackRAGInteraction({
     filterType,
     selectedClassCount,
     sourceMix,
+    correlationId,
 }) {
     const client = await getClient();
     if (!client) return;
@@ -88,6 +90,7 @@ export async function trackRAGInteraction({
             firstTokenAt: firstTokenAt || null,
             filterType: filterType || 'unknown',
             sourceMix: sourceMix || 'unknown',
+            ...(correlationId && { correlationId }),
         },
         measurements: {
             promptTokens: promptTokens || 0,
@@ -156,6 +159,7 @@ export async function trackVectorSearchDependency({
  * @param {number} params.totalTokens    - Sum of all tokens used (embeddings + summary + map)
  * @param {number} params.durationMs     - Full execution time of the document pipeline (ms)
  * @param {string} [params.status]       - 'success' or 'error'
+ * @param {string} [params.correlationId] - Trace correlation ID for joining with request telemetry in KQL
  */
 export async function trackIngestionInteraction({
     userId,
@@ -165,6 +169,7 @@ export async function trackIngestionInteraction({
     totalTokens,
     durationMs,
     status = 'success',
+    correlationId,
 }) {
     const client = await getClient();
     if (!client) return;
@@ -177,6 +182,7 @@ export async function trackIngestionInteraction({
             fileName,
             materialType,
             status,
+            ...(correlationId && { correlationId }),
         },
         measurements: {
             totalTokens: totalTokens || 0,
