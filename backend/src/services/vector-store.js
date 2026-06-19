@@ -4,6 +4,7 @@
  */
 import { CategorizedError, ErrorCategory } from './error-categories.js';
 import { trackVectorSearchDependency } from './telemetry.js';
+import { recordVectorOperation } from './vector-metrics.js';
 
 const BATCH_SIZE = 100;
 const REQUEST_TIMEOUT_MS = 15000;
@@ -186,30 +187,36 @@ export async function querySimilarWithTelemetry(embedding, filter, topK = 5, dep
             }))
             : [];
 
+        const elapsed = Date.now() - startedAt;
+
         await dependencyTracker({
             provider,
             index: indexName,
             indexName,
             target,
             operation: 'vector.search',
-            durationMs: Date.now() - startedAt,
+            durationMs: elapsed,
             success: true,
             resultCode: 200,
         });
 
+        recordVectorOperation(elapsed, true);
         return matches;
     } catch (err) {
+        const elapsed = Date.now() - startedAt;
+
         await dependencyTracker({
             provider,
             index: indexName,
             indexName,
             target,
             operation: 'vector.search',
-            durationMs: Date.now() - startedAt,
+            durationMs: elapsed,
             success: false,
             resultCode: err?.status || err?.code || 500,
         });
 
+        recordVectorOperation(elapsed, false);
         console.error('[Pinecone] Error en querySimilar:', err);
         throw new CategorizedError(`Error consultando la base vectorial: ${err.message}`, {
             errorCategory: ErrorCategory.RETRIEVAL_FAILURE,

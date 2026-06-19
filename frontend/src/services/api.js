@@ -1262,6 +1262,10 @@ export const api = {
                     indexFullness: 0,
                     namespaces: {},
                 },
+                latencyMs: { p50: 95, p95: 280 },
+                failureRatio: 0.02,
+                metricsWindow: 5,
+                metricsSampleCount: 85,
                 timestamp: new Date().toISOString(),
             };
         }

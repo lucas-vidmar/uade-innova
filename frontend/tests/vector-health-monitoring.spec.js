@@ -67,6 +67,10 @@ test('director can review vector index health in dashboard', async ({ page }) =>
           indexFullness: 0.08,
           namespaces: {},
         },
+        latencyMs: { p50: 95, p95: 280 },
+        failureRatio: 0.02,
+        metricsWindow: 5,
+        metricsSampleCount: 85,
         timestamp: '2026-04-10T16:05:00.000Z',
       }),
     });
@@ -80,4 +84,8 @@ test('director can review vector index health in dashboard', async ({ page }) =>
   await expect(page.locator('#vector-health-table')).toContainText('dashboard-edu-pilot');
   await expect(page.locator('#vector-health-table')).toContainText('1.250');
   await expect(page.locator('#vector-health-table')).toContainText('8%');
+  await expect(page.locator('#vector-health-table')).toContainText('95 ms');
+  await expect(page.locator('#vector-health-table')).toContainText('280 ms');
+  await expect(page.locator('#vector-health-table')).toContainText('2.0%');
+  await expect(page.locator('#vector-health-table')).toContainText('85 ops');
 });

@@ -1,5 +1,6 @@
 import { app } from '@azure/functions';
 import { getIndexStats } from '../services/vector-store.js';
+import { getVectorMetrics } from '../services/vector-metrics.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
 
 app.http('vector-health', {
@@ -11,7 +12,6 @@ app.http('vector-health', {
             return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         }
 
-        // Restrict to authenticated users (teachers and directors)
         const principal = parseClientPrincipal(request);
         const roles = principal?.userRoles || [];
         if (!roles.includes('Docente') && !roles.includes('Director') && !roles.includes('authenticated')) {
@@ -19,7 +19,10 @@ app.http('vector-health', {
         }
 
         try {
+            const windowMinutes = parseInt(request.query.get('window')) || 5;
             const stats = await getIndexStats();
+            const metrics = getVectorMetrics(windowMinutes);
+
             return {
                 status: 200,
                 headers: { 'Content-Type': 'application/json' },
@@ -28,6 +31,10 @@ app.http('vector-health', {
                     endpoint: process.env.PINECONE_HOST || null,
                     indexName: process.env.PINECONE_INDEX_NAME || null,
                     stats,
+                    latencyMs: metrics.latencyMs,
+                    failureRatio: metrics.failureRatio,
+                    metricsWindow: metrics.windowMinutes,
+                    metricsSampleCount: metrics.sampleCount,
                     timestamp: new Date().toISOString(),
                 }),
             };

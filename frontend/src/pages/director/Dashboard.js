@@ -168,6 +168,16 @@ export async function renderDirectorDashboard(container) {
               <tr><td><strong>Index</strong></td><td>${vectorHealth.indexName || 'n/a'}</td></tr>
               <tr><td><strong>Total Documents</strong></td><td>${Number(vectorHealth?.stats?.totalVectorCount || 0).toLocaleString('es-AR')}</td></tr>
               <tr><td><strong>Index Fullness</strong></td><td>${Math.round(Number(vectorHealth?.stats?.indexFullness || 0) * 10000) / 100}%</td></tr>
+              ${vectorHealth.latencyMs ? `
+              <tr><td><strong>Latency p50</strong></td><td>${vectorHealth.latencyMs.p50 != null ? vectorHealth.latencyMs.p50 + ' ms' : 'n/a'}</td></tr>
+              <tr><td><strong>Latency p95</strong></td><td>${vectorHealth.latencyMs.p95 != null ? vectorHealth.latencyMs.p95 + ' ms' : 'n/a'}</td></tr>
+              ` : ''}
+              ${vectorHealth.failureRatio != null ? `
+              <tr><td><strong>Failure Ratio</strong></td><td>${(vectorHealth.failureRatio * 100).toFixed(1)}%</td></tr>
+              ` : ''}
+              ${vectorHealth.metricsSampleCount != null ? `
+              <tr><td><strong>Metrics Sample</strong></td><td>${vectorHealth.metricsSampleCount} ops (${vectorHealth.metricsWindow || 5} min)</td></tr>
+              ` : ''}
             </tbody>
           </table>
         </div>
