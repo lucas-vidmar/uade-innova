@@ -45,7 +45,7 @@ function isWithinThresholdWindow({ dueAt, now, thresholdHours, windowHours }) {
 function buildReminderNotification({ subjectId, deadline, thresholdHours, dueAt, now, timezone }) {
   const deadlineId = String(deadline?.id || `${deadline?.classId || 'class'}-${deadline?.title || 'deadline'}`).replace(/\s+/g, '-').toLowerCase();
   const id = `notif-deadline-${subjectId}-${deadlineId}-${thresholdHours}h`;
-  const title = thresholdHours === 48 ? 'Deadline en 48 horas' : 'Deadline en 24 horas';
+  const title = thresholdHours === 48 ? 'Deadline en 48 horas' : thresholdHours === 2 ? '⚠️ Deadline urgente — 2 horas restantes' : 'Deadline en 24 horas';
   const classLabel = deadline?.classId ? ` · ${deadline.classId}` : '';
   const dueDateLabel = dueAt.toISOString().slice(0, 10);
   const message = `${deadline?.title || 'Entrega pendiente'} vence el ${dueDateLabel}${classLabel}.`;
@@ -67,6 +67,7 @@ function buildReminderNotification({ subjectId, deadline, thresholdHours, dueAt,
 
 export async function runDeadlineProximityDispatcher(context = { log: () => {}, error: () => {} }, now = new Date()) {
   const windowHours = normalizeWindowHours(process.env.DEADLINE_PROXIMITY_WINDOW_HOURS);
+  const weightThreshold = Number(process.env.DEADLINE_HIGH_PRIORITY_WEIGHT_THRESHOLD) || 25;
   const deadlineBlobs = await listBlobs(CONTAINER_DEADLINES);
   const subjectIds = deadlineBlobs
     .filter((name) => name.endsWith('.json'))
@@ -99,6 +100,20 @@ export async function runDeadlineProximityDispatcher(context = { log: () => {}, 
           await upsertNotificationForSubject(subjectId, notification);
           existingIds.add(notification.id);
           dispatched += 1;
+        }
+
+        const isHighPriority = (deadline?.weight || 0) >= weightThreshold;
+        const isPending = (deadline?.status || 'pending') !== 'completed';
+        if (isHighPriority && isPending) {
+          const withinWindow2h = isWithinThresholdWindow({ dueAt, now, thresholdHours: 2, windowHours });
+          if (withinWindow2h) {
+            const notification = buildReminderNotification({ subjectId, deadline, thresholdHours: 2, dueAt, now, timezone });
+            if (!existingIds.has(notification.id)) {
+              await upsertNotificationForSubject(subjectId, notification);
+              existingIds.add(notification.id);
+              dispatched += 1;
+            }
+          }
         }
       } catch (err) {
         context.error(`[deadline-proximity-dispatcher] subject=${subjectId} deadline=${deadline?.id || 'unknown'} timezone=${resolveTimezone(deadline)} error=${err.message}`);

@@ -26,6 +26,8 @@ function normalizeDeadline(deadline = {}) {
         timezone: deadline.timezone || null,
         notifyOnDayBefore: deadline.notifyOnDayBefore !== false,
         notifyOnDayOf: deadline.notifyOnDayOf !== false,
+        weight: deadline.weight || 0,
+        status: deadline.status || 'pending',
         createdAt: deadline.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
     };

@@ -194,6 +194,104 @@ test('deadline-proximity-dispatcher should fall back to default for invalid time
   assert.strictEqual(payload.dueDateTimezone, 'America/Argentina/Buenos_Aires');
 });
 
+test('deadline-proximity-dispatcher should emit 2h escalation for high-weight pending deadline', async () => {
+  storageMocks.listBlobs.mock.mockImplementation(async () => ['arq-software-2026.json']);
+  storageMocks.loadJson.mock.mockImplementation(async () => ([
+    {
+      id: 'deadline-high-weight',
+      title: 'Parcial 1',
+      subjectId: 'arq-software-2026',
+      classId: 'class-05',
+      dueDate: '2026-04-11T11:00:00.000Z',
+      weight: 35,
+      status: 'pending',
+    },
+  ]));
+  notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => []);
+
+  const now = new Date('2026-04-11T09:30:00.000Z');
+  const result = await dispatcher.runDeadlineProximityDispatcher({ log: () => {}, error: () => {} }, now);
+
+  assert.strictEqual(result.dispatched, 1);
+  const [, payload] = notificationStoreMocks.upsertNotificationForSubject.mock.calls.at(-1).arguments;
+  assert.strictEqual(payload.title, '⚠️ Deadline urgente — 2 horas restantes');
+  assert.ok(payload.id.endsWith('-2h'));
+});
+
+test('deadline-proximity-dispatcher should NOT emit 2h escalation for low-weight deadline', async () => {
+  storageMocks.listBlobs.mock.mockImplementation(async () => ['arq-software-2026.json']);
+  storageMocks.loadJson.mock.mockImplementation(async () => ([
+    {
+      id: 'deadline-low-weight',
+      title: 'Lectura opcional',
+      subjectId: 'arq-software-2026',
+      classId: 'class-05',
+      dueDate: '2026-04-11T11:00:00.000Z',
+      weight: 5,
+      status: 'pending',
+    },
+  ]));
+  notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => []);
+
+  const before = notificationStoreMocks.upsertNotificationForSubject.mock.callCount();
+  const now = new Date('2026-04-11T09:30:00.000Z');
+  const result = await dispatcher.runDeadlineProximityDispatcher({ log: () => {}, error: () => {} }, now);
+  const after = notificationStoreMocks.upsertNotificationForSubject.mock.callCount();
+
+  assert.strictEqual(result.dispatched, 0);
+  assert.strictEqual(after, before);
+});
+
+test('deadline-proximity-dispatcher should NOT emit 2h escalation for completed deadline', async () => {
+  storageMocks.listBlobs.mock.mockImplementation(async () => ['arq-software-2026.json']);
+  storageMocks.loadJson.mock.mockImplementation(async () => ([
+    {
+      id: 'deadline-completed',
+      title: 'TP entregado',
+      subjectId: 'arq-software-2026',
+      classId: 'class-05',
+      dueDate: '2026-04-11T11:00:00.000Z',
+      weight: 40,
+      status: 'completed',
+    },
+  ]));
+  notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => []);
+
+  const before = notificationStoreMocks.upsertNotificationForSubject.mock.callCount();
+  const now = new Date('2026-04-11T09:30:00.000Z');
+  const result = await dispatcher.runDeadlineProximityDispatcher({ log: () => {}, error: () => {} }, now);
+  const after = notificationStoreMocks.upsertNotificationForSubject.mock.callCount();
+
+  assert.strictEqual(result.dispatched, 0);
+  assert.strictEqual(after, before);
+});
+
+test('deadline-proximity-dispatcher should skip duplicate 2h escalation', async () => {
+  storageMocks.listBlobs.mock.mockImplementation(async () => ['arq-software-2026.json']);
+  storageMocks.loadJson.mock.mockImplementation(async () => ([
+    {
+      id: 'deadline-dup-2h',
+      title: 'Parcial 2',
+      subjectId: 'arq-software-2026',
+      classId: 'class-06',
+      dueDate: '2026-04-11T11:00:00.000Z',
+      weight: 30,
+      status: 'pending',
+    },
+  ]));
+  notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => ([
+    { id: 'notif-deadline-arq-software-2026-deadline-dup-2h-2h' },
+  ]));
+
+  const before = notificationStoreMocks.upsertNotificationForSubject.mock.callCount();
+  const now = new Date('2026-04-11T09:30:00.000Z');
+  const result = await dispatcher.runDeadlineProximityDispatcher({ log: () => {}, error: () => {} }, now);
+  const after = notificationStoreMocks.upsertNotificationForSubject.mock.callCount();
+
+  assert.strictEqual(result.dispatched, 0);
+  assert.strictEqual(after, before);
+});
+
 test('deadline-proximity-dispatcher should use UTC timezone when specified', async () => {
   storageMocks.listBlobs.mock.mockImplementation(async () => ['arq-software-2026.json']);
   storageMocks.loadJson.mock.mockImplementation(async () => ([
