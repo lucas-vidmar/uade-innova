@@ -255,6 +255,49 @@ export async function trackDispatcherRun({
 }
 
 /**
+ * Tracks a categorized RAG error event for telemetry monitoring.
+ *
+ * @param {object} params
+ * @param {string} params.errorCategory - One of SAFETY, RETRIEVAL_FAILURE, PARSING, LLM
+ * @param {string} params.code         - Specific error code from the categorized error
+ * @param {string} [params.message]    - Human-readable error message (truncated to 500)
+ * @param {string} params.subjectId    - Subject identifier for filtering
+ * @param {string} [params.userId]     - User identifier
+ * @param {string|string[]} [params.classIds] - Class identifier(s) for correlation
+ * @param {string} [params.correlationId] - Trace correlation ID
+ * @param {string} [params.stackTrace] - Error stack trace (truncated to 2000)
+ */
+export async function trackRAGError({
+    errorCategory,
+    code,
+    message,
+    subjectId,
+    userId,
+    classIds,
+    correlationId,
+    stackTrace,
+}) {
+    const client = await getClient();
+    if (!client) return;
+
+    client.trackEvent({
+        name: 'RAGErrorCategorized',
+        properties: {
+            errorCategory: errorCategory || 'UNKNOWN',
+            code: code || 'UNKNOWN_ERROR',
+            message: message ? String(message).slice(0, 500) : '',
+            subjectId: subjectId || 'unknown',
+            userId: userId || 'anonymous',
+            classIds: Array.isArray(classIds) ? classIds.join(',') : (classIds || ''),
+            correlationId: correlationId || '',
+            stackTrace: stackTrace ? String(stackTrace).slice(0, 2000) : '',
+        },
+    });
+
+    await client.flush({ isAppCrashing: true });
+}
+
+/**
  * Tracks notification-center interactions (quick actions/read acknowledgements).
  *
  * @param {object} params

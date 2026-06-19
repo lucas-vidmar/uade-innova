@@ -7,7 +7,7 @@ import { generateEmbedding, chatCompletion } from '../services/ai.js';
 import { querySimilar } from '../services/vector-store.js';
 import { saveJson, saveMetricsToTable } from '../services/storage.js';
 import { getShadowPrompt } from '../services/prompts.js';
-import { trackRAGInteraction } from '../services/telemetry.js';
+import { trackRAGInteraction, trackRAGError } from '../services/telemetry.js';
 import { parseClientPrincipal, validateFrontDoorId, getAuthenticatedUser } from '../services/auth-utils.js';
 import { normalizeCategorizedError, ErrorCategory } from '../services/error-categories.js';
 import { resolveCorrelationId, buildDependencyHeaders, withCorrelationResponseHeaders } from '../services/correlation.js';
@@ -395,6 +395,15 @@ app.http('rag-query', {
         } catch (err) {
             const categorizedError = normalizeCategorizedError(err, ErrorCategory.LLM);
             context.error('Error generando embedding:', categorizedError);
+            trackRAGError({
+                errorCategory: categorizedError.errorCategory,
+                code: categorizedError.code,
+                message: categorizedError.message,
+                subjectId,
+                userId,
+                correlationId,
+                stackTrace: err?.stack,
+            }).catch(e => context.error('[Telemetry] Error emitting RAGErrorCategorized (embedding):', e));
             return handleErrorResponse(categorizedError.status, `Error procesando la pregunta (embedding): ${categorizedError.message}`, categorizedError.errorCategory, stream, correlationId);
         }
 
@@ -468,6 +477,16 @@ app.http('rag-query', {
         } catch (err) {
             const categorizedError = normalizeCategorizedError(err, ErrorCategory.RETRIEVAL_FAILURE);
             context.error('Error consultando Pinecone:', categorizedError);
+            trackRAGError({
+                errorCategory: categorizedError.errorCategory,
+                code: categorizedError.code,
+                message: categorizedError.message,
+                subjectId,
+                userId,
+                classIds,
+                correlationId,
+                stackTrace: err?.stack,
+            }).catch(e => context.error('[Telemetry] Error emitting RAGErrorCategorized (Pinecone):', e));
             return handleErrorResponse(categorizedError.status, `Error buscando en la base de conocimiento: ${categorizedError.message}`, categorizedError.errorCategory, stream, correlationId);
         }
 
@@ -682,6 +701,16 @@ ${contextText}
                     } catch (err) {
                         const categorizedError = normalizeCategorizedError(err, ErrorCategory.LLM);
                         context.error('Error durante el stream:', categorizedError);
+                        trackRAGError({
+                            errorCategory: categorizedError.errorCategory,
+                            code: categorizedError.code,
+                            message: categorizedError.message,
+                            subjectId,
+                            userId,
+                            classIds,
+                            correlationId,
+                            stackTrace: err?.stack,
+                        }).catch(e => context.error('[Telemetry] Error emitting RAGErrorCategorized (stream):', e));
                         controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ error: categorizedError.message, errorCategory: categorizedError.errorCategory })}\n\n`));
                         controller.close();
                     }
@@ -710,6 +739,16 @@ ${contextText}
         } catch (err) {
             const categorizedError = normalizeCategorizedError(err, ErrorCategory.LLM);
             context.error('Error en chat completion:', categorizedError);
+            trackRAGError({
+                errorCategory: categorizedError.errorCategory,
+                code: categorizedError.code,
+                message: categorizedError.message,
+                subjectId,
+                userId,
+                classIds,
+                correlationId,
+                stackTrace: err?.stack,
+            }).catch(e => context.error('[Telemetry] Error emitting RAGErrorCategorized (blocking):', e));
             return jsonResponse(categorizedError.status, {
                 error: `Error generando respuesta (chat): ${categorizedError.message}`,
                 errorCategory: categorizedError.errorCategory,

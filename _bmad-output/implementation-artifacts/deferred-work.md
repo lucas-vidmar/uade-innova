@@ -64,3 +64,8 @@
 - Accessibility: warning div has no `role="alert"` or `aria-live` region — screen readers won't announce dynamic appearance/disappearance [ChatWidget.js:81-86]
 - No dismiss mechanism for warning — user can't permanently dismiss it for the session (intentional per spec, but worth revisiting)
 - No i18n framework — hardcoded Spanish string will need extraction if app is ever localized
+
+## Deferred from: code review of gh-120-rag-error-telemetry-category (2026-06-19)
+
+- All telemetry `trackEvent` functions lack `client.flush()` on Consumption plan — `trackRAGInteraction`, `trackDispatcherRun`, and other sibling functions also skip flush; should be fixed holistically across telemetry.js [telemetry.js]
+- `ErrorCategory` enum values documented in JSDoc but not validated at runtime — a typo'd category string would silently pollute telemetry data; consider runtime guard or TypeScript migration [error-categories.js]
