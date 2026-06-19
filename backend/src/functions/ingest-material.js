@@ -7,6 +7,7 @@ import { uploadFile, saveMetricsToTable } from '../services/storage.js';
 import { upsertMaterialState, getEnrollment } from '../services/state-store.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
 import { getMaterialPriority } from '../services/material-classification.js';
+import { ErrorCategory, normalizeCategorizedError, structuredErrorResponse } from '../services/error-categories.js';
 
 const SESSION_METRICS_TABLE = 'SessionMetrics';
 
@@ -16,7 +17,7 @@ app.http('ingest-material', {
     route: 'ingest-material',
     handler: async (request, context) => {
         if (!validateFrontDoorId(request)) {
-            return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+            return structuredErrorResponse(403, 'Forbidden - Invalid Front Door ID', ErrorCategory.AUTH, 'FRONTDOOR_INVALID');
         }
 
         try {
@@ -37,38 +38,22 @@ app.http('ingest-material', {
                     const enrollment = await getEnrollment(subjectId, userId);
                     if (!enrollment || enrollment.role !== 'teacher' || enrollment.status !== 'active') {
                         context.log.warn(`[Ingest] Unauthorized upload attempt: User ${userId} is not an active teacher for subject ${subjectId}`);
-                        return {
-                            status: 403,
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ error: 'No tienes permisos para subir material a esta materia. Debes estar asignado como docente.' }),
-                        };
+                        return structuredErrorResponse(403, 'No tienes permisos para subir material a esta materia. Debes estar asignado como docente.', ErrorCategory.AUTH, 'ENROLLMENT_INACTIVE');
                     }
                 } catch (enrollmentErr) {
                     context.error(`[Ingest] Error verifying enrollment for ${userId} in ${subjectId}:`, enrollmentErr);
-                    // Fail secure: if we can't verify enrollment, we block the upload
-                    return {
-                        status: 500,
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ error: 'Error al verificar permisos de docente.' }),
-                    };
+                    const categorized = normalizeCategorizedError(enrollmentErr, ErrorCategory.AUTH);
+                    return structuredErrorResponse(categorized.status, 'Error al verificar permisos de docente.', categorized.errorCategory, categorized.code);
                 }
             }
 
             if (!classIds || classIds.length === 0 || !subjectId || !materialType) {
                 context.log.warn(`[Ingest] Missing required fields: classIds=${classIds?.length}, subjectId=${!!subjectId}, materialType=${!!materialType}`);
-                return {
-                    status: 400,
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ error: 'Faltan campos requeridos: classIds, subjectId, materialType' }),
-                };
+                return structuredErrorResponse(400, 'Faltan campos requeridos: classIds, subjectId, materialType', ErrorCategory.VALIDATION, 'MISSING_FIELDS');
             }
 
             if (!validateFileType(fileBuffer, materialType, context)) {
-                return {
-                    status: 400,
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ error: `El tipo de archivo no coincide con el tipo de material "${materialType}". Formatos aceptados: TXT, VTT, DOCX, PDF, PPTX.` }),
-                };
+                return structuredErrorResponse(400, `El tipo de archivo no coincide con el tipo de material "${materialType}". Formatos aceptados: TXT, VTT, DOCX, PDF, PPTX.`, ErrorCategory.VALIDATION, 'INVALID_FILE_TYPE');
             }
 
             const materialId = uuidv4();
@@ -136,20 +121,14 @@ app.http('ingest-material', {
                 };
             } catch (storageErr) {
                 context.error(`[Ingest] Storage error for ${materialId}:`, storageErr);
-                return {
-                    status: 500,
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ error: `Error de almacenamiento: ${storageErr.message}` }),
-                };
+                const categorized = normalizeCategorizedError(storageErr, ErrorCategory.STORAGE);
+                return structuredErrorResponse(categorized.status, `Error de almacenamiento: ${categorized.message}`, categorized.errorCategory, categorized.code);
             }
 
         } catch (err) {
             context.error('[Ingest] Fatal error in ingest-material handler:', err);
-            return {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ error: err.message || 'Error interno del servidor' }),
-            };
+            const categorized = normalizeCategorizedError(err, ErrorCategory.INTERNAL);
+            return structuredErrorResponse(categorized.status, categorized.message || 'Error interno del servidor', categorized.errorCategory, categorized.code);
         }
     }
 });

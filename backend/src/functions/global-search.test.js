@@ -56,6 +56,33 @@ mock.module('../services/auth-utils.js', { namedExports: authUtilsMocks });
 mock.module('../services/state-store.js', { namedExports: stateStoreMocks });
 mock.module('../services/correlation.js', { namedExports: correlationMocks });
 
+const errorCategoriesMocks = {
+    ErrorCategory: {
+        RETRIEVAL_FAILURE: 'RETRIEVAL_FAILURE',
+        SAFETY: 'SAFETY',
+        PARSING: 'PARSING',
+        LLM: 'LLM',
+        VALIDATION: 'VALIDATION',
+        AUTH: 'AUTH',
+        STORAGE: 'STORAGE',
+        NOT_FOUND: 'NOT_FOUND',
+        RATE_LIMIT: 'RATE_LIMIT',
+        INTERNAL: 'INTERNAL',
+    },
+    normalizeCategorizedError: mock.fn((err, fallback) => ({
+        message: err?.message || 'error',
+        errorCategory: fallback,
+        code: err?.code || 'UNKNOWN_ERROR',
+        status: 500,
+    })),
+    structuredErrorResponse: mock.fn((status, message, errorCategory, code) => ({
+        status,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ error: message, errorCategory, code }),
+    })),
+};
+mock.module('../services/error-categories.js', { namedExports: errorCategoriesMocks });
+
 let capturedHandler;
 mock.module('@azure/functions', {
     namedExports: {
@@ -73,7 +100,7 @@ test('global-search handler should be registered', () => {
     assert.strictEqual(typeof capturedHandler, 'function');
 });
 
-test('global-search should reject missing required fields', async () => {
+test('global-search should reject missing required fields with errorCategory', async () => {
     const response = await capturedHandler(
         { json: async () => ({ query: 'Architecture' }) },
         { error: mock.fn() }
@@ -82,6 +109,8 @@ test('global-search should reject missing required fields', async () => {
     assert.strictEqual(response.status, 400);
     const body = JSON.parse(response.body);
     assert.ok(body.error.includes('query, subjectId'));
+    assert.strictEqual(body.errorCategory, 'VALIDATION');
+    assert.strictEqual(body.code, 'MISSING_FIELDS');
 });
 
 test('global-search should query full subject index scoped to transcript+bibliography', async () => {

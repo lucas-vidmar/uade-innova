@@ -1,5 +1,5 @@
 /**
- * services/error-categories.js — Standardized RAG error taxonomy
+ * services/error-categories.js — Standardized system-wide error taxonomy
  */
 
 export const ErrorCategory = Object.freeze({
@@ -7,6 +7,12 @@ export const ErrorCategory = Object.freeze({
     SAFETY: 'SAFETY',
     PARSING: 'PARSING',
     LLM: 'LLM',
+    VALIDATION: 'VALIDATION',
+    AUTH: 'AUTH',
+    STORAGE: 'STORAGE',
+    NOT_FOUND: 'NOT_FOUND',
+    RATE_LIMIT: 'RATE_LIMIT',
+    INTERNAL: 'INTERNAL',
 });
 
 export class CategorizedError extends Error {
@@ -80,6 +86,42 @@ function isRetrievalSignal(err) {
     );
 }
 
+function isValidationSignal(err) {
+    const text = textFromError(err);
+    return (
+        text.includes('validation') ||
+        text.includes('invalid') ||
+        text.includes('required') ||
+        text.includes('missing') ||
+        text.includes('bad request')
+    );
+}
+
+function isAuthSignal(err) {
+    const text = textFromError(err);
+    return (
+        err?.status === 401 ||
+        err?.status === 403 ||
+        text.includes('forbidden') ||
+        text.includes('unauthorized') ||
+        text.includes('auth') ||
+        text.includes('permiso') ||
+        text.includes('acceso')
+    );
+}
+
+function isStorageSignal(err) {
+    const text = textFromError(err);
+    return (
+        text.includes('storage') ||
+        text.includes('blob') ||
+        text.includes('table') ||
+        text.includes('upload') ||
+        text.includes('ETIMEDOUT') ||
+        text.includes('ECONNREFUSED')
+    );
+}
+
 export function normalizeCategorizedError(err, fallbackCategory = ErrorCategory.LLM) {
     if (err instanceof CategorizedError) return err;
 
@@ -87,6 +129,9 @@ export function normalizeCategorizedError(err, fallbackCategory = ErrorCategory.
     if (isSafetySignal(err)) inferred = ErrorCategory.SAFETY;
     else if (isParsingSignal(err)) inferred = ErrorCategory.PARSING;
     else if (isRetrievalSignal(err)) inferred = ErrorCategory.RETRIEVAL_FAILURE;
+    else if (isValidationSignal(err)) inferred = ErrorCategory.VALIDATION;
+    else if (isAuthSignal(err)) inferred = ErrorCategory.AUTH;
+    else if (isStorageSignal(err)) inferred = ErrorCategory.STORAGE;
 
     return new CategorizedError(err?.message || 'Unexpected error', {
         errorCategory: inferred,
@@ -95,4 +140,18 @@ export function normalizeCategorizedError(err, fallbackCategory = ErrorCategory.
         details: err?.details || err?.error || null,
         cause: err,
     });
+}
+
+export function buildStructuredErrorBody(message, errorCategory = ErrorCategory.INTERNAL, code = 'UNSPECIFIED_ERROR') {
+    const body = { error: message, errorCategory };
+    if (code) body.code = code;
+    return body;
+}
+
+export function structuredErrorResponse(status, message, errorCategory = ErrorCategory.INTERNAL, code = 'UNSPECIFIED_ERROR') {
+    return {
+        status,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildStructuredErrorBody(message, errorCategory, code)),
+    };
 }

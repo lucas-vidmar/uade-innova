@@ -628,7 +628,17 @@ export const api = {
         });
 
         if (!res.ok) {
-            return { query, subjectId, total: 0, results: [] };
+            let errorMessage = 'Error en búsqueda global';
+            let errorCategory = null;
+            try {
+                const errorData = await res.json();
+                if (errorData && errorData.error) errorMessage = errorData.error;
+                if (errorData && errorData.errorCategory) errorCategory = errorData.errorCategory;
+            } catch { /* ignore parse errors */ }
+            const apiError = new Error(`Error ${res.status}: ${errorMessage}`);
+            apiError.status = res.status;
+            apiError.errorCategory = errorCategory;
+            throw apiError;
         }
 
         const data = await res.json();
@@ -1161,7 +1171,6 @@ export const api = {
                 const res = await apiFetch(`${BASE_URL}/ingest-material`, { method: 'POST', body: formData });
 
                 if (!res.ok) {
-                    // Solo fallback si estamos en local y falla por 404 (funcionalidad no implementada)
                     if (USE_MOCK || (res.status === 404 && window.location.hostname === 'localhost')) {
                         return {
                             materialId: `m-local-${Date.now()}`,
@@ -1171,20 +1180,23 @@ export const api = {
                     }
 
                     let message = `Error ${res.status}: no se pudo subir el material`;
+                    let errorCategory = null;
                     try {
                         const contentType = res.headers.get('content-type') || '';
                         if (contentType.includes('application/json')) {
                             const err = await res.json();
                             if (err?.error) message = err.error;
+                            if (err?.errorCategory) errorCategory = err.errorCategory;
                         } else {
                             const text = await res.text();
                             if (text) message = text;
                         }
-                    } catch {
-                        // no-op
-                    }
+                    } catch { /* ignore parse errors */ }
 
-                    throw new Error(message);
+                    const apiError = new Error(message);
+                    apiError.status = res.status;
+                    apiError.errorCategory = errorCategory;
+                    throw apiError;
                 }
 
                 return res.json();

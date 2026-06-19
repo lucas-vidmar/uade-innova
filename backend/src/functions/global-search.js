@@ -8,6 +8,7 @@ import { querySimilar } from '../services/vector-store.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
 import { getEnrollment } from '../services/state-store.js';
 import { resolveCorrelationId, resolveTraceContext, buildDependencyHeaders, withCorrelationResponseHeaders } from '../services/correlation.js';
+import { ErrorCategory, normalizeCategorizedError, structuredErrorResponse } from '../services/error-categories.js';
 
 const MAX_GLOBAL_RESULTS = 12;
 
@@ -52,7 +53,7 @@ app.http('global-search', {
             return {
                 status: 403,
                 headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
-                body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }),
+                body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID', errorCategory: ErrorCategory.AUTH, code: 'FRONTDOOR_INVALID' }),
             };
         }
 
@@ -63,7 +64,7 @@ app.http('global-search', {
             return {
                 status: 400,
                 headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
-                body: JSON.stringify({ error: 'Body JSON inválido' }),
+                body: JSON.stringify({ error: 'Body JSON inválido', errorCategory: ErrorCategory.VALIDATION, code: 'INVALID_JSON' }),
             };
         }
 
@@ -74,7 +75,7 @@ app.http('global-search', {
             return {
                 status: 400,
                 headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
-                body: JSON.stringify({ error: 'Faltan campos requeridos: query, subjectId' }),
+                body: JSON.stringify({ error: 'Faltan campos requeridos: query, subjectId', errorCategory: ErrorCategory.VALIDATION, code: 'MISSING_FIELDS' }),
             };
         }
 
@@ -91,14 +92,14 @@ app.http('global-search', {
                     return {
                         status: 403,
                         headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
-                        body: JSON.stringify({ error: 'No tienes acceso a esta materia.' })
+                        body: JSON.stringify({ error: 'No tienes acceso a esta materia.', errorCategory: ErrorCategory.AUTH, code: 'ENROLLMENT_INACTIVE' })
                     };
                 }
             } catch (err) {
                 return {
                     status: 500,
                     headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
-                    body: JSON.stringify({ error: 'Error verificando permisos de acceso.' })
+                    body: JSON.stringify({ error: 'Error verificando permisos de acceso.', errorCategory: ErrorCategory.AUTH, code: 'ENROLLMENT_CHECK_FAILED' })
                 };
             }
         }
@@ -144,10 +145,11 @@ app.http('global-search', {
             };
         } catch (err) {
             context.error('Error en global-search:', err);
+            const categorized = normalizeCategorizedError(err, ErrorCategory.RETRIEVAL_FAILURE);
             return {
                 status: 500,
                 headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
-                body: JSON.stringify({ error: `Error buscando en índice global: ${err.message}` }),
+                body: JSON.stringify({ error: `Error buscando en índice global: ${categorized.message}`, errorCategory: categorized.errorCategory, code: categorized.code }),
             };
         }
     },
