@@ -129,6 +129,7 @@ export function renderSidebar() {
                 <h3>Notificaciones</h3>
                 <button class="notification-mark-read" id="notification-mark-read">Marcar todas leídas</button>
               </div>
+              <div class="notification-dropdown-filters" id="notification-dropdown-filters"></div>
               <div class="notification-list" id="notification-list">
                 <div class="notification-empty">Cargando notificaciones...</div>
               </div>
@@ -283,6 +284,14 @@ export function renderSidebar() {
   }
 }
 
+const DROPDOWN_FILTERS = [
+  { id: 'all', label: 'Todas' },
+  { id: 'grade', label: 'Nota' },
+  { id: 'summary', label: 'Resumen' },
+  { id: 'material', label: 'Material' },
+];
+const DROPDOWN_PAGE_SIZE = 8;
+
 async function initializeNotificationCenter({ userId, subjectId }) {
   const center = document.getElementById('notification-center');
   const bellButton = document.getElementById('notification-bell-btn');
@@ -294,19 +303,40 @@ async function initializeNotificationCenter({ userId, subjectId }) {
 
   if (!center || !bellButton || !badge || !dropdown || !listEl) return;
 
-  let notifications = [];
+  let allNotifications = [];
+  let activeFilter = 'all';
+  let hasMore = true;
+
+  const getFiltered = () => {
+    if (activeFilter === 'all') return allNotifications;
+    return allNotifications.filter((n) => n.type === activeFilter);
+  };
 
   const render = () => {
-    const unreadCount = notifications.filter((item) => item.unread).length;
+    const unreadCount = allNotifications.filter((item) => item.unread).length;
     badge.textContent = String(unreadCount);
     badge.hidden = unreadCount === 0;
 
-    if (notifications.length === 0) {
+    const dropFiltersEl = document.getElementById('notification-dropdown-filters');
+    if (dropFiltersEl) {
+      dropFiltersEl.innerHTML = DROPDOWN_FILTERS.map((f) => `
+        <button class="notif-dropdown-pill ${activeFilter === f.id ? 'active' : ''}" data-filter="${f.id}">${f.label}</button>
+      `).join('');
+    }
+
+    const filtered = getFiltered();
+
+    if (allNotifications.length === 0) {
       listEl.innerHTML = '<div class="notification-empty">No hay notificaciones nuevas.</div>';
       return;
     }
 
-    listEl.innerHTML = notifications
+    if (filtered.length === 0) {
+      listEl.innerHTML = '<div class="notification-empty">No hay notificaciones de este tipo.</div>';
+      return;
+    }
+
+    listEl.innerHTML = filtered
       .map((item) => {
         const icon = item.type === 'grade'
           ? '📝'
@@ -339,7 +369,9 @@ async function initializeNotificationCenter({ userId, subjectId }) {
           </button>
         `;
       })
-      .join('');
+      .join('') + (hasMore ? `
+        <button class="notification-load-more" id="notif-dropdown-load-more">Cargar más</button>
+      ` : '');
   };
 
   const setOpen = (open) => {
@@ -360,14 +392,14 @@ async function initializeNotificationCenter({ userId, subjectId }) {
 
   const onMarkAllRead = (e) => {
     e.stopPropagation();
-    const unreadIds = notifications.filter((item) => item.unread).map((item) => item.id);
+    const unreadIds = allNotifications.filter((item) => item.unread).map((item) => item.id);
     if (unreadIds.length === 0) {
       toast('success', 'Notificaciones actualizadas', 'No había notificaciones pendientes de lectura.');
       return;
     }
 
-    const before = notifications;
-    notifications = notifications.map((item) => ({ ...item, unread: false }));
+    const before = allNotifications;
+    allNotifications = allNotifications.map((item) => ({ ...item, unread: false }));
     render();
 
     api.markNotificationsRead({ notificationIds: unreadIds, userId, subjectId })
@@ -375,7 +407,7 @@ async function initializeNotificationCenter({ userId, subjectId }) {
         toast('success', 'Notificaciones actualizadas', 'Se marcaron todas como leídas.');
       })
       .catch((err) => {
-        notifications = before;
+        allNotifications = before;
         render();
         toast('error', 'No se pudo actualizar', err?.message || 'Intentá nuevamente en unos segundos.');
       });
@@ -383,7 +415,7 @@ async function initializeNotificationCenter({ userId, subjectId }) {
 
   const onSimulate = (e) => {
     e.stopPropagation();
-    notifications = [
+    allNotifications = [
       {
         id: `notif-sim-${Date.now()}`,
         type: 'material',
@@ -394,27 +426,47 @@ async function initializeNotificationCenter({ userId, subjectId }) {
         targetHash: '#/student/dashboard',
         subjectId,
       },
-      ...notifications,
+      ...allNotifications,
     ];
     render();
   };
 
   const onListClick = async (e) => {
+    const loadMoreBtn = e.target.closest('#notif-dropdown-load-more');
+    if (loadMoreBtn) {
+      e.stopPropagation();
+      loadMoreBtn.disabled = true;
+      loadMoreBtn.textContent = 'Cargando...';
+      try {
+        const newItems = await api.getNotifications({ userId, subjectId, limit: DROPDOWN_PAGE_SIZE, skip: allNotifications.length });
+        if (!Array.isArray(newItems) || newItems.length === 0) {
+          hasMore = false;
+        } else {
+          allNotifications = [...allNotifications, ...newItems];
+          hasMore = newItems.length >= DROPDOWN_PAGE_SIZE;
+        }
+      } catch {
+        hasMore = false;
+      }
+      render();
+      return;
+    }
+
     const item = e.target.closest('[data-notification-id]');
     if (!item) return;
     const id = item.getAttribute('data-notification-id');
     const markReadAction = e.target.closest('[data-notification-action="mark-read"]');
-    const before = notifications;
-    notifications = notifications.map((notif) => (notif.id === id ? { ...notif, unread: false } : notif));
+    const before = allNotifications;
+    allNotifications = allNotifications.map((notif) => (notif.id === id ? { ...notif, unread: false } : notif));
     render();
 
-    const clicked = notifications.find((notif) => notif.id === id);
+    const clicked = allNotifications.find((notif) => notif.id === id);
     if (clicked?.subjectId && userId) {
       try {
         await api.markNotificationRead({ notificationId: id, userId, subjectId: clicked.subjectId });
         toast('success', 'Notificación leída', 'Tu acción se guardó correctamente.');
       } catch (err) {
-        notifications = before;
+        allNotifications = before;
         render();
         toast('error', 'No se pudo actualizar', err?.message || 'Intentá nuevamente en unos segundos.');
         if (markReadAction) return;
@@ -432,9 +484,16 @@ async function initializeNotificationCenter({ userId, subjectId }) {
     if (targetHash) window.location.hash = targetHash;
   };
 
+  const onFiltersClick = (e) => {
+    const pill = e.target.closest('.notif-dropdown-pill');
+    if (!pill) return;
+    activeFilter = pill.dataset.filter;
+    render();
+  };
+
   const onExternalTrigger = (event) => {
     const detail = event?.detail || {};
-    notifications = [
+    allNotifications = [
       {
         id: detail.id || `notif-ext-${Date.now()}`,
         type: ['grade', 'summary', 'material', 'deadline'].includes(detail.type) ? detail.type : 'material',
@@ -444,7 +503,7 @@ async function initializeNotificationCenter({ userId, subjectId }) {
         unread: true,
         targetHash: detail.targetHash || '#/student/dashboard',
       },
-      ...notifications,
+      ...allNotifications,
     ];
     render();
   };
@@ -452,6 +511,8 @@ async function initializeNotificationCenter({ userId, subjectId }) {
   bellButton.addEventListener('click', onBellClick);
   document.addEventListener('click', onOutsideClick);
   listEl.addEventListener('click', onListClick);
+  const filtersEl = document.getElementById('notification-dropdown-filters');
+  filtersEl?.addEventListener('click', onFiltersClick);
   markReadBtn?.addEventListener('click', onMarkAllRead);
   simulateBtn?.addEventListener('click', onSimulate);
   window.addEventListener('student:trigger-notification', onExternalTrigger);
@@ -460,12 +521,14 @@ async function initializeNotificationCenter({ userId, subjectId }) {
     bellButton.removeEventListener('click', onBellClick);
     document.removeEventListener('click', onOutsideClick);
     listEl.removeEventListener('click', onListClick);
+    filtersEl?.removeEventListener('click', onFiltersClick);
     markReadBtn?.removeEventListener('click', onMarkAllRead);
     simulateBtn?.removeEventListener('click', onSimulate);
     window.removeEventListener('student:trigger-notification', onExternalTrigger);
   };
 
-  notifications = await api.getNotifications({ userId, subjectId, limit: 8 });
+  allNotifications = await api.getNotifications({ userId, subjectId, limit: DROPDOWN_PAGE_SIZE });
+  hasMore = Array.isArray(allNotifications) && allNotifications.length >= DROPDOWN_PAGE_SIZE;
   render();
 }
 

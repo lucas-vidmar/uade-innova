@@ -365,6 +365,56 @@
     font-size: var(--font-size-xs);
 }
 
+.notification-dropdown-filters {
+  display: flex;
+  gap: 4px;
+  padding: 8px 14px 4px;
+  overflow-x: auto;
+}
+
+.notif-dropdown-pill {
+  flex-shrink: 0;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.notif-dropdown-pill:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.notif-dropdown-pill.active {
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
+  border-color: var(--color-primary);
+}
+
+.notification-load-more {
+  width: 100%;
+  border: 1px dashed var(--color-border);
+  background: transparent;
+  color: var(--color-primary);
+  border-radius: 8px;
+  padding: 8px;
+  margin-top: 4px;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.notification-load-more:hover {
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  border-color: var(--color-primary);
+}
+
 .notification-dropdown-foot {
     display: flex;
     justify-content: space-between;
