@@ -17,6 +17,7 @@ import { getEnrollment, getConsentStatus } from '../services/state-store.js';
 import { getMaterialPriority } from '../services/material-classification.js';
 const MAX_RAG_CHUNKS = 4;
 const RETRIEVAL_CANDIDATES = 10;
+const MAX_CHUNKS_PER_SOURCE = 2;
 const MIN_HISTORY_TURNS = 3;
 const MAX_HISTORY_TURNS = 5;
 const DEFAULT_HISTORY_TURNS = 4;
@@ -135,6 +136,64 @@ function buildHybridContext(matches = [], maxChunks = MAX_RAG_CHUNKS, priorityMa
     }
 
     return selected.slice(0, maxChunks);
+}
+
+function diversifyBySourceFile(matches, maxPerFile = MAX_CHUNKS_PER_SOURCE, maxChunks = MAX_RAG_CHUNKS) {
+    if (!Array.isArray(matches) || matches.length === 0) return [];
+
+    const getSourceFile = (match) => match?.metadata?.sourceFilename ?? 'unknown';
+
+    const fileBuckets = Object.create(null);
+    const fileOrder = [];
+    for (const match of matches) {
+        const file = getSourceFile(match);
+        if (!fileBuckets[file]) {
+            fileBuckets[file] = [];
+            fileOrder.push(file);
+        }
+        fileBuckets[file].push(match);
+    }
+
+    if (fileOrder.length <= 1) {
+        return matches.slice(0, maxChunks);
+    }
+
+    const kept = [];
+    const oversubscribed = Object.create(null);
+    const oversubscribedOrder = [];
+
+    for (const file of fileOrder) {
+        const bucket = fileBuckets[file];
+        if (bucket.length > maxPerFile) {
+            kept.push(...bucket.slice(0, maxPerFile));
+            oversubscribed[file] = bucket.slice(maxPerFile);
+            oversubscribedOrder.push(file);
+        } else {
+            kept.push(...bucket);
+        }
+    }
+
+    if (kept.length >= maxChunks) {
+        return kept.slice(0, maxChunks);
+    }
+
+    const remaining = maxChunks - kept.length;
+    let added = 0;
+    while (added < remaining) {
+        let madeProgress = false;
+        for (const file of oversubscribedOrder) {
+            if (added >= remaining) break;
+            const extras = oversubscribed[file];
+            if (extras.length > 0) {
+                kept.push(extras.shift());
+                added++;
+                madeProgress = true;
+            }
+        }
+        if (!madeProgress) break;
+    }
+
+    return kept;
 }
 
 async function rewriteQuestionWithHistory(question, conversationHistory, context) {
@@ -443,7 +502,8 @@ app.http('rag-query', {
         }
 
         matches = buildHybridContext(matches, MAX_RAG_CHUNKS, priorityMap);
-        
+        matches = diversifyBySourceFile(matches);
+
         const REFUSAL_MESSAGE = "No encontre informacion sobre eso en los materiales seleccionados.";
 
         // ── 5. Early return if no context found ───────────────────
