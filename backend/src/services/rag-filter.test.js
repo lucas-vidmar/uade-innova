@@ -311,6 +311,7 @@ test('Telemetry: filterType is "exact-classId" for single class', async () => {
 
     const callArgs = telemetryMocks.trackRAGInteraction.mock.calls[0].arguments[0];
     assert.strictEqual(callArgs.filterType, 'exact-classId');
+    assert.strictEqual(callArgs.selectedClassCount, 1);
 });
 
 test('Telemetry: filterType is "multi-classIds" for multiple classes', async () => {
@@ -324,6 +325,7 @@ test('Telemetry: filterType is "multi-classIds" for multiple classes', async () 
 
     const callArgs = telemetryMocks.trackRAGInteraction.mock.calls[0].arguments[0];
     assert.strictEqual(callArgs.filterType, 'multi-classIds');
+    assert.strictEqual(callArgs.selectedClassCount, 2);
 });
 
 test('Telemetry: filterType is "subject-only" when classIds is ["all"]', async () => {
@@ -337,6 +339,7 @@ test('Telemetry: filterType is "subject-only" when classIds is ["all"]', async (
 
     const callArgs = telemetryMocks.trackRAGInteraction.mock.calls[0].arguments[0];
     assert.strictEqual(callArgs.filterType, 'subject-only');
+    assert.strictEqual(callArgs.selectedClassCount, 0);
 });
 
 test('Telemetry: filterType is "subject-only" when classIds is null', async () => {
@@ -350,4 +353,18 @@ test('Telemetry: filterType is "subject-only" when classIds is null', async () =
 
     const callArgs = telemetryMocks.trackRAGInteraction.mock.calls[0].arguments[0];
     assert.strictEqual(callArgs.filterType, 'subject-only');
+    assert.strictEqual(callArgs.selectedClassCount, 0);
+});
+
+test('Telemetry: selectedClassCount deduplicates repeated classIds', async () => {
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+    telemetryMocks.trackRAGInteraction.mock.resetCalls();
+
+    await capturedHandler(
+        mockRequest({ question: 'telemetry test', subjectId: 'math-101', classIds: ['class-05', 'class-05', 'class-06'] }),
+        mockContext()
+    );
+
+    const callArgs = telemetryMocks.trackRAGInteraction.mock.calls[0].arguments[0];
+    assert.strictEqual(callArgs.selectedClassCount, 2);
 });

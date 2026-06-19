@@ -210,6 +210,11 @@ function resolveFilterType(classIds) {
     return classIds.length === 1 ? 'exact-classId' : 'multi-classIds';
 }
 
+function resolveSelectedClassCount(classIds) {
+    if (!classIds || classIds.length === 0 || classIds.includes('all')) return 0;
+    return new Set(classIds.filter(id => id && id !== 'all')).size;
+}
+
 function handleErrorResponse(status, message, category, isStream, correlationId) {
     if (isStream) {
         const encoder = new TextEncoder();
@@ -540,6 +545,8 @@ ${contextText}
                         const userId = userAuth.userId;
                         const totalInteractionTokens = (embeddingUsage?.total_tokens || 0) + (finalUsage?.total_tokens || 0);
 
+                        const selectedClassCount = resolveSelectedClassCount(classIds);
+
                         trackRAGInteraction({
                             userId,
                             subjectId,
@@ -552,6 +559,7 @@ ${contextText}
                             interactionId,
                             firstTokenAt,
                             filterType,
+                            selectedClassCount,
                         }).catch(err => context.error('[Telemetry] Error emitting RAGInteraction event from stream:', err));
 
 
@@ -641,6 +649,7 @@ ${contextText}
             promptVersion: promptId,
             interactionId: uuidv4(),
             filterType,
+            selectedClassCount: resolveSelectedClassCount(classIds),
         }).catch(err => context.error('[Telemetry] Error emitting RAGInteraction event:', err));
 
         // ── 7. Construir respuesta con fuentes ────────────────────

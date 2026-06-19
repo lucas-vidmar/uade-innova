@@ -57,6 +57,7 @@ async function getClient() {
  * @param {string} params.promptVersion     - A/B prompt version ID (Issue #80)
  * @param {string} [params.interactionId]   - Unique ID for this chat turn
  * @param {string} [params.firstTokenAt]    - ISO timestamp when first SSE token was emitted
+ * @param {number} [params.selectedClassCount] - Number of unique classes selected for context
  */
 export async function trackRAGInteraction({
     userId,
@@ -70,6 +71,7 @@ export async function trackRAGInteraction({
     interactionId,
     firstTokenAt,
     filterType,
+    selectedClassCount,
 }) {
     const client = await getClient();
     if (!client) return;
@@ -90,6 +92,7 @@ export async function trackRAGInteraction({
             totalTokens: totalTokens || 0,
             durationMs: durationMs || 0,
             ttftMs: Number.isFinite(ttftMs) ? ttftMs : 0,
+            selectedClassCount: Number.isFinite(selectedClassCount) ? selectedClassCount : 0,
         },
     });
 }
