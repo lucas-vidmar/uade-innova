@@ -1,6 +1,7 @@
 import { app } from '@azure/functions';
 import { loadJson, listBlobs } from '../services/storage.js';
 import { upsertNotificationForSubject } from '../services/notification-store.js';
+import { trackDispatcherRun } from '../services/telemetry.js';
 
 const CONTAINER_CLASSES = process.env.AZURE_STORAGE_CONTAINER_CLASSES || 'classes-config';
 const CONTAINER_SUMMARIES = 'class-summaries';
@@ -45,17 +46,26 @@ async function shouldDispatchForClass(classData) {
 }
 
 export async function runPostClassSummaryDispatcher(context = { log: () => {}, error: () => {} }) {
+  const startedAt = Date.now();
   const subjectIds = await loadSubjectIds();
   let dispatched = 0;
+  let classCount = 0;
+  let skipped = 0;
+  let errors = 0;
+  const errorEntries = [];
 
   for (const subjectId of subjectIds) {
     const classes = await loadJson(CONTAINER_CLASSES, `${subjectId}.json`);
     if (!Array.isArray(classes) || classes.length === 0) continue;
 
     for (const classData of classes) {
+      classCount += 1;
       try {
         const shouldDispatch = await shouldDispatchForClass(classData);
-        if (!shouldDispatch) continue;
+        if (!shouldDispatch) {
+          skipped += 1;
+          continue;
+        }
 
         const classId = String(classData.id);
         await upsertNotificationForSubject(subjectId, {
@@ -73,13 +83,33 @@ export async function runPostClassSummaryDispatcher(context = { log: () => {}, e
 
         dispatched += 1;
       } catch (err) {
-        context.error(`[post-class-summary-dispatcher] subject=${subjectId} class=${classData?.id || 'unknown'} error=${err.message}`);
+        errors += 1;
+        errorEntries.push(`subject=${subjectId} class=${String(classData.id) || 'unknown'}`);
+        context.error(`[post-class-summary-dispatcher] subject=${subjectId} class=${String(classData.id) || 'unknown'} error=${err.message}`);
       }
     }
   }
 
-  context.log(`[post-class-summary-dispatcher] completed; notifications upserted=${dispatched}`);
-  return { dispatched, subjectCount: subjectIds.length };
+  const durationMs = Date.now() - startedAt;
+
+  context.log(`[post-class-summary-dispatcher] completed; subjects=${subjectIds.length} classes=${classCount} dispatched=${dispatched} skipped=${skipped} errors=${errors} duration=${durationMs}ms`);
+
+  try {
+    await trackDispatcherRun({
+      dispatcherName: 'post-class-summary',
+      subjectCount: subjectIds.length,
+      classCount,
+      dispatched,
+      skipped,
+      errors,
+      durationMs,
+      errorDetails: errorEntries.length > 0 ? errorEntries.join(' | ') : undefined,
+    });
+  } catch (telemetryErr) {
+    context.error(`[post-class-summary-dispatcher] telemetry error: ${telemetryErr.message}`);
+  }
+
+  return { dispatched, subjectCount: subjectIds.length, classCount, skipped, errors, durationMs };
 }
 
 app.timer('post-class-summary-dispatcher', {

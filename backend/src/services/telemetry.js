@@ -206,6 +206,49 @@ export async function trackUserLogin({ userId, roles = [] }) {
 }
 
 /**
+ * Tracks a timer-triggered dispatcher run with structured execution metrics.
+ *
+ * @param {object} params
+ * @param {string} params.dispatcherName  - Name of the dispatcher (e.g. 'post-class-summary')
+ * @param {number} params.subjectCount    - Total subjects evaluated
+ * @param {number} params.classCount      - Total classes iterated across all subjects
+ * @param {number} params.dispatched      - Notifications successfully upserted
+ * @param {number} params.skipped         - Items skipped (future date, not ready, etc.)
+ * @param {number} params.errors          - Count of errors caught during the run
+ * @param {number} params.durationMs      - Wall-clock execution time in milliseconds
+ * @param {string} [params.errorDetails]  - Concatenated error context for troubleshooting (subjectId/classId)
+ */
+export async function trackDispatcherRun({
+    dispatcherName = 'unknown',
+    subjectCount = 0,
+    classCount = 0,
+    dispatched = 0,
+    skipped = 0,
+    errors = 0,
+    durationMs = 0,
+    errorDetails,
+}) {
+    const client = await getClient();
+    if (!client) return;
+
+    client.trackEvent({
+        name: 'DispatcherRun',
+        properties: {
+            dispatcherName: dispatcherName || 'unknown',
+            errorDetails: errorDetails || '',
+        },
+        measurements: {
+            subjectCount: Math.max(0, Number(subjectCount) || 0),
+            classCount: Math.max(0, Number(classCount) || 0),
+            dispatched: Math.max(0, Number(dispatched) || 0),
+            skipped: Math.max(0, Number(skipped) || 0),
+            errors: Math.max(0, Number(errors) || 0),
+            durationMs: Math.max(0, Number(durationMs) || 0),
+        },
+    });
+}
+
+/**
  * Tracks notification-center interactions (quick actions/read acknowledgements).
  *
  * @param {object} params
