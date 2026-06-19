@@ -7,13 +7,53 @@ const authUtilsMocks = {
     parseClientPrincipal: mock.fn(() => ({ userRoles: [] }))
 };
 
+function applyODataFilter(entities, options) {
+    const filterStr = options?.queryOptions?.filter;
+    if (!filterStr) return entities;
+    const parts = filterStr.split(' and ');
+    return entities.filter(entity => {
+        for (const part of parts) {
+            const m = part.match(/(\w+)\s+(ne|eq)\s+'([^']*)'/);
+            if (!m) continue;
+            const [, field, op, value] = m;
+            const entityVal = String(entity[field] || '').trim();
+            if (op === 'ne' && entityVal === value) return false;
+            if (op === 'eq' && entityVal !== value) return false;
+        }
+        return true;
+    });
+}
+
+function makeListEntitiesResult(entities) {
+    let _lastOptions = null;
+    const iterable = {
+        [Symbol.asyncIterator]: async function* () {
+            for (const e of entities) yield e;
+        },
+        byPage: async function* (pageOptions) {
+            const filtered = applyODataFilter(entities, _lastOptions);
+            const page = [...filtered];
+            page.continuationToken = null;
+            yield page;
+        }
+    };
+    const listFn = (options) => {
+        _lastOptions = options || null;
+        return iterable;
+    };
+    listFn._iterable = iterable;
+    return listFn;
+}
+
+const defaultListEntities = makeListEntitiesResult([]);
+
 const storageMocks = {
     loadJson: mock.fn(async () => ({})),
     saveJson: mock.fn(async () => true),
     deleteBlob: mock.fn(async () => true),
     listBlobs: mock.fn(async () => []),
     getTableClient: mock.fn(() => ({
-        listEntities: async function* () { }
+        listEntities: defaultListEntities
     })),
     uploadFile: mock.fn(async () => true),
     downloadFile: mock.fn(async () => null),
@@ -200,12 +240,12 @@ test('classes-api get-director-powerbi-metrics returns aggregated daily metrics'
     const anonTodayIso = new Date(new Date(todayIso).getTime() + 60 * 60 * 1000).toISOString();
 
     storageMocks.getTableClient.mock.mockImplementation(() => ({
-        listEntities: async function* () {
-            yield { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, timestamp: yesterdayIso };
-            yield { userId: 'alu-001', promptTokens: 120, completionTokens: 80, totalTokens: 200, timestamp: yesterdayIso2 };
-            yield { userId: 'alu-002', promptTokens: 200, completionTokens: 100, totalTokens: 300, timestamp: todayIso };
-            yield { userId: 'anonymous', promptTokens: 500, completionTokens: 499, totalTokens: 999, timestamp: anonTodayIso };
-        },
+        listEntities: makeListEntitiesResult([
+            { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, timestamp: yesterdayIso },
+            { userId: 'alu-001', promptTokens: 120, completionTokens: 80, totalTokens: 200, timestamp: yesterdayIso2 },
+            { userId: 'alu-002', promptTokens: 200, completionTokens: 100, totalTokens: 300, timestamp: todayIso },
+            { userId: 'anonymous', promptTokens: 500, completionTokens: 499, totalTokens: 999, timestamp: anonTodayIso },
+        ])
     }));
 
     const mockContext = { log: mock.fn(), error: mock.fn() };
@@ -246,11 +286,11 @@ test('classes-api get-director-stats returns costBySubject with subject-level br
     const todayIso = new Date().toISOString();
 
     storageMocks.getTableClient.mock.mockImplementation(() => ({
-        listEntities: async function* () {
-            yield { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', timestamp: yesterdayIso };
-            yield { userId: 'alu-002', promptTokens: 200, completionTokens: 100, totalTokens: 300, subjectId: 'diseno-bd-2026', timestamp: yesterdayIso };
-            yield { userId: 'alu-001', promptTokens: 50, completionTokens: 25, totalTokens: 75, subjectId: 'arq-software-2026', timestamp: todayIso };
-        },
+        listEntities: makeListEntitiesResult([
+            { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', timestamp: yesterdayIso },
+            { userId: 'alu-002', promptTokens: 200, completionTokens: 100, totalTokens: 300, subjectId: 'diseno-bd-2026', timestamp: yesterdayIso },
+            { userId: 'alu-001', promptTokens: 50, completionTokens: 25, totalTokens: 75, subjectId: 'arq-software-2026', timestamp: todayIso },
+        ])
     }));
 
     const mockContext = { log: mock.fn(), error: mock.fn() };
@@ -277,11 +317,11 @@ test('classes-api get-director-stats returns wausBySubject with weekly user coun
     const yesterdayIso = new Date(Date.now() - 86400000).toISOString();
 
     storageMocks.getTableClient.mock.mockImplementation(() => ({
-        listEntities: async function* () {
-            yield { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', timestamp: yesterdayIso };
-            yield { userId: 'alu-002', promptTokens: 200, completionTokens: 100, totalTokens: 300, subjectId: 'arq-software-2026', timestamp: yesterdayIso };
-            yield { userId: 'alu-003', promptTokens: 50, completionTokens: 25, totalTokens: 75, subjectId: 'diseno-bd-2026', timestamp: yesterdayIso };
-        },
+        listEntities: makeListEntitiesResult([
+            { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', timestamp: yesterdayIso },
+            { userId: 'alu-002', promptTokens: 200, completionTokens: 100, totalTokens: 300, subjectId: 'arq-software-2026', timestamp: yesterdayIso },
+            { userId: 'alu-003', promptTokens: 50, completionTokens: 25, totalTokens: 75, subjectId: 'diseno-bd-2026', timestamp: yesterdayIso },
+        ])
     }));
 
     const mockContext = { log: mock.fn(), error: mock.fn() };
@@ -302,11 +342,11 @@ test('classes-api get-director-stats returns materialUploads with teacher breakd
     const todayIso = new Date().toISOString();
 
     storageMocks.getTableClient.mock.mockImplementation(() => ({
-        listEntities: async function* () {
-            yield { eventType: 'material-upload', teacherId: 'doc-001', userId: 'doc-001', materialType: 'transcript', filename: 'clase.vtt', subjectId: 'arq-software-2026', timestamp: todayIso };
-            yield { eventType: 'material-upload', teacherId: 'doc-001', userId: 'doc-001', materialType: 'presentation', filename: 'clase.pptx', subjectId: 'arq-software-2026', timestamp: todayIso };
-            yield { eventType: 'material-upload', teacherId: 'doc-002', userId: 'doc-002', materialType: 'notes', filename: 'apuntes.docx', subjectId: 'diseno-bd-2026', timestamp: todayIso };
-        },
+        listEntities: makeListEntitiesResult([
+            { eventType: 'material-upload', teacherId: 'doc-001', userId: 'doc-001', materialType: 'transcript', filename: 'clase.vtt', subjectId: 'arq-software-2026', timestamp: todayIso },
+            { eventType: 'material-upload', teacherId: 'doc-001', userId: 'doc-001', materialType: 'presentation', filename: 'clase.pptx', subjectId: 'arq-software-2026', timestamp: todayIso },
+            { eventType: 'material-upload', teacherId: 'doc-002', userId: 'doc-002', materialType: 'notes', filename: 'apuntes.docx', subjectId: 'diseno-bd-2026', timestamp: todayIso },
+        ])
     }));
 
     const mockContext = { log: mock.fn(), error: mock.fn() };
@@ -335,10 +375,10 @@ test('classes-api get-director-stats returns budget object with projection', asy
     const yesterdayIso = new Date(Date.now() - 86400000).toISOString();
 
     storageMocks.getTableClient.mock.mockImplementation(() => ({
-        listEntities: async function* () {
-            yield { userId: 'alu-001', promptTokens: 1000, completionTokens: 500, totalTokens: 1500, timestamp: yesterdayIso };
-            yield { userId: 'alu-001', promptTokens: 2000, completionTokens: 1000, totalTokens: 3000, timestamp: todayIso };
-        },
+        listEntities: makeListEntitiesResult([
+            { userId: 'alu-001', promptTokens: 1000, completionTokens: 500, totalTokens: 1500, timestamp: yesterdayIso },
+            { userId: 'alu-001', promptTokens: 2000, completionTokens: 1000, totalTokens: 3000, timestamp: todayIso },
+        ])
     }));
 
     const mockContext = { log: mock.fn(), error: mock.fn() };
@@ -363,10 +403,10 @@ test('classes-api get-director-stats returns costPerActiveStudent', async () => 
     const todayIso = new Date().toISOString();
 
     storageMocks.getTableClient.mock.mockImplementation(() => ({
-        listEntities: async function* () {
-            yield { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, timestamp: todayIso };
-            yield { userId: 'alu-002', promptTokens: 200, completionTokens: 100, totalTokens: 300, timestamp: todayIso };
-        },
+        listEntities: makeListEntitiesResult([
+            { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, timestamp: todayIso },
+            { userId: 'alu-002', promptTokens: 200, completionTokens: 100, totalTokens: 300, timestamp: todayIso },
+        ])
     }));
 
     const mockContext = { log: mock.fn(), error: mock.fn() };
@@ -385,9 +425,9 @@ test('classes-api get-director-powerbi-metrics returns costBySubject array', asy
     const yesterdayIso = new Date(Date.now() - 86400000).toISOString();
 
     storageMocks.getTableClient.mock.mockImplementation(() => ({
-        listEntities: async function* () {
-            yield { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', timestamp: yesterdayIso };
-        },
+        listEntities: makeListEntitiesResult([
+            { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', timestamp: yesterdayIso },
+        ])
     }));
 
     const mockContext = { log: mock.fn(), error: mock.fn() };
@@ -411,11 +451,11 @@ test('classes-api get-director-powerbi-metrics costByClass respects subjectId fi
     const yesterdayIso = new Date(Date.now() - 86400000).toISOString();
 
     storageMocks.getTableClient.mock.mockImplementation(() => ({
-        listEntities: async function* () {
-            yield { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso };
-            yield { userId: 'alu-002', promptTokens: 200, completionTokens: 100, totalTokens: 300, subjectId: 'diseno-bd-2026', classId: 'class-02', timestamp: yesterdayIso };
-            yield { eventType: 'material-upload', teacherId: 'doc-001', subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso };
-        },
+        listEntities: makeListEntitiesResult([
+            { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso },
+            { userId: 'alu-002', promptTokens: 200, completionTokens: 100, totalTokens: 300, subjectId: 'diseno-bd-2026', classId: 'class-02', timestamp: yesterdayIso },
+            { eventType: 'material-upload', teacherId: 'doc-001', subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso },
+        ])
     }));
 
     const mockContext = { log: mock.fn(), error: mock.fn() };
@@ -437,10 +477,10 @@ test('classes-api get-director-session-metrics-history returns all rows when no 
     const yesterdayIso = new Date(Date.now() - 86400000).toISOString();
 
     storageMocks.getTableClient.mock.mockImplementation(() => ({
-        listEntities: async function* () {
-            yield { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso };
-            yield { userId: 'alu-002', promptTokens: 200, completionTokens: 100, totalTokens: 300, subjectId: 'diseno-bd-2026', classId: 'class-02', timestamp: yesterdayIso };
-        },
+        listEntities: makeListEntitiesResult([
+            { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso },
+            { userId: 'alu-002', promptTokens: 200, completionTokens: 100, totalTokens: 300, subjectId: 'diseno-bd-2026', classId: 'class-02', timestamp: yesterdayIso },
+        ])
     }));
 
     const mockContext = { log: mock.fn(), error: mock.fn() };
@@ -455,6 +495,8 @@ test('classes-api get-director-session-metrics-history returns all rows when no 
     assert.strictEqual(payload.history[0].subjectId, 'arq-software-2026');
     assert.strictEqual(payload.history[1].subjectId, 'diseno-bd-2026');
     assert.strictEqual(payload.history[0].userId, undefined, 'should not expose userId');
+    assert.strictEqual(payload.continuationToken, null, 'should have null continuationToken');
+    assert.strictEqual(payload.hasMore, false, 'should have hasMore false');
 });
 
 test('classes-api get-director-session-metrics-history filters by subjectId', async () => {
@@ -462,10 +504,10 @@ test('classes-api get-director-session-metrics-history filters by subjectId', as
     const yesterdayIso = new Date(Date.now() - 86400000).toISOString();
 
     storageMocks.getTableClient.mock.mockImplementation(() => ({
-        listEntities: async function* () {
-            yield { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso };
-            yield { userId: 'alu-002', promptTokens: 200, completionTokens: 100, totalTokens: 300, subjectId: 'diseno-bd-2026', classId: 'class-02', timestamp: yesterdayIso };
-        },
+        listEntities: makeListEntitiesResult([
+            { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso },
+            { userId: 'alu-002', promptTokens: 200, completionTokens: 100, totalTokens: 300, subjectId: 'diseno-bd-2026', classId: 'class-02', timestamp: yesterdayIso },
+        ])
     }));
 
     const mockContext = { log: mock.fn(), error: mock.fn() };
@@ -484,9 +526,9 @@ test('classes-api get-director-session-metrics-history returns empty for non-exi
     const yesterdayIso = new Date(Date.now() - 86400000).toISOString();
 
     storageMocks.getTableClient.mock.mockImplementation(() => ({
-        listEntities: async function* () {
-            yield { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso };
-        },
+        listEntities: makeListEntitiesResult([
+            { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso },
+        ])
     }));
 
     const mockContext = { log: mock.fn(), error: mock.fn() };
@@ -505,10 +547,10 @@ test('classes-api get-director-session-metrics-history excludes material-upload 
     const yesterdayIso = new Date(Date.now() - 86400000).toISOString();
 
     storageMocks.getTableClient.mock.mockImplementation(() => ({
-        listEntities: async function* () {
-            yield { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso };
-            yield { eventType: 'material-upload', teacherId: 'doc-001', subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso };
-        },
+        listEntities: makeListEntitiesResult([
+            { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso },
+            { eventType: 'material-upload', teacherId: 'doc-001', subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso },
+        ])
     }));
 
     const mockContext = { log: mock.fn(), error: mock.fn() };
@@ -526,7 +568,7 @@ test('classes-api get-director-session-metrics-history returns empty array when 
     authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
 
     storageMocks.getTableClient.mock.mockImplementation(() => ({
-        listEntities: async function* () {},
+        listEntities: makeListEntitiesResult([])
     }));
 
     const mockContext = { log: mock.fn(), error: mock.fn() };
@@ -577,10 +619,10 @@ test('classes-api get-director-session-metrics-history trims whitespace from sub
     const yesterdayIso = new Date(Date.now() - 86400000).toISOString();
 
     storageMocks.getTableClient.mock.mockImplementation(() => ({
-        listEntities: async function* () {
-            yield { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso };
-            yield { userId: 'alu-002', promptTokens: 200, completionTokens: 100, totalTokens: 300, subjectId: 'diseno-bd-2026', classId: 'class-02', timestamp: yesterdayIso };
-        },
+        listEntities: makeListEntitiesResult([
+            { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso },
+            { userId: 'alu-002', promptTokens: 200, completionTokens: 100, totalTokens: 300, subjectId: 'diseno-bd-2026', classId: 'class-02', timestamp: yesterdayIso },
+        ])
     }));
 
     const mockContext = { log: mock.fn(), error: mock.fn() };
@@ -592,4 +634,214 @@ test('classes-api get-director-session-metrics-history trims whitespace from sub
     const payload = JSON.parse(response.body);
     assert.strictEqual(payload.total, 1, 'should match after trimming whitespace');
     assert.strictEqual(payload.history[0].subjectId, 'arq-software-2026');
+});
+
+test('classes-api get-director-session-metrics-history paginates with default limit', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+    const yesterdayIso = new Date(Date.now() - 86400000).toISOString();
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: makeListEntitiesResult([
+            { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso },
+            { userId: 'alu-002', promptTokens: 200, completionTokens: 100, totalTokens: 300, subjectId: 'diseno-bd-2026', classId: 'class-02', timestamp: yesterdayIso },
+        ])
+    }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = { params: {}, query: new Map() };
+
+    const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    const payload = JSON.parse(response.body);
+    assert.strictEqual(payload.total, 2);
+    assert.strictEqual(payload.continuationToken, null);
+    assert.strictEqual(payload.hasMore, false);
+});
+
+test('classes-api get-director-session-metrics-history returns 400 for invalid continuationToken', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: makeListEntitiesResult([])
+    }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = { params: {}, query: new Map([['continuationToken', 'not-valid-base64']]) };
+
+    const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 400);
+
+    const payload = JSON.parse(response.body);
+    assert.strictEqual(payload.error, 'Invalid continuation token');
+});
+
+test('classes-api get-director-session-metrics-history limit clamps to max 1000', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+    const yesterdayIso = new Date(Date.now() - 86400000).toISOString();
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: makeListEntitiesResult([
+            { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso },
+        ])
+    }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = { params: {}, query: new Map([['limit', '9999']]) };
+
+    const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+});
+
+test('classes-api get-director-session-metrics-history filters by subjectId with pagination', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+    const yesterdayIso = new Date(Date.now() - 86400000).toISOString();
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: makeListEntitiesResult([
+            { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso },
+            { userId: 'alu-002', promptTokens: 200, completionTokens: 100, totalTokens: 300, subjectId: 'diseno-bd-2026', classId: 'class-02', timestamp: yesterdayIso },
+        ])
+    }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = { params: {}, query: new Map([['subjectId', 'arq-software-2026']]) };
+
+    const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    const payload = JSON.parse(response.body);
+    assert.strictEqual(payload.total, 1);
+    assert.strictEqual(payload.history[0].subjectId, 'arq-software-2026');
+});
+
+test('classes-api get-director-session-metrics-history defaults limit to 1000 when limit is 0', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+    const yesterdayIso = new Date(Date.now() - 86400000).toISOString();
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: makeListEntitiesResult([
+            { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso },
+        ])
+    }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = { params: {}, query: new Map([['limit', '0']]) };
+
+    const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    const payload = JSON.parse(response.body);
+    assert.strictEqual(payload.total, 1);
+    assert.strictEqual(payload.hasMore, false);
+});
+
+test('classes-api get-director-session-metrics-history defaults limit to 1000 when limit param is empty', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+    const yesterdayIso = new Date(Date.now() - 86400000).toISOString();
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: makeListEntitiesResult([
+            { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso },
+        ])
+    }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = { params: {}, query: new Map([['limit', '']]) };
+
+    const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    const payload = JSON.parse(response.body);
+    assert.strictEqual(payload.total, 1);
+});
+
+test('classes-api get-director-session-metrics-history rejects array continuationToken', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: makeListEntitiesResult([])
+    }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const arrayToken = Buffer.from(JSON.stringify([1, 2, 3])).toString('base64');
+    const mockRequest = { params: {}, query: new Map([['continuationToken', arrayToken]]) };
+
+    const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 400);
+
+    const payload = JSON.parse(response.body);
+    assert.strictEqual(payload.error, 'Invalid continuation token');
+});
+
+test('classes-api get-director-session-metrics-history rejects string continuationToken', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: makeListEntitiesResult([])
+    }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const strToken = Buffer.from(JSON.stringify('raw-string')).toString('base64');
+    const mockRequest = { params: {}, query: new Map([['continuationToken', strToken]]) };
+
+    const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 400);
+
+    const payload = JSON.parse(response.body);
+    assert.strictEqual(payload.error, 'Invalid continuation token');
+});
+
+test('classes-api get-director-session-metrics-history multi-page iteration with continuationToken', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+    const yesterdayIso = new Date(Date.now() - 86400000).toISOString();
+
+    const entities = [
+        { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, subjectId: 'arq-software-2026', classId: 'class-01', timestamp: yesterdayIso },
+        { userId: 'alu-002', promptTokens: 200, completionTokens: 100, totalTokens: 300, subjectId: 'diseno-bd-2026', classId: 'class-02', timestamp: yesterdayIso },
+    ];
+    const page2Token = { _kind: 'page2' };
+    const page1Returned = { called: false };
+
+    let _listOpts = null;
+    const iterable = {
+        [Symbol.asyncIterator]: async function* () { for (const e of entities) yield e; },
+        byPage: async function* (pageOptions) {
+            if (pageOptions?.continuationToken) {
+                const page = [entities[1]];
+                page.continuationToken = null;
+                yield page;
+            } else {
+                const page = [entities[0]];
+                page.continuationToken = page2Token;
+                yield page;
+            }
+        }
+    };
+    const listFn = (options) => { _listOpts = options; return iterable; };
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: listFn
+    }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+
+    // First page
+    const req1 = { params: {}, query: new Map([['limit', '1']]) };
+    const res1 = await handlers['get-director-session-metrics-history'](req1, mockContext);
+    assert.strictEqual(res1.status, 200);
+    const body1 = JSON.parse(res1.body);
+    assert.strictEqual(body1.total, 1);
+    assert.strictEqual(body1.history[0].subjectId, 'arq-software-2026');
+    assert.ok(body1.continuationToken !== null, 'first page should have continuationToken');
+    assert.strictEqual(body1.hasMore, true);
+
+    // Second page using token from first page
+    const req2 = { params: {}, query: new Map([['limit', '1'], ['continuationToken', body1.continuationToken]]) };
+    const res2 = await handlers['get-director-session-metrics-history'](req2, mockContext);
+    assert.strictEqual(res2.status, 200);
+    const body2 = JSON.parse(res2.body);
+    assert.strictEqual(body2.total, 1);
+    assert.strictEqual(body2.history[0].subjectId, 'diseno-bd-2026');
+    assert.strictEqual(body2.continuationToken, null);
+    assert.strictEqual(body2.hasMore, false);
 });

@@ -71,6 +71,38 @@ async function loadSessionMetricsRows(context) {
     }
 }
 
+async function loadSessionMetricsRowsPaginated(context, { limit = 1000, continuationToken, subjectId } = {}) {
+    try {
+        const tableClient = getTableClient(SESSION_METRICS_TABLE);
+
+        const filterParts = ["eventType ne 'material-upload'"];
+        if (subjectId) {
+            const esc = String(subjectId).replace(/'/g, "''");
+            filterParts.push(`subjectId eq '${esc}'`);
+        }
+
+        const iter = tableClient.listEntities({
+            queryOptions: { filter: filterParts.join(' and ') },
+        });
+
+        const rows = [];
+        let nextToken = null;
+
+        for await (const page of iter.byPage({ maxPageSize: limit, continuationToken: continuationToken || undefined })) {
+            for (const entity of page) {
+                rows.push(entity);
+            }
+            nextToken = page.continuationToken || null;
+            break;
+        }
+
+        return { rows, continuationToken: nextToken };
+    } catch (err) {
+        context.log.warn(`[SessionMetrics] Could not read paginated ${SESSION_METRICS_TABLE}: ${err.message}`);
+        return { rows: [], continuationToken: null };
+    }
+}
+
 function createSubjectDailyBucket(date, subjectId) {
     return {
         date, subjectId,
@@ -319,6 +351,12 @@ function computeCostSpikeAlert(daily) {
     if (avgCost < MIN_COST_THRESHOLD || todayCost <= avgCost * 2) return null;
     const delta = Math.round(((todayCost - avgCost) / avgCost) * 100);
     return { detected: true, delta, todayAvg: todayCost, sevenDayAvg: avgCost };
+}
+
+function normalizeLimit(value, fallback = 1000) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+    return Math.min(Math.max(Math.floor(parsed), 1), 1000);
 }
 
 function safeObjectKey(key) {
@@ -1569,8 +1607,8 @@ app.http('update-material-text', {
 });
 
 // ── GET /api/director/session-metrics-history ─────────────────────────
-// Devuelve el histórico de sesiones (sin eventType material-upload).
-// Acepta subjectId opcional para filtrar por materia.
+// Devuelve el histórico de sesiones con paginación por cursor.
+// Acepta subjectId, limit y continuationToken opcionales.
 app.http('get-director-session-metrics-history', {
     methods: ['GET'],
     authLevel: 'anonymous',
@@ -1585,34 +1623,57 @@ app.http('get-director-session-metrics-history', {
         }
 
         const subjectId = (request.query.get('subjectId') || '').trim();
-        const rows = await loadSessionMetricsRows(context);
-
-        const history = [];
-        for (const row of rows) {
-            const eventType = String(row?.eventType || '').trim();
-            if (eventType === 'material-upload') continue;
-
-            if (subjectId) {
-                const sId = String(row?.subjectId || '').trim();
-                if (sId !== subjectId) continue;
+        const limit = normalizeLimit(request.query.get('limit'), 1000);
+        const rawToken = request.query.get('continuationToken') || '';
+        let continuationToken = null;
+        if (rawToken) {
+            try {
+                const decoded = Buffer.from(rawToken, 'base64').toString('utf-8');
+                const parsed = JSON.parse(decoded);
+                if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+                    throw new Error('token must be an object');
+                }
+                continuationToken = parsed;
+            } catch {
+                return {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ error: 'Invalid continuation token' }),
+                };
             }
-
-            const entry = {
-                timestamp: row.timestamp || row.Timestamp || '',
-                subjectId: row.subjectId || '',
-                classId: row.classId || '',
-                promptTokens: Number(row.promptTokens || 0),
-                completionTokens: Number(row.completionTokens || 0),
-                totalTokens: Number(row.totalTokens || 0),
-                sessionId: row.sessionId || '',
-            };
-            history.push(entry);
         }
+
+        const result = await loadSessionMetricsRowsPaginated(context, {
+            limit,
+            continuationToken,
+            subjectId: subjectId || undefined,
+        });
+
+        const history = result.rows
+            .filter(row => String(row?.eventType || '').trim() !== 'material-upload')
+            .map(row => ({
+            timestamp: row.timestamp || row.Timestamp || '',
+            subjectId: row.subjectId || '',
+            classId: row.classId || '',
+            promptTokens: Number(row.promptTokens || 0),
+            completionTokens: Number(row.completionTokens || 0),
+            totalTokens: Number(row.totalTokens || 0),
+            sessionId: row.sessionId || '',
+        }));
+
+        const nextToken = result.continuationToken
+            ? Buffer.from(JSON.stringify(result.continuationToken)).toString('base64')
+            : null;
 
         return {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ history, total: history.length }),
+            body: JSON.stringify({
+                history,
+                total: history.length,
+                continuationToken: nextToken,
+                hasMore: nextToken !== null,
+            }),
         };
     }
 });
