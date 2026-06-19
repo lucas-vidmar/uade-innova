@@ -58,3 +58,9 @@
 - Cross-tab broadcast toasts bypass the 3s grouping buffer — receiving tab shows individual toasts instead of grouped; creates UX inconsistency between polling tab and broadcast-receiving tab [processing-notifications.js:89-92]
 - No subjectId validation against current auth context in handleBroadcast — all tabs share same auth, but defensive check would prevent edge cases [processing-notifications.js:55-96]
 - Non-terminal value in broadcast payload defaults to error toast — graceful fallback is acceptable, but unexpected values should be handled explicitly [processing-notifications.js:89-93]
+
+## Deferred from: review of spec-3-169-context-selection-guardrail (2026-06-19)
+
+- Accessibility: warning div has no `role="alert"` or `aria-live` region — screen readers won't announce dynamic appearance/disappearance [ChatWidget.js:81-86]
+- No dismiss mechanism for warning — user can't permanently dismiss it for the session (intentional per spec, but worth revisiting)
+- No i18n framework — hardcoded Spanish string will need extraction if app is ever localized

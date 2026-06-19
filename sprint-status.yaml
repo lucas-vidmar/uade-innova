@@ -33,7 +33,8 @@
 #   - done: Retrospective has been completed
 
 generated: "2026-06-05"
-last_updated: "2026-06-18"
+last_updated: "2026-06-19"
+
 project: "UADE Innova Dashboard Educativo"
 project_key: "UADE-EDU"
 tracking_system: "github-issues"
@@ -78,7 +79,7 @@ development_status:
   3-127-configurable-rag-source-weighting-by-sub: backlog
   3-128-rag-context-diversity-guardrail: backlog
   3-160-add-exact-classid-retrieval-filter-path-: done
-  3-169-context-selection-guardrail-for-large-cl: backlog
+  3-169-context-selection-guardrail-for-large-cl: review
   3-170-track-selectedclasscount-in-rag-telemetr: backlog
   3-171-improve-empty-class-selection-ux-hint-in: done
   3-188-response-rating-thumbs-up-down: backlog

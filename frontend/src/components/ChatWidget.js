@@ -8,6 +8,7 @@ import { toast } from './Toast.js';
 import { renderPrivacyModal } from './PrivacyModal.js';
 
 const FOLLOW_UP_HISTORY_WINDOW_SIZE = 4;
+const CLASS_SELECTION_WARN_THRESHOLD = 5;
 
 export function createChatWidget({ classes = [], subjectId = '', sessionId = null, initialMessages = [], highlightMessageId = null, transcriptFocus: initialTranscriptFocus = null, onNewChat, onMessageSent }) {
   const user = auth.getUser();
@@ -75,6 +76,14 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
           `).join('')}
         </div>
       </div>
+
+      <!-- Class selection warning -->
+      ${selectedClassIds.length > CLASS_SELECTION_WARN_THRESHOLD ? `
+        <div class="selection-warning">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <span>Seleccionaste muchas clases. La respuesta puede ser menos precisa. Deseleccioná algunas para mejorar los resultados.</span>
+        </div>
+      ` : ''}
 
       <!-- Empty class selection hint -->
       ${selectedClassIds.length === 0 ? `

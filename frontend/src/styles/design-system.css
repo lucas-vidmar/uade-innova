@@ -265,6 +265,21 @@ body.top-nav-mobile-open .top-nav-mobile {
   animation: fadeIn 0.3s ease;
 }
 
+.selection-warning {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  margin: 0 var(--space-4);
+  background: color-mix(in srgb, var(--color-warning) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 34%, transparent);
+  border-radius: var(--radius-md);
+  color: var(--color-warning);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  animation: fadeIn 0.3s ease;
+}
+
 .chat-chips-container {
   display: flex;
   flex-wrap: wrap;
