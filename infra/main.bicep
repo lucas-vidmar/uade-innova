@@ -106,6 +106,7 @@ var keyVaultName = 'kv-edu-${take(resourceToken, 17)}'
 
 var frontDoorName = 'afd-dashboard-${resourceToken}'
 var workbookName = guid(resourceGroup().id, 'cost-per-interaction-workbook')
+var latencyWorkbookName = guid(resourceGroup().id, 'latency-percentiles-workbook')
 var anomalousUsageAlertName = 'alert-anomalous-token-usage-${take(resourceToken, 8)}'
 var anomalousUsageActionGroupName = 'ag-token-usage-${take(resourceToken, 8)}'
 
@@ -245,6 +246,17 @@ module workbook './modules/workbook.bicep' = {
   params: {
     location: location
     workbookName: workbookName
+    appInsightsId: appInsights.outputs.appInsightsId
+    tags: tags
+  }
+}
+
+// ─── Module: Latency Percentiles Workbook (Issue #153) ──────────
+module latencyWorkbook './modules/latency-workbook.bicep' = {
+  name: 'latencyWorkbook'
+  params: {
+    location: location
+    workbookName: latencyWorkbookName
     appInsightsId: appInsights.outputs.appInsightsId
     tags: tags
   }
