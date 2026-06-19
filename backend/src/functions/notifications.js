@@ -52,18 +52,28 @@ function canMarkNotifications(principal, requestedUserId) {
 
 function resolveEffectiveUserId(request, principal, body = null) {
   const principalUserId = principal?.userId || principal?.oid || null;
+  const isDev = process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
+
   const queryUserId = request?.query?.get('userId') || null;
   const bodyUserId = body?.userId ? String(body.userId) : null;
   const requestedUserId = bodyUserId || queryUserId;
-  const isDev = process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
-  
-  // Pilot Phase: allow requestedUserId if principal is missing (since we are using CORS directly to functions)
-  if (!isDev && requestedUserId && !principalUserId) {
+
+  if (principalUserId) {
+    if (requestedUserId && principalUserId !== requestedUserId) {
+      return { userId: null, forbidden: true };
+    }
+    return { userId: principalUserId, forbidden: false };
+  }
+
+  if (isDev && requestedUserId) {
     return { userId: requestedUserId, forbidden: false };
   }
-  
-  if (!isDev && principalUserId && requestedUserId && principalUserId !== requestedUserId) return { userId: null, forbidden: true };
-  return { userId: principalUserId || requestedUserId || null, forbidden: false };
+
+  if (requestedUserId && !isDev) {
+    return { userId: null, forbidden: true };
+  }
+
+  return { userId: null, forbidden: false };
 }
 
 async function ensureSeedNotificationPersisted(subjectId, notificationId) {
@@ -92,7 +102,18 @@ app.http('get-notifications', {
     if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
     const principal = parseClientPrincipal(request);
     const { userId, forbidden } = resolveEffectiveUserId(request, principal);
-    if (forbidden) return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Notification scope does not match authenticated user' }) };
+    if (forbidden) {
+      const principalUserId = principal?.userId || principal?.oid || 'none';
+      const queryUserId = request?.query?.get('userId') || null;
+      const attemptedId = queryUserId || 'unknown';
+      context.log(`[notifications] Forbidden: userId="${attemptedId}" attempted without matching principal="${principalUserId}"`);
+      return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Notification scope does not match authenticated user' }) };
+    }
+
+    if (!userId) {
+      context.log(`[notifications] Unauthenticated request rejected`);
+      return { status: 401, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Debes iniciar sesión para ver tus notificaciones.' }) };
+    }
 
     const subjectId = request.query.get('subjectId') || null;
     const limit = normalizeLimit(request.query.get('limit'));
@@ -148,7 +169,12 @@ app.http('mark-notification-read', {
     const principal = parseClientPrincipal(request);
     const { userId, forbidden } = resolveEffectiveUserId(request, principal, body);
     const subjectId = body?.subjectId ? String(body.subjectId) : null;
-    if (forbidden) return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Notification scope does not match authenticated user' }) };
+    if (forbidden) {
+      const principalUserId = principal?.userId || principal?.oid || 'none';
+      const bodyUserId = body?.userId ? String(body.userId) : 'none';
+      context.log(`[notifications] Forbidden mark-read: body userId="${bodyUserId}" does not match principal="${principalUserId}"`);
+      return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Notification scope does not match authenticated user' }) };
+    }
     if (!notificationId || !subjectId || !userId) return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Missing required fields: notificationId, subjectId, userId' }) };
     if (!canMarkNotifications(principal, userId)) return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Student access required for own notifications' }) };
 
@@ -190,7 +216,12 @@ app.http('mark-notifications-read', {
     const subjectId = body?.subjectId ? String(body.subjectId) : null;
     const notificationIds = Array.isArray(body?.notificationIds) ? Array.from(new Set(body.notificationIds.map((item) => String(item || '').trim()).filter(Boolean))) : [];
 
-    if (forbidden) return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Notification scope does not match authenticated user' }) };
+    if (forbidden) {
+      const principalUserId = principal?.userId || principal?.oid || 'none';
+      const bodyUserId = body?.userId ? String(body.userId) : 'none';
+      context.log(`[notifications] Forbidden bulk-mark-read: body userId="${bodyUserId}" does not match principal="${principalUserId}"`);
+      return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Notification scope does not match authenticated user' }) };
+    }
     if (!subjectId || !userId) return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Missing required fields: subjectId, userId' }) };
     if (notificationIds.length === 0) return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ updated: 0 }) };
 
