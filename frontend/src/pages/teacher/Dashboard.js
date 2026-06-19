@@ -8,6 +8,7 @@ import { toast } from '../../components/Toast.js';
 import { showPromptDialog } from '../../components/Dialog.js';
 import { OnboardingEngine, isOnboardingCompleted } from '../../services/onboarding.js';
 import { TEACHER_ONBOARDING_STEPS } from './OnboardingSteps.js';
+import { renderSubjectWeights } from './SubjectWeights.js';
 
 export async function renderTeacherDashboard(container) {
   renderHeader('Mis Cátedras');
@@ -159,7 +160,12 @@ export async function renderTeacherDashboard(container) {
         `).join('') : '<div class="empty-state" style="padding:24px">No hay reportes de calidad IA para esta materia.</div>'}
       </div>
     </div>
+
+    <div id="weights-section"></div>
   `;
+
+  const weightsSection = container.querySelector('#weights-section');
+  renderSubjectWeights(weightsSection, activeSubjectId, activeSubjectName);
 
   const saveBtn = container.querySelector('#deadline-save');
   saveBtn?.addEventListener('click', async () => {

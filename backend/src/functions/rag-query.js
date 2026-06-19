@@ -15,6 +15,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { listMaterialsBySubject } from '../services/state-store.js';
 import { getEnrollment, getConsentStatus } from '../services/state-store.js';
 import { getMaterialPriority } from '../services/material-classification.js';
+import { getSubjectWeights, DEFAULT_WEIGHTS } from '../services/subject-weights.js';
 const MAX_RAG_CHUNKS = 4;
 const RETRIEVAL_CANDIDATES = 10;
 const MAX_CHUNKS_PER_SOURCE = 2;
@@ -22,12 +23,7 @@ const MIN_HISTORY_TURNS = 3;
 const MAX_HISTORY_TURNS = 5;
 const DEFAULT_HISTORY_TURNS = 4;
 
-const MATERIAL_TYPE_WEIGHT = {
-    notes: 1.35,
-    bibliography: 1.1,
-    transcript: 1,
-    presentation: 0.95,
-};
+const MATERIAL_TYPE_WEIGHT = { ...DEFAULT_WEIGHTS };
 
 const MATERIAL_PRIORITY_WEIGHT = {
     primary: 1,
@@ -74,8 +70,9 @@ function normalizeConversationHistory(rawHistory, requestedWindowSize) {
         .slice(-boundedWindow);
 }
 
-function getMaterialWeight(materialType) {
-    return MATERIAL_TYPE_WEIGHT[materialType] || 1;
+function getMaterialWeight(materialType, customWeights) {
+    const weights = customWeights || MATERIAL_TYPE_WEIGHT;
+    return weights[materialType] || 1;
 }
 
 function getPriorityWeight(materialPriority) {
@@ -88,13 +85,13 @@ function resolveMaterialPriority(metadata = {}, priorityMap = {}) {
     return getMaterialPriority(metadata.materialType, override);
 }
 
-function rankMatches(matches = [], priorityMap = {}) {
+function rankMatches(matches = [], priorityMap = {}, materialWeights) {
     return [...matches]
         .map(match => {
             const materialType = match?.metadata?.materialType;
             const materialPriority = resolveMaterialPriority(match?.metadata, priorityMap);
             const baseScore = Number(match?.score || 0);
-            const weightedScore = baseScore * getMaterialWeight(materialType) * getPriorityWeight(materialPriority);
+            const weightedScore = baseScore * getMaterialWeight(materialType, materialWeights) * getPriorityWeight(materialPriority);
             return {
                 ...match,
                 weightedScore,
@@ -103,8 +100,8 @@ function rankMatches(matches = [], priorityMap = {}) {
         .sort((a, b) => b.weightedScore - a.weightedScore);
 }
 
-function buildHybridContext(matches = [], maxChunks = MAX_RAG_CHUNKS, priorityMap = {}) {
-    const ranked = rankMatches(matches, priorityMap);
+function buildHybridContext(matches = [], maxChunks = MAX_RAG_CHUNKS, priorityMap = {}, materialWeights) {
+    const ranked = rankMatches(matches, priorityMap, materialWeights);
     if (ranked.length <= maxChunks) return ranked;
 
     const selected = [];
@@ -471,6 +468,15 @@ app.http('rag-query', {
             return jsonResponse(200, { id: interactionId, answer: verifiedAnswerText, sources: verifiedSources, verified: true, verifiedBy: verifiedMatch.metadata?.teacherId }, correlationId);
         }
 
+        // ── 3c. Cargar pesos de material type por materia ────────
+        let materialWeights = null;
+        try {
+            const weightResult = await getSubjectWeights(subjectId);
+            materialWeights = weightResult.weights;
+        } catch (weightErr) {
+            context.error('[RAG] Error loading subject weights (non-blocking):', weightErr);
+        }
+
         // ── 4. Búsqueda de similitud en Pinecone ──────────────────
         let matches;
         try {
@@ -521,7 +527,7 @@ app.http('rag-query', {
             context.error('[RAG] Error obteniendo materiales para filtro/prioridad (no bloqueante):', reviewErr);
         }
 
-        matches = buildHybridContext(matches, MAX_RAG_CHUNKS, priorityMap);
+        matches = buildHybridContext(matches, MAX_RAG_CHUNKS, priorityMap, materialWeights);
         matches = diversifyBySourceFile(matches);
 
         const REFUSAL_MESSAGE = "No encontre informacion sobre eso en los materiales seleccionados.";

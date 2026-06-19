@@ -81,12 +81,21 @@ const authUtilsMocks = {
 
 const telemetryMocks = {
     trackRAGInteraction: mock.fn(async () => {}),
+    trackRAGError: mock.fn(async () => {}),
 };
 
 const stateStoreMocks = {
     getEnrollment: mock.fn(async () => ({ status: 'active' })),
     getConsentStatus: mock.fn(async () => true),
     listMaterialsBySubject: mock.fn(async () => []),
+};
+
+const subjectWeightsMocks = {
+    getSubjectWeights: mock.fn(async () => ({
+        weights: { notes: 1.35, bibliography: 1.1, transcript: 1.0, presentation: 0.95 },
+        defaults: true,
+    })),
+    DEFAULT_WEIGHTS: { notes: 1.35, bibliography: 1.1, transcript: 1.0, presentation: 0.95 },
 };
 
 // Mock dependencies
@@ -97,6 +106,7 @@ mock.module('../services/prompts.js', { namedExports: promptsMocks });
 mock.module('../services/auth-utils.js', { namedExports: authUtilsMocks });
 mock.module('../services/telemetry.js', { namedExports: telemetryMocks });
 mock.module('../services/state-store.js', { namedExports: stateStoreMocks });
+mock.module('../services/subject-weights.js', { namedExports: subjectWeightsMocks });
 
 // Mock @azure/functions to capture the handler
 let capturedHandler;
@@ -780,4 +790,118 @@ test('rag-query should gracefully fall through when verified search errors', asy
         const args = Array.isArray(c) ? c : (c.arguments || []);
         return args.some(a => String(a).includes('non-blocking'));
     }), true);
+});
+
+test('rag-query should use custom subject weights when configured', async () => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.generateEmbedding.mock.resetCalls();
+    for (let i = 0; i < 3; i++) { try { await openaiMocks.chatCompletion('drain'); } catch {} }
+    openaiMocks.chatCompletion.mock.resetCalls();
+    for (let i = 0; i < 3; i++) { try { await openaiMocks.generateEmbedding('drain'); } catch {} }
+    openaiMocks.generateEmbedding.mock.resetCalls();
+
+    subjectWeightsMocks.getSubjectWeights.mock.mockImplementation(async () => ({
+        weights: { notes: 2.5, bibliography: 1.0, transcript: 1.0, presentation: 0.5 },
+        defaults: false,
+    }));
+
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter, topK) => {
+        if (filter?.materialType?.$eq === 'verified-answer') return [];
+        return [
+            { score: 0.8, metadata: { materialType: 'notes', text: 'Apunte clase', classIds: ['class1'], chunkIndex: 0, sourceFilename: 'apunte.pdf' } },
+            { score: 0.8, metadata: { materialType: 'presentation', text: 'Slide clase', classIds: ['class1'], chunkIndex: 0, sourceFilename: 'slide.pdf' } },
+        ];
+    });
+
+    openaiMocks.chatCompletion.mock.mockImplementation(async () => ({
+        content: 'Respuesta con pesos personalizados.',
+        usage: { prompt_tokens: 50, completion_tokens: 50, total_tokens: 100 },
+    }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = {
+        json: async () => ({ question: '¿Qué es?', subjectId: 'materia-pesos', classIds: ['class1'] }),
+        headers: new Map(),
+        user: { id: 'test-user' },
+    };
+
+    await capturedHandler(mockRequest, mockContext);
+    const messages = openaiMocks.chatCompletion.mock.calls[0]?.arguments[0];
+    const contextText = messages?.find(m => m.role === 'system')?.content || '';
+    assert.ok(contextText.includes('apunte.pdf'), 'Context should contain higher-weighted notes chunk');
+    assert.strictEqual(subjectWeightsMocks.getSubjectWeights.mock.callCount() >= 1, true);
+});
+
+test('rag-query should fall back to default weights when no subject config exists', async () => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.generateEmbedding.mock.resetCalls();
+    for (let i = 0; i < 3; i++) { try { await openaiMocks.chatCompletion('drain'); } catch {} }
+    openaiMocks.chatCompletion.mock.resetCalls();
+    for (let i = 0; i < 3; i++) { try { await openaiMocks.generateEmbedding('drain'); } catch {} }
+    openaiMocks.generateEmbedding.mock.resetCalls();
+
+    subjectWeightsMocks.getSubjectWeights.mock.mockImplementation(async () => ({
+        weights: { notes: 1.35, bibliography: 1.1, transcript: 1.0, presentation: 0.95 },
+        defaults: true,
+    }));
+
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter, topK) => {
+        if (filter?.materialType?.$eq === 'verified-answer') return [];
+        return [{ score: 0.8, metadata: { materialType: 'notes', text: 'Apunte default', classIds: ['class1'], chunkIndex: 0, sourceFilename: 'default.pdf' } }];
+    });
+
+    openaiMocks.chatCompletion.mock.mockImplementation(async () => ({
+        content: 'Respuesta con pesos por defecto.',
+        usage: { prompt_tokens: 50, completion_tokens: 50, total_tokens: 100 },
+    }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = {
+        json: async () => ({ question: '¿Qué es?', subjectId: 'materia-sin-pesos', classIds: ['class1'] }),
+        headers: new Map(),
+        user: { id: 'test-user' },
+    };
+
+    await capturedHandler(mockRequest, mockContext);
+    const calls = subjectWeightsMocks.getSubjectWeights.mock.calls;
+    const lastCall = calls[calls.length - 1];
+    assert.strictEqual(lastCall.arguments[0], 'materia-sin-pesos');
+    const body = JSON.parse((await capturedHandler(mockRequest, mockContext)).body);
+    assert.ok(body.answer);
+});
+
+test('rag-query should handle subject weights service error gracefully', async () => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.generateEmbedding.mock.resetCalls();
+    for (let i = 0; i < 3; i++) { try { await openaiMocks.chatCompletion('drain'); } catch {} }
+    openaiMocks.chatCompletion.mock.resetCalls();
+    for (let i = 0; i < 3; i++) { try { await openaiMocks.generateEmbedding('drain'); } catch {} }
+    openaiMocks.generateEmbedding.mock.resetCalls();
+
+    subjectWeightsMocks.getSubjectWeights.mock.mockImplementation(async () => { throw new Error('Storage timeout'); });
+
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter, topK) => {
+        if (filter?.materialType?.$eq === 'verified-answer') return [];
+        return [{ score: 0.8, metadata: { materialType: 'notes', text: 'Apunte fallback', classIds: ['class1'], chunkIndex: 0, sourceFilename: 'fallback.pdf' } }];
+    });
+
+    openaiMocks.chatCompletion.mock.mockImplementation(async () => ({
+        content: 'Respuesta fallback.',
+        usage: { prompt_tokens: 50, completion_tokens: 50, total_tokens: 100 },
+    }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = {
+        json: async () => ({ question: '¿Qué es?', subjectId: 'materia-error', classIds: ['class1'] }),
+        headers: new Map(),
+        user: { id: 'test-user' },
+    };
+
+    await capturedHandler(mockRequest, mockContext);
+    const errorLogged = mockContext.error.mock.calls.some(c => {
+        const args = Array.isArray(c) ? c : (c.arguments || []);
+        return args.some(a => String(a).includes('non-blocking'));
+    });
+    assert.strictEqual(errorLogged, true, 'Weight loading error should be logged as non-blocking');
+    assert.strictEqual(openaiMocks.chatCompletion.mock.callCount(), 1, 'RAG should still proceed after weight error');
 });

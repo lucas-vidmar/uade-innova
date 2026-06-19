@@ -2054,4 +2054,33 @@ async getTeacherAiFeedbackAlerts(subjectId, limit = 10) {
             });
             return res.json();
         },
+
+    // ── Subject Source Weights (Issue #127) ─────────────────────
+    async getSubjectWeights(subjectId) {
+            if (!subjectId) return { data: { notes: 1.35, bibliography: 1.1, transcript: 1.0, presentation: 0.95 }, defaults: true };
+            try {
+                const res = await fetchWithTimeout(`${BASE_URL}/subject-weights/${encodeURIComponent(subjectId)}`, { timeout: 4000 });
+                if (!res.ok) return null;
+                const json = await res.json();
+                return { data: json?.data, defaults: json?.defaults };
+            } catch (err) {
+                console.error('[API] getSubjectWeights failed:', err);
+                return null;
+            }
+        },
+
+    async saveSubjectWeights(subjectId, weights) {
+            if (!subjectId) throw new Error('subjectId is required');
+            const res = await apiFetch(`${BASE_URL}/subject-weights/${encodeURIComponent(subjectId)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ weights }),
+            });
+            if (!res.ok) {
+                let message = 'Error al guardar la ponderación de fuentes';
+                try { const err = await res.json(); if (err?.error) message = err.error; } catch {}
+                throw new Error(message);
+            }
+            return res.json();
+        },
       };
