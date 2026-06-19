@@ -215,6 +215,28 @@ function resolveSelectedClassCount(classIds) {
     return new Set(classIds.filter(id => id && id !== 'all')).size;
 }
 
+function resolveSourceMix(sources) {
+    if (!sources || sources.length === 0) return 'none';
+
+    const types = new Set(sources.map(s => s?.materialType).filter(Boolean));
+    if (types.size === 0) return 'unknown';
+
+    const hasNotes = types.has('notes');
+    const hasBibliography = types.has('bibliography');
+    const hasTranscript = types.has('transcript');
+    const hasPresentation = types.has('presentation');
+    const hasOther = [...types].some(t => !['notes', 'bibliography', 'transcript', 'presentation'].includes(t));
+
+    if (hasNotes && hasBibliography && types.size === 2) return 'notes+bibliography';
+    if (hasNotes && types.size === 1) return 'notes-only';
+    if (hasBibliography && types.size === 1) return 'bibliography-only';
+    if (hasTranscript && types.size === 1) return 'transcript-only';
+    if (hasPresentation && types.size === 1) return 'presentation-only';
+    if (hasOther) return 'mixed-other';
+
+    return 'mixed-other';
+}
+
 function handleErrorResponse(status, message, category, isStream, correlationId) {
     if (isStream) {
         const encoder = new TextEncoder();
@@ -560,6 +582,7 @@ ${contextText}
                             firstTokenAt,
                             filterType,
                             selectedClassCount,
+                            sourceMix: resolveSourceMix(sources),
                         }).catch(err => context.error('[Telemetry] Error emitting RAGInteraction event from stream:', err));
 
 
@@ -639,6 +662,8 @@ ${contextText}
         // Accumulate total tokens for this interaction (embedding + chat)
         const totalInteractionTokens = (embeddingUsage?.total_tokens || 0) + (chatUsage?.total_tokens || 0);
 
+        const sourceMix = resolveSourceMix(matches.map(m => ({ materialType: m.metadata?.materialType })));
+
         trackRAGInteraction({
             userId,
             subjectId,
@@ -650,6 +675,7 @@ ${contextText}
             interactionId: uuidv4(),
             filterType,
             selectedClassCount: resolveSelectedClassCount(classIds),
+            sourceMix,
         }).catch(err => context.error('[Telemetry] Error emitting RAGInteraction event:', err));
 
         // ── 7. Construir respuesta con fuentes ────────────────────

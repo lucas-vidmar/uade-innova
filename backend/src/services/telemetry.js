@@ -58,6 +58,7 @@ async function getClient() {
  * @param {string} [params.interactionId]   - Unique ID for this chat turn
  * @param {string} [params.firstTokenAt]    - ISO timestamp when first SSE token was emitted
  * @param {number} [params.selectedClassCount] - Number of unique classes selected for context
+ * @param {string} [params.sourceMix] - Classification of material types used in the response (e.g. 'notes+bibliography', 'notes-only', 'mixed-other')
  */
 export async function trackRAGInteraction({
     userId,
@@ -72,6 +73,7 @@ export async function trackRAGInteraction({
     firstTokenAt,
     filterType,
     selectedClassCount,
+    sourceMix,
 }) {
     const client = await getClient();
     if (!client) return;
@@ -85,6 +87,7 @@ export async function trackRAGInteraction({
             interactionId: interactionId || 'unknown',
             firstTokenAt: firstTokenAt || null,
             filterType: filterType || 'unknown',
+            sourceMix: sourceMix || 'unknown',
         },
         measurements: {
             promptTokens: promptTokens || 0,
