@@ -29,6 +29,17 @@ test('main.bicep wires anomalous usage alert behind notification email', async (
   assert.match(content, /workspaceId:\s*appInsights\.outputs\.logAnalyticsWorkspaceId/);
   assert.match(content, /notificationEmail:\s*notificationEmail/);
   assert.match(content, /subjectTokenThreshold:\s*500000/);
+  assert.match(content, /warningTokenThreshold:\s*750000/);
+});
+
+test('warning tier alert rule is defined with 750K threshold and severity 1', async () => {
+  const content = await readRepoFile('infra/modules/anomalous-usage-alert.bicep');
+
+  assert.match(content, /param\s+warningTokenThreshold\s+int\s*=\s*750000/);
+  assert.match(content, /warningUsageRule/);
+  assert.match(content, /'\$\{scheduledQueryRuleName\}-warning'/);
+  assert.match(content, /severity:\s*1/);
+  assert.match(content, /where\s+tokens24h\s*>\s*\$\{warningTokenThreshold\}/);
 });
 
 test('per-subject anomalous usage alert rule is defined with lower threshold and subjectId grouping', async () => {

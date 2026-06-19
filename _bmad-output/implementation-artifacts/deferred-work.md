@@ -65,6 +65,12 @@
 - No dismiss mechanism for warning — user can't permanently dismiss it for the session (intentional per spec, but worth revisiting)
 - No i18n framework — hardcoded Spanish string will need extraction if app is ever localized
 
+## Deferred from: adversarial review of gh-99-tiered-token-usage-alerts (2026-06-19)
+
+- Severity inversion — warning (sev 1) is numerically more severe than "critical" (sev 2) in Azure Monitor's scale (0=Critical, 1=Warning, 2=Informational). Pre-existing, but worth fixing so 3-tier alert becomes 1=Warning (750k) → 0=Critical (1M). [anomalous-usage-alert.bicep:56]
+- `>` vs `>=` at exact threshold boundaries — all three rules use strict greater-than, so exactly 750K or 1M tokens would not fire. Pre-existing pattern across all rules. [anomalous-usage-alert.bicep:79]
+- Hardcoded threshold literal in critical query — `where tokens24h > 1000000` instead of using `${tokenThreshold}` var. Changing the var would have no effect. Pre-existing, not introduced by this change. [anomalous-usage-alert.bicep:79]
+
 ## Deferred from: code review of gh-120-rag-error-telemetry-category (2026-06-19)
 
 - All telemetry `trackEvent` functions lack `client.flush()` on Consumption plan — `trackRAGInteraction`, `trackDispatcherRun`, and other sibling functions also skip flush; should be fixed holistically across telemetry.js [telemetry.js]

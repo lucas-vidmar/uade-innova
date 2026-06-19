@@ -24,6 +24,9 @@ param tags object = {}
 @description('Threshold for per-subject token anomaly alert (tokens per userId+subjectId over 24h).')
 param subjectTokenThreshold int = 500000
 
+@description('Threshold for warning-tier token anomaly alert (tokens per user over 24h, before critical threshold).')
+param warningTokenThreshold int = 750000
+
 var tokenThreshold = 1000000
 
 resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
@@ -168,8 +171,70 @@ union isfuzzy=true ragFromCustomEvents, ragFromAppEvents
   }
 }
 
+resource warningUsageRule 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = {
+  name: '${scheduledQueryRuleName}-warning'
+  location: location
+  tags: tags
+  properties: {
+    description: 'Triggers when a single user exceeds ${warningTokenThreshold} tokens over the last 24 hours (warning tier before critical threshold).'
+    displayName: 'Elevated token usage (>${warningTokenThreshold} tokens / 24h per user)'
+    severity: 1
+    enabled: true
+    scopes: [
+      workspaceId
+    ]
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT24H'
+    criteria: {
+      allOf: [
+        {
+          query: '''
+let ragFromCustomEvents =
+customEvents
+| where name == "RAGInteraction"
+| project timestamp, userId=tostring(customDimensions.userId), totalTokens=todouble(customMeasurements.totalTokens);
+let ragFromAppEvents =
+AppEvents
+| where Name == "RAGInteraction"
+| project timestamp=TimeGenerated, userId=tostring(Properties.userId), totalTokens=todouble(Measurements.totalTokens);
+union isfuzzy=true ragFromCustomEvents, ragFromAppEvents
+| where timestamp >= ago(24h)
+| where isnotempty(userId)
+| summarize tokens24h = sum(coalesce(totalTokens, 0.0)) by userId
+| where tokens24h > ${warningTokenThreshold}
+| project userId, tokens24h
+'''
+          timeAggregation: 'Count'
+          operator: 'GreaterThanOrEqual'
+          threshold: 1
+          dimensions: [
+            {
+              name: 'userId'
+              operator: 'Include'
+              values: ['*']
+            }
+          ]
+          failingPeriods: {
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
+          }
+        }
+      ]
+    }
+    autoMitigate: true
+    muteActionsDuration: 'PT1H'
+    actions: {
+      actionGroups: [
+        actionGroup.id
+      ]
+    }
+  }
+}
+
 output actionGroupId string = actionGroup.id
 output scheduledQueryRuleId string = anomalousUsageRule.id
 output perSubjectScheduledQueryRuleId string = perSubjectUsageRule.id
+output warningScheduledQueryRuleId string = warningUsageRule.id
 output threshold int = tokenThreshold
 output subjectTokenThresholdValue int = subjectTokenThreshold
+output warningTokenThresholdValue int = warningTokenThreshold
