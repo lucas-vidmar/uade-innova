@@ -152,7 +152,9 @@ app.http('get-notifications', {
       try { persisted = await notificationStore.listNotificationsBySubject(subjectId); } catch (err) { context.error(`[notifications] error loading persisted notifications for ${subjectId}: ${err.message}`); }
     }
 
-    let data = [...persisted, ...MOCK_NOTIFICATIONS]
+    const persistedIds = new Set(persisted.map((n) => n.id));
+    const mockOnly = MOCK_NOTIFICATIONS.filter((n) => !persistedIds.has(n.id));
+    let data = [...persisted, ...mockOnly]
       .filter((item) => !subjectId || item.subjectId === subjectId)
       .filter((item) => canReceiveNotification(item, userId))
       .map((item, idx) => asPublicNotification(item, idx, userId))
@@ -272,7 +274,9 @@ app.http('stream-notifications', {
         let snapshot;
         if (subjectId) {
           const persisted = await notificationStore.listNotificationsBySubject(subjectId).catch(() => []);
-          const allItems = [...persisted, ...MOCK_NOTIFICATIONS]
+          const persistedIdsForStream = new Set(persisted.map((n) => n.id));
+          const mockOnlyForStream = MOCK_NOTIFICATIONS.filter((n) => !persistedIdsForStream.has(n.id));
+          const allItems = [...persisted, ...mockOnlyForStream]
             .filter((item) => item.subjectId === subjectId)
             .filter((item) => canReceiveNotification(item, userId))
             .map((item, idx) => asPublicNotification(item, idx, userId))

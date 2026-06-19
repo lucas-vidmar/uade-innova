@@ -240,3 +240,108 @@ test('stream-notifications sends notification event for new items', async () => 
     reader.cancel('test done');
     notificationStoreMocks.listNotificationsSince.mock.mockImplementation(async () => ([]));
 });
+
+test('get-notifications should deduplicate persisted notifications over MOCK_NOTIFICATIONS with same ID', async () => {
+    notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => ([
+        {
+            id: 'notif-grade-001',
+            type: 'grade',
+            title: 'Nueva nota publicada',
+            message: 'Quiz Online — Estilos Arquitectónicos: 8.5',
+            createdAt: '2026-03-20T11:10:00Z',
+            unread: true,
+            targetHash: '#/student/tasks',
+            subjectId: 'arq-software-2026',
+            readByUserIds: ['alu-001'],
+            recipientUserIds: [],
+            origin: 'manual',
+        },
+    ]));
+
+    const response = await handlers['get-notifications'](
+        { query: new URLSearchParams({ subjectId: 'arq-software-2026', userId: 'alu-001', limit: '10' }) },
+        { log: () => {}, error: () => {} }
+    );
+
+    assert.strictEqual(response.status, 200);
+    const body = JSON.parse(response.body);
+    const gradeNotifs = body.filter((item) => item.id === 'notif-grade-001');
+    assert.strictEqual(gradeNotifs.length, 1, 'should only return one copy of the deduplicated notification');
+    assert.strictEqual(gradeNotifs[0].unread, false, 'persisted copy with readByUserIds should be authoritative');
+});
+
+test('get-notifications should return only MOCK_NOTIFICATIONS when no persisted data exists', async () => {
+    notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => ([]));
+
+    const response = await handlers['get-notifications'](
+        { query: new URLSearchParams({ subjectId: 'arq-software-2026', limit: '10' }) },
+        { log: () => {}, error: () => {} }
+    );
+
+    assert.strictEqual(response.status, 200);
+    const body = JSON.parse(response.body);
+    assert.ok(body.length > 0, 'should return mock notifications when no persisted data exists');
+    assert.ok(body.some((item) => item.id === 'notif-grade-001'), 'should include mock notification grade-001');
+});
+
+test('get-notifications should handle partial overlap correctly', async () => {
+    notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => ([
+        {
+            id: 'notif-grade-001',
+            type: 'grade',
+            title: 'Nueva nota publicada',
+            message: 'Quiz Online — Estilos Arquitectónicos: 8.5',
+            createdAt: '2026-03-20T11:10:00Z',
+            unread: true,
+            targetHash: '#/student/tasks',
+            subjectId: 'arq-software-2026',
+            readByUserIds: ['alu-001'],
+            recipientUserIds: [],
+            origin: 'manual',
+        },
+    ]));
+
+    const response = await handlers['get-notifications'](
+        { query: new URLSearchParams({ subjectId: 'arq-software-2026', limit: '10' }) },
+        { log: () => {}, error: () => {} }
+    );
+
+    assert.strictEqual(response.status, 200);
+    const body = JSON.parse(response.body);
+    const gradeNotifs = body.filter((item) => item.id === 'notif-grade-001');
+    assert.strictEqual(gradeNotifs.length, 1, 'deduped entry');
+    assert.ok(body.some((item) => item.id === 'notif-summary-001'), 'non-overlapping mock should still appear');
+});
+
+test('get-notifications after seed-and-mark-read should return deduped notification with correct unread state', async () => {
+    notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => ([
+        {
+            id: 'notif-grade-001',
+            type: 'grade',
+            title: 'Nueva nota publicada',
+            message: 'Quiz Online — Estilos Arquitectónicos: 8.5',
+            createdAt: '2026-03-20T11:10:00Z',
+            unread: true,
+            targetHash: '#/student/tasks',
+            subjectId: 'arq-software-2026',
+            readByUserIds: ['alu-001'],
+            recipientUserIds: [],
+            origin: 'manual',
+        },
+    ]));
+
+    const response = await handlers['get-notifications'](
+        { query: new URLSearchParams({ subjectId: 'arq-software-2026', userId: 'alu-001', limit: '10' }) },
+        { log: () => {}, error: () => {} }
+    );
+
+    assert.strictEqual(response.status, 200);
+    const body = JSON.parse(response.body);
+    const gradeNotifs = body.filter((item) => item.id === 'notif-grade-001');
+    assert.strictEqual(gradeNotifs.length, 1, 'deduped — mock copy suppressed');
+    assert.strictEqual(gradeNotifs[0].unread, false, 'readByUserIds from persisted copy is authoritative');
+    assert.strictEqual(gradeNotifs[0].readByUserIds, undefined, 'readByUserIds stripped from public response');
+    assert.ok(body.some((item) => item.id === 'notif-summary-001'), 'non-overlapping mock items still appear');
+    const mockMaterial = body.find((item) => item.id === 'notif-material-001');
+    assert.strictEqual(mockMaterial.unread, false, 'mock notification with unread:false preserves its read state');
+});
