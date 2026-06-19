@@ -13,6 +13,7 @@ const NAV = {
     { id: 'student-dashboard', icon: 'home', label: 'Inicio', path: '#/student/dashboard' },
     { id: 'student-tasks', icon: 'tasks', label: 'Tareas y Notas', path: '#/student/tasks' },
     { id: 'student-calendar', icon: 'calendar', label: 'Calendario', path: '#/student/calendar' },
+    { id: 'student-settings', icon: 'settings', label: 'Configuración', path: '#/student/settings' },
   ],
   teacher: [
     { id: 'teacher-dashboard', icon: 'home', label: 'Mis Catedras', path: '#/teacher/dashboard' },

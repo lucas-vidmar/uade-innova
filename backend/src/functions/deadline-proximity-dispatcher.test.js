@@ -1,9 +1,14 @@
 import { test, mock } from 'node:test';
 import assert from 'node:assert';
 
+const mockTableClient = {
+  getEntity: mock.fn(async () => { throw { statusCode: 404 }; }),
+};
+
 const storageMocks = {
   listBlobs: mock.fn(async () => []),
   loadJson: mock.fn(async () => []),
+  getTableClient: mock.fn(() => mockTableClient),
 };
 
 const notificationStoreMocks = {
@@ -11,8 +16,15 @@ const notificationStoreMocks = {
   upsertNotificationForSubject: mock.fn(async () => true),
 };
 
+const stateStoreMocks = {
+  getEnrollmentsBySubject: mock.fn(async () => ([
+    { userId: 'alu-001', status: 'active' },
+  ])),
+};
+
 mock.module('../services/storage.js', { namedExports: storageMocks });
 mock.module('../services/notification-store.js', { namedExports: notificationStoreMocks });
+mock.module('../services/state-store.js', { namedExports: stateStoreMocks });
 
 let timerHandler;
 mock.module('@azure/functions', {
@@ -38,7 +50,6 @@ test('deadline-proximity-dispatcher should emit 24h remaining reminder', async (
       dueDate: '2026-04-12T12:00:00.000Z',
     },
   ]));
-
   const now = new Date('2026-04-11T12:00:00.000Z');
   const result = await dispatcher.runDeadlineProximityDispatcher({ log: () => {}, error: () => {} }, now);
 
@@ -290,6 +301,155 @@ test('deadline-proximity-dispatcher should skip duplicate 2h escalation', async 
 
   assert.strictEqual(result.dispatched, 0);
   assert.strictEqual(after, before);
+});
+
+test('deadline-proximity-dispatcher should filter by user who disabled reminders', async () => {
+  storageMocks.listBlobs.mock.mockImplementation(async () => ['arq-software-2026.json']);
+  storageMocks.loadJson.mock.mockImplementation(async () => ([
+    {
+      id: 'deadline-pref-off',
+      title: 'TP Prefs Off',
+      subjectId: 'arq-software-2026',
+      classId: 'class-10',
+      dueDate: '2026-04-12T12:00:00.000Z',
+    },
+  ]));
+  notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => []);
+  stateStoreMocks.getEnrollmentsBySubject.mock.mockImplementation(async () => ([
+    { userId: 'user-disabled', status: 'active' },
+    { userId: 'user-enabled', status: 'active' },
+  ]));
+
+  mockTableClient.getEntity = mock.fn(async (userId) => {
+    if (userId === 'user-disabled') return { enabled: 'false', cadence: 'both' };
+    if (userId === 'user-enabled') return { enabled: 'true', cadence: 'both' };
+    throw { statusCode: 404 };
+  });
+
+  const before = notificationStoreMocks.upsertNotificationForSubject.mock.callCount();
+  const now = new Date('2026-04-11T12:00:00.000Z');
+  const result = await dispatcher.runDeadlineProximityDispatcher({ log: () => {}, error: () => {} }, now);
+
+  assert.strictEqual(result.dispatched, 1);
+  const [, payload] = notificationStoreMocks.upsertNotificationForSubject.mock.calls.at(-1).arguments;
+  assert.ok(payload.recipientUserIds.includes('user-enabled'));
+  assert.ok(!payload.recipientUserIds.includes('user-disabled'));
+});
+
+test('deadline-proximity-dispatcher should exclude 24h-only user from 48h notification', async () => {
+  storageMocks.listBlobs.mock.mockImplementation(async () => ['arq-software-2026.json']);
+  storageMocks.loadJson.mock.mockImplementation(async () => ([
+    {
+      id: 'deadline-48h-exclude',
+      title: 'TP 48h test',
+      subjectId: 'arq-software-2026',
+      classId: 'class-11',
+      dueDate: '2026-04-13T12:00:00.000Z',
+    },
+  ]));
+  notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => []);
+  stateStoreMocks.getEnrollmentsBySubject.mock.mockImplementation(async () => ([
+    { userId: 'user-24h-only', status: 'active' },
+    { userId: 'user-both', status: 'active' },
+  ]));
+
+  mockTableClient.getEntity = mock.fn(async (userId) => {
+    if (userId === 'user-24h-only') return { enabled: 'true', cadence: '24h' };
+    if (userId === 'user-both') return { enabled: 'true', cadence: 'both' };
+    return { enabled: 'true', cadence: 'both' };
+  });
+
+  const now = new Date('2026-04-11T12:00:00.000Z');
+  const result = await dispatcher.runDeadlineProximityDispatcher({ log: () => {}, error: () => {} }, now);
+
+  assert.strictEqual(result.dispatched, 1);
+  const [, payload] = notificationStoreMocks.upsertNotificationForSubject.mock.calls.at(-1).arguments;
+  assert.ok(!payload.recipientUserIds.includes('user-24h-only'), '24h-only user should NOT get 48h notification');
+  assert.ok(payload.recipientUserIds.includes('user-both'), 'both user SHOULD get 48h notification');
+});
+
+test('deadline-proximity-dispatcher should include 24h-only user in 24h window', async () => {
+  storageMocks.listBlobs.mock.mockImplementation(async () => ['arq-software-2026.json']);
+  storageMocks.loadJson.mock.mockImplementation(async () => ([
+    {
+      id: 'deadline-cadence-24h-window',
+      title: 'TP 24h Window',
+      subjectId: 'arq-software-2026',
+      classId: 'class-12',
+      dueDate: '2026-04-11T12:00:00.000Z',
+    },
+  ]));
+  notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => []);
+  stateStoreMocks.getEnrollmentsBySubject.mock.mockImplementation(async () => ([
+    { userId: 'user-24h-only', status: 'active' },
+  ]));
+
+  mockTableClient.getEntity = mock.fn(async () => ({ enabled: 'true', cadence: '24h' }));
+
+  const now = new Date('2026-04-10T12:00:00.000Z');
+  const result = await dispatcher.runDeadlineProximityDispatcher({ log: () => {}, error: () => {} }, now);
+
+  assert.strictEqual(result.dispatched, 1);
+  const [, payload] = notificationStoreMocks.upsertNotificationForSubject.mock.calls.at(-1).arguments;
+  assert.ok(payload.recipientUserIds.includes('user-24h-only'));
+});
+
+test('deadline-proximity-dispatcher should use defaults when no pref record exists', async () => {
+  storageMocks.listBlobs.mock.mockImplementation(async () => ['arq-software-2026.json']);
+  storageMocks.loadJson.mock.mockImplementation(async () => ([
+    {
+      id: 'deadline-no-pref',
+      title: 'TP Sin Prefs',
+      subjectId: 'arq-software-2026',
+      classId: 'class-13',
+      dueDate: '2026-04-12T12:00:00.000Z',
+    },
+  ]));
+  notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => []);
+  stateStoreMocks.getEnrollmentsBySubject.mock.mockImplementation(async () => ([
+    { userId: 'user-no-prefs', status: 'active' },
+  ]));
+
+  mockTableClient.getEntity = mock.fn(async () => { throw { statusCode: 404 }; });
+
+  const before = notificationStoreMocks.upsertNotificationForSubject.mock.callCount();
+  const now = new Date('2026-04-11T12:00:00.000Z');
+  const result = await dispatcher.runDeadlineProximityDispatcher({ log: () => {}, error: () => {} }, now);
+  const after = notificationStoreMocks.upsertNotificationForSubject.mock.callCount();
+
+  assert.strictEqual(result.dispatched, 1);
+  assert.strictEqual(after, before + 1);
+});
+
+test('deadline-proximity-dispatcher should skip enrollment with no active status', async () => {
+  storageMocks.listBlobs.mock.mockImplementation(async () => ['arq-software-2026.json']);
+  storageMocks.loadJson.mock.mockImplementation(async () => ([
+    {
+      id: 'deadline-inactive',
+      title: 'TP Inactive',
+      subjectId: 'arq-software-2026',
+      classId: 'class-14',
+      dueDate: '2026-04-12T12:00:00.000Z',
+    },
+  ]));
+  notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => []);
+  stateStoreMocks.getEnrollmentsBySubject.mock.mockImplementation(async () => ([
+    { userId: 'user-active', status: 'active' },
+    { userId: 'user-inactive', status: 'inactive' },
+  ]));
+
+  mockTableClient.getEntity = mock.fn(async (userId) => {
+    if (userId === 'user-active') return { enabled: 'true', cadence: 'both' };
+    throw { statusCode: 404 };
+  });
+
+  const now = new Date('2026-04-11T12:00:00.000Z');
+  const result = await dispatcher.runDeadlineProximityDispatcher({ log: () => {}, error: () => {} }, now);
+
+  assert.strictEqual(result.dispatched, 1);
+  const [, payload] = notificationStoreMocks.upsertNotificationForSubject.mock.calls.at(-1).arguments;
+  assert.ok(payload.recipientUserIds.includes('user-active'));
+  assert.ok(!payload.recipientUserIds.includes('user-inactive'));
 });
 
 test('deadline-proximity-dispatcher should use UTC timezone when specified', async () => {

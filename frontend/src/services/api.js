@@ -1791,6 +1791,38 @@ async getTeacherAiFeedbackAlerts(subjectId, limit = 10) {
             }
         },
 
+    // ── Reminder Preferences (Issue #140) ──────────────────────
+    async getReminderPreferences() {
+            if (USE_MOCK) {
+                await delay(200);
+                return { enabled: true, cadence: 'both' };
+            }
+            try {
+                const res = await apiFetch(`${BASE_URL}/reminder-preferences`);
+                if (!res.ok) return { enabled: true, cadence: 'both' };
+                return await res.json();
+            } catch (err) {
+                console.error('[API] getReminderPreferences failed:', err);
+                return { enabled: true, cadence: 'both' };
+            }
+        },
+
+    async saveReminderPreferences(data) {
+            if (USE_MOCK) return { saved: true };
+            try {
+                const res = await apiFetch(`${BASE_URL}/reminder-preferences`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data),
+                });
+                if (!res.ok) return null;
+                return await res.json();
+            } catch (err) {
+                console.error('[API] saveReminderPreferences failed:', err);
+                return null;
+            }
+        },
+
     // ── Glossary (Story 2.186) ────────────────────────────────
     async getGlossary(subjectId) {
             if (!subjectId) return null;

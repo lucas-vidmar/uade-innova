@@ -94,6 +94,19 @@ export const auth = {
         return sessionStorage.getItem('edu_logged_in') !== 'false';
     },
 
+    getReminderPreferences() {
+            return {
+                enabled: sessionStorage.getItem('edu_reminder_enabled') !== 'false',
+                cadence: sessionStorage.getItem('edu_reminder_cadence') || 'both',
+            };
+        },
+
+    setReminderPreferences(prefs) {
+            if (prefs.enabled !== undefined) sessionStorage.setItem('edu_reminder_enabled', String(prefs.enabled));
+            if (prefs.cadence) sessionStorage.setItem('edu_reminder_cadence', prefs.cadence);
+            window.dispatchEvent(new CustomEvent('auth:reminderPrefsChanged', { detail: prefs }));
+        },
+
     getConsentAccepted() {
         return localStorage.getItem('edu_consent_accepted') === 'true' || sessionStorage.getItem('edu_consent_accepted') === 'true';
     },
@@ -292,6 +305,17 @@ export const auth = {
             }
         } catch (err) {
             console.error('Error fetching user profile:', err);
+        }
+
+        // Sync reminder preferences from backend
+        try {
+            const prefs = await api.getReminderPreferences();
+            if (prefs) {
+                sessionStorage.setItem('edu_reminder_enabled', String(prefs.enabled !== false));
+                sessionStorage.setItem('edu_reminder_cadence', prefs.cadence || 'both');
+            }
+        } catch (err) {
+            console.error('Error fetching reminder preferences:', err);
         }
 
         // Sync AI consent from backend

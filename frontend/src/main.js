@@ -18,6 +18,7 @@ const ROUTES = {
     '/student/class': () => import('./pages/student/ClassDetail.js').then(m => m.renderClassDetail),
     '/student/tasks': () => import('./pages/student/Tasks.js').then(m => m.renderStudentTasks),
     '/student/calendar': () => import('./pages/student/Calendar.js').then(m => m.renderStudentCalendar),
+    '/student/settings': () => import('./pages/student/Settings.js').then(m => m.renderStudentSettings),
     '/teacher/dashboard': () => import('./pages/teacher/Dashboard.js').then(m => m.renderTeacherDashboard),
     '/teacher/classes': () => import('./pages/teacher/ClassManager.js').then(m => m.renderClassManager),
     '/teacher/upload': () => import('./pages/teacher/UploadMaterials.js').then(m => m.renderTeacherUpload),

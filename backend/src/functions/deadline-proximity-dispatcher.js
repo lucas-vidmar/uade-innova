@@ -1,10 +1,13 @@
 import { app } from '@azure/functions';
 import moment from 'moment-timezone';
-import { listBlobs, loadJson } from '../services/storage.js';
+import { listBlobs, loadJson, getTableClient } from '../services/storage.js';
 import { listNotificationsBySubject, upsertNotificationForSubject } from '../services/notification-store.js';
+import { getEnrollmentsBySubject } from '../services/state-store.js';
 
 const CONTAINER_DEADLINES = 'deadlines';
 const DEFAULT_TIMEZONE = 'America/Argentina/Buenos_Aires';
+const NOTIFICATION_PREFS_TABLE = process.env.AZURE_TABLE_NOTIFICATION_PREFERENCES || 'NotificationPreferences';
+const VALID_CADENCES = ['48h', '24h', 'both'];
 
 function resolveTimezone(deadline) {
   const tz = deadline?.timezone || process.env.DEFAULT_TIMEZONE || DEFAULT_TIMEZONE;
@@ -40,6 +43,26 @@ function isWithinThresholdWindow({ dueAt, now, thresholdHours, windowHours }) {
   const thresholdMs = thresholdHours * 60 * 60 * 1000;
   const windowMs = windowHours * 60 * 60 * 1000;
   return diffMs <= thresholdMs && diffMs > (thresholdMs - windowMs);
+}
+
+async function loadUserPreferences(userId) {
+  try {
+    const client = getTableClient(NOTIFICATION_PREFS_TABLE);
+    const entity = await client.getEntity(userId, 'deadline-reminders');
+    const enabled = entity.enabled === true || entity.enabled === 'true';
+    const cadence = VALID_CADENCES.includes(entity.cadence) ? entity.cadence : 'both';
+    return { enabled, cadence };
+  } catch {
+    return { enabled: true, cadence: 'both' };
+  }
+}
+
+function shouldNotifyForThreshold(prefs, thresholdHours) {
+  if (!prefs.enabled) return false;
+  if (prefs.cadence === 'both') return true;
+  if (prefs.cadence === '48h' && thresholdHours === 48) return true;
+  if (prefs.cadence === '24h' && thresholdHours === 24) return true;
+  return false;
 }
 
 function buildReminderNotification({ subjectId, deadline, thresholdHours, dueAt, now, timezone }) {
@@ -83,37 +106,56 @@ export async function runDeadlineProximityDispatcher(context = { log: () => {}, 
     const existing = await listNotificationsBySubject(subjectId);
     const existingIds = new Set(existing.map((item) => item.id));
 
+    const enrollments = await getEnrollmentsBySubject(subjectId);
+    const enrolledUserIds = enrollments
+      .filter((e) => e?.status === 'active')
+      .map((e) => e.userId)
+      .filter(Boolean);
+
+    const prefsCache = new Map();
+    async function getPrefs(userId) {
+      if (!prefsCache.has(userId)) {
+        prefsCache.set(userId, await loadUserPreferences(userId));
+      }
+      return prefsCache.get(userId);
+    }
+
     for (const deadline of deadlines) {
       try {
         const timezone = resolveTimezone(deadline);
         const dueAt = parseDeadlineDueAt(deadline?.dueDate, timezone);
         if (!dueAt) continue;
 
-        const thresholds = [48, 24];
-        for (const thresholdHours of thresholds) {
+        const isHighPriority = (deadline?.weight || 0) >= weightThreshold;
+        const isPending = (deadline?.status || 'pending') !== 'completed';
+
+        const thresholdHoursList = [48, 24];
+        if (isHighPriority && isPending) {
+          thresholdHoursList.push(2);
+        }
+
+        for (const thresholdHours of thresholdHoursList) {
           const withinWindow = isWithinThresholdWindow({ dueAt, now, thresholdHours, windowHours });
           if (!withinWindow) continue;
 
+          const recipientUserIds = [];
+          for (const userId of enrolledUserIds) {
+            const prefs = await getPrefs(userId);
+            if (shouldNotifyForThreshold(prefs, thresholdHours)) {
+              recipientUserIds.push(userId);
+            }
+          }
+
+          if (recipientUserIds.length === 0) continue;
+
           const notification = buildReminderNotification({ subjectId, deadline, thresholdHours, dueAt, now, timezone });
+          notification.recipientUserIds = recipientUserIds;
+
           if (existingIds.has(notification.id)) continue;
 
           await upsertNotificationForSubject(subjectId, notification);
           existingIds.add(notification.id);
           dispatched += 1;
-        }
-
-        const isHighPriority = (deadline?.weight || 0) >= weightThreshold;
-        const isPending = (deadline?.status || 'pending') !== 'completed';
-        if (isHighPriority && isPending) {
-          const withinWindow2h = isWithinThresholdWindow({ dueAt, now, thresholdHours: 2, windowHours });
-          if (withinWindow2h) {
-            const notification = buildReminderNotification({ subjectId, deadline, thresholdHours: 2, dueAt, now, timezone });
-            if (!existingIds.has(notification.id)) {
-              await upsertNotificationForSubject(subjectId, notification);
-              existingIds.add(notification.id);
-              dispatched += 1;
-            }
-          }
         }
       } catch (err) {
         context.error(`[deadline-proximity-dispatcher] subject=${subjectId} deadline=${deadline?.id || 'unknown'} timezone=${resolveTimezone(deadline)} error=${err.message}`);
