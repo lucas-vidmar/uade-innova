@@ -5,6 +5,14 @@ import { trackNotificationInteraction } from '../services/telemetry.js';
 
 const COMPLIANCE_CONTAINER = process.env.AZURE_STORAGE_CONTAINER_COMPLIANCE || 'compliance';
 const POLICY_BLOB = 'retention-policy.json';
+const COMPLIANCE_ROLES = ['Director', 'Admin', 'Security'];
+
+function isComplianceAuthorized(request) {
+  if (process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development') return true;
+  if (!validateFrontDoorId(request)) return false;
+  const principal = parseClientPrincipal(request);
+  return principal?.userRoles?.some(r => COMPLIANCE_ROLES.includes(r)) === true;
+}
 
 function buildCsv(policy, generatedAt) {
   const header = 'rule_name,enabled,action,retention_days,prefixes';
@@ -23,14 +31,8 @@ async function getPolicy() {
 }
 
 async function handleGetPolicy(request, context) {
-  if (!validateFrontDoorId(request)) {
-    return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
-  }
-  const principal = parseClientPrincipal(request);
-  const isAuthorized = principal?.userRoles?.some(r => ['Director'].includes(r))
-    || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
-  if (!isAuthorized) {
-    return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Director access required' }) };
+  if (!isComplianceAuthorized(request)) {
+    return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Director, Admin, or Security role required' }) };
   }
 
   try {
@@ -50,14 +52,8 @@ async function handleGetPolicy(request, context) {
 }
 
 async function handleExport(request, context) {
-  if (!validateFrontDoorId(request)) {
-    return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
-  }
-  const principal = parseClientPrincipal(request);
-  const isAuthorized = principal?.userRoles?.some(r => ['Director'].includes(r))
-    || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
-  if (!isAuthorized) {
-    return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Director access required' }) };
+  if (!isComplianceAuthorized(request)) {
+    return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Director, Admin, or Security role required' }) };
   }
 
   try {
@@ -73,7 +69,7 @@ async function handleExport(request, context) {
 
     const generatedAt = new Date().toISOString();
 
-    const userId = principal?.userId || 'anonymous';
+    const userId = parseClientPrincipal(request)?.userId || 'anonymous';
     trackNotificationInteraction({
       action: 'compliance_export',
       status: 'success',

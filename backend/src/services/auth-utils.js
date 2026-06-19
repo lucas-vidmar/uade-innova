@@ -37,13 +37,17 @@ export function parseClientPrincipal(request) {
         const roleMapping = {
             'director': 'Director',
             'teacher': 'Docente',
-            'student': 'Alumno'
+            'student': 'Alumno',
+            'admin': 'Admin',
+            'security': 'Security'
         };
         const mappedRole = roleMapping[mockRole] || 'Anonymous';
         const userIdMapping = {
             'director': 'dir-001',
             'teacher': 'doc-001',
-            'student': 'alu-001'
+            'student': 'alu-001',
+            'admin': 'adm-001',
+            'security': 'sec-001'
         };
         const mockUserId = eduUid || userIdMapping[mockRole] || `mock-${mockRole}`;
         
@@ -80,7 +84,7 @@ export function getAuthenticatedUser(request) {
         userId,
         sanitizedId,
         principal,
-        role: principal?.userRoles?.find(r => ['Director', 'Docente', 'Alumno'].includes(r)) || 'Anonymous'
+        role: principal?.userRoles?.find(r => ['Director', 'Docente', 'Alumno', 'Admin', 'Security'].includes(r)) || 'Anonymous'
     };
 }
 
