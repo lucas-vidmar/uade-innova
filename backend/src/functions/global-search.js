@@ -7,7 +7,7 @@ import { generateEmbedding } from '../services/ai.js';
 import { querySimilar } from '../services/vector-store.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
 import { getEnrollment } from '../services/state-store.js';
-import { resolveCorrelationId, buildDependencyHeaders, withCorrelationResponseHeaders } from '../services/correlation.js';
+import { resolveCorrelationId, resolveTraceContext, buildDependencyHeaders, withCorrelationResponseHeaders } from '../services/correlation.js';
 
 const MAX_GLOBAL_RESULTS = 12;
 
@@ -45,7 +45,8 @@ app.http('global-search', {
     route: 'global-search',
     handler: async (request, context) => {
         const correlationId = resolveCorrelationId(request);
-        const openAiHeaders = buildDependencyHeaders(correlationId);
+        const traceContext = resolveTraceContext(request);
+        const openAiHeaders = buildDependencyHeaders(correlationId, traceContext);
 
         if (!validateFrontDoorId(request)) {
             return {

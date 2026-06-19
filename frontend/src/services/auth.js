@@ -7,13 +7,29 @@ import { enrollments as enrollmentService } from './enrollments.js';
 const AI_CONSENT_KEY = 'edu_ai_consent_accepted';
 
 const CORRELATION_HEADER = 'x-correlation-id';
+const TRACEPARENT_HEADER = 'traceparent';
+
+function generateSpanId() {
+    const bytes = new Uint8Array(8);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function generateTraceParent() {
+    const traceId = crypto.randomUUID().replace(/-/g, '').toLowerCase().padEnd(32, '0').slice(0, 32);
+    const spanId = generateSpanId();
+    return `00-${traceId}-${spanId}-01`;
+}
 
 function correlationHeaders() {
     const headers = new Headers();
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
         headers.set(CORRELATION_HEADER, crypto.randomUUID());
+        headers.set(TRACEPARENT_HEADER, generateTraceParent());
     } else {
-        headers.set(CORRELATION_HEADER, `corr-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+        const ts = Date.now();
+        headers.set(CORRELATION_HEADER, `corr-${ts}-${Math.random().toString(16).slice(2)}`);
+        headers.set(TRACEPARENT_HEADER, `00-${ts.toString(16).padEnd(32, '0')}-${Math.random().toString(16).slice(2, 18)}-01`);
     }
     return headers;
 }

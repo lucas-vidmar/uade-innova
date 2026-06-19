@@ -23,6 +23,8 @@ const BASE_URL = (!isLocalRuntime && isLocalApiUrl)
             : '/api'));
 
 const CORRELATION_HEADER = 'x-correlation-id';
+const TRACEPARENT_HEADER = 'traceparent';
+const TRACESTATE_HEADER = 'tracestate';
 
 function nextCorrelationId() {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -31,10 +33,26 @@ function nextCorrelationId() {
     return `corr-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function generateSpanId() {
+    const bytes = new Uint8Array(8);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function generateTraceParent() {
+    const traceId = nextCorrelationId().replace(/-/g, '').toLowerCase().padEnd(32, '0').slice(0, 32);
+    const spanId = generateSpanId();
+    return `00-${traceId}-${spanId}-01`;
+}
+
 function withCorrelationHeaders(headers = {}) {
     const normalized = new Headers(headers || {});
     if (!normalized.has(CORRELATION_HEADER)) {
         normalized.set(CORRELATION_HEADER, nextCorrelationId());
+    }
+    if (!normalized.has(TRACEPARENT_HEADER)) {
+        const stored = window.sessionStorage.getItem('w3c_traceparent');
+        normalized.set(TRACEPARENT_HEADER, stored || generateTraceParent());
     }
 
     // Only send mock role header in local development (no real SWA auth)

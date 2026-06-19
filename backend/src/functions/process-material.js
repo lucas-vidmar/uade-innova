@@ -7,7 +7,7 @@ import { BlobServiceClient, StorageSharedKeyCredential } from '@azure/storage-bl
 import { runPipeline } from '../services/pipeline.js';
 import { saveJson } from '../services/storage.js';
 import { upsertMaterialState } from '../services/state-store.js';
-import { generateCorrelationId } from '../services/correlation.js';
+import { generateCorrelationId, resolveTraceContext } from '../services/correlation.js';
 
 const CONTAINER_MATERIALS = process.env.AZURE_STORAGE_CONTAINER_MATERIALS || 'class-materials';
 const CONTAINER_PROCESSED = 'processed';
@@ -131,6 +131,7 @@ app.storageBlob('process-material', {
         }
         const fileName = deriveFilename(metadata.filename, rawBlobName || context.triggerMetadata?.name);
 
+        const traceContext = resolveTraceContext({ headers: { get: () => null } });
         const params = {
             fileBuffer: blob,
             fileContentType: context.triggerMetadata.contentType,
@@ -141,6 +142,7 @@ app.storageBlob('process-material', {
             materialId,
             userId: metadata.userid || 'anonymous',
             correlationId: metadata.correlationid || generateCorrelationId(),
+            traceContext,
             blobUrl: context.triggerMetadata.uri || (fullBlobPath ? `https://${process.env.AZURE_STORAGE_ACCOUNT_NAME}.blob.core.windows.net/${CONTAINER_MATERIALS}/${fullBlobPath}` : ''),
         };
 

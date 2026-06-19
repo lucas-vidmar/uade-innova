@@ -19,11 +19,11 @@ const BATCH_SIZE = 20;
 /**
  * Ejecuta el pipeline completo de procesamiento de un archivo con telemetría.
  */
-export async function runPipeline({ fileBuffer, fileContentType, fileName, classIds, subjectId, materialType, materialId, userId, blobUrl, correlationId }, context) {
+export async function runPipeline({ fileBuffer, fileContentType, fileName, classIds, subjectId, materialType, materialId, userId, blobUrl, correlationId, traceContext }, context) {
     const startTime = Date.now();
     let totalTokens = 0;
     const lectureDateIso = new Date().toISOString();
-    const openAiHeaders = buildDependencyHeaders(correlationId);
+    const openAiHeaders = buildDependencyHeaders(correlationId, traceContext);
     const mt = (materialType || '').toLowerCase();
 
     try {

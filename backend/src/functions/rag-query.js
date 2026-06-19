@@ -10,7 +10,7 @@ import { getShadowPrompt } from '../services/prompts.js';
 import { trackRAGInteraction, trackRAGError } from '../services/telemetry.js';
 import { parseClientPrincipal, validateFrontDoorId, getAuthenticatedUser } from '../services/auth-utils.js';
 import { normalizeCategorizedError, ErrorCategory } from '../services/error-categories.js';
-import { resolveCorrelationId, buildDependencyHeaders, withCorrelationResponseHeaders } from '../services/correlation.js';
+import { resolveCorrelationId, resolveTraceContext, buildDependencyHeaders, withCorrelationResponseHeaders } from '../services/correlation.js';
 import { v4 as uuidv4 } from 'uuid';
 import { listMaterialsBySubject } from '../services/state-store.js';
 import { getEnrollment, getConsentStatus } from '../services/state-store.js';
@@ -324,7 +324,8 @@ app.http('rag-query', {
     route: 'rag-query',
     handler: async (request, context) => {
         const correlationId = resolveCorrelationId(request);
-        const openAiHeaders = buildDependencyHeaders(correlationId);
+        const traceContext = resolveTraceContext(request);
+        const openAiHeaders = buildDependencyHeaders(correlationId, traceContext);
         context.openAiHeaders = openAiHeaders;
 
         if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' }, correlationId);

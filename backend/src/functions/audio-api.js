@@ -3,7 +3,7 @@ import { uploadFile, downloadFile, listBlobs, loadJson } from '../services/stora
 import { generateClassAudio } from '../services/ai.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { getEnrollment } from '../services/state-store.js';
-import { resolveCorrelationId, buildDependencyHeaders, withCorrelationResponseHeaders } from '../services/correlation.js';
+import { resolveCorrelationId, resolveTraceContext, buildDependencyHeaders, withCorrelationResponseHeaders } from '../services/correlation.js';
 
 const CONTAINER_AUDIO = 'class-audio';
 const CONTAINER_SUMMARIES = 'class-summaries';
@@ -14,7 +14,8 @@ app.http('get-class-audio', {
     route: 'class-audio/{classId}',
     handler: async (request, context) => {
         const correlationId = resolveCorrelationId(request);
-        const openAiHeaders = buildDependencyHeaders(correlationId);
+        const traceContext = resolveTraceContext(request);
+        const openAiHeaders = buildDependencyHeaders(correlationId, traceContext);
 
         const classId = request.params.classId;
         const subjectId = request.query.get('subjectId');

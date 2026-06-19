@@ -2,7 +2,7 @@ import { app } from '@azure/functions';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { getTableClient } from '../services/storage.js';
 import { downloadFile } from '../services/storage.js';
-import { resolveCorrelationId, buildDependencyHeaders, withCorrelationResponseHeaders } from '../services/correlation.js';
+import { resolveCorrelationId, resolveTraceContext, buildDependencyHeaders, withCorrelationResponseHeaders } from '../services/correlation.js';
 import { v4 as uuidv4 } from 'uuid';
 
 const CONSENT_TABLE = 'UserConsent';
