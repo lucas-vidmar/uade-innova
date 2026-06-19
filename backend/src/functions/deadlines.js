@@ -23,6 +23,7 @@ function normalizeDeadline(deadline = {}) {
         subjectId: deadline.subjectId,
         classId: deadline.classId,
         dueDate: deadline.dueDate,
+        timezone: deadline.timezone || null,
         notifyOnDayBefore: deadline.notifyOnDayBefore !== false,
         notifyOnDayOf: deadline.notifyOnDayOf !== false,
         createdAt: deadline.createdAt || new Date().toISOString(),

@@ -101,3 +101,118 @@ test('timer handler should execute dispatcher without throwing', async () => {
   await timerHandler({}, { log: () => {}, error: () => {} });
   assert.ok(true);
 });
+
+test('deadline-proximity-dispatcher should emit notification with dueDateTimezone in payload', async () => {
+  storageMocks.listBlobs.mock.mockImplementation(async () => ['arq-software-2026.json']);
+  storageMocks.loadJson.mock.mockImplementation(async () => ([
+    {
+      id: 'deadline-tz-payload',
+      title: 'TP con timezone',
+      subjectId: 'arq-software-2026',
+      classId: 'class-06',
+      dueDate: '2026-04-12T12:00:00.000Z',
+      timezone: 'America/Argentina/Buenos_Aires',
+    },
+  ]));
+  notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => []);
+
+  const now = new Date('2026-04-11T12:00:00.000Z');
+  const result = await dispatcher.runDeadlineProximityDispatcher({ log: () => {}, error: () => {} }, now);
+
+  assert.strictEqual(result.dispatched, 1);
+  const [, payload] = notificationStoreMocks.upsertNotificationForSubject.mock.calls.at(-1).arguments;
+  assert.strictEqual(payload.dueDateTimezone, 'America/Argentina/Buenos_Aires');
+});
+
+test('deadline-proximity-dispatcher should handle date-only dueDate in target timezone', async () => {
+  storageMocks.listBlobs.mock.mockImplementation(async () => ['arq-software-2026.json']);
+  storageMocks.loadJson.mock.mockImplementation(async () => ([
+    {
+      id: 'deadline-dateonly',
+      title: 'TP fecha sola',
+      subjectId: 'arq-software-2026',
+      classId: 'class-07',
+      dueDate: '2026-04-13',
+      timezone: 'America/Argentina/Buenos_Aires',
+    },
+  ]));
+  notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => []);
+
+  const now = new Date('2026-04-11T03:00:00.000Z');
+  const result = await dispatcher.runDeadlineProximityDispatcher({ log: () => {}, error: () => {} }, now);
+
+  assert.strictEqual(result.dispatched, 1);
+  const [, payload] = notificationStoreMocks.upsertNotificationForSubject.mock.calls.at(-1).arguments;
+  assert.strictEqual(payload.title, 'Deadline en 48 horas');
+});
+
+test('deadline-proximity-dispatcher should fall back to default timezone when timezone missing', async () => {
+  const originalEnv = process.env.DEFAULT_TIMEZONE;
+  delete process.env.DEFAULT_TIMEZONE;
+
+  storageMocks.listBlobs.mock.mockImplementation(async () => ['arq-software-2026.json']);
+  storageMocks.loadJson.mock.mockImplementation(async () => ([
+    {
+      id: 'deadline-no-tz',
+      title: 'TP sin timezone',
+      subjectId: 'arq-software-2026',
+      classId: 'class-08',
+      dueDate: '2026-04-13T03:00:00.000Z',
+    },
+  ]));
+  notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => []);
+
+  const now = new Date('2026-04-11T03:00:00.000Z');
+  const result = await dispatcher.runDeadlineProximityDispatcher({ log: () => {}, error: () => {} }, now);
+
+  assert.strictEqual(result.dispatched, 1);
+  const [, payload] = notificationStoreMocks.upsertNotificationForSubject.mock.calls.at(-1).arguments;
+  assert.strictEqual(payload.title, 'Deadline en 48 horas');
+  assert.strictEqual(payload.dueDateTimezone, 'America/Argentina/Buenos_Aires');
+
+  if (originalEnv) process.env.DEFAULT_TIMEZONE = originalEnv;
+});
+
+test('deadline-proximity-dispatcher should fall back to default for invalid timezone', async () => {
+  storageMocks.listBlobs.mock.mockImplementation(async () => ['arq-software-2026.json']);
+  storageMocks.loadJson.mock.mockImplementation(async () => ([
+    {
+      id: 'deadline-bad-tz',
+      title: 'TP timezone inválido',
+      subjectId: 'arq-software-2026',
+      dueDate: '2026-04-13T03:00:00.000Z',
+      timezone: 'Invalid/Zone',
+    },
+  ]));
+  notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => []);
+
+  const now = new Date('2026-04-11T03:00:00.000Z');
+  const result = await dispatcher.runDeadlineProximityDispatcher({ log: () => {}, error: () => {} }, now);
+
+  assert.strictEqual(result.dispatched, 1);
+  const [, payload] = notificationStoreMocks.upsertNotificationForSubject.mock.calls.at(-1).arguments;
+  assert.strictEqual(payload.dueDateTimezone, 'America/Argentina/Buenos_Aires');
+});
+
+test('deadline-proximity-dispatcher should use UTC timezone when specified', async () => {
+  storageMocks.listBlobs.mock.mockImplementation(async () => ['arq-software-2026.json']);
+  storageMocks.loadJson.mock.mockImplementation(async () => ([
+    {
+      id: 'deadline-utc',
+      title: 'TP UTC',
+      subjectId: 'arq-software-2026',
+      classId: 'class-09',
+      dueDate: '2026-04-13T09:00:00.000Z',
+      timezone: 'UTC',
+    },
+  ]));
+  notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => []);
+
+  const now = new Date('2026-04-11T09:00:00.000Z');
+  const result = await dispatcher.runDeadlineProximityDispatcher({ log: () => {}, error: () => {} }, now);
+
+  assert.strictEqual(result.dispatched, 1);
+  const [, payload] = notificationStoreMocks.upsertNotificationForSubject.mock.calls.at(-1).arguments;
+  assert.strictEqual(payload.title, 'Deadline en 48 horas');
+  assert.strictEqual(payload.dueDateTimezone, 'UTC');
+});
