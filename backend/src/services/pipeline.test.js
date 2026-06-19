@@ -14,20 +14,21 @@ const parserMocks = {
 };
 
 const openaiMocks = {
-    generateEmbeddingsBatch: mock.fn(async () => ({ 
-        embeddings: [[0.1, 0.2], [0.3, 0.4]], 
-        usage: { total_tokens: 100 } 
+    generateEmbeddingsBatch: mock.fn(async () => ({
+        embeddings: [[0.1, 0.2], [0.3, 0.4]],
+        usage: { total_tokens: 100 }
     })),
-    generateClassSummary: mock.fn(async () => ({ 
-        content: 'summary', 
+    generateClassSummary: mock.fn(async () => ({
+        content: 'summary',
         usage: { total_tokens: 50 },
-        generatedAt: new Date().toISOString() 
+        generatedAt: new Date().toISOString()
     })),
-    generateClassMap: mock.fn(async () => ({ 
-        code: 'graph TD; A-->B', 
+    generateClassMap: mock.fn(async () => ({
+        code: 'graph TD; A-->B',
         usage: { total_tokens: 30 },
-        generatedAt: new Date().toISOString() 
-    }))
+        generatedAt: new Date().toISOString()
+    })),
+    chatCompletion: mock.fn(async () => ({ content: 'ok', usage: { total_tokens: 5 } })),
 };
 
 const vectorStoreMocks = {
@@ -38,6 +39,15 @@ const vectorStoreMocks = {
 const storageMocks = {
     saveJson: mock.fn(async () => true),
     loadJson: mock.fn(async () => null),
+    getTableClient: mock.fn(() => ({
+        createTable: mock.fn(async () => {}),
+        listEntities: mock.fn(() => ({
+            [Symbol.asyncIterator]: async function* () { yield* []; }
+        })),
+        upsertEntity: mock.fn(async () => {}),
+        getEntity: mock.fn(async () => ({})),
+        deleteEntity: mock.fn(async () => {})
+    })),
 };
 
 const stateStoreMocks = {

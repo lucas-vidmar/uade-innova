@@ -13,25 +13,26 @@ const openaiMocks = {
     }))
 };
 
-const vectorStoreMocks = {
-    querySimilar: mock.fn(async (embedding, filter, topK) => {
-        // Return empty for verified-answer pre-search to avoid intercepting standard search
-        if (filter?.materialType?.$eq === 'verified-answer') {
-            return [];
-        }
-        return [
-            {
-                score: 0.9,
-                metadata: {
-                    sourceFilename: 'clase1.pdf',
-                    text: 'Contenido de la clase 1',
-                    materialType: 'pdf',
-                    classIds: ['class1'],
-                    chunkIndex: 0
-                }
+const defaultQuerySimilarImpl = async (embedding, filter, topK) => {
+    if (filter?.materialType?.$eq === 'verified-answer') {
+        return [];
+    }
+    return [
+        {
+            score: 0.9,
+            metadata: {
+                sourceFilename: 'clase1.pdf',
+                text: 'Contenido de la clase 1',
+                materialType: 'pdf',
+                classIds: ['class1'],
+                chunkIndex: 0
             }
-        ];
-    }),
+        }
+    ];
+};
+
+const vectorStoreMocks = {
+    querySimilar: mock.fn(defaultQuerySimilarImpl),
     getIndexStats: mock.fn(async () => ({ totalVectorCount: 0, indexFullness: 0, namespaces: {} }))
 };
 
@@ -192,9 +193,12 @@ test('rag-query should return the refusal message if OpenAI returns it', async (
 
 test('rag-query should use correct refusal string when vector search returns empty', async (t) => {
     vectorStoreMocks.querySimilar.mock.resetCalls();
-    // Verified pre-search returns empty, standard search also returns empty
     vectorStoreMocks.querySimilar.mock.mockImplementation(async () => []);
     openaiMocks.chatCompletion.mock.resetCalls();
+
+    t.after(() => {
+        vectorStoreMocks.querySimilar.mock.mockImplementation(defaultQuerySimilarImpl);
+    });
 
     const mockContext = {
         log: mock.fn(),
@@ -396,50 +400,54 @@ test('rag-query should request extra retrieval candidates for hybrid ranking', a
     assert.strictEqual(vectorStoreMocks.querySimilar.mock.calls[1].arguments[2], 10);
 });
 
-test('rag-query should build mixed context and prioritize teacher notes over bibliography', async () => {
+test('rag-query should build mixed context and prioritize teacher notes over bibliography', async (t) => {
     openaiMocks.chatCompletion.mock.resetCalls();
     vectorStoreMocks.querySimilar.mock.resetCalls();
-    // First call: verified pre-search returns empty
-    vectorStoreMocks.querySimilar.mock.mockImplementationOnce(async () => []);
-    // Second call: standard search with mixed types
-    vectorStoreMocks.querySimilar.mock.mockImplementationOnce(async () => [
-        {
-            id: 'biblio-1',
-            score: 0.89,
-            metadata: {
-                sourceFilename: 'bibliografia.pdf',
-                text: 'Definicion academica en bibliografia.',
-                materialType: 'bibliography',
-                materialPriority: 'secondary',
-                classIds: ['class1'],
-                chunkIndex: 2,
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter, topK) => {
+        if (filter?.materialType?.$eq === 'verified-answer') return [];
+        return [
+            {
+                id: 'biblio-1',
+                score: 0.89,
+                metadata: {
+                    sourceFilename: 'bibliografia.pdf',
+                    text: 'Definicion academica en bibliografia.',
+                    materialType: 'bibliography',
+                    materialPriority: 'secondary',
+                    classIds: ['class1'],
+                    chunkIndex: 2,
+                },
             },
-        },
-        {
-            id: 'notes-1',
-            score: 0.82,
-            metadata: {
-                sourceFilename: 'notas-docente.docx',
-                text: 'Nota del docente con prioridad conceptual.',
-                materialType: 'notes',
-                materialPriority: 'primary',
-                classIds: ['class1'],
-                chunkIndex: 1,
+            {
+                id: 'notes-1',
+                score: 0.82,
+                metadata: {
+                    sourceFilename: 'notas-docente.docx',
+                    text: 'Nota del docente con prioridad conceptual.',
+                    materialType: 'notes',
+                    materialPriority: 'primary',
+                    classIds: ['class1'],
+                    chunkIndex: 1,
+                },
             },
-        },
-        {
-            id: 'transcript-1',
-            score: 0.93,
-            metadata: {
-                sourceFilename: 'transcript.txt',
-                text: 'Transcripcion complementaria.',
-                materialType: 'transcript',
-                materialPriority: 'primary',
-                classIds: ['class1'],
-                chunkIndex: 5,
+            {
+                id: 'transcript-1',
+                score: 0.93,
+                metadata: {
+                    sourceFilename: 'transcript.txt',
+                    text: 'Transcripcion complementaria.',
+                    materialType: 'transcript',
+                    materialPriority: 'primary',
+                    classIds: ['class1'],
+                    chunkIndex: 5,
+                },
             },
-        },
-    ]);
+        ];
+    });
+
+    t.after(() => {
+        vectorStoreMocks.querySimilar.mock.mockImplementation(defaultQuerySimilarImpl);
+    });
 
     const mockContext = {
         log: mock.fn(),
@@ -468,37 +476,41 @@ test('rag-query should build mixed context and prioritize teacher notes over bib
     );
 });
 
-test('rag-query should expose material priority in returned sources', async () => {
+test('rag-query should expose material priority in returned sources', async (t) => {
     vectorStoreMocks.querySimilar.mock.resetCalls();
-    // First call: verified pre-search returns empty
-    vectorStoreMocks.querySimilar.mock.mockImplementationOnce(async () => []);
-    // Second call: standard search with priority data
-    vectorStoreMocks.querySimilar.mock.mockImplementationOnce(async () => [
-        {
-            id: 'biblio-2',
-            score: 0.9,
-            metadata: {
-                sourceFilename: 'referencia.pdf',
-                text: 'Texto bibliografico',
-                materialType: 'bibliography',
-                materialPriority: 'secondary',
-                classIds: ['class1'],
-                chunkIndex: 0,
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter, topK) => {
+        if (filter?.materialType?.$eq === 'verified-answer') return [];
+        return [
+            {
+                id: 'biblio-2',
+                score: 0.9,
+                metadata: {
+                    sourceFilename: 'referencia.pdf',
+                    text: 'Texto bibliografico',
+                    materialType: 'bibliography',
+                    materialPriority: 'secondary',
+                    classIds: ['class1'],
+                    chunkIndex: 0,
+                },
             },
-        },
-        {
-            id: 'notes-2',
-            score: 0.88,
-            metadata: {
-                sourceFilename: 'apuntes.md',
-                text: 'Texto docente',
-                materialType: 'notes',
-                materialPriority: 'primary',
-                classIds: ['class1'],
-                chunkIndex: 1,
+            {
+                id: 'notes-2',
+                score: 0.88,
+                metadata: {
+                    sourceFilename: 'apuntes.md',
+                    text: 'Texto docente',
+                    materialType: 'notes',
+                    materialPriority: 'primary',
+                    classIds: ['class1'],
+                    chunkIndex: 1,
+                },
             },
-        },
-    ]);
+        ];
+    });
+
+    t.after(() => {
+        vectorStoreMocks.querySimilar.mock.mockImplementation(defaultQuerySimilarImpl);
+    });
 
     const mockContext = {
         log: mock.fn(),
@@ -520,26 +532,30 @@ test('rag-query should expose material priority in returned sources', async () =
     assert.strictEqual(body.sources[1].materialPriority, 'secondary');
 });
 
-test('rag-query should include slideTitle in sources when metadata contains it', async () => {
+test('rag-query should include slideTitle in sources when metadata contains it', async (t) => {
     vectorStoreMocks.querySimilar.mock.resetCalls();
-    // First call: verified pre-search returns empty
-    vectorStoreMocks.querySimilar.mock.mockImplementationOnce(async () => []);
-    // Second call: standard search with slide title
-    vectorStoreMocks.querySimilar.mock.mockImplementationOnce(async () => [
-        {
-            id: 'ppt-chunk-1',
-            score: 0.95,
-            metadata: {
-                sourceFilename: 'clase.pptx',
-                text: '[Diapositiva 1]\nArquitectura Hexagonal',
-                materialType: 'presentation',
-                materialPriority: 'secondary',
-                slideTitle: 'Arquitectura Hexagonal',
-                classIds: ['class1'],
-                chunkIndex: 0,
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter, topK) => {
+        if (filter?.materialType?.$eq === 'verified-answer') return [];
+        return [
+            {
+                id: 'ppt-chunk-1',
+                score: 0.95,
+                metadata: {
+                    sourceFilename: 'clase.pptx',
+                    text: '[Diapositiva 1]\nArquitectura Hexagonal',
+                    materialType: 'presentation',
+                    materialPriority: 'secondary',
+                    slideTitle: 'Arquitectura Hexagonal',
+                    classIds: ['class1'],
+                    chunkIndex: 0,
+                },
             },
-        },
-    ]);
+        ];
+    });
+
+    t.after(() => {
+        vectorStoreMocks.querySimilar.mock.mockImplementation(defaultQuerySimilarImpl);
+    });
 
     const mockContext = {
         log: mock.fn(),

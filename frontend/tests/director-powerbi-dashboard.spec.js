@@ -5,6 +5,9 @@ test.use({ channel: 'chrome' });
 test('director can review DAU, token and cost metrics for Power BI', async ({ page }) => {
 
   await page.addInitScript(() => {
+    localStorage.setItem('onboarding-student-completed', 'true');
+    localStorage.setItem('onboarding-teacher-completed', 'true');
+    localStorage.setItem('onboarding-director-completed', 'true');
     sessionStorage.setItem('edu_role', 'director');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');

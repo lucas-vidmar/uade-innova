@@ -49,6 +49,7 @@ const storageMocks = {
 const stateStoreMocks = {
     getEnrollment: mock.fn(async () => ({ status: 'active', role: 'teacher' })),
     upsertCorrection: mock.fn(async () => true),
+    RATINGS_TABLE: 'ConversationRatings',
 };
 
 mock.module('../services/auth-utils.js', { namedExports: authMocks });

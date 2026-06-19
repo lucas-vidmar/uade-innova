@@ -21,18 +21,21 @@ const openaiMocks = {
 };
 
 const vectorStoreMocks = {
-    querySimilar: mock.fn(async () => [
-        {
-            score: 0.9,
-            metadata: {
-                sourceFilename: 'clase1.pdf',
-                text: 'Context text',
-                materialType: 'pdf',
-                classIds: ['class1'],
-                chunkIndex: 0
+    querySimilar: mock.fn(async (embedding, filter, topK) => {
+        if (filter?.materialType?.$eq === 'verified-answer') return [];
+        return [
+            {
+                score: 0.9,
+                metadata: {
+                    sourceFilename: 'clase1.pdf',
+                    text: 'Context text',
+                    materialType: 'pdf',
+                    classIds: ['class1'],
+                    chunkIndex: 0
+                }
             }
-        }
-    ]),
+        ];
+    }),
 };
 
 const storageMocks = {
@@ -61,6 +64,7 @@ const authUtilsMocks = {
 
 const telemetryMocks = {
     trackRAGInteraction: mock.fn(async () => {}),
+    trackRAGError: mock.fn(async () => {}),
 };
 
 const stateStoreMocks = {

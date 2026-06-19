@@ -60,6 +60,46 @@ function buildMockTeacherAlerts(subjectId) {
     return subjectId ? alerts.filter((item) => item.subjectId === subjectId) : alerts;
 }
 
+function buildMockEarlyAlerts(subjectId) {
+    const alerts = [
+        {
+            id: 'early-alert-alu-001',
+            studentId: 'alu-001',
+            name: 'María López',
+            subjectId: 'arq-software-2026',
+            subject: 'Arquitectura de Software',
+            risk: 'low',
+            interventionFlag: 'stable',
+            attendance: '85%',
+            avgGrade: 8.2,
+        },
+        {
+            id: 'early-alert-alu-007',
+            studentId: 'alu-007',
+            name: 'Diego Fernández',
+            subjectId: 'arq-software-2026',
+            subject: 'Arquitectura de Software',
+            risk: 'medium',
+            interventionFlag: 'watchlist',
+            attendance: '62%',
+            avgGrade: 6.0,
+        },
+        {
+            id: 'early-alert-alu-012',
+            studentId: 'alu-012',
+            name: 'Tomás García',
+            subjectId: 'arq-software-2026',
+            subject: 'Arquitectura de Software',
+            risk: 'high',
+            interventionFlag: 'at_risk',
+            attendance: '45%',
+            avgGrade: 4.2,
+        },
+    ];
+
+    return alerts;
+}
+
 app.http('sga-get-tasks', {
     methods: ['GET'],
     authLevel: 'anonymous',
@@ -128,6 +168,33 @@ app.http('sga-get-teacher-alerts', {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(buildMockTeacherAlerts(subjectId)),
+        };
+    },
+});
+
+app.http('sga-get-early-alerts', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'sga/early-alerts',
+    handler: async (request) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+
+        const subjectId = request.query.get('subjectId');
+        if (!subjectId) {
+            return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Parámetro requerido: subjectId' }) };
+        }
+
+        let alerts = buildMockEarlyAlerts(subjectId);
+
+        const interventionOnly = request.query.get('interventionOnly') === 'true';
+        if (interventionOnly) {
+            alerts = alerts.filter((item) => item.interventionFlag === 'at_risk' && parseInt(item.attendance, 10) < 50);
+        }
+
+        return {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(alerts),
         };
     },
 });

@@ -4,6 +4,9 @@ test.use({ browserName: 'chromium' });
 
 test('teacher upload sends required metadata fields in multipart request', async ({ page }) => {
   await page.addInitScript(() => {
+    localStorage.setItem('onboarding-student-completed', 'true');
+    localStorage.setItem('onboarding-teacher-completed', 'true');
+    localStorage.setItem('onboarding-director-completed', 'true');
     sessionStorage.setItem('edu_role', 'teacher');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');

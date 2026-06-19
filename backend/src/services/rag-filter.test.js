@@ -14,20 +14,23 @@ const openaiMocks = {
 };
 
 const vectorStoreMocks = {
-    querySimilar: mock.fn(async () => [
-        {
-            score: 0.9,
-            id: 'test-chunk-0',
-            metadata: {
-                sourceFilename: 'clase1.pdf',
-                text: 'Contenido',
-                materialType: 'notes',
-                materialPriority: 'primary',
-                classIds: ['class1'],
-                chunkIndex: 0
+    querySimilar: mock.fn(async (embedding, filter, topK) => {
+        if (filter?.materialType?.$eq === 'verified-answer') return [];
+        return [
+            {
+                score: 0.9,
+                id: 'test-chunk-0',
+                metadata: {
+                    sourceFilename: 'clase1.pdf',
+                    text: 'Contenido',
+                    materialType: 'notes',
+                    materialPriority: 'primary',
+                    classIds: ['class1'],
+                    chunkIndex: 0
+                }
             }
-        }
-    ])
+        ];
+    })
 };
 
 const storageMocks = {
@@ -52,6 +55,7 @@ const authUtilsMocks = {
 
 const telemetryMocks = {
     trackRAGInteraction: mock.fn(async () => {}),
+    trackRAGError: mock.fn(async () => {}),
 };
 
 const stateStoreMocks = {
@@ -66,6 +70,7 @@ const promptsMocks = {
 
 const correlationMocks = {
     resolveCorrelationId: mock.fn(() => 'test-correlation-id'),
+    resolveTraceContext: mock.fn(() => ({ traceparent: '00-trace-id-span-id-01', tracestate: null, traceId: 'trace-id', spanId: 'span-id' })),
     buildDependencyHeaders: mock.fn(() => ({})),
     withCorrelationResponseHeaders: mock.fn((cid, headers) => headers || {}),
 };
@@ -121,7 +126,7 @@ test('RAG Filter: should ALWAYS include subjectId: { $eq: subjectId }', async ()
         mockContext()
     );
 
-    const filter = vectorStoreMocks.querySimilar.mock.calls[0].arguments[1];
+    const filter = vectorStoreMocks.querySimilar.mock.calls[1].arguments[1];
     assert.strictEqual(filter.subjectId.$eq, subjectId);
 });
 
@@ -137,7 +142,7 @@ test('RAG Filter: should include $or with classIds.$in and bibliography when mul
         mockContext()
     );
 
-    const filter = vectorStoreMocks.querySimilar.mock.calls[0].arguments[1];
+    const filter = vectorStoreMocks.querySimilar.mock.calls[1].arguments[1];
     assert.ok(filter.$or);
     assert.deepStrictEqual(filter.$or, [
         { classIds: { $in: classIds } },
@@ -154,7 +159,7 @@ test('RAG Filter: should simplify to ONLY subjectId when classIds is ["all"]', a
         mockContext()
     );
 
-    const filter = vectorStoreMocks.querySimilar.mock.calls[0].arguments[1];
+    const filter = vectorStoreMocks.querySimilar.mock.calls[1].arguments[1];
     assert.strictEqual(filter.subjectId.$eq, subjectId);
     assert.strictEqual(filter.$or, undefined);
 });
@@ -168,7 +173,7 @@ test('RAG Filter: should simplify to ONLY subjectId when classIds is empty', asy
         mockContext()
     );
 
-    const filter = vectorStoreMocks.querySimilar.mock.calls[0].arguments[1];
+    const filter = vectorStoreMocks.querySimilar.mock.calls[1].arguments[1];
     assert.strictEqual(filter.subjectId.$eq, subjectId);
     assert.strictEqual(filter.$or, undefined);
 });
@@ -182,7 +187,7 @@ test('RAG Filter: should simplify to ONLY subjectId when classIds is null', asyn
         mockContext()
     );
 
-    const filter = vectorStoreMocks.querySimilar.mock.calls[0].arguments[1];
+    const filter = vectorStoreMocks.querySimilar.mock.calls[1].arguments[1];
     assert.strictEqual(filter.subjectId.$eq, subjectId);
     assert.strictEqual(filter.$or, undefined);
 });
@@ -196,7 +201,7 @@ test('RAG Filter: cross-contamination prevention - ensure subjectId is strictly 
         mockContext()
     );
 
-    const filter = vectorStoreMocks.querySimilar.mock.calls[0].arguments[1];
+    const filter = vectorStoreMocks.querySimilar.mock.calls[1].arguments[1];
     assert.strictEqual(filter.subjectId.$eq, subjectId);
     const topLevelKeys = Object.keys(filter);
     assert.ok(topLevelKeys.includes('subjectId'));
@@ -219,7 +224,7 @@ test('Exact classId: single class uses classId.$eq in filter', async () => {
         mockContext()
     );
 
-    const filter = vectorStoreMocks.querySimilar.mock.calls[0].arguments[1];
+    const filter = vectorStoreMocks.querySimilar.mock.calls[1].arguments[1];
     // Single class should use exact classId match
     assert.strictEqual(filter.subjectId.$eq, subjectId);
     assert.ok(filter.$or, 'should have $or clause for exact classId + bibliography');
@@ -238,7 +243,7 @@ test('Exact classId: multi-class uses classIds.$in in filter (backward-compat)',
         mockContext()
     );
 
-    const filter = vectorStoreMocks.querySimilar.mock.calls[0].arguments[1];
+    const filter = vectorStoreMocks.querySimilar.mock.calls[1].arguments[1];
     assert.ok(filter.$or);
     const classFilter = filter.$or.find(f => f.classIds !== undefined);
     assert.ok(classFilter, 'should have classIds filter for multi-class');
@@ -257,7 +262,7 @@ test('Exact classId: bibliography fallback present by default (single class)', a
         mockContext()
     );
 
-    const filter = vectorStoreMocks.querySimilar.mock.calls[0].arguments[1];
+    const filter = vectorStoreMocks.querySimilar.mock.calls[1].arguments[1];
     const bibFilter = filter.$or.find(f => f.materialType && f.materialType.$eq === 'bibliography');
     assert.ok(bibFilter, 'bibliography fallback should be present by default');
 });
@@ -271,7 +276,7 @@ test('Exact classId: bibliography fallback present by default (multi class)', as
         mockContext()
     );
 
-    const filter = vectorStoreMocks.querySimilar.mock.calls[0].arguments[1];
+    const filter = vectorStoreMocks.querySimilar.mock.calls[1].arguments[1];
     const bibFilter = filter.$or.find(f => f.materialType && f.materialType.$eq === 'bibliography');
     assert.ok(bibFilter, 'bibliography fallback should be present for multi-class');
 });
@@ -288,7 +293,7 @@ test('Exact classId: bibliography fallback omitted when RAG_DISABLE_BIBLIOGRAPHY
             mockContext()
         );
 
-        const filter = vectorStoreMocks.querySimilar.mock.calls[0].arguments[1];
+        const filter = vectorStoreMocks.querySimilar.mock.calls[1].arguments[1];
         // $or should exist (at least for the classId filter)
         assert.ok(filter.$or, 'should have $or clause');
         // No bibliography filter in $or

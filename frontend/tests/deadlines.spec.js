@@ -4,6 +4,9 @@ test('teacher can create a deadline and student sees it on dashboard and calenda
   const requests = [];
 
   await page.addInitScript(() => {
+    localStorage.setItem('onboarding-student-completed', 'true');
+    localStorage.setItem('onboarding-teacher-completed', 'true');
+    localStorage.setItem('onboarding-director-completed', 'true');
     sessionStorage.setItem('edu_role', 'teacher');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');
