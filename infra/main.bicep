@@ -213,6 +213,8 @@ module functions './modules/functions.bicep' = {
     conversationRatingsTableName: storage.outputs.conversationRatingsTableName
     notificationPreferencesTableName: storage.outputs.notificationPreferencesTableName
     userEventsTableName: storage.outputs.userEventsTableName
+    interventionsTableName: storage.outputs.interventionsTableName
+    riskThresholdsTableName: storage.outputs.riskThresholdsTableName
     glossaryFilesContainerName: storage.outputs.glossaryFilesContainerName
     summariesContainerName: storage.outputs.summariesContainerName
     notificationQueueName: storage.outputs.notificationQueueName

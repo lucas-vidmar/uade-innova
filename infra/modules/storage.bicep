@@ -261,6 +261,18 @@ resource userEventsTable 'Microsoft.Storage/storageAccounts/tableServices/tables
   name: 'UserEvents'
 }
 
+// ─── Table: Interventions (risk assessment records & workflow state) ─
+resource interventionsTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-01-01' = {
+  parent: tableService
+  name: 'Interventions'
+}
+
+// ─── Table: RiskThresholds (per-subject risk config) ──────────
+resource riskThresholdsTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-01-01' = {
+  parent: tableService
+  name: 'RiskThresholds'
+}
+
 // ─── Outputs ───────────────────────────────────────────────────
 @description('The name of the Storage Account.')
 output accountName string = storageAccount.name
@@ -312,6 +324,12 @@ output notificationPreferencesTableName string = notificationPreferencesTable.na
 
 @description('The name of the UserEvents table.')
 output userEventsTableName string = userEventsTable.name
+
+@description('The name of the Interventions table.')
+output interventionsTableName string = interventionsTable.name
+
+@description('The name of the RiskThresholds table.')
+output riskThresholdsTableName string = riskThresholdsTable.name
 
 @description('The name of the ingestion tasks queue.')
 output ingestionQueueName string = ingestionQueue.name

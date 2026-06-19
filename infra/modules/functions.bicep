@@ -96,6 +96,12 @@ param notificationPreferencesTableName string = 'NotificationPreferences'
 @description('Table name for user activity events.')
 param userEventsTableName string = 'UserEvents'
 
+@description('Table name for intervention records.')
+param interventionsTableName string = 'Interventions'
+
+@description('Table name for per-subject risk thresholds.')
+param riskThresholdsTableName string = 'RiskThresholds'
+
 @description('Name of the glossary-files blob container.')
 param glossaryFilesContainerName string = 'glossary-files'
 
@@ -297,6 +303,14 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         {
           name: 'AZURE_TABLE_USER_EVENTS'
           value: userEventsTableName
+        }
+        {
+          name: 'AZURE_TABLE_INTERVENTIONS'
+          value: interventionsTableName
+        }
+        {
+          name: 'AZURE_TABLE_RISK_THRESHOLDS'
+          value: riskThresholdsTableName
         }
         // Blob container names
         {

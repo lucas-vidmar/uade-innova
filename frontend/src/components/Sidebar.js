@@ -26,6 +26,7 @@ const NAV = {
   ],
   director: [
     { id: 'director-dashboard', icon: 'chart', label: 'Panel Directivo', path: '#/director/dashboard' },
+    { id: 'director-interventions', icon: 'alert', label: 'Intervenciones', path: '#/director/interventions' },
     { id: 'director-classes', icon: 'stack', label: 'Gestión de Clases', path: '#/director/classes' },
     { id: 'director-subjects', icon: 'settings', label: 'Gestión de Materias', path: '#/director/subjects' },
   ],

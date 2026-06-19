@@ -31,6 +31,7 @@ const ROUTES = {
     '/director/dashboard': () => import('./pages/director/Dashboard.js').then(m => m.renderDirectorDashboard),
     '/director/classes': () => import('./pages/director/ClassManagement.js').then(m => m.renderClassManagement),
     '/director/subjects': () => import('./pages/director/SubjectManagement.js').then(m => m.renderSubjectManagement),
+    '/director/interventions': () => import('./pages/director/Interventions.js').then(m => m.renderDirectorInterventions),
     '/admin/users': () => import('./pages/admin/UserManagement.js').then(m => m.renderUserManagement),
 };
 

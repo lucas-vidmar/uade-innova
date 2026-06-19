@@ -1877,4 +1877,71 @@ async getTeacherAiFeedbackAlerts(subjectId, limit = 10) {
             }
             return res.json();
         },
+
+    // ── Interventions (Story 6.2) ──────────────────────────────
+    async getInterventions({ subjectId, state, risk } = {}) {
+            if (USE_MOCK) {
+                await delay(400);
+                return [
+                    { id: 'int-001', subjectId: 'arq-software-2026', studentId: 'alu-012', risk: 'high', score: 8, reason: 'Sin login en 21 días; sin actividad', state: 'assigned', notes: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+                    { id: 'int-002', subjectId: 'arq-software-2026', studentId: 'alu-008', risk: 'medium', score: 5, reason: 'Sin login en 14 días; menos de 2 consultas en 7 días', state: 'assigned', notes: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+                ];
+            }
+            const params = new URLSearchParams();
+            if (subjectId) params.set('subjectId', subjectId);
+            if (state) params.set('state', state);
+            if (risk) params.set('risk', risk);
+            const qs = params.toString() ? `?${params.toString()}` : '';
+            const res = await fetchWithTimeout(`${BASE_URL}/interventions${qs}`, { timeout: 4000 });
+            if (!res.ok) return [];
+            const json = await res.json();
+            return json?.data || [];
+        },
+
+    async updateIntervention(id, subjectId, state, note = '') {
+            if (USE_MOCK) {
+                await delay(300);
+                return { success: true, data: { id, subjectId, state, updatedAt: new Date().toISOString() } };
+            }
+            const res = await apiFetch(`${BASE_URL}/interventions`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, subjectId, state, note }),
+            });
+            return res.json();
+        },
+
+    async computeInterventions(subjectId) {
+            if (USE_MOCK) {
+                await delay(800);
+                return { success: true, data: { computed: 2, interventions: [] } };
+            }
+            const qs = subjectId ? `?subjectId=${encodeURIComponent(subjectId)}` : '';
+            const res = await apiFetch(`${BASE_URL}/interventions/compute${qs}`, { method: 'POST' });
+            return res.json();
+        },
+
+    async getRiskThresholds(subjectId) {
+            if (USE_MOCK) {
+                await delay(300);
+                return { success: true, data: { subjectId: subjectId || 'default', thresholds: { attendanceWarning: 70, attendanceCritical: 50, engagementWarning: 60, engagementCritical: 40, gradeWarning: 6, noLoginDaysLow: 7, noLoginDaysMedium: 14, noLoginDaysHigh: 21, minQueriesMedium: 2, minQueriesHigh: 5, queryWindowDays: 7, queryWindowHighDays: 14 }, source: 'default' } };
+            }
+            const qs = subjectId ? `?subjectId=${encodeURIComponent(subjectId)}` : '';
+            const res = await fetchWithTimeout(`${BASE_URL}/risk-thresholds${qs}`, { timeout: 4000 });
+            if (!res.ok) return { success: false, error: 'Error' };
+            return res.json();
+        },
+
+    async updateRiskThresholds(subjectId, thresholds) {
+            if (USE_MOCK) {
+                await delay(300);
+                return { success: true, data: { subjectId, thresholds } };
+            }
+            const res = await apiFetch(`${BASE_URL}/risk-thresholds`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ subjectId, thresholds }),
+            });
+            return res.json();
+        },
       };
