@@ -7,6 +7,7 @@ import { toast } from './Toast.js';
 import { OnboardingEngine, resetOnboarding } from '../services/onboarding.js';
 import { TEACHER_ONBOARDING_STEPS } from '../pages/teacher/OnboardingSteps.js';
 import { STUDENT_ONBOARDING_STEPS } from '../pages/student/OnboardingSteps.js';
+import { createNotificationStream } from '../services/notification-stream.js';
 
 const NAV = {
   student: [
@@ -517,6 +518,8 @@ async function initializeNotificationCenter({ userId, subjectId }) {
   simulateBtn?.addEventListener('click', onSimulate);
   window.addEventListener('student:trigger-notification', onExternalTrigger);
 
+  let notificationStream = null;
+
   renderSidebar._notificationCleanup = () => {
     bellButton.removeEventListener('click', onBellClick);
     document.removeEventListener('click', onOutsideClick);
@@ -525,11 +528,30 @@ async function initializeNotificationCenter({ userId, subjectId }) {
     markReadBtn?.removeEventListener('click', onMarkAllRead);
     simulateBtn?.removeEventListener('click', onSimulate);
     window.removeEventListener('student:trigger-notification', onExternalTrigger);
+    if (notificationStream) {
+      notificationStream.stop();
+      notificationStream = null;
+    }
   };
 
   allNotifications = await api.getNotifications({ userId, subjectId, limit: DROPDOWN_PAGE_SIZE });
   hasMore = Array.isArray(allNotifications) && allNotifications.length >= DROPDOWN_PAGE_SIZE;
   render();
+
+  notificationStream = createNotificationStream();
+  notificationStream.onSnapshot = (data) => {
+    if (Array.isArray(data?.notifications)) {
+      const merged = [...data.notifications];
+      for (const item of allNotifications) {
+        if (!merged.some((m) => m.id === item.id)) {
+          merged.push(item);
+        }
+      }
+      allNotifications = merged.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      render();
+    }
+  };
+  notificationStream.start({ userId, subjectId });
 }
 
 function formatNotificationDate(value) {

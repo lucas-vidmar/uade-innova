@@ -8,6 +8,7 @@ const authMocks = {
 
 const notificationStoreMocks = {
     listNotificationsBySubject: mock.fn(async () => []),
+    listNotificationsSince: mock.fn(async () => []),
     markNotificationReadForUser: mock.fn(async () => true),
 };
 
@@ -169,4 +170,73 @@ test('mark-notification-read should reject unauthorized student updates', async 
     assert.strictEqual(response.status, 403);
 
     authMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'alu-001', userRoles: ['Alumno'] }));
+});
+
+test('stream-notifications should return 401 without auth', async () => {
+    authMocks.parseClientPrincipal.mock.mockImplementation(() => null);
+    authMocks.validateFrontDoorId.mock.mockImplementation(() => true);
+
+    const response = await handlers['stream-notifications'](
+        { query: new URLSearchParams({ subjectId: 'arq-software-2026' }) },
+        { log: () => {} }
+    );
+
+    assert.strictEqual(response.status, 401);
+
+    authMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'alu-001', userRoles: ['Alumno'] }));
+});
+
+test('stream-notifications should start with stream headers and snapshot event', async () => {
+    notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => ([
+        { id: 'n1', type: 'material', title: 'New material', message: 'Test', createdAt: '2026-06-19T12:00:00Z', unread: true, targetHash: '#/student/dashboard', subjectId: 'arq-software-2026', recipientUserIds: [], readByUserIds: [] },
+    ]));
+
+    const response = await handlers['stream-notifications'](
+        { query: new URLSearchParams({ subjectId: 'arq-software-2026', userId: 'alu-001' }) },
+        { log: () => {} }
+    );
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(response.headers['Content-Type'], 'text/event-stream');
+    assert.strictEqual(response.headers['Cache-Control'], 'no-cache');
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    const { value } = await reader.read();
+    const chunk = decoder.decode(value, { stream: true });
+
+    assert.ok(chunk.includes('event: snapshot'));
+    assert.ok(chunk.includes('"notifications"'));
+    reader.cancel('test done');
+
+    notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => ([]));
+});
+
+test('stream-notifications sends notification event for new items', async () => {
+    notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => ([]));
+    notificationStoreMocks.listNotificationsSince.mock.mockImplementation(async () => ([
+        { id: 'n2', type: 'deadline', title: 'Deadline approaching', message: 'Test deadline', createdAt: '2026-06-19T13:00:00Z', unread: true, targetHash: '#/student/calendar', subjectId: 'arq-software-2026', recipientUserIds: [], readByUserIds: [] },
+    ]));
+
+    const response = await handlers['stream-notifications'](
+        { query: new URLSearchParams({ subjectId: 'arq-software-2026', userId: 'alu-001', since: '2026-06-19T12:00:00Z' }) },
+        { log: () => {} }
+    );
+
+    assert.strictEqual(response.status, 200);
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    const { value } = await reader.read();
+    const chunk = decoder.decode(value, { stream: true });
+
+    assert.ok(chunk.includes('event: snapshot'));
+
+    // Wait for poll cycle to send notification event
+    await new Promise((r) => setTimeout(r, 5100));
+    const { value: v2 } = await reader.read();
+    const chunk2 = decoder.decode(v2, { stream: true });
+    assert.ok(chunk2.includes('event: notification'));
+
+    reader.cancel('test done');
+    notificationStoreMocks.listNotificationsSince.mock.mockImplementation(async () => ([]));
 });

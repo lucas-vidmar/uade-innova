@@ -725,6 +725,77 @@ export const api = {
         return res.json();
     },
 
+    /**
+     * Subscribes to the SSE notification stream.
+     * @param {Object} opts - { userId, subjectId }
+     * @param {Function} onEvent - Callback (eventType, data) => void
+     * @returns {Promise<Response>} The fetch Response object (caller should read the body stream)
+     */
+    async subscribeNotificationStream({ userId, subjectId, signal } = {}, onEvent) {
+        if (USE_MOCK) {
+            onEvent('snapshot', { notifications: buildFallbackNotifications(subjectId, 10), userId });
+            return;
+        }
+
+        const params = new URLSearchParams();
+        if (userId) params.set('userId', userId);
+        if (subjectId) params.set('subjectId', subjectId);
+
+        const query = params.toString();
+        const response = await apiFetch(`${BASE_URL}/notifications/stream${query ? `?${query}` : ''}`);
+
+        if (!response.ok) {
+            const body = await response.json().catch(() => ({ error: 'Unknown error' }));
+            throw new Error(body.error || `Stream connection failed (${response.status})`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        try {
+            while (true) {
+                if (signal?.aborted) break;
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const parts = buffer.split('\n\n');
+                buffer = parts.pop();
+
+                if (buffer.length > 50000) {
+                    buffer = '';
+                }
+
+                for (const part of parts) {
+                    if (!part.trim()) continue;
+                    const lines = part.split('\n');
+                    let eventType = 'message';
+                    let data = null;
+
+                    for (const line of lines) {
+                        if (line.startsWith('event: ')) {
+                            eventType = line.slice(7).trim();
+                        } else if (line.startsWith('data: ')) {
+                            try {
+                                data = JSON.parse(line.slice(6));
+                            } catch {
+                                // skip unparseable data
+                            }
+                        }
+                    }
+
+                    if (data && typeof onEvent === 'function') {
+                        onEvent(eventType, data);
+                    }
+                }
+            }
+        } catch (err) {
+            if (signal?.aborted) return;
+            throw err;
+        }
+    },
+
     async getSubjects() {
         if (USE_MOCK) {
             await delay(400);

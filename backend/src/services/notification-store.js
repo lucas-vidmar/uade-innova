@@ -36,6 +36,17 @@ export async function listNotificationsBySubject(subjectId) {
   return data.map((item, idx) => normalizeNotification(item, idx));
 }
 
+export async function listNotificationsSince(subjectId, sinceTimestamp) {
+  if (!subjectId) return [];
+  const data = await loadJson(CONTAINER_NOTIFICATIONS, `${subjectId}.json`);
+  if (!Array.isArray(data)) return [];
+  const since = new Date(sinceTimestamp).getTime();
+  if (Number.isNaN(since)) return [];
+  return data
+    .filter((item) => new Date(item.createdAt).getTime() >= since)
+    .map((item, idx) => normalizeNotification(item, idx));
+}
+
 export async function upsertNotificationForSubject(subjectId, notification) {
   if (!subjectId) return false;
   const current = await listNotificationsBySubject(subjectId);

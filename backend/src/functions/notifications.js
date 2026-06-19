@@ -218,6 +218,135 @@ app.http('mark-notification-read', {
   },
 });
 
+app.http('stream-notifications', {
+  methods: ['GET'],
+  authLevel: 'anonymous',
+  route: 'notifications/stream',
+  handler: async (request, context) => {
+    if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+    const principal = parseClientPrincipal(request);
+    const { userId, forbidden } = resolveEffectiveUserId(request, principal);
+    if (forbidden) {
+      return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Notification scope does not match authenticated user' }) };
+    }
+    if (!userId) {
+      return { status: 401, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Debes iniciar sesión para recibir notificaciones.' }) };
+    }
+
+    const subjectId = request.query.get('subjectId') || null;
+    const lastPolledAt = request.query.get('since') || null;
+
+    if (subjectId) {
+      const roles = principal?.userRoles || [];
+      const isDirector = roles.includes('Director');
+      if (!isDirector) {
+        try {
+          const enrollment = await getEnrollment(subjectId, userId).catch(() => null);
+          if (!enrollment || enrollment.status !== 'active') {
+            return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'No tienes acceso a las notificaciones de esta materia.' }) };
+          }
+        } catch {
+          return { status: 500, body: JSON.stringify({ error: 'Error verificando permisos.' }) };
+        }
+      }
+    }
+
+    const encoder = new TextEncoder();
+    let closed = false;
+    let pollCount = 0;
+    let sinceTimestamp = lastPolledAt || new Date(Date.now() - 5000).toISOString();
+    let pollInterval = null;
+
+    const sendEvent = (controller, event, data) => {
+      if (closed) return;
+      try {
+        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+      } catch (err) {
+        context.error(`[notifications/stream] sendEvent error: ${err.message}`);
+        closed = true;
+      }
+    };
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        let snapshot;
+        if (subjectId) {
+          const persisted = await notificationStore.listNotificationsBySubject(subjectId).catch(() => []);
+          const allItems = [...persisted, ...MOCK_NOTIFICATIONS]
+            .filter((item) => item.subjectId === subjectId)
+            .filter((item) => canReceiveNotification(item, userId))
+            .map((item, idx) => asPublicNotification(item, idx, userId))
+            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+          snapshot = allItems;
+        } else {
+          snapshot = [];
+        }
+
+        sendEvent(controller, 'snapshot', { notifications: snapshot, userId });
+
+        const cleanup = () => {
+          if (pollInterval) {
+            clearInterval(pollInterval);
+            pollInterval = null;
+          }
+        };
+
+        pollInterval = setInterval(async () => {
+          if (closed) { cleanup(); return; }
+          pollCount += 1;
+
+          const since = sinceTimestamp;
+          let newItems = [];
+          if (subjectId) {
+            try {
+              const persisted = await notificationStore.listNotificationsSince(subjectId, since);
+              newItems = persisted
+                .filter((item) => canReceiveNotification(item, userId))
+                .map((item, idx) => asPublicNotification(item, idx, userId));
+              sinceTimestamp = new Date().toISOString();
+            } catch (err) {
+              context.error(`[notifications/stream] poll error: ${err.message}`);
+            }
+          }
+
+          for (const item of newItems) {
+            if (closed) break;
+            sendEvent(controller, 'notification', item);
+          }
+
+          if (pollCount % 6 === 0) {
+            sendEvent(controller, 'keepalive', { ts: new Date().toISOString() });
+          }
+        }, 5000);
+
+        request?.signal?.addEventListener('abort', () => {
+          closed = true;
+          cleanup();
+          context.log('[notifications/stream] client disconnected');
+        });
+      },
+      cancel() {
+        closed = true;
+        if (pollInterval) {
+          clearInterval(pollInterval);
+          pollInterval = null;
+        }
+      },
+    });
+
+    context.log(`[notifications/stream] started userId=${userId} subjectId=${subjectId || 'all'}`);
+    return {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+      body: stream,
+    };
+  },
+});
+
 app.http('mark-notifications-read', {
   methods: ['POST'],
   authLevel: 'anonymous',
