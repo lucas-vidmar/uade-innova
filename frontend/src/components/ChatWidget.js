@@ -10,6 +10,14 @@ import { renderPrivacyModal } from './PrivacyModal.js';
 const FOLLOW_UP_HISTORY_WINDOW_SIZE = 4;
 const CLASS_SELECTION_WARN_THRESHOLD = 5;
 
+const ERROR_MESSAGES = {
+  RETRIEVAL_FAILURE: 'No se pudieron recuperar los materiales de referencia. Probá consultando de nuevo en unos minutos.',
+  SAFETY: 'No se pudo procesar la consulta. Reformulá la pregunta e intentá de nuevo.',
+  PARSING: 'Hay un problema con el formato de los materiales de la clase. El docente ya fue notificado.',
+  LLM: 'El asistente no pudo generar una respuesta en este momento. Esperá unos segundos y volvé a intentar.',
+  UNKNOWN: 'Ocurrió un error inesperado. Por favor, intentá nuevamente.',
+};
+
 export function createChatWidget({ classes = [], subjectId = '', sessionId = null, initialMessages = [], highlightMessageId = null, transcriptFocus: initialTranscriptFocus = null, onNewChat, onMessageSent }) {
   const user = auth.getUser();
   const hasEnrollment = auth.isEnrolled(subjectId) !== false;
@@ -423,6 +431,12 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
               bubbleEl.parentElement.insertBefore(badgeEl, bubbleEl);
             }
           }
+        } else if (type === 'error') {
+          const category = data?.errorCategory;
+          assistantMsg.content = ERROR_MESSAGES[category] || ERROR_MESSAGES.UNKNOWN;
+          assistantMsg.streaming = false;
+          const bubbleEl = msgEl.querySelector('.chat-bubble-assistant');
+          if (bubbleEl) bubbleEl.textContent = assistantMsg.content;
         } else if (type === 'delta') {
           assistantMsg.content += data.content;
           const bubbleEl = msgEl.querySelector('.chat-bubble-assistant');
@@ -456,11 +470,8 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         render();
         return;
       }
-      const category = err?.errorCategory || 'LLM';
-      const categoryMessage = category === 'SAFETY'
-        ? 'Categoria: SAFETY (contenido bloqueado por seguridad).'
-        : `Categoria: ${category}.`;
-      assistantMsg.content = `${err.message || 'Error de conexión con el servidor. Por favor intentá nuevamente.'}\n\n${categoryMessage}`;
+      const category = err?.errorCategory;
+      assistantMsg.content = ERROR_MESSAGES[category] || ERROR_MESSAGES.UNKNOWN;
       assistantMsg.streaming = false;
       render();
     } finally {

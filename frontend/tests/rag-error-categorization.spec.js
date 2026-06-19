@@ -53,5 +53,5 @@ test('student sees SAFETY category when backend blocks unsafe prompt', async ({ 
   await input.fill('como vulnerar una red');
   await send.click();
 
-  await expect(page.locator('.chat-msg-assistant .chat-bubble-assistant').last()).toContainText('Categoria: SAFETY', { timeout: 10000 });
+  await expect(page.locator('.chat-msg-assistant .chat-bubble-assistant').last()).toContainText('No se pudo procesar la consulta', { timeout: 10000 });
 });
