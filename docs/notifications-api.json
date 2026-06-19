@@ -1,0 +1,380 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "UADE Dashboard - Notifications API",
+    "version": "1.0.0",
+    "description": "Contrato OpenAPI para el sistema de notificaciones del Dashboard Educativo. Cubre feed, marcado de lectura (individual y masivo) y streaming SSE en tiempo real."
+  },
+  "servers": [
+    {
+      "url": "/api",
+      "description": "Azure Functions API base"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Notifications",
+      "description": "Endpoints de notificaciones para alumnos y docentes"
+    }
+  ],
+  "paths": {
+    "/notifications": {
+      "get": {
+        "tags": ["Notifications"],
+        "summary": "Obtiene la lista de notificaciones del usuario",
+        "operationId": "getNotifications",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "ID del usuario (resuelto automáticamente desde el principal autenticado en producción)"
+          },
+          {
+            "name": "subjectId",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "Filtro opcional por materia"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 50, "default": 10 },
+            "description": "Cantidad máxima de notificaciones (se normaliza a rango 1-50)"
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 0, "default": 0 },
+            "description": "Cantidad de notificaciones a saltar para paginación"
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "pattern": "^(grade|summary|material|deadline|teacher-reminder)(,(grade|summary|material|deadline|teacher-reminder))*$" },
+            "description": "Filtro por tipo(s) separados por coma: grade, summary, material, deadline, teacher-reminder"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de notificaciones ordenadas por createdAt descendente",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/PublicNotification" }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Usuario no autenticado",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "403": {
+            "description": "Acceso denegado — Front Door ID inválido o sin matrícula activa en la materia",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Parámetros inválidos (limit fuera de rango o type malformado)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno al verificar permisos o cargar datos",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/notifications/{id}/read": {
+      "patch": {
+        "tags": ["Notifications"],
+        "summary": "Marca una notificación como leída para el usuario actual",
+        "operationId": "markNotificationRead",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1 },
+            "description": "ID de la notificación a marcar"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["userId", "subjectId"],
+                "additionalProperties": false,
+                "properties": {
+                  "userId": { "type": "string", "description": "ID del usuario (validado contra el principal autenticado)" },
+                  "subjectId": { "type": "string", "description": "Materia a la que pertenece la notificación" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Notificación marcada como leída exitosamente",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["id", "unread"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": { "type": "string" },
+                    "unread": { "type": "boolean", "description": "Siempre false después de marcar como leída" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Faltan campos requeridos: notificationId, subjectId, userId",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "403": {
+            "description": "Acceso denegado — el userId del body no coincide con el principal o la notificación no pertenece al usuario",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "Notificación no encontrada para la materia indicada (incluso después de intentar seeded desde mock)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno al persistir el cambio",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/notifications/read": {
+      "post": {
+        "tags": ["Notifications"],
+        "summary": "Marca múltiples notificaciones como leídas (bulk)",
+        "operationId": "markNotificationsRead",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["userId", "subjectId", "notificationIds"],
+                "additionalProperties": false,
+                "properties": {
+                  "userId": { "type": "string", "description": "ID del usuario" },
+                  "subjectId": { "type": "string", "description": "Materia a la que pertenecen las notificaciones" },
+                    "notificationIds": {
+                      "type": "array",
+                      "items": { "type": "string" },
+                      "minItems": 1,
+                      "description": "Lista de IDs de notificaciones a marcar. Se deduplican internamente (Set). Vacío resulta en updated: 0."
+                    }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bulk mark completado. updated refleja cuántas se marcaron realmente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["updated"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "updated": { "type": "integer", "minimum": 0, "description": "Cantidad de notificaciones efectivamente marcadas como leídas" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Faltan campos requeridos (subjectId, userId) o JSON inválido",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "403": {
+            "description": "Acceso denegado — userId no coincide con el principal autenticado",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno al persistir cambios",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/notifications/stream": {
+      "get": {
+        "tags": ["Notifications"],
+        "summary": "Stream SSE de notificaciones en tiempo real",
+        "operationId": "streamNotifications",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "ID del usuario (resuelto automáticamente desde el principal)"
+          },
+          {
+            "name": "subjectId",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "Filtro opcional por materia"
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "format": "date-time" },
+            "description": "Timestamp ISO 8601 para recibir solo cambios desde ese momento (se usa como lastPolledAt)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conexión SSE establecida. Eventos:\n  - `snapshot`: estado inicial completo ({ notifications, userId })\n  - `notification`: nueva notificación individual\n  - `keepalive`: ping cada 30s ({ ts })",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "description": "Stream SSE. Eventos:\n  - `snapshot`: estado inicial completo con `{ notifications: PublicNotification[], userId: string }`\n  - `notification`: notificación individual (esquema PublicNotification)\n  - `keepalive`: ping cada 30s con `{ ts: string (ISO 8601) }`"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Usuario no autenticado",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "403": {
+            "description": "Acceso denegado — Front Door ID inválido o sin matrícula activa",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "PublicNotification": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "type", "title", "message", "createdAt", "unread", "targetHash", "subjectId"],
+        "properties": {
+          "id": { "type": "string", "description": "UUID o identificador único de la notificación" },
+          "type": {
+            "type": "string",
+            "enum": ["grade", "summary", "material", "deadline", "teacher-reminder"],
+            "description": "Categoría de la notificación"
+          },
+          "title": { "type": "string", "description": "Título corto en español (ej: Nueva nota publicada)" },
+          "message": { "type": "string", "description": "Cuerpo del mensaje en español" },
+          "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp ISO 8601 de creación" },
+          "unread": { "type": "boolean", "description": "true si el usuario no ha leído la notificación. Se computa desde readByUserIds en backend." },
+          "targetHash": { "type": "string", "description": "Hash de deep-linking del frontend (ej: #/student/calendar, #/student/tasks)" },
+          "subjectId": { "type": "string", "nullable": true, "description": "ID de la materia asociada o null si es跨-materia" }
+        }
+      },
+      "InternalNotification": {
+        "type": "object",
+        "description": "Esquema interno (no expuesto al frontend) con campos de control de acceso",
+        "additionalProperties": false,
+        "required": ["id", "type", "title", "message", "createdAt", "unread", "targetHash", "subjectId", "recipientUserIds", "readByUserIds", "origin"],
+        "properties": {
+          "id": { "type": "string" },
+          "type": { "type": "string", "enum": ["grade", "summary", "material", "deadline", "teacher-reminder"] },
+          "title": { "type": "string" },
+          "message": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "unread": { "type": "boolean" },
+          "targetHash": { "type": "string" },
+          "subjectId": { "type": "string", "nullable": true },
+          "recipientUserIds": { "type": "array", "items": { "type": "string" }, "description": "Si está vacío, la notificación es pública para todos los usuarios de la materia. Si tiene valores, solo esos usuarios pueden verla." },
+          "readByUserIds": { "type": "array", "items": { "type": "string" }, "description": "Lista de usuarios que marcaron esta notificación como leída. Se usa para computar unread. Se elimina del objeto público." },
+          "origin": { "type": "string", "enum": ["seed", "timer", "manual"], "description": "Origen de creación: seed (mock inicial), timer (trigger automático), manual (API)" }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["error"],
+        "properties": {
+          "error": { "type": "string", "description": "Mensaje de error en español" }
+        }
+      }
+    }
+  }
+}
