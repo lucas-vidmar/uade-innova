@@ -635,7 +635,7 @@ export const api = {
         return data && Array.isArray(data.results) ? data : { query, subjectId, total: 0, results: [] };
     },
 
-    async getNotifications({ userId, subjectId, limit = 10 } = {}) {
+    async getNotifications({ userId, subjectId, limit = 10, skip = 0, type } = {}) {
         if (USE_MOCK) {
             await delay(250);
             return buildFallbackNotifications(subjectId, limit);
@@ -646,6 +646,8 @@ export const api = {
             if (userId) params.set('userId', userId);
             if (subjectId) params.set('subjectId', subjectId);
             if (limit) params.set('limit', String(limit));
+            if (skip > 0) params.set('skip', String(skip));
+            if (type) params.set('type', type);
 
             const query = params.toString();
             const res = await fetchWithTimeout(`${BASE_URL}/notifications${query ? `?${query}` : ''}`, { timeout: 3500 });

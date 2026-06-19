@@ -11,6 +11,7 @@ import { STUDENT_ONBOARDING_STEPS } from '../pages/student/OnboardingSteps.js';
 const NAV = {
   student: [
     { id: 'student-dashboard', icon: 'home', label: 'Inicio', path: '#/student/dashboard' },
+    { id: 'student-notifications', icon: 'bell', label: 'Notificaciones', path: '#/student/notifications' },
     { id: 'student-tasks', icon: 'tasks', label: 'Tareas y Notas', path: '#/student/tasks' },
     { id: 'student-calendar', icon: 'calendar', label: 'Calendario', path: '#/student/calendar' },
     { id: 'student-settings', icon: 'settings', label: 'Configuración', path: '#/student/settings' },
@@ -132,6 +133,7 @@ export function renderSidebar() {
                 <div class="notification-empty">Cargando notificaciones...</div>
               </div>
               <div class="notification-dropdown-foot">
+                <a href="#/student/notifications" class="notification-view-all">Ver todo</a>
                 <button class="notification-simulate" id="notification-simulate">Simular notificación</button>
               </div>
             </div>

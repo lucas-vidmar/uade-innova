@@ -17,6 +17,12 @@ function normalizeLimit(value) {
   return Math.min(Math.max(Math.floor(parsed), 1), 50);
 }
 
+function normalizeSkip(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
+  return Math.floor(parsed);
+}
+
 function normalizeNotification(item = {}, idx = 0) {
   const type = ['grade', 'summary', 'material', 'deadline', 'teacher-reminder'].includes(item.type) ? item.type : 'material';
   return {
@@ -117,6 +123,8 @@ app.http('get-notifications', {
 
     const subjectId = request.query.get('subjectId') || null;
     const limit = normalizeLimit(request.query.get('limit'));
+    const skip = normalizeSkip(request.query.get('skip'));
+    const typeFilter = request.query.get('type') || null;
 
     // Security Check: Enrollment-based access control
     if (subjectId) {
@@ -144,14 +152,22 @@ app.http('get-notifications', {
       try { persisted = await notificationStore.listNotificationsBySubject(subjectId); } catch (err) { context.error(`[notifications] error loading persisted notifications for ${subjectId}: ${err.message}`); }
     }
 
-    const data = [...persisted, ...MOCK_NOTIFICATIONS]
+    let data = [...persisted, ...MOCK_NOTIFICATIONS]
       .filter((item) => !subjectId || item.subjectId === subjectId)
       .filter((item) => canReceiveNotification(item, userId))
       .map((item, idx) => asPublicNotification(item, idx, userId))
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-      .slice(0, limit);
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-    context.log(`[notifications] returning ${data.length} records (subjectId=${subjectId || 'all'}, userId=${userId || 'anonymous'})`);
+    if (typeFilter) {
+      const allowedTypes = typeFilter.split(',').map((t) => t.trim()).filter(Boolean);
+      if (allowedTypes.length > 0) {
+        data = data.filter((item) => allowedTypes.includes(item.type));
+      }
+    }
+
+    data = data.slice(skip, skip + limit);
+
+    context.log(`[notifications] returning ${data.length} records (subjectId=${subjectId || 'all'}, userId=${userId || 'anonymous'}, skip=${skip}, type=${typeFilter || 'all'})`);
     trackNotificationInteraction({ action: 'fetch_feed', status: 'success', userId, subjectId, notificationId: 'feed' }).catch((err) => context.error('[Telemetry] Error emitting NotificationInteraction:', err));
     return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) };
   },

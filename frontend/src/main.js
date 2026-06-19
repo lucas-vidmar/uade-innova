@@ -16,6 +16,7 @@ themeManager.init();
 const ROUTES = {
     '/student/dashboard': () => import('./pages/student/Dashboard.js').then(m => m.renderStudentDashboard),
     '/student/class': () => import('./pages/student/ClassDetail.js').then(m => m.renderClassDetail),
+    '/student/notifications': () => import('./pages/student/Notifications.js').then(m => m.renderStudentNotifications),
     '/student/tasks': () => import('./pages/student/Tasks.js').then(m => m.renderStudentTasks),
     '/student/calendar': () => import('./pages/student/Calendar.js').then(m => m.renderStudentCalendar),
     '/student/settings': () => import('./pages/student/Settings.js').then(m => m.renderStudentSettings),
