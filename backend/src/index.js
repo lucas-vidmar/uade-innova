@@ -33,3 +33,4 @@ import './functions/glossary/update-glossary/index.js';
 import './functions/corrections-transcription/get-suggestions/index.js';
 import './functions/corrections-transcription/apply-correction/index.js';
 import './functions/corrections-transcription/reject-suggestion/index.js';
+import './functions/compliance-api.js';

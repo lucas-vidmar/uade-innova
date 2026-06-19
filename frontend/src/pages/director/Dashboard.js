@@ -216,9 +216,12 @@ export async function renderDirectorDashboard(container) {
         <small style="display:block;margin-top:var(--space-3);color:var(--color-text-secondary)">
           Vista anonimizada: no se muestran datos personales de estudiantes.
         </small>
-        <div style="margin-top:var(--space-3);text-align:right">
+        <div style="margin-top:var(--space-3);text-align:right;display:flex;justify-content:flex-end;gap:var(--space-3)">
           <a href="#/director/interventions" style="color:var(--color-accent);text-decoration:none;font-size:0.875rem">
             Ver detalle de intervenciones &rarr;
+          </a>
+          <a href="#/director/compliance" style="color:var(--color-accent);text-decoration:none;font-size:0.875rem">
+            Cumplimiento &rarr;
           </a>
         </div>
       </div>

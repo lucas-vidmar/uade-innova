@@ -85,6 +85,18 @@ resource summariesContainer 'Microsoft.Storage/storageAccounts/blobServices/cont
   }
 }
 
+// ─── Container: compliance (retention policy config) ──────────
+resource complianceContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
+  parent: blobService
+  name: 'compliance'
+  properties: {
+    publicAccess: 'None'
+    metadata: {
+      purpose: 'Retention policy configuration and compliance evidence exports'
+    }
+  }
+}
+
 // ─── Container: processed (chunk JSON + embeddings metadata) ───
 resource processedContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
   parent: blobService
@@ -294,6 +306,9 @@ output glossaryFilesContainerName string = glossaryFilesContainer.name
 
 @description('The name of the summaries container.')
 output summariesContainerName string = summariesContainer.name
+
+@description('The name of the compliance container.')
+output complianceContainerName string = complianceContainer.name
 
 @description('The name of the materials table.')
 output materialsTableName string = materialsTable.name

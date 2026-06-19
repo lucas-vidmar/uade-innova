@@ -33,6 +33,7 @@ const ROUTES = {
     '/director/classes': () => import('./pages/director/ClassManagement.js').then(m => m.renderClassManagement),
     '/director/subjects': () => import('./pages/director/SubjectManagement.js').then(m => m.renderSubjectManagement),
     '/director/interventions': () => import('./pages/director/Interventions.js').then(m => m.renderDirectorInterventions),
+    '/director/compliance': () => import('./pages/director/Compliance.js').then(m => m.renderDirectorCompliance),
     '/admin/users': () => import('./pages/admin/UserManagement.js').then(m => m.renderUserManagement),
 };
 

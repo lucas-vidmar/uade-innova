@@ -1964,6 +1964,36 @@ async getTeacherAiFeedbackAlerts(subjectId, limit = 10) {
             return res.json();
         },
 
+    async getRetentionPolicy() {
+            if (USE_MOCK) {
+                await delay(300);
+                return { rules: [{ name: 'DeleteArchiveAfter2Years', enabled: true, action: 'delete', retentionDays: 730, prefixes: ['class-materials/', 'processed/'] }, { name: 'ArchiveOldSemesterMaterials', enabled: true, action: 'tierToArchive', retentionDays: 180, prefixes: ['class-materials/semester-', 'processed/semester-'] }], softDeleteDays: 7, evaluatedAt: new Date().toISOString() };
+            }
+            const res = await fetchWithTimeout(`${BASE_URL}/compliance/retention-policy`, { timeout: 4000 });
+            if (!res.ok) return null;
+            return res.json();
+        },
+
+    async getRetentionExport(format) {
+            const qs = `?format=${encodeURIComponent(format)}`;
+            const url = `${BASE_URL}/compliance/retention-export${qs}`;
+            if (USE_MOCK) {
+                await delay(500);
+                const policy = await this.getRetentionPolicy();
+                if (format === 'csv') {
+                    const header = 'rule_name,enabled,action,retention_days,prefixes';
+                    const rows = policy.rules.map(r => `${r.name},${r.enabled},${r.action},${r.retentionDays},"${r.prefixes.join(';')}"`);
+                    const footer = `generated_at,${new Date().toISOString()}`;
+                    return new Blob([header + '\n' + rows.join('\n') + '\n' + footer], { type: 'text/csv' });
+                }
+                return new Blob([JSON.stringify({ export: { rules: policy.rules, softDeletePolicy: { enabled: true, days: policy.softDeleteDays }, generatedAt: new Date().toISOString() } }, null, 2)], { type: 'application/json' });
+            }
+            const res = await fetchWithTimeout(url, { timeout: 8000 });
+            if (!res.ok) return null;
+            const blob = await res.blob();
+            return blob;
+        },
+
     async updateRiskThresholds(subjectId, thresholds) {
             if (USE_MOCK) {
                 await delay(300);
