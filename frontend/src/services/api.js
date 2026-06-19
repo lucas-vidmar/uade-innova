@@ -481,24 +481,52 @@ export const api = {
         }
 
         try {
-            const params = new URLSearchParams({
-                subjectId,
-                materialIds: deduped.join(','),
-            });
             const res = await fetchWithTimeout(
-                `${BASE_URL}/material-status?${params.toString()}`,
-                { timeout: 3500 }
+                `${BASE_URL}/material-status/batch`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ subjectId, materialIds: deduped }),
+                    timeout: 5000,
+                }
             );
 
-            if (!res.ok) throw new Error(`Error ${res.status}: material-status-batch`);
+            if (!res.ok) {
+                if (res.status === 404) {
+                    return await this._getMaterialStatusBatchGet(subjectId, deduped);
+                }
+                throw new Error(`Error ${res.status}: material-status-batch`);
+            }
 
             const data = await res.json();
             const results = Array.isArray(data?.results) ? data.results : [];
             return { subjectId, results };
         } catch (err) {
-            console.error('[API] getMaterialStatusBatch failed:', err);
-            throw err;
+            console.error('[API] getMaterialStatusBatch failed, falling back to GET:', err);
+            try {
+                return await this._getMaterialStatusBatchGet(subjectId, deduped);
+            } catch (fallbackErr) {
+                console.error('[API] getMaterialStatusBatch GET fallback also failed:', fallbackErr);
+                throw fallbackErr;
+            }
         }
+    },
+
+    async _getMaterialStatusBatchGet(subjectId, materialIds) {
+        const params = new URLSearchParams({
+            subjectId,
+            materialIds: materialIds.join(','),
+        });
+        const res = await fetchWithTimeout(
+            `${BASE_URL}/material-status?${params.toString()}`,
+            { timeout: 3500 }
+        );
+
+        if (!res.ok) throw new Error(`Error ${res.status}: material-status-batch-get`);
+
+        const data = await res.json();
+        const results = Array.isArray(data?.results) ? data.results : [];
+        return { subjectId, results };
     },
 
     async getMaterialStatus(subjectId, materialId) {

@@ -965,6 +965,91 @@ app.http('get-material-status-batch', {
     },
 });
 
+// ── POST /api/material-status/batch ────────────────────────────────
+// Consulta estado de múltiples materiales en una sola llamada (POST)
+app.http('post-material-status-batch', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'material-status/batch',
+    handler: async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+
+        let body;
+        try {
+            body = await request.json();
+        } catch {
+            return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Cuerpo de la solicitud inválido' }) };
+        }
+
+        const subjectId = body?.subjectId;
+        const materialIds = Array.isArray(body?.materialIds) ? body.materialIds.map(id => String(id).trim()).filter(Boolean) : [];
+
+        if (!subjectId || subjectId === 'undefined') {
+            return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Falta subjectId' }) };
+        }
+
+        if (materialIds.length === 0) {
+            return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Falta materialIds' }) };
+        }
+
+        if (materialIds.length > 50) {
+            return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'materialIds excede el máximo permitido (50)' }) };
+        }
+
+        // Security Check: Enrollment-based access control
+        const principal = parseClientPrincipal(request);
+        const userId = principal?.userId || principal?.oid || 'anonymous';
+        const roles = principal?.userRoles || [];
+        const isDirector = roles.includes('Director');
+
+        if (!isDirector) {
+            try {
+                const enrollment = await getEnrollment(subjectId, userId);
+                if (!enrollment || enrollment.status !== 'active') {
+                    context.log.warn(`[post-material-status-batch] Unauthorized access attempt: User ${userId} is not enrolled in ${subjectId}`);
+                    return {
+                        status: 403,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ error: 'No tienes acceso a los materiales de esta materia.' })
+                    };
+                }
+            } catch (enrollmentErr) {
+                context.error(`[post-material-status-batch] Error verifying enrollment for ${userId} in ${subjectId}:`, enrollmentErr);
+                return { status: 500, body: JSON.stringify({ error: 'Error al verificar permisos de acceso.' }) };
+            }
+        }
+
+        try {
+            const results = [];
+
+            for (const materialId of materialIds) {
+                const material = await getMaterialBySubjectAndId(subjectId, materialId, context);
+                if (!material) {
+                    results.push({ materialId, found: false, httpStatus: 404 });
+                    continue;
+                }
+
+                results.push({
+                    materialId,
+                    found: true,
+                    httpStatus: 200,
+                    status: normalizeMaterialStatus(material.status),
+                    material,
+                });
+            }
+
+            return {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ subjectId, results }),
+            };
+        } catch (err) {
+            context.error(err);
+            return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Error interno' }) };
+        }
+    },
+});
+
 // ── POST /api/classes ──────────────────────────────────────────────
 // Crea o actualiza una clase entera (o la lista de clases)
 app.http('save-classes', {
