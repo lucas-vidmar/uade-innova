@@ -1332,6 +1332,33 @@ export const api = {
         }
     },
 
+    async getArchiveUsage(subjectId, semester) {
+        if (USE_MOCK) {
+            await delay(350);
+            return {
+                totalArchiveBlobs: 0,
+                totalArchiveSizeGB: 0,
+                bySubject: [],
+                bySemester: [],
+                lastUpdatedAt: new Date().toISOString(),
+                dataSource: 'Mock data — no real Azure Storage connection',
+            };
+        }
+        try {
+            const params = new URLSearchParams();
+            if (subjectId) params.set('subjectId', subjectId);
+            if (semester) params.set('semester', semester);
+            const qs = params.toString();
+            const url = `${BASE_URL}/archive-usage${qs ? '?' + qs : ''}`;
+            const res = await fetchWithTimeout(url, { timeout: 10000 });
+            if (!res.ok) return null;
+            return await res.json();
+        } catch (err) {
+            console.error('[API] getArchiveUsage failed:', err);
+            return null;
+        }
+    },
+
     async getAdminUsers() {
             if (USE_MOCK) {
                 await delay(400);

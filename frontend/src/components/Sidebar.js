@@ -32,6 +32,7 @@ const NAV = {
     { id: 'director-sat-analytics', icon: 'chart', label: 'SAT por Prompt', path: '#/director/sat-analytics' },
     { id: 'director-interventions', icon: 'alert', label: 'Intervenciones', path: '#/director/interventions' },
     { id: 'director-compliance', icon: 'shield', label: 'Cumplimiento', path: '#/director/compliance' },
+    { id: 'director-archive-usage', icon: 'database', label: 'Archivo en Frío', path: '#/director/archive-usage' },
     { id: 'director-classes', icon: 'stack', label: 'Gestión de Clases', path: '#/director/classes' },
     { id: 'director-subjects', icon: 'settings', label: 'Gestión de Materias', path: '#/director/subjects' },
   ],
@@ -595,6 +596,7 @@ function getIcon(icon) {
     book: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5A2.5 2.5 0 0 1 4 19.5Z"/><path d="M8 7h8"/><path d="M8 11h6"/><path d="M8 15h4"/></svg>',
     help: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>',
     shield: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>',
+    database: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></svg>',
   };
 
   return icons[icon] || icons.home;

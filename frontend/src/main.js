@@ -36,6 +36,7 @@ const ROUTES = {
     '/director/subjects': () => import('./pages/director/SubjectManagement.js').then(m => m.renderSubjectManagement),
     '/director/interventions': () => import('./pages/director/Interventions.js').then(m => m.renderDirectorInterventions),
     '/director/compliance': () => import('./pages/director/Compliance.js').then(m => m.renderDirectorCompliance),
+    '/director/archive-usage': () => import('./pages/director/ArchiveUsage.js').then(m => m.renderDirectorArchiveUsage),
     '/admin/users': () => import('./pages/admin/UserManagement.js').then(m => m.renderUserManagement),
 };
 
