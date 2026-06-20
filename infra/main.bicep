@@ -95,6 +95,10 @@ param graphApiClientSecret string
 @description('Tenant ID for Microsoft Graph API. Defaults to the subscription\'s tenant ID.')
 param graphApiTenantId string = subscription().tenantId
 
+@secure()
+@description('Pinecone vector database API key.')
+param pineconeApiKey string
+
 // ─── Variables & naming ──────────────────────────────────────────
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
@@ -177,6 +181,7 @@ module keyVault './modules/keyvault.bicep' = {
     graphApiClientId: graphApiClientId
     graphApiClientSecret: graphApiClientSecret
     graphApiTenantId: graphApiTenantId
+    pineconeApiKey: pineconeApiKey
   }
 }
 
@@ -211,6 +216,7 @@ module functions './modules/functions.bicep' = {
     pineconeEnvironment: pineconeEnvironment
     pineconeHost: pineconeHost
     pineconeApiKeySecretName: pineconeApiKeySecretName
+    pineconeApiKey: pineconeApiKey
     keyVaultUri: keyVault.outputs.keyVaultUri
     classMaterialsContainerName: classMaterialsContainerName
     materialsTableName: storage.outputs.materialsTableName

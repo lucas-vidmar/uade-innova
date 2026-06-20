@@ -55,6 +55,9 @@
         },
         "notificationEmail": {
             "value": "${notificationEmail}"
+        },
+        "pineconeApiKey": {
+            "value": "${PINECONE_API_KEY}"
         }
     }
 }

@@ -46,6 +46,10 @@ param pineconeHost string = ''
 @description('Key Vault secret name that stores the Pinecone API key.')
 param pineconeApiKeySecretName string = 'PINECONE-API-KEY'
 
+@secure()
+@description('Pinecone vector database API key.')
+param pineconeApiKey string
+
 @description('Key Vault URI.')
 param keyVaultUri string
 
@@ -251,7 +255,11 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         }
         {
           name: 'PINECONE_API_KEY'
-          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/${pineconeApiKeySecretName}/)'
+          value: pineconeApiKey
+        }
+        {
+          name: 'AZURE_STORAGE_ACCESS_KEY'
+          value: listKeys(storageAccountId, '2023-01-01').keys[0].value
         }
         {
           name: 'NODE_ENV'
@@ -369,8 +377,8 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
 @description('The name of the Function App.')
 output functionAppName string = functionApp.name
 
-// @description('The principal ID of the Function App Managed Identity.')
-// output functionAppPrincipalId string = functionApp.identity.principalId
+@description('The principal ID of the Function App Managed Identity.')
+output functionAppPrincipalId string = functionApp.identity.principalId
 
 @description('The default hostname of the Function App.')
 output functionAppHostName string = functionApp.properties.defaultHostName

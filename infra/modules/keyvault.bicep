@@ -30,6 +30,10 @@ param graphApiClientSecret string
 @description('Tenant ID for Microsoft Graph API. Defaults to the subscription\'s tenant ID.')
 param graphApiTenantId string = subscription().tenantId
 
+@secure()
+@description('API key for Pinecone vector database. Must be a valid Pinecone API key for the configured index.')
+param pineconeApiKey string
+
 // ─── Key Vault ───────────────────────────────────────────────────
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: name
@@ -106,6 +110,15 @@ resource graphApiTenantIdSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' =
   name: 'GRAPH-API-TENANT-ID'
   properties: {
     value: graphApiTenantId
+  }
+}
+
+// ─── PINECONE-API-KEY ─────────────────────────────────────────
+resource pineconeApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'PINECONE-API-KEY'
+  properties: {
+    value: pineconeApiKey
   }
 }
 
