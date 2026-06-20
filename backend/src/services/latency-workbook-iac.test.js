@@ -42,6 +42,40 @@ test('latency workbook documents KQL queries in markdown', async () => {
   assert.match(workbookContent, /KQL.*Reference|kqlReference/);
 });
 
+test('latency workbook includes TTFT by subject chart and table', async () => {
+  const workbookContent = await readRepoFile('infra/modules/latency-workbook.bicep');
+
+  assert.match(workbookContent, /ttftBySubject/);
+  assert.match(workbookContent, /ttftMs/);
+  assert.match(workbookContent, /percentile\(ttftMs,\s*50\)/);
+  assert.match(workbookContent, /percentile\(ttftMs,\s*90\)/);
+  assert.match(workbookContent, /percentile\(ttftMs,\s*95\)/);
+  assert.match(workbookContent, /SampleCount\s*>\s*2/);
+});
+
+test('latency workbook includes TTFT by prompt version chart and table', async () => {
+  const workbookContent = await readRepoFile('infra/modules/latency-workbook.bicep');
+
+  assert.match(workbookContent, /ttftByVersion/);
+  assert.match(workbookContent, /PromptVersion/);
+  assert.match(workbookContent, /customDimensions\.promptVersion/);
+});
+
+test('latency workbook header mentions TTFT segmentation', async () => {
+  const workbookContent = await readRepoFile('infra/modules/latency-workbook.bicep');
+
+  assert.match(workbookContent, /TTFT/);
+  assert.match(workbookContent, /Time to First Token/);
+});
+
+test('latency workbook KQL reference documents TTFT queries', async () => {
+  const workbookContent = await readRepoFile('infra/modules/latency-workbook.bicep');
+
+  assert.match(workbookContent, /TTFT by Subject/);
+  assert.match(workbookContent, /TTFT by Prompt Version/);
+  assert.match(workbookContent, /minimum sample count/);
+});
+
 test('main.bicep wires latency workbook module', async () => {
   const mainContent = await readRepoFile('infra/main.bicep');
 

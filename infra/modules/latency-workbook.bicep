@@ -25,7 +25,7 @@ var workbookContent = {
     {
       type: 1
       content: {
-        json: '## Vector vs LLM Latency Percentiles\nSide-by-side comparison of vector-search (Pinecone) and end-to-end RAG latency. P50/P95/P99 percentiles over time.'
+        json: '## Vector vs LLM Latency Percentiles\nSide-by-side comparison of vector-search (Pinecone) and end-to-end RAG latency. P50/P95/P99 percentiles over time. Includes TTFT (Time to First Token) segmentation by Subject and Prompt Version (Issue #146).'
       }
       name: 'header'
     }
@@ -197,11 +197,197 @@ customEvents
         showBorder: false
       }
     }
+    // ── TTFT by Subject ──
+    {
+      type: 12
+      content: {
+        version: 'NotebookGroup/1.0'
+        groupType: 'editable'
+        items: [
+          {
+            type: 3
+            content: {
+              version: 'KqlItem/1.0'
+              query: '''
+customEvents
+| where timestamp {TimeRange}
+| where name == "RAGInteraction"
+| where '{SubjectId}' == 'all' or tostring(customDimensions.subjectId) == '{SubjectId}'
+| where '{PromptVersion}' == 'all' or tostring(customDimensions.promptVersion) == '{PromptVersion}'
+| extend ttftMs = todouble(customMeasurements.ttftMs)
+| where ttftMs > 0
+| summarize
+    P95 = percentile(ttftMs, 95),
+    SampleCount = count()
+    by bin(timestamp, 1h), Subject = tostring(customDimensions.subjectId)
+| where SampleCount > 2
+| order by timestamp asc
+'''
+              size: 1
+              title: 'TTFT P95 by Subject (ms) — segmented by subjectId'
+              timeContextFromParameter: 'TimeRange'
+              queryType: 0
+              resourceType: 'microsoft.insights/components'
+              visualization: 'linechart'
+              chartSettings: {
+                xAxis: 'timestamp'
+                series: [{
+                  field: 'P95'
+                  splitBy: 'Subject'
+                }]
+                ySettings: {
+                  unit: 2
+                }
+              }
+            }
+            name: 'ttftBySubjectChart'
+            customWidth: '50%'
+          }
+          {
+            type: 3
+            content: {
+              version: 'KqlItem/1.0'
+              query: '''
+customEvents
+| where timestamp {TimeRange}
+| where name == "RAGInteraction"
+| where '{SubjectId}' == 'all' or tostring(customDimensions.subjectId) == '{SubjectId}'
+| where '{PromptVersion}' == 'all' or tostring(customDimensions.promptVersion) == '{PromptVersion}'
+| extend ttftMs = todouble(customMeasurements.ttftMs)
+| where ttftMs > 0
+| summarize
+    P50 = percentile(ttftMs, 50),
+    P90 = percentile(ttftMs, 90),
+    P95 = percentile(ttftMs, 95),
+    SampleCount = count()
+    by Subject = tostring(customDimensions.subjectId)
+| where SampleCount > 2
+| order by Subject asc
+'''
+              size: 1
+              title: 'TTFT Summary by Subject — P50/P90/P95'
+              timeContextFromParameter: 'TimeRange'
+              queryType: 0
+              resourceType: 'microsoft.insights/components'
+              visualization: 'table'
+              gridSettings: {
+                formatters: [
+                  { columnMatch: 'Subject', columnType: 'string' }
+                  { columnMatch: 'P50', columnType: 'number', round: 0 }
+                  { columnMatch: 'P90', columnType: 'number', round: 0 }
+                  { columnMatch: 'P95', columnType: 'number', round: 0 }
+                  { columnMatch: 'SampleCount', columnType: 'number', round: 0 }
+                ]
+              }
+            }
+            name: 'ttftBySubjectTable'
+            customWidth: '50%'
+          }
+        ]
+      }
+      name: 'ttftBySubjectGroup'
+      styleSettings: {
+        showBorder: true
+      }
+    }
+    // ── TTFT by Prompt Version ──
+    {
+      type: 12
+      content: {
+        version: 'NotebookGroup/1.0'
+        groupType: 'editable'
+        items: [
+          {
+            type: 3
+            content: {
+              version: 'KqlItem/1.0'
+              query: '''
+customEvents
+| where timestamp {TimeRange}
+| where name == "RAGInteraction"
+| where '{SubjectId}' == 'all' or tostring(customDimensions.subjectId) == '{SubjectId}'
+| where '{PromptVersion}' == 'all' or tostring(customDimensions.promptVersion) == '{PromptVersion}'
+| extend ttftMs = todouble(customMeasurements.ttftMs)
+| where ttftMs > 0
+| summarize
+    P95 = percentile(ttftMs, 95),
+    SampleCount = count()
+    by bin(timestamp, 1h), PromptVersion = tostring(customDimensions.promptVersion)
+| where SampleCount > 2
+| order by timestamp asc
+'''
+              size: 1
+              title: 'TTFT P95 by Prompt Version (ms) — segmented by promptVersion'
+              timeContextFromParameter: 'TimeRange'
+              queryType: 0
+              resourceType: 'microsoft.insights/components'
+              visualization: 'linechart'
+              chartSettings: {
+                xAxis: 'timestamp'
+                series: [{
+                  field: 'P95'
+                  splitBy: 'PromptVersion'
+                }]
+                ySettings: {
+                  unit: 2
+                }
+              }
+            }
+            name: 'ttftByVersionChart'
+            customWidth: '50%'
+          }
+          {
+            type: 3
+            content: {
+              version: 'KqlItem/1.0'
+              query: '''
+customEvents
+| where timestamp {TimeRange}
+| where name == "RAGInteraction"
+| where '{SubjectId}' == 'all' or tostring(customDimensions.subjectId) == '{SubjectId}'
+| where '{PromptVersion}' == 'all' or tostring(customDimensions.promptVersion) == '{PromptVersion}'
+| extend ttftMs = todouble(customMeasurements.ttftMs)
+| where ttftMs > 0
+| summarize
+    P50 = percentile(ttftMs, 50),
+    P90 = percentile(ttftMs, 90),
+    P95 = percentile(ttftMs, 95),
+    SampleCount = count()
+    by PromptVersion = tostring(customDimensions.promptVersion)
+| where SampleCount > 2
+| order by PromptVersion asc
+'''
+              size: 1
+              title: 'TTFT Summary by Prompt Version — P50/P90/P95'
+              timeContextFromParameter: 'TimeRange'
+              queryType: 0
+              resourceType: 'microsoft.insights/components'
+              visualization: 'table'
+              gridSettings: {
+                formatters: [
+                  { columnMatch: 'PromptVersion', columnType: 'string' }
+                  { columnMatch: 'P50', columnType: 'number', round: 0 }
+                  { columnMatch: 'P90', columnType: 'number', round: 0 }
+                  { columnMatch: 'P95', columnType: 'number', round: 0 }
+                  { columnMatch: 'SampleCount', columnType: 'number', round: 0 }
+                ]
+              }
+            }
+            name: 'ttftByVersionTable'
+            customWidth: '50%'
+          }
+        ]
+      }
+      name: 'ttftByVersionGroup'
+      styleSettings: {
+        showBorder: true
+      }
+    }
     // ── KQL Reference ──
     {
       type: 1
       content: {
-        json: '### KQL Queries Reference\n\n**Vector Search Latency:** Queries `dependencies` table filtered by `name == "vector.search"`. Duration is in milliseconds. Filtered by SubjectId.\n\n**RAG Interaction Latency:** Queries `customEvents` table filtered by `name == "RAGInteraction"`. Duration comes from `customMeasurements.durationMs`. Filtered by SubjectId and PromptVersion.\n\nBoth queries use adaptive bin size based on the selected time range.'
+        json: '### KQL Queries Reference\n\n**Vector Search Latency:** Queries `dependencies` table filtered by `name == "vector.search"`. Duration is in milliseconds. Filtered by SubjectId.\n\n**RAG Interaction Latency:** Queries `customEvents` table filtered by `name == "RAGInteraction"`. Duration comes from `customMeasurements.durationMs`. Filtered by SubjectId and PromptVersion.\n\n**TTFT by Subject:** Queries `customEvents` filtered by `name == "RAGInteraction"`. TTFT from `customMeasurements.ttftMs`. Segmented by `subjectId` with P50/P90/P95 and a minimum sample count guard (>2 samples) to suppress low-volume segments.\n\n**TTFT by Prompt Version:** Same as above, segmented by `promptVersion`.\n\nAll queries use adaptive bin size based on the selected time range.'
       }
       name: 'kqlReference'
     }
