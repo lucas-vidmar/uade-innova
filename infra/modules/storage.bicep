@@ -121,6 +121,18 @@ resource monitorStateContainer 'Microsoft.Storage/storageAccounts/blobServices/c
   }
 }
 
+// ─── Container: vector-snapshots (periodic vector health snapshots) ─────
+resource vectorSnapshotsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
+  parent: blobService
+  name: 'vector-snapshots'
+  properties: {
+    publicAccess: 'None'
+    metadata: {
+      purpose: 'Periodic vector health snapshots for trend analysis'
+    }
+  }
+}
+
 // ─── Lifecycle Management Policy (2-Year Retention) ─────────────
 resource blobLifecyclePolicy 'Microsoft.Storage/storageAccounts/managementPolicies@2023-01-01' = {
   parent: storageAccount
@@ -170,6 +182,28 @@ resource blobLifecyclePolicy 'Microsoft.Storage/storageAccounts/managementPolici
               prefixMatch: [
                 'class-materials/semester-'
                 'processed/semester-'
+              ]
+            }
+          }
+        }
+        {
+          enabled: true
+          name: 'DeleteVectorSnapshotsAfter2Years'
+          type: 'Lifecycle'
+          definition: {
+            actions: {
+              baseBlob: {
+                delete: {
+                  daysAfterModificationGreaterThan: 730
+                }
+              }
+            }
+            filters: {
+              blobTypes: [
+                'blockBlob'
+              ]
+              prefixMatch: [
+                'vector-snapshots/'
               ]
             }
           }
@@ -357,6 +391,9 @@ output interventionsTableName string = interventionsTable.name
 
 @description('The name of the RiskThresholds table.')
 output riskThresholdsTableName string = riskThresholdsTable.name
+
+@description('The name of the vector-snapshots container.')
+output vectorSnapshotsContainerName string = vectorSnapshotsContainer.name
 
 @description('The name of the ingestion tasks queue.')
 output ingestionQueueName string = ingestionQueue.name
