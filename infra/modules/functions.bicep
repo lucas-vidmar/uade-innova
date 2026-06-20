@@ -266,6 +266,11 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           name: 'FRONT_DOOR_ID'
           value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/FRONT-DOOR-ID/)'
         }
+        // Vector backup scheduler
+        {
+          name: 'VECTOR_BACKUP_WINDOW_CRON'
+          value: '0 0 3 * * *'
+        }
         // Graph API (Teams notifications)
         {
           name: 'GRAPH_API_CLIENT_ID'
