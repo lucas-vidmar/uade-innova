@@ -1,0 +1,188 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.41.2.15936",
+      "templateHash": "7281100021859218862"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure region for monitor resources."
+      }
+    },
+    "workspaceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the Log Analytics Workspace connected to App Insights."
+      }
+    },
+    "notificationEmail": {
+      "type": "string",
+      "metadata": {
+        "description": "Email destination for alert notifications."
+      }
+    },
+    "scheduledQueryRuleName": {
+      "type": "string",
+      "defaultValue": "alert-ttft-anomaly",
+      "metadata": {
+        "description": "Name of the scheduled query alert rule."
+      }
+    },
+    "actionGroupName": {
+      "type": "string",
+      "defaultValue": "ag-ttft-anomaly",
+      "metadata": {
+        "description": "Name of the action group that sends email notifications."
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Tags to apply to resources."
+      }
+    },
+    "ttftThresholdMs": {
+      "type": "int",
+      "defaultValue": 2000,
+      "minValue": 1,
+      "metadata": {
+        "description": "TTFT P95 threshold in milliseconds. Alert fires when P95 exceeds this value."
+      }
+    },
+    "lookbackWindow": {
+      "type": "string",
+      "defaultValue": "PT15M",
+      "metadata": {
+        "description": "Lookback window for the alert query in ISO 8601 duration format."
+      }
+    },
+    "minimumSamples": {
+      "type": "int",
+      "defaultValue": 3,
+      "minValue": 1,
+      "metadata": {
+        "description": "Minimum number of samples required to prevent false positives during no-traffic periods."
+      }
+    },
+    "severity": {
+      "type": "int",
+      "defaultValue": 2,
+      "minValue": 0,
+      "maxValue": 4,
+      "metadata": {
+        "description": "Alert severity (0=Critical, 1=Error, 2=Warning, 3=Informational, 4=Verbose)."
+      }
+    },
+    "evaluationFrequency": {
+      "type": "string",
+      "defaultValue": "PT5M",
+      "metadata": {
+        "description": "How often the alert query is evaluated, in ISO 8601 duration format."
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Insights/actionGroups",
+      "apiVersion": "2023-01-01",
+      "name": "[parameters('actionGroupName')]",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "groupShortName": "TTFTAlert",
+        "enabled": true,
+        "emailReceivers": [
+          {
+            "name": "operations-email",
+            "emailAddress": "[parameters('notificationEmail')]",
+            "useCommonAlertSchema": true
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-12-01",
+      "name": "[parameters('scheduledQueryRuleName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "[format('Triggers when TTFT P95 exceeds {0}ms over the last {1} (minimum {2} samples required).', parameters('ttftThresholdMs'), parameters('lookbackWindow'), parameters('minimumSamples'))]",
+        "displayName": "[format('TTFT P95 anomaly (>{0}ms over {1})', parameters('ttftThresholdMs'), parameters('lookbackWindow'))]",
+        "severity": "[parameters('severity')]",
+        "enabled": true,
+        "scopes": [
+          "[parameters('workspaceId')]"
+        ],
+        "evaluationFrequency": "[parameters('evaluationFrequency')]",
+        "windowSize": "[parameters('lookbackWindow')]",
+        "criteria": {
+          "allOf": [
+            {
+              "query": "let ttftFromCustomEvents =\ncustomEvents\n| where name == \"RagQuery.Executed\"\n| where timestamp >= ago(${lookbackWindow})\n| where isnotempty(tostring(customMeasurements.llmFirstTokenLatencyMs))\n| extend subjectId = tostring(customDimensions.subjectId)\n| project timestamp, subjectId, llmFirstTokenLatencyMs = todouble(customMeasurements.llmFirstTokenLatencyMs);\nlet ttftFromAppEvents =\nAppEvents\n| where Name == \"RagQuery.Executed\"\n| where timestamp >= ago(${lookbackWindow})\n| where isnotempty(tostring(Measurements.llmFirstTokenLatencyMs))\n| extend subjectId = tostring(Properties.subjectId)\n| project timestamp=TimeGenerated, subjectId, llmFirstTokenLatencyMs = todouble(Measurements.llmFirstTokenLatencyMs);\nunion isfuzzy=true ttftFromCustomEvents, ttftFromAppEvents\n| summarize\n    ttftP95Ms = percentile(llmFirstTokenLatencyMs, 95),\n    sampleCount = count()\n    by subjectId\n| where sampleCount >= ${minimumSamples}\n| where ttftP95Ms > ${ttftThresholdMs}\n| project subjectId, ttftP95Ms, sampleCount\n",
+              "timeAggregation": "Count",
+              "operator": "GreaterThanOrEqual",
+              "threshold": 1,
+              "dimensions": [
+                {
+                  "name": "subjectId",
+                  "operator": "Include",
+                  "values": [
+                    "*"
+                  ]
+                }
+              ],
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 1,
+                "minFailingPeriodsToAlert": 1
+              }
+            }
+          ]
+        },
+        "autoMitigate": true,
+        "muteActionsDuration": "PT15M",
+        "actions": {
+          "actionGroups": [
+            "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "actionGroupId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+    },
+    "scheduledQueryRuleId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Insights/scheduledQueryRules', parameters('scheduledQueryRuleName'))]"
+    },
+    "ttftThresholdMsValue": {
+      "type": "int",
+      "value": "[parameters('ttftThresholdMs')]"
+    },
+    "minimumSamplesValue": {
+      "type": "int",
+      "value": "[parameters('minimumSamples')]"
+    },
+    "severityValue": {
+      "type": "int",
+      "value": "[parameters('severity')]"
+    },
+    "evaluationFrequencyValue": {
+      "type": "string",
+      "value": "[parameters('evaluationFrequency')]"
+    }
+  }
+}

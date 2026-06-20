@@ -75,6 +75,15 @@ param budgetAmount int = 100
 @description('Lista de correos para notificaciones de presupuesto.')
 param notificationEmail string = ''
 
+@minValue(1)
+@description('TTFT P95 threshold in milliseconds for the anomaly alert rule.')
+param ttftAnomalyThresholdMs int = 2000
+
+@minValue(0)
+@maxValue(4)
+@description('Alert severity for TTFT anomaly (0=Critical, 1=Error, 2=Warning).')
+param ttftAnomalySeverity int = 2
+
 @secure()
 @description('Client ID of the Entra ID app registration for Microsoft Graph API (Teams notifications).')
 param graphApiClientId string
@@ -109,6 +118,8 @@ var workbookName = guid(resourceGroup().id, 'cost-per-interaction-workbook')
 var latencyWorkbookName = guid(resourceGroup().id, 'latency-percentiles-workbook')
 var anomalousUsageAlertName = 'alert-anomalous-token-usage-${take(resourceToken, 8)}'
 var anomalousUsageActionGroupName = 'ag-token-usage-${take(resourceToken, 8)}'
+var ttftAnomalyAlertName = 'alert-ttft-anomaly-${take(resourceToken, 8)}'
+var ttftAnomalyActionGroupName = 'ag-ttft-anomaly-${take(resourceToken, 8)}'
 
 // SWA hostname is randomly generated (e.g., agreeable-beach-..., not the resource name).
 // Use "*" during development; override in main.parameters.json for production.
@@ -273,6 +284,23 @@ module anomalousUsageAlert './modules/anomalous-usage-alert.bicep' = if (!empty(
     actionGroupName: anomalousUsageActionGroupName
     subjectTokenThreshold: 500000
     warningTokenThreshold: 750000
+    tags: tags
+  }
+}
+
+// ─── Module: TTFT Anomaly Alert (Issue #147) ─────────────────────
+module ttftAnomalyAlert './modules/ttft-anomaly-alert.bicep' = if (!empty(notificationEmail)) {
+  name: 'ttftAnomalyAlert'
+  params: {
+    location: location
+    workspaceId: appInsights.outputs.logAnalyticsWorkspaceId
+    notificationEmail: notificationEmail
+    scheduledQueryRuleName: ttftAnomalyAlertName
+    actionGroupName: ttftAnomalyActionGroupName
+    ttftThresholdMs: ttftAnomalyThresholdMs
+    severity: ttftAnomalySeverity
+    lookbackWindow: 'PT15M'
+    minimumSamples: 3
     tags: tags
   }
 }
