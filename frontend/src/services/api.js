@@ -1606,13 +1606,29 @@ export const api = {
             return res.json();
         },
 
-    async sendChatRating({ sessionId, messageId, subjectId, rating, comment }) {
+    async sendChatRating({ sessionId, messageId, subjectId, classId, rating, comment }) {
             if (USE_MOCK) return { success: true };
             const res = await apiFetch(`${BASE_URL}/chat-rate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sessionId, messageId, subjectId, rating, comment: comment || '' })
+                body: JSON.stringify({ sessionId, messageId, subjectId, classId, rating, comment: comment || '' })
             });
+            return res.json();
+        },
+
+    async getSatAnalytics({ subjectId, classId }) {
+            if (USE_MOCK) {
+                await delay(300);
+                const segments = [
+                    { promptVersion: 'v1', rated: 12, positive: 9, satScore: 0.75 },
+                    { promptVersion: 'v2', rated: 8, positive: 7, satScore: 0.875 },
+                ];
+                const filtered = classId ? segments.filter(() => false) : [];
+                return { segments: filtered, total: filtered.reduce((s, x) => s + x.rated, 0), filter: { subjectId, classId: classId || null } };
+            }
+            let url = `${BASE_URL}/sat-analytics?subjectId=${encodeURIComponent(subjectId)}`;
+            if (classId) url += `&classId=${encodeURIComponent(classId)}`;
+            const res = await apiFetch(url);
             return res.json();
         },
 

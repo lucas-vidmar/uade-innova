@@ -200,7 +200,7 @@ app.http('chat-rate', {
     handler: async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         try {
-            const { sessionId, messageId, subjectId, rating, comment } = await request.json();
+            const { sessionId, messageId, subjectId, classId, rating, comment } = await request.json();
             const { userId, sanitizedId } = getAuthenticatedUser(request);
 
             if (!sessionId || !messageId || !subjectId || !rating) {
@@ -233,17 +233,27 @@ app.http('chat-rate', {
                 if (createErr.statusCode !== 409) throw createErr;
             }
 
+            let promptVersion = '';
+            try {
+                const chatLog = await loadJson('chat-logs', `${sanitizedId}/${subjectId}/${messageId}.json`);
+                if (chatLog?.promptVersion) promptVersion = chatLog.promptVersion;
+            } catch (promptErr) {
+                context.warn(`[chat-rate] Could not load chat log for promptVersion: ${promptErr?.message || promptErr}`);
+            }
+
             await tableClient.upsertEntity({
-                partitionKey: sessionId,
+                partitionKey: subjectId,
                 rowKey: messageId,
                 userId,
                 subjectId,
+                classId: classId || '',
                 rating,
                 comment: comment || '',
+                promptVersion,
                 createdAt: new Date().toISOString(),
             }, 'Merge');
 
-            context.log(`[chat-rate] Rating saved: sessionId=${sessionId}, messageId=${messageId}, rating=${rating}, userId=${sanitizedId}`);
+            context.log(`[chat-rate] Rating saved: subjectId=${subjectId}, classId=${classId || 'none'}, messageId=${messageId}, rating=${rating}, userId=${sanitizedId}`);
 
             return {
                 status: 200,

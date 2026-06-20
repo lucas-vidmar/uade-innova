@@ -29,6 +29,7 @@ const NAV = {
   ],
   director: [
     { id: 'director-dashboard', icon: 'chart', label: 'Panel Directivo', path: '#/director/dashboard' },
+    { id: 'director-sat-analytics', icon: 'chart', label: 'SAT por Prompt', path: '#/director/sat-analytics' },
     { id: 'director-interventions', icon: 'alert', label: 'Intervenciones', path: '#/director/interventions' },
     { id: 'director-compliance', icon: 'shield', label: 'Cumplimiento', path: '#/director/compliance' },
     { id: 'director-classes', icon: 'stack', label: 'Gestión de Clases', path: '#/director/classes' },

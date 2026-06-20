@@ -508,9 +508,10 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         }
 
         try {
+          const classId = Array.isArray(selectedClassIds) && selectedClassIds.length > 0 ? selectedClassIds[0] : '';
           await Promise.all([
             api.sendChatFeedback({ messageId, subjectId, isPositive: type === 'positive' }),
-            api.sendChatRating({ sessionId: currentSessionId, messageId, subjectId, rating: type, comment }),
+            api.sendChatRating({ sessionId: currentSessionId, messageId, subjectId, classId, rating: type, comment }),
           ]);
           const msg = messages.find((item) => item.id === messageId);
           if (msg) { msg.feedback = type; msg.rated = true; }
