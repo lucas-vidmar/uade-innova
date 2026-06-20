@@ -29,6 +29,45 @@ param warningTokenThreshold int = 750000
 
 var tokenThreshold = 1000000
 
+var perSubjectQueryTemplate = '''
+AppEvents
+| where Name == "RAGInteraction"
+| where TimeGenerated >= ago(24h)
+| where isnotempty(tostring(Properties.userId)) and isnotempty(tostring(Properties.subjectId))
+| extend userId = tostring(Properties.userId), subjectId = tostring(Properties.subjectId), totalTokens = todouble(Measurements.totalTokens)
+| summarize tokens24h = sum(coalesce(totalTokens, 0.0)) by userId, subjectId
+| where tokens24h > {threshold}
+| project userId, subjectId, tokens24h
+'''
+
+var perSubjectQuery = replace(perSubjectQueryTemplate, '{threshold}', format('{0}', subjectTokenThreshold))
+
+var warningQueryTemplate = '''
+AppEvents
+| where Name == "RAGInteraction"
+| where TimeGenerated >= ago(24h)
+| where isnotempty(tostring(Properties.userId))
+| extend userId = tostring(Properties.userId), totalTokens = todouble(Measurements.totalTokens)
+| summarize tokens24h = sum(coalesce(totalTokens, 0.0)) by userId
+| where tokens24h > {threshold}
+| project userId, tokens24h
+'''
+
+var warningQuery = replace(warningQueryTemplate, '{threshold}', format('{0}', warningTokenThreshold))
+
+var criticalQueryTemplate = '''
+AppEvents
+| where Name == "RAGInteraction"
+| where TimeGenerated >= ago(24h)
+| where isnotempty(tostring(Properties.userId))
+| extend userId = tostring(Properties.userId), totalTokens = todouble(Measurements.totalTokens)
+| summarize tokens24h = sum(coalesce(totalTokens, 0.0)) by userId
+| where tokens24h > {threshold}
+| project userId, tokens24h
+'''
+
+var criticalQuery = replace(criticalQueryTemplate, '{threshold}', format('{0}', tokenThreshold))
+
 resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
   name: actionGroupName
   location: 'global'
@@ -63,22 +102,7 @@ resource anomalousUsageRule 'Microsoft.Insights/scheduledQueryRules@2023-12-01' 
     criteria: {
       allOf: [
         {
-          query: '''
-let ragFromCustomEvents =
-customEvents
-| where name == "RAGInteraction"
-| project timestamp, userId=tostring(customDimensions.userId), totalTokens=todouble(customMeasurements.totalTokens);
-let ragFromAppEvents =
-AppEvents
-| where Name == "RAGInteraction"
-| project timestamp=TimeGenerated, userId=tostring(Properties.userId), totalTokens=todouble(Measurements.totalTokens);
-union isfuzzy=true ragFromCustomEvents, ragFromAppEvents
-| where timestamp >= ago(24h)
-| where isnotempty(userId)
-| summarize tokens24h = sum(coalesce(totalTokens, 0.0)) by userId
-| where tokens24h > 1000000
-| project userId, tokens24h
-'''
+          query: criticalQuery
           timeAggregation: 'Count'
           operator: 'GreaterThanOrEqual'
           threshold: 1
@@ -122,22 +146,7 @@ resource perSubjectUsageRule 'Microsoft.Insights/scheduledQueryRules@2023-12-01'
     criteria: {
       allOf: [
         {
-          query: '''
-let ragFromCustomEvents =
-customEvents
-| where name == "RAGInteraction"
-| project timestamp, userId=tostring(customDimensions.userId), subjectId=tostring(customDimensions.subjectId), totalTokens=todouble(customMeasurements.totalTokens);
-let ragFromAppEvents =
-AppEvents
-| where Name == "RAGInteraction"
-| project timestamp=TimeGenerated, userId=tostring(Properties.userId), subjectId=tostring(Properties.subjectId), totalTokens=todouble(Measurements.totalTokens);
-union isfuzzy=true ragFromCustomEvents, ragFromAppEvents
-| where timestamp >= ago(24h)
-| where isnotempty(userId) and isnotempty(subjectId)
-| summarize tokens24h = sum(coalesce(totalTokens, 0.0)) by userId, subjectId
-| where tokens24h > ${subjectTokenThreshold}
-| project userId, subjectId, tokens24h
-'''
+          query: perSubjectQuery
           timeAggregation: 'Count'
           operator: 'GreaterThanOrEqual'
           threshold: 1
@@ -186,22 +195,7 @@ resource warningUsageRule 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = 
     criteria: {
       allOf: [
         {
-          query: '''
-let ragFromCustomEvents =
-customEvents
-| where name == "RAGInteraction"
-| project timestamp, userId=tostring(customDimensions.userId), totalTokens=todouble(customMeasurements.totalTokens);
-let ragFromAppEvents =
-AppEvents
-| where Name == "RAGInteraction"
-| project timestamp=TimeGenerated, userId=tostring(Properties.userId), totalTokens=todouble(Measurements.totalTokens);
-union isfuzzy=true ragFromCustomEvents, ragFromAppEvents
-| where timestamp >= ago(24h)
-| where isnotempty(userId)
-| summarize tokens24h = sum(coalesce(totalTokens, 0.0)) by userId
-| where tokens24h > ${warningTokenThreshold}
-| project userId, tokens24h
-'''
+          query: warningQuery
           timeAggregation: 'Count'
           operator: 'GreaterThanOrEqual'
           threshold: 1

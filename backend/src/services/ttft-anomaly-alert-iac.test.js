@@ -27,9 +27,8 @@ test('TTFT anomaly alert module defines a scheduled query rule', async () => {
   const content = await readRepoFile('infra/modules/ttft-anomaly-alert.bicep');
 
   assert.match(content, /Microsoft\.Insights\/scheduledQueryRules@2023-12-01/);
-  assert.match(content, /customEvents/);
   assert.match(content, /AppEvents/);
-  assert.match(content, /union\s+isfuzzy=true/);
+  assert.match(content, /TimeGenerated/);
   assert.match(content, /RagQuery\.Executed/);
   assert.match(content, /llmFirstTokenLatencyMs/);
   assert.match(content, /percentile\(llmFirstTokenLatencyMs,\s*95\)/);
@@ -49,14 +48,16 @@ test('TTFT anomaly alert module has configurable parameters', async () => {
 test('TTFT alert is resilient to no-traffic periods via minimumSamples filter', async () => {
   const content = await readRepoFile('infra/modules/ttft-anomaly-alert.bicep');
 
-  assert.match(content, /where\s+sampleCount\s*>=\s*\$\{minimumSamples\}/);
   assert.match(content, /sampleCount\s*=\s*count\(\)/);
+  assert.match(content, /where\s+sampleCount\s*>=\s*\{minimumSamples\}/);
+  assert.match(content, /minimumSamples.*format\('/s);
+  assert.match(content, /minimumSamples\}.*format\('/s);
 });
 
 test('TTFT alert payload includes subjectId dimensions', async () => {
   const content = await readRepoFile('infra/modules/ttft-anomaly-alert.bicep');
 
-  assert.match(content, /customDimensions\.subjectId/);
+  assert.match(content, /Properties\.subjectId/);
   assert.match(content, /by\s+subjectId/);
   assert.match(content, /name:\s+'subjectId'/);
   assert.match(content, /project\s+subjectId,\s*ttftP95Ms,\s*sampleCount/);

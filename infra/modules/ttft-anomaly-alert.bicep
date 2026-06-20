@@ -40,6 +40,29 @@ param severity int = 2
 @description('How often the alert query is evaluated, in ISO 8601 duration format.')
 param evaluationFrequency string = 'PT5M'
 
+var ttftQueryTemplate = '''
+AppEvents
+| where Name == "RagQuery.Executed"
+| where TimeGenerated >= ago({lookbackWindow})
+| where isnotempty(tostring(Measurements.llmFirstTokenLatencyMs))
+| extend subjectId = tostring(Properties.subjectId), llmFirstTokenLatencyMs = todouble(Measurements.llmFirstTokenLatencyMs)
+| summarize
+    ttftP95Ms = percentile(llmFirstTokenLatencyMs, 95),
+    sampleCount = count()
+    by subjectId
+| where sampleCount >= {minimumSamples}
+| where ttftP95Ms > {ttftThresholdMs}
+| project subjectId, ttftP95Ms, sampleCount
+'''
+
+var ttftQuery = replace(
+  replace(
+    replace(ttftQueryTemplate, '{lookbackWindow}', lookbackWindow),
+    '{minimumSamples}', format('{0}', minimumSamples)
+  ),
+  '{ttftThresholdMs}', format('{0}', ttftThresholdMs)
+)
+
 resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
   name: actionGroupName
   location: 'global'
@@ -74,30 +97,7 @@ resource ttftAnomalyRule 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = {
     criteria: {
       allOf: [
         {
-          query: '''
-let ttftFromCustomEvents =
-customEvents
-| where name == "RagQuery.Executed"
-| where timestamp >= ago(${lookbackWindow})
-| where isnotempty(tostring(customMeasurements.llmFirstTokenLatencyMs))
-| extend subjectId = tostring(customDimensions.subjectId)
-| project timestamp, subjectId, llmFirstTokenLatencyMs = todouble(customMeasurements.llmFirstTokenLatencyMs);
-let ttftFromAppEvents =
-AppEvents
-| where Name == "RagQuery.Executed"
-| where timestamp >= ago(${lookbackWindow})
-| where isnotempty(tostring(Measurements.llmFirstTokenLatencyMs))
-| extend subjectId = tostring(Properties.subjectId)
-| project timestamp=TimeGenerated, subjectId, llmFirstTokenLatencyMs = todouble(Measurements.llmFirstTokenLatencyMs);
-union isfuzzy=true ttftFromCustomEvents, ttftFromAppEvents
-| summarize
-    ttftP95Ms = percentile(llmFirstTokenLatencyMs, 95),
-    sampleCount = count()
-    by subjectId
-| where sampleCount >= ${minimumSamples}
-| where ttftP95Ms > ${ttftThresholdMs}
-| project subjectId, ttftP95Ms, sampleCount
-'''
+          query: ttftQuery
           timeAggregation: 'Count'
           operator: 'GreaterThanOrEqual'
           threshold: 1
