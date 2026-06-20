@@ -207,7 +207,11 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           name: 'AZURE_RESOURCE_GROUP_NAME'
           value: resourceGroup().name
         }
-        // Storage — Uses Managed Identity + RBAC (no access key in App Settings)
+        // Storage — Uses Connection String for data-plane operations
+        {
+          name: 'AZURE_STORAGE_CONNECTION_STRING'
+          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${listKeys(storageAccountId, '2023-01-01').keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
+        }
         {
           name: 'AZURE_STORAGE_ACCOUNT_NAME'
           value: classMaterialsStorageAccount
