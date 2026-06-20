@@ -97,7 +97,6 @@ union isfuzzy=true ragFromCustomEvents, ragFromAppEvents
       ]
     }
     autoMitigate: true
-    muteActionsDuration: 'PT1H'
     actions: {
       actionGroups: [
         actionGroup.id
@@ -162,7 +161,6 @@ union isfuzzy=true ragFromCustomEvents, ragFromAppEvents
       ]
     }
     autoMitigate: true
-    muteActionsDuration: 'PT1H'
     actions: {
       actionGroups: [
         actionGroup.id
@@ -222,7 +220,6 @@ union isfuzzy=true ragFromCustomEvents, ragFromAppEvents
       ]
     }
     autoMitigate: true
-    muteActionsDuration: 'PT1H'
     actions: {
       actionGroups: [
         actionGroup.id

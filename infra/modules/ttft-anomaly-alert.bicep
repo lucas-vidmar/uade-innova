@@ -116,7 +116,6 @@ union isfuzzy=true ttftFromCustomEvents, ttftFromAppEvents
       ]
     }
     autoMitigate: true
-    muteActionsDuration: 'PT15M'
     actions: {
       actionGroups: [
         actionGroup.id

@@ -62,11 +62,10 @@ test('TTFT alert payload includes subjectId dimensions', async () => {
   assert.match(content, /project\s+subjectId,\s*ttftP95Ms,\s*sampleCount/);
 });
 
-test('TTFT alert uses autoMitigate and proper muteActionsDuration', async () => {
+test('TTFT alert uses autoMitigate for automatic resolution', async () => {
   const content = await readRepoFile('infra/modules/ttft-anomaly-alert.bicep');
 
   assert.match(content, /autoMitigate:\s*true/);
-  assert.match(content, /muteActionsDuration:\s*'PT15M'/);
 });
 
 test('main.bicep wires TTFT anomaly alert behind notification email', async () => {
