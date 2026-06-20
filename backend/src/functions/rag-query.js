@@ -10,7 +10,7 @@ import { getShadowPrompt } from '../services/prompts.js';
 import { trackRAGInteraction, trackRAGError } from '../services/telemetry.js';
 import { parseClientPrincipal, validateFrontDoorId, getAuthenticatedUser } from '../services/auth-utils.js';
 import { normalizeCategorizedError, ErrorCategory } from '../services/error-categories.js';
-import { resolveCorrelationId, resolveTraceContext, buildDependencyHeaders, withCorrelationResponseHeaders } from '../services/correlation.js';
+import { withCorrelation } from '../middleware/with-correlation.js';
 import { v4 as uuidv4 } from 'uuid';
 import { listMaterialsBySubject } from '../services/state-store.js';
 import { getEnrollment, getConsentStatus } from '../services/state-store.js';
@@ -216,7 +216,7 @@ Devuelve unicamente la pregunta reescrita en espanol, sin comillas ni explicacio
         const rewritten = await chatCompletion(rewriteMessages, false, {
             temperature: 0,
             max_tokens: 120,
-            headers: context?.openAiHeaders,
+            headers: context?.dependencyHeaders,
         });
         const rewrittenQuestion = rewritten?.content?.trim();
         if (!rewrittenQuestion) return question;
@@ -228,10 +228,10 @@ Devuelve unicamente la pregunta reescrita en espanol, sin comillas ni explicacio
     }
 }
 
-function jsonResponse(status, payload, correlationId) {
+function jsonResponse(status, payload) {
     return {
         status,
-        headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
     };
 }
@@ -293,7 +293,7 @@ function resolveSourceMix(sources) {
     return 'mixed-other';
 }
 
-function handleErrorResponse(status, message, category, isStream, correlationId) {
+function handleErrorResponse(status, message, category, isStream) {
     if (isStream) {
         const encoder = new TextEncoder();
         const responseStream = new ReadableStream({
@@ -307,25 +307,21 @@ function handleErrorResponse(status, message, category, isStream, correlationId)
             headers: {
                 'Content-Type': 'text/event-stream',
                 'Cache-Control': 'no-cache',
-                ...withCorrelationResponseHeaders(correlationId),
             },
             body: responseStream
         };
     }
-    return jsonResponse(status, { error: message, errorCategory: category }, correlationId);
+    return jsonResponse(status, { error: message, errorCategory: category });
 }
 
 app.http('rag-query', {
     methods: ['POST'],
     authLevel: 'anonymous',
     route: 'rag-query',
-    handler: async (request, context) => {
-        const correlationId = resolveCorrelationId(request);
-        const traceContext = resolveTraceContext(request);
-        const openAiHeaders = buildDependencyHeaders(correlationId, traceContext);
-        context.openAiHeaders = openAiHeaders;
+    handler: withCorrelation(async (request, context) => {
+        const { correlationId, dependencyHeaders } = context;
 
-        if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' }, correlationId);
+        if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
         context.log('rag-query triggered');
         const { userId, sanitizedId } = getAuthenticatedUser(request);
         context.log(`[Trace] Correlation-ID: ${correlationId} | User: ${userId}`);
@@ -338,13 +334,13 @@ app.http('rag-query', {
         try {
             body = await request.json();
         } catch {
-            return jsonResponse(400, { error: 'Body JSON inválido' }, correlationId);
+            return jsonResponse(400, { error: 'Body JSON inválido' });
         }
 
         const { question, classIds, subjectId, sessionId, stream = false, conversationHistory, historyWindowSize, transcriptFocus } = body;
 
         if (!question || !subjectId) {
-            return jsonResponse(400, { error: 'Faltan campos requeridos: question, subjectId' }, correlationId);
+                return jsonResponse(400, { error: 'Faltan campos requeridos: question, subjectId' });
         }
 
         const recentConversationHistory = normalizeConversationHistory(conversationHistory, historyWindowSize);
@@ -362,7 +358,7 @@ app.http('rag-query', {
                 return jsonResponse(403, {
                     error: 'ENROLLMENT_REQUIRED',
                     message: 'No estás matriculado en esta materia. Contactá a administración.',
-                }, correlationId);
+                });
             }
         }
 
@@ -375,7 +371,7 @@ app.http('rag-query', {
                     success: false,
                     error: { code: 'CONSENT_REQUIRED', message: 'Debés aceptar los términos de uso antes de usar el chat.' },
                     meta: { timestamp: new Date().toISOString(), requestId: correlationId },
-                }, correlationId);
+                });
             }
         }
 
@@ -387,7 +383,7 @@ app.http('rag-query', {
         let questionEmbedding;
         let embeddingUsage;
         try {
-            const embeddingResult = await generateEmbedding(rewrittenQuestion, { headers: openAiHeaders });
+            const embeddingResult = await generateEmbedding(rewrittenQuestion, { headers: dependencyHeaders });
             questionEmbedding = embeddingResult.embedding;
             embeddingUsage = embeddingResult.usage;
         } catch (err) {
@@ -402,7 +398,7 @@ app.http('rag-query', {
                 correlationId,
                 stackTrace: err?.stack,
             }).catch(e => context.error('[Telemetry] Error emitting RAGErrorCategorized (embedding):', e));
-            return handleErrorResponse(categorizedError.status, `Error procesando la pregunta (embedding): ${categorizedError.message}`, categorizedError.errorCategory, stream, correlationId);
+            return handleErrorResponse(categorizedError.status, `Error procesando la pregunta (embedding): ${categorizedError.message}`, categorizedError.errorCategory, stream);
         }
 
         // ── 3. Filtro Pinecone por subjectId y classIds ───────────
@@ -459,13 +455,12 @@ app.http('rag-query', {
                         'Content-Type': 'text/event-stream',
                         'Cache-Control': 'no-cache',
                         'Connection': 'keep-alive',
-                        ...withCorrelationResponseHeaders(correlationId),
                     },
                     body: responseStream,
                 };
             }
 
-            return jsonResponse(200, { id: interactionId, answer: verifiedAnswerText, sources: verifiedSources, verified: true, verifiedBy: verifiedMatch.metadata?.teacherId }, correlationId);
+            return jsonResponse(200, { id: interactionId, answer: verifiedAnswerText, sources: verifiedSources, verified: true, verifiedBy: verifiedMatch.metadata?.teacherId });
         }
 
         // ── 3c. Cargar pesos de material type por materia ────────
@@ -494,7 +489,7 @@ app.http('rag-query', {
                 correlationId,
                 stackTrace: err?.stack,
             }).catch(e => context.error('[Telemetry] Error emitting RAGErrorCategorized (Pinecone):', e));
-            return handleErrorResponse(categorizedError.status, `Error buscando en la base de conocimiento: ${categorizedError.message}`, categorizedError.errorCategory, stream, correlationId);
+            return handleErrorResponse(categorizedError.status, `Error buscando en la base de conocimiento: ${categorizedError.message}`, categorizedError.errorCategory, stream);
         }
 
         matches = filterMatchesByTranscriptFocus(matches, transcriptFocus);
@@ -553,14 +548,14 @@ app.http('rag-query', {
                 });
                 return {
                     status: 200,
-                    headers: { 'Content-Type': 'text/event-stream', ...withCorrelationResponseHeaders(correlationId) },
+                    headers: { 'Content-Type': 'text/event-stream' },
                     body: responseStream
                 };
             } else {
                 return jsonResponse(200, {
                     answer: REFUSAL_MESSAGE,
                     sources: []
-                }, correlationId);
+                });
             }
         }
 
@@ -632,7 +627,7 @@ ${contextText}
                     const networkSetupMs = Date.now() - startTime;
 
                     try {
-                        const stream = await chatCompletion(messages, true, { headers: openAiHeaders });
+                        const stream = await chatCompletion(messages, true, { headers: dependencyHeaders });
                         for await (const chunk of stream) {
                             const delta = chunk.choices?.[0]?.delta?.content || '';
                             if (delta) {
@@ -733,7 +728,6 @@ ${contextText}
                     'Content-Type': 'text/event-stream',
                     'Cache-Control': 'no-cache',
                     'Connection': 'keep-alive',
-                    ...withCorrelationResponseHeaders(correlationId),
                 },
                 body: responseStream
             };
@@ -744,7 +738,7 @@ ${contextText}
         let answer;
         let chatUsage;
         try {
-            const chatResult = await chatCompletion(messages, false, { headers: openAiHeaders });
+            const chatResult = await chatCompletion(messages, false, { headers: dependencyHeaders });
             answer = chatResult.content;
             chatUsage = chatResult.usage;
         } catch (err) {
@@ -763,7 +757,7 @@ ${contextText}
             return jsonResponse(categorizedError.status, {
                 error: `Error generando respuesta (chat): ${categorizedError.message}`,
                 errorCategory: categorizedError.errorCategory,
-            }, correlationId);
+            });
         }
 
         // ── 6b. Emit App Insights telemetry (Issue #69) ───────────
@@ -841,6 +835,6 @@ ${contextText}
             context.error('Error guardando log de chat:', logErr);
         }
 
-        return jsonResponse(200, { id: interactionId, answer, sources }, correlationId);
-    },
+        return jsonResponse(200, { id: interactionId, answer, sources });
+    }),
 });

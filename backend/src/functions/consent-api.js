@@ -2,16 +2,16 @@ import { app } from '@azure/functions';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { getTableClient } from '../services/storage.js';
 import { downloadFile } from '../services/storage.js';
-import { resolveCorrelationId, resolveTraceContext, buildDependencyHeaders, withCorrelationResponseHeaders } from '../services/correlation.js';
+import { withCorrelation } from '../middleware/with-correlation.js';
 import { v4 as uuidv4 } from 'uuid';
 
 const CONSENT_TABLE = 'UserConsent';
 const LEGAL_CONTAINER = 'legal';
 
-function jsonResponse(status, payload, correlationId) {
+function jsonResponse(status, payload) {
     return {
         status,
-        headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
     };
 }
@@ -42,9 +42,9 @@ app.http('consent-get', {
     methods: ['GET'],
     route: 'consent',
     authLevel: 'anonymous',
-    handler: async (request, context) => {
-        const correlationId = resolveCorrelationId(request);
-        if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' }, correlationId);
+    handler: withCorrelation(async (request, context) => {
+        const correlationId = context.correlationId;
+        if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
 
         const principal = parseClientPrincipal(request);
         const userId = principal?.oid || request.headers.get('x-edu-uid') || 'pilot-user';
@@ -61,7 +61,7 @@ app.http('consent-get', {
                         version: record.version,
                     },
                     meta: { timestamp: new Date().toISOString(), requestId: correlationId },
-                }, correlationId);
+                });
             }
             return jsonResponse(200, {
                 success: true,
@@ -71,25 +71,25 @@ app.http('consent-get', {
                     version: null,
                 },
                 meta: { timestamp: new Date().toISOString(), requestId: correlationId },
-            }, correlationId);
+            });
         } catch (error) {
             context.error(`[Consent] Error reading consent for userId=${userId}:`, error);
             return jsonResponse(500, {
                 success: false,
                 error: { code: 'INTERNAL_ERROR', message: 'Error al leer el consentimiento.' },
                 meta: { timestamp: new Date().toISOString(), requestId: correlationId },
-            }, correlationId);
+            });
         }
-    },
+    }),
 });
 
 app.http('consent-post', {
     methods: ['POST'],
     route: 'consent',
     authLevel: 'anonymous',
-    handler: async (request, context) => {
-        const correlationId = resolveCorrelationId(request);
-        if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' }, correlationId);
+    handler: withCorrelation(async (request, context) => {
+        const correlationId = context.correlationId;
+        if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
 
         const principal = parseClientPrincipal(request);
         const userId = principal?.oid || request.headers.get('x-edu-uid') || 'pilot-user';
@@ -105,14 +105,14 @@ app.http('consent-post', {
                 success: false,
                 error: { code: 'INVALID_BODY', message: 'Cuerpo de solicitud inválido.' },
                 meta: { timestamp: new Date().toISOString(), requestId: correlationId },
-            }, correlationId);
+            });
         }
         if (body?.accepted !== true) {
             return jsonResponse(400, {
                 success: false,
                 error: { code: 'CONSENT_NOT_ACCEPTED', message: 'Debés aceptar los términos para continuar.' },
                 meta: { timestamp: new Date().toISOString(), requestId: correlationId },
-            }, correlationId);
+            });
         }
 
         try {
@@ -131,25 +131,25 @@ app.http('consent-post', {
                 success: true,
                 data: { saved: true },
                 meta: { timestamp: new Date().toISOString(), requestId: correlationId },
-            }, correlationId);
+            });
         } catch (error) {
             context.error(`[Consent] Error saving consent for userId=${userId}:`, error);
             return jsonResponse(500, {
                 success: false,
                 error: { code: 'INTERNAL_ERROR', message: 'Error al guardar el consentimiento.' },
                 meta: { timestamp: new Date().toISOString(), requestId: correlationId },
-            }, correlationId);
+            });
         }
-    },
+    }),
 });
 
 app.http('terms-get', {
     methods: ['GET'],
     route: 'terms',
     authLevel: 'anonymous',
-    handler: async (request, context) => {
-        const correlationId = resolveCorrelationId(request);
-        if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' }, correlationId);
+    handler: withCorrelation(async (request, context) => {
+        const correlationId = context.correlationId;
+        if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
 
         context.log(`[Consent] GET terms`);
 
@@ -160,21 +160,21 @@ app.http('terms-get', {
                     success: false,
                     error: { code: 'TERMS_NOT_FOUND', message: 'No se encontraron los términos de uso.' },
                     meta: { timestamp: new Date().toISOString(), requestId: correlationId },
-                }, correlationId);
+                });
             }
             const text = content.toString('utf-8');
             return jsonResponse(200, {
                 success: true,
                 data: { content: text, version: 'v1' },
                 meta: { timestamp: new Date().toISOString(), requestId: correlationId },
-            }, correlationId);
+            });
         } catch (error) {
             context.error('[Consent] Error fetching terms:', error);
             return jsonResponse(500, {
                 success: false,
                 error: { code: 'TERMS_NOT_FOUND', message: 'No se encontraron los términos de uso.' },
                 meta: { timestamp: new Date().toISOString(), requestId: correlationId },
-            }, correlationId);
+            });
         }
-    },
+    }),
 });

@@ -3,7 +3,7 @@ import { uploadFile, downloadFile, listBlobs, loadJson } from '../services/stora
 import { generateClassAudio } from '../services/ai.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { getEnrollment } from '../services/state-store.js';
-import { resolveCorrelationId, resolveTraceContext, buildDependencyHeaders, withCorrelationResponseHeaders } from '../services/correlation.js';
+import { withCorrelation } from '../middleware/with-correlation.js';
 
 const CONTAINER_AUDIO = 'class-audio';
 const CONTAINER_SUMMARIES = 'class-summaries';
@@ -12,10 +12,8 @@ app.http('get-class-audio', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'class-audio/{classId}',
-    handler: async (request, context) => {
-        const correlationId = resolveCorrelationId(request);
-        const traceContext = resolveTraceContext(request);
-        const openAiHeaders = buildDependencyHeaders(correlationId, traceContext);
+    handler: withCorrelation(async (request, context) => {
+        const { correlationId, dependencyHeaders } = context;
 
         const classId = request.params.classId;
         const subjectId = request.query.get('subjectId');
@@ -23,7 +21,7 @@ app.http('get-class-audio', {
         if (!classId || !subjectId) {
             return {
                 status: 400,
-                headers: withCorrelationResponseHeaders(correlationId),
+                headers: {},
                 body: 'Faltan parámetros requeridos: classId y subjectId'
             };
         }
@@ -31,7 +29,7 @@ app.http('get-class-audio', {
         if (!validateFrontDoorId(request)) {
             return {
                 status: 403,
-                headers: withCorrelationResponseHeaders(correlationId),
+                headers: {},
                 body: 'Forbidden - Invalid Front Door ID'
             };
         }
@@ -48,14 +46,14 @@ app.http('get-class-audio', {
                 if (!enrollment || enrollment.status !== 'active') {
                     return {
                         status: 403,
-                        headers: withCorrelationResponseHeaders(correlationId),
+                        headers: {},
                         body: 'No tienes acceso a los recursos de esta materia.'
                     };
                 }
             } catch (err) {
                 return {
                     status: 500,
-                    headers: withCorrelationResponseHeaders(correlationId),
+                    headers: {},
                     body: 'Error verificando permisos de acceso.'
                 };
             }
@@ -71,7 +69,7 @@ app.http('get-class-audio', {
                 const audioBuffer = await downloadFile(CONTAINER_AUDIO, blobName);
                 return {
                     status: 200,
-                    headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'audio/mpeg' }),
+                    headers: { 'Content-Type': 'audio/mpeg' },
                     body: audioBuffer
                 };
             } catch (err) {
@@ -84,7 +82,7 @@ app.http('get-class-audio', {
             if (!summaryData) {
                 return {
                     status: 404,
-                    headers: withCorrelationResponseHeaders(correlationId),
+                    headers: {},
                     body: 'Resumen no encontrado para esta clase. Genera el resumen primero.'
                 };
             }
@@ -93,20 +91,20 @@ app.http('get-class-audio', {
             if (!textToSpeak) {
                 return {
                     status: 404,
-                    headers: withCorrelationResponseHeaders(correlationId),
+                    headers: {},
                     body: 'Contenido del resumen vacío.'
                 };
             }
 
             // 3. Generar audio con OpenAI TTS
-            const audioBuffer = await generateClassAudio(textToSpeak, 'nova', { headers: openAiHeaders });
+            const audioBuffer = await generateClassAudio(textToSpeak, 'nova', { headers: dependencyHeaders });
 
             // 4. Guardar en Blob Storage para futuras consultas (cache)
             await uploadFile(CONTAINER_AUDIO, blobName, audioBuffer, 'audio/mpeg');
 
             return {
                 status: 200,
-                headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'audio/mpeg' }),
+                headers: { 'Content-Type': 'audio/mpeg' },
                 body: audioBuffer
             };
 
@@ -114,9 +112,9 @@ app.http('get-class-audio', {
             context.error(`Error en get-class-audio para ${classId}:`, err);
             return {
                 status: 500,
-                headers: withCorrelationResponseHeaders(correlationId),
+                headers: {},
                 body: 'Error interno generando audio.'
             };
         }
-    }
+    })
 });

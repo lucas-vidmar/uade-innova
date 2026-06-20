@@ -7,7 +7,7 @@ import { generateEmbedding } from '../services/ai.js';
 import { querySimilar } from '../services/vector-store.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
 import { getEnrollment } from '../services/state-store.js';
-import { resolveCorrelationId, resolveTraceContext, buildDependencyHeaders, withCorrelationResponseHeaders } from '../services/correlation.js';
+import { withCorrelation } from '../middleware/with-correlation.js';
 import { ErrorCategory, normalizeCategorizedError, structuredErrorResponse } from '../services/error-categories.js';
 
 const MAX_GLOBAL_RESULTS = 12;
@@ -44,15 +44,13 @@ app.http('global-search', {
     methods: ['POST'],
     authLevel: 'anonymous',
     route: 'global-search',
-    handler: async (request, context) => {
-        const correlationId = resolveCorrelationId(request);
-        const traceContext = resolveTraceContext(request);
-        const openAiHeaders = buildDependencyHeaders(correlationId, traceContext);
+    handler: withCorrelation(async (request, context) => {
+        const { correlationId, dependencyHeaders } = context;
 
         if (!validateFrontDoorId(request)) {
             return {
                 status: 403,
-                headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID', errorCategory: ErrorCategory.AUTH, code: 'FRONTDOOR_INVALID' }),
             };
         }
@@ -63,7 +61,7 @@ app.http('global-search', {
         } catch {
             return {
                 status: 400,
-                headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ error: 'Body JSON inválido', errorCategory: ErrorCategory.VALIDATION, code: 'INVALID_JSON' }),
             };
         }
@@ -74,7 +72,7 @@ app.http('global-search', {
         if (!query || !subjectId) {
             return {
                 status: 400,
-                headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ error: 'Faltan campos requeridos: query, subjectId', errorCategory: ErrorCategory.VALIDATION, code: 'MISSING_FIELDS' }),
             };
         }
@@ -91,21 +89,21 @@ app.http('global-search', {
                 if (!enrollment || enrollment.status !== 'active') {
                     return {
                         status: 403,
-                        headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
+                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ error: 'No tienes acceso a esta materia.', errorCategory: ErrorCategory.AUTH, code: 'ENROLLMENT_INACTIVE' })
                     };
                 }
             } catch (err) {
                 return {
                     status: 500,
-                    headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ error: 'Error verificando permisos de acceso.', errorCategory: ErrorCategory.AUTH, code: 'ENROLLMENT_CHECK_FAILED' })
                 };
             }
         }
 
         try {
-            const { embedding } = await generateEmbedding(query, { headers: openAiHeaders });
+            const { embedding } = await generateEmbedding(query, { headers: dependencyHeaders });
             const filter = {
                 subjectId: { $eq: subjectId },
                 materialType: { $in: ['transcript', 'bibliography'] },
@@ -135,7 +133,7 @@ app.http('global-search', {
 
             return {
                 status: 200,
-                headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     query,
                     subjectId,
@@ -148,9 +146,9 @@ app.http('global-search', {
             const categorized = normalizeCategorizedError(err, ErrorCategory.RETRIEVAL_FAILURE);
             return {
                 status: 500,
-                headers: withCorrelationResponseHeaders(correlationId, { 'Content-Type': 'application/json' }),
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ error: `Error buscando en índice global: ${categorized.message}`, errorCategory: categorized.errorCategory, code: categorized.code }),
             };
         }
-    },
+    }),
 });
