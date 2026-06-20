@@ -41,4 +41,6 @@ import './functions/backup-approval-api.js';
 import './functions/storage-lifecycle.js';
 import './functions/sat-analytics.js';
 import './functions/vector-health-monitor.js';
+import './functions/vector-health-snapshotter.js';
+import './functions/vector-health-snapshots-api.js';
 import './functions/director-kpi-export.js';
