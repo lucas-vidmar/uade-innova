@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withCorrelation } from '../middleware/with-correlation.js';
 import { loadJson, saveJson } from '../services/storage.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 
@@ -8,7 +9,7 @@ app.http('get-class-timeline', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'class-timeline/{classId}',
-    handler: async (request) => {
+    handler: withCorrelation(async (request) => {
         if (!validateFrontDoorId(request)) {
             return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         }
@@ -24,14 +25,14 @@ app.http('get-class-timeline', {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(timeline || { classId, sections: [], markers: [] }),
         };
-    },
+    }),
 });
 
 app.http('save-class-timeline', {
     methods: ['POST'],
     authLevel: 'anonymous',
     route: 'class-timeline/{classId}',
-    handler: async (request) => {
+    handler: withCorrelation(async (request) => {
         if (!validateFrontDoorId(request)) {
             return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         }
@@ -61,5 +62,5 @@ app.http('save-class-timeline', {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
         };
-    },
+    }),
 });

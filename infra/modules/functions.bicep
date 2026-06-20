@@ -185,6 +185,10 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
           value: appInsightsConnectionString
         }
+        {
+          name: 'LOG_LEVEL'
+          value: 'info'
+        }
         // Azure OpenAI — Uses Managed Identity + RBAC (no API key needed)
         {
           name: 'AZURE_OPENAI_ENDPOINT'

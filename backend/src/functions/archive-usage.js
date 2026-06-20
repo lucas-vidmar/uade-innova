@@ -1,12 +1,13 @@
 import { app } from '@azure/functions';
 import { getArchiveUsage } from '../services/archive-usage.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
+import { withCorrelation } from '../middleware/with-correlation.js';
 
 app.http('archive-usage', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'archive-usage',
-    handler: async (request, context) => {
+    handler: withCorrelation(async (request, context) => {
         try {
             if (!validateFrontDoorId(request)) {
                 return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
@@ -45,5 +46,5 @@ app.http('archive-usage', {
                 }),
             };
         }
-    },
+    })
 });

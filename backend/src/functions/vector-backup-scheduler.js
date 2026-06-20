@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withCorrelationTimer } from '../middleware/with-correlation.js';
 import { v4 as uuidv4 } from 'uuid';
 import { runVectorBackup } from '../services/vector-backup.js';
 import { listActiveApprovals } from '../services/backup-approval.js';
@@ -114,7 +115,7 @@ export async function runScheduledBackup(context) {
 
 app.timer('vector-backup-scheduler', {
     schedule: process.env.VECTOR_BACKUP_WINDOW_CRON || '0 0 3 * * *',
-    handler: async (_timer, context) => {
+    handler: withCorrelationTimer(async (_timer, context) => {
         await runScheduledBackup(context);
-    },
+    }),
 });

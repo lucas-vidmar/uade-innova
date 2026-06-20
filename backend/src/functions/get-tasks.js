@@ -5,12 +5,13 @@ import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-util
  * Mock para el prototipo — estructura lista para conectar a SGA real.
  */
 import { app } from '@azure/functions';
+import { withCorrelation } from '../middleware/with-correlation.js';
 
 app.http('get-tasks', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'tasks',
-    handler: async (request, context) => {
+    handler: withCorrelation(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         context.log('get-tasks triggered');
 
@@ -110,5 +111,5 @@ app.http('get-tasks', {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(sortedTasks),
         };
-    },
+    })
 });

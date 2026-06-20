@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withCorrelation } from '../middleware/with-correlation.js';
 import { getTableClient } from '../services/storage.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 
@@ -12,7 +13,7 @@ app.http('manage-get-users', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'manage/users',
-    handler: async (request, context) => {
+    handler: withCorrelation(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         try {
             const principal = parseClientPrincipal(request);
@@ -55,5 +56,5 @@ app.http('manage-get-users', {
                 body: "Internal Server Error"
             };
         }
-    }
+    })
 });

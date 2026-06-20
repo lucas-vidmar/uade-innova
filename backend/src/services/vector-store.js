@@ -37,7 +37,8 @@ function getHost() {
 }
 
 function getApiKey() {
-    return String(process.env.PINECONE_API_KEY || '').trim();
+    const key = String(process.env.PINECONE_API_KEY || '').trim();
+    return key || '';
 }
 
 function assertConfiguration() {
@@ -46,20 +47,19 @@ function assertConfiguration() {
     const indexName = getIndexName();
 
     if (!apiKey) {
-        console.error('[VectorStore] PINECONE_API_KEY is missing.');
         throw new Error('Configuracion incompleta: PINECONE_API_KEY es requerida.');
     }
 
     if (!host) {
-        console.error('[VectorStore] PINECONE_HOST is missing. Check your environment variables.');
         throw new Error('Configuracion incompleta: PINECONE_HOST (o PINECONE_ENVIRONMENT) es requerida.');
     }
+
+    try { new URL(host); } catch { throw new Error('Configuracion incompleta: PINECONE_HOST no es una URL valida.'); }
 
     if (!indexName) {
         throw new Error('Configuracion incompleta: PINECONE_INDEX_NAME es requerida.');
     }
 
-    console.log(`[VectorStore] Configured with host: ${host}, index: ${indexName}`);
     return { apiKey, host, indexName };
 }
 

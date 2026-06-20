@@ -11,6 +11,7 @@ import { trackRAGInteraction, trackRAGError } from '../services/telemetry.js';
 import { parseClientPrincipal, validateFrontDoorId, getAuthenticatedUser } from '../services/auth-utils.js';
 import { normalizeCategorizedError, ErrorCategory } from '../services/error-categories.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
+import { createStructuredLogger } from '../services/structured-logger.js';
 import { v4 as uuidv4 } from 'uuid';
 import { listMaterialsBySubject } from '../services/state-store.js';
 import { getEnrollment, getConsentStatus } from '../services/state-store.js';
@@ -321,10 +322,11 @@ app.http('rag-query', {
     handler: withCorrelation(async (request, context) => {
         const { correlationId, dependencyHeaders } = context;
 
+        const log = createStructuredLogger('rag-query', context);
         if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
-        context.log('rag-query triggered');
+        log.info('rag-query triggered');
         const { userId, sanitizedId } = getAuthenticatedUser(request);
-        context.log(`[Trace] Correlation-ID: ${correlationId} | User: ${userId}`);
+        log.info('RAG query start', { correlationId, userId });
 
         // Capture start time for end-to-end latency measurement (Issue #69)
         const startTime = Date.now();

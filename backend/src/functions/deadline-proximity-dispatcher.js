@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withCorrelationTimer } from '../middleware/with-correlation.js';
 import moment from 'moment-timezone';
 import { listBlobs, loadJson, getTableClient } from '../services/storage.js';
 import { listNotificationsBySubject, upsertNotificationForSubject } from '../services/notification-store.js';
@@ -198,7 +199,7 @@ export async function runDeadlineProximityDispatcher(context = { log: () => {}, 
 
 app.timer('deadline-proximity-dispatcher', {
   schedule: process.env.DEADLINE_PROXIMITY_TIMER_CRON || '0 */30 * * * *',
-  handler: async (_timer, context) => {
+  handler: withCorrelationTimer(async (_timer, context) => {
     await runDeadlineProximityDispatcher(context);
-  },
+  }),
 });

@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withCorrelation } from '../../../middleware/with-correlation.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../../../services/auth-utils.js';
 import { getTableClient } from '../../../services/storage.js';
 
@@ -8,7 +9,7 @@ app.http('reject-transcription-suggestion', {
   methods: ['POST'],
   authLevel: 'anonymous',
   route: 'corrections-transcription/reject',
-  handler: async (request, context) => {
+  handler: withCorrelation(async (request, context) => {
     if (!validateFrontDoorId(request)) {
       return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } }) };
     }
@@ -63,5 +64,5 @@ app.http('reject-transcription-suggestion', {
       context.error(`[reject-transcription-suggestion] Error:`, err);
       return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: false, error: { code: 'INTERNAL_ERROR', message: err.message } }) };
     }
-  },
+  }),
 });

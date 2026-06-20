@@ -7,7 +7,7 @@ const tableName = "UserProfiles";
 app.http('get-profile', {
     methods: ['GET'],
     authLevel: 'anonymous',
-    handler: async (request, context) => {
+    handler: withCorrelation(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         try {
             // Use shared auth utility to parse identity
@@ -57,5 +57,5 @@ app.http('get-profile', {
                 body: "Internal Server Error"
             };
         }
-    }
+    })
 });

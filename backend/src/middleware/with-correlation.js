@@ -1,4 +1,5 @@
-import { resolveCorrelationId, resolveTraceContext, buildDependencyHeaders, withCorrelationResponseHeaders } from '../services/correlation.js';
+import { v4 as uuidv4 } from 'uuid';
+import { resolveCorrelationId, resolveTraceContext, buildDependencyHeaders, withCorrelationResponseHeaders, generateCorrelationId } from '../services/correlation.js';
 
 export function withCorrelation(handler) {
   return async (request, context) => {
@@ -18,5 +19,22 @@ export function withCorrelation(handler) {
     }
 
     return result;
+  };
+}
+
+export function withCorrelationTimer(handler) {
+  return async (myTimer, context) => {
+    if (!context || typeof context !== 'object') {
+      throw new Error('withCorrelationTimer requires a valid context object');
+    }
+
+    const correlationId = generateCorrelationId() || uuidv4();
+    const traceContext = resolveTraceContext({ headers: { get: () => null } });
+
+    context.correlationId = correlationId;
+    context.traceContext = traceContext;
+    context.dependencyHeaders = buildDependencyHeaders(correlationId, traceContext);
+
+    return handler(myTimer, context);
   };
 }

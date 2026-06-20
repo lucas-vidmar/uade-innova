@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withCorrelationTimer } from '../middleware/with-correlation.js';
 import { captureSnapshot, deleteOlderThan } from '../services/vector-health-snapshots.js';
 
 function getEnv(key, fallback) {
@@ -7,7 +8,7 @@ function getEnv(key, fallback) {
 
 app.timer('vector-health-snapshotter', {
     schedule: getEnv('VECTOR_SNAPSHOT_CRON', '0 */15 * * * *'),
-    handler: async (myTimer, context) => {
+    handler: withCorrelationTimer(async (myTimer, context) => {
         const startMs = Date.now();
         context.log(`[VectorHealthSnapshotter] Tick at ${new Date().toISOString()}`);
 
@@ -30,5 +31,5 @@ app.timer('vector-health-snapshotter', {
 
         const elapsed = Date.now() - startMs;
         context.log(`[VectorHealthSnapshotter] Run complete in ${elapsed}ms`);
-    },
+    }),
 });

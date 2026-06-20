@@ -2,12 +2,13 @@ import { app } from '@azure/functions';
 import { parseClientPrincipal, validateFrontDoorId, getAuthenticatedUser } from '../services/auth-utils.js';
 import { getEnrollment } from '../services/state-store.js';
 import { getSubjectWeights, upsertSubjectWeights, DEFAULT_WEIGHTS } from '../services/subject-weights.js';
+import { withCorrelation } from '../middleware/with-correlation.js';
 
 app.http('subject-weights-get', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'subject-weights/{subjectId}',
-    handler: async (request, context) => {
+    handler: withCorrelation(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         const subjectId = request.params.subjectId;
         if (!subjectId) return { status: 400, body: JSON.stringify({ error: 'subjectId es requerido.' }) };
@@ -22,14 +23,14 @@ app.http('subject-weights-get', {
             context.error('[SubjectWeights] Error getting weights:', err);
             return { status: 500, body: JSON.stringify({ error: 'Error al obtener la configuración de pesos.' }) };
         }
-    }
+    })
 });
 
 app.http('subject-weights-put', {
     methods: ['PUT'],
     authLevel: 'anonymous',
     route: 'subject-weights/{subjectId}',
-    handler: async (request, context) => {
+    handler: withCorrelation(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         const subjectId = request.params.subjectId;
         if (!subjectId) return { status: 400, body: JSON.stringify({ error: 'subjectId es requerido.' }) };
@@ -65,5 +66,5 @@ app.http('subject-weights-put', {
             context.error('[SubjectWeights] Error upserting weights:', err);
             return { status: 400, body: JSON.stringify({ error: err.message || 'Error al guardar la configuración de pesos.' }) };
         }
-    }
+    })
 });

@@ -21,6 +21,7 @@ mock.module('../services/correlation.js', {
       'x-correlation-id': cid,
       ...(traceContext ? { 'traceparent': traceContext.traceparent } : {}),
     })),
+    generateCorrelationId: mock.fn(() => 'auto-gen-uuid'),
   },
 });
 

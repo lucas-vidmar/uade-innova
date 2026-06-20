@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withCorrelation } from '../middleware/with-correlation.js';
 import { saveApproval, getApproval, revokeApproval, listActiveApprovals } from '../services/backup-approval.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
 import { CategorizedError } from '../services/error-categories.js';
@@ -7,7 +8,7 @@ app.http('backup-approval', {
     methods: ['GET', 'POST', 'DELETE'],
     authLevel: 'anonymous',
     route: 'backup-approval',
-    handler: async (request, context) => {
+    handler: withCorrelation(async (request, context) => {
         if (!validateFrontDoorId(request)) {
             return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         }
@@ -95,5 +96,5 @@ app.http('backup-approval', {
                 body: JSON.stringify({ error: err.message, code: err.code || 'BACKUP_APPROVAL_ERROR' }),
             };
         }
-    },
+    }),
 });

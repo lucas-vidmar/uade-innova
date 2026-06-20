@@ -8,6 +8,8 @@ import { upsertMaterialState, getEnrollment } from '../services/state-store.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
 import { getMaterialPriority } from '../services/material-classification.js';
 import { ErrorCategory, normalizeCategorizedError, structuredErrorResponse } from '../services/error-categories.js';
+import { withCorrelation } from '../middleware/with-correlation.js';
+import { createStructuredLogger } from '../services/structured-logger.js';
 
 const SESSION_METRICS_TABLE = 'SessionMetrics';
 
@@ -15,16 +17,17 @@ app.http('ingest-material', {
     methods: ['POST'],
     authLevel: 'anonymous',
     route: 'ingest-material',
-    handler: async (request, context) => {
+    handler: withCorrelation(async (request, context) => {
+        const log = createStructuredLogger('ingest-material', context);
         if (!validateFrontDoorId(request)) {
             return structuredErrorResponse(403, 'Forbidden - Invalid Front Door ID', ErrorCategory.AUTH, 'FRONTDOOR_INVALID');
         }
 
         try {
-            context.log(`[Ingest] Received request for ${request.url}`);
+            log.info('Ingest request received', { url: request.url });
             const { fileReadable, fileHeader, fileContentType, fileName, classIds, subjectId, materialType } = await parseMultipart(request, context);
             
-            context.log(`[Ingest] Multipart parsed successfully: ${fileName} (${fileContentType}), subjectId=${subjectId}, materialType=${materialType}, classIds=${JSON.stringify(classIds)}`);
+            log.info('Multipart parsed', { fileName, fileContentType, subjectId, materialType, classIds });
 
             // Security Check: Enrollment-based access control
             const principal = parseClientPrincipal(request);
@@ -37,18 +40,18 @@ app.http('ingest-material', {
                 try {
                     const enrollment = await getEnrollment(subjectId, userId);
                     if (!enrollment || enrollment.role !== 'teacher' || enrollment.status !== 'active') {
-                        context.log.warn(`[Ingest] Unauthorized upload attempt: User ${userId} is not an active teacher for subject ${subjectId}`);
+                        log.warn('Unauthorized upload attempt', { userId, subjectId });
                         return structuredErrorResponse(403, 'No tienes permisos para subir material a esta materia. Debes estar asignado como docente.', ErrorCategory.AUTH, 'ENROLLMENT_INACTIVE');
                     }
                 } catch (enrollmentErr) {
-                    context.error(`[Ingest] Error verifying enrollment for ${userId} in ${subjectId}:`, enrollmentErr);
+                    log.error('Enrollment verification error', { userId, subjectId, error: enrollmentErr.message });
                     const categorized = normalizeCategorizedError(enrollmentErr, ErrorCategory.AUTH);
                     return structuredErrorResponse(categorized.status, 'Error al verificar permisos de docente.', categorized.errorCategory, categorized.code);
                 }
             }
 
             if (!classIds || classIds.length === 0 || !subjectId || !materialType) {
-                context.log.warn(`[Ingest] Missing required fields: classIds=${classIds?.length}, subjectId=${!!subjectId}, materialType=${!!materialType}`);
+                log.warn('Missing required fields', { classIdsLength: classIds?.length, hasSubjectId: !!subjectId, hasMaterialType: !!materialType });
                 return structuredErrorResponse(400, 'Faltan campos requeridos: classIds, subjectId, materialType', ErrorCategory.VALIDATION, 'MISSING_FIELDS');
             }
 
@@ -69,11 +72,11 @@ app.http('ingest-material', {
             };
 
             try {
-                context.log(`[Ingest] Initializing material state in Table Storage: ${materialId}`);
+                log.info('Initializing material state', { materialId });
                 await upsertMaterialState(material);
 
                 const blobName = `${subjectId}/${materialId}${path.extname(fileName)}`;
-                context.log(`[Ingest] Uploading file to blob storage via stream: ${blobName}`);
+                log.info('Uploading file to blob storage', { blobName });
 
                 let uploadResult;
                 try {
@@ -97,7 +100,7 @@ app.http('ingest-material', {
                 }
 
                 const blobUrl = uploadResult.url;
-                context.log(`[Ingest] File uploaded successfully via stream: ${blobUrl}`);
+                log.info('File uploaded successfully', { blobUrl });
 
                 const updatedMaterial = await upsertMaterialState({
                     ...material,
@@ -119,7 +122,7 @@ app.http('ingest-material', {
                         timestamp: new Date().toISOString()
                     });
                 } catch (metricsErr) {
-                    context.log.warn(`[Ingest] Non-fatal error writing material upload metric: ${metricsErr.message}`);
+                    log.warn('Non-fatal metrics write error', { error: metricsErr.message });
                 }
 
                 return {
@@ -128,17 +131,17 @@ app.http('ingest-material', {
                     body: JSON.stringify(updatedMaterial),
                 };
             } catch (storageErr) {
-                context.error(`[Ingest] Storage error for ${materialId}:`, storageErr);
+                log.error('Storage error', { materialId, error: storageErr.message });
                 const categorized = normalizeCategorizedError(storageErr, ErrorCategory.STORAGE);
                 return structuredErrorResponse(categorized.status, `Error de almacenamiento: ${categorized.message}`, categorized.errorCategory, categorized.code);
             }
 
         } catch (err) {
-            context.error('[Ingest] Fatal error in ingest-material handler:', err);
+            log.error('Fatal handler error', { error: err.message });
             const categorized = normalizeCategorizedError(err, ErrorCategory.INTERNAL);
             return structuredErrorResponse(categorized.status, categorized.message || 'Error interno del servidor', categorized.errorCategory, categorized.code);
         }
-    }
+    })
 });
 
 /**

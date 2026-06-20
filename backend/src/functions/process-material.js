@@ -3,6 +3,7 @@
  * Se dispara automáticamente al subir archivos a 'class-materials'.
  */
 import { app } from '@azure/functions';
+import { withCorrelationTimer } from '../middleware/with-correlation.js';
 import { BlobServiceClient, StorageSharedKeyCredential } from '@azure/storage-blob';
 import { runPipeline } from '../services/pipeline.js';
 import { saveJson } from '../services/storage.js';
@@ -97,7 +98,7 @@ async function persistProcessingError(params, context, message) {
 app.storageBlob('process-material', {
     path: `${CONTAINER_MATERIALS}/{subjectId}/{blobName}`,
     connection: 'AzureWebJobsStorage',
-    handler: async (blob, context) => {
+    handler: withCorrelationTimer(async (blob, context) => {
         const blobPath = context.triggerMetadata.blobTrigger;
         context.log(`[BlobTrigger] Procesando: ${blobPath}`);
 
@@ -157,5 +158,5 @@ app.storageBlob('process-material', {
 
         // 2. Ejecutar pipeline
         await runPipeline(params, context);
-    }
+    })
 });

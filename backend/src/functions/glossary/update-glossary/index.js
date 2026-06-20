@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withCorrelation } from '../../../middleware/with-correlation.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../../../services/auth-utils.js';
 import { getEnrollment } from '../../../services/state-store.js';
 import { updateGlossary } from '../../../services/glossary-store.js';
@@ -7,7 +8,7 @@ app.http('update-glossary', {
   methods: ['POST'],
   authLevel: 'anonymous',
   route: 'glossary',
-  handler: async (request, context) => {
+  handler: withCorrelation(async (request, context) => {
     if (!validateFrontDoorId(request)) {
       return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } }) };
     }
@@ -44,5 +45,5 @@ app.http('update-glossary', {
       context.error(`[update-glossary] Error:`, err);
       return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: false, error: { code: 'INTERNAL_ERROR', message: err.message } }) };
     }
-  },
+  }),
 });

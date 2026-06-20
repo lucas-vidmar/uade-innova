@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withCorrelation } from '../middleware/with-correlation.js';
 import { listBlobs, loadJson } from '../services/storage.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { getEnrollment } from '../services/state-store.js';
@@ -26,7 +27,7 @@ app.http('get-teacher-analytics', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'analytics',
-    handler: async (request, context) => {
+    handler: withCorrelation(async (request, context) => {
         if (!validateFrontDoorId(request)) {
             return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         }
@@ -124,5 +125,5 @@ app.http('get-teacher-analytics', {
             context.error('Error procesando analitica:', err);
             return { status: 500, body: 'Error interno procesando analitica' };
         }
-    }
+    })
 });

@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withCorrelationTimer } from '../middleware/with-correlation.js';
 import { loadJson, listBlobs } from '../services/storage.js';
 import { upsertNotificationForSubject } from '../services/notification-store.js';
 import { trackDispatcherRun } from '../services/telemetry.js';
@@ -120,7 +121,7 @@ export async function runPostClassSummaryDispatcher(context = { log: () => {}, e
 
 app.timer('post-class-summary-dispatcher', {
   schedule: process.env.POST_CLASS_SUMMARY_TIMER_CRON || '0 */15 * * * *',
-  handler: async (_timer, context) => {
+  handler: withCorrelationTimer(async (_timer, context) => {
     await runPostClassSummaryDispatcher(context);
-  },
+  }),
 });

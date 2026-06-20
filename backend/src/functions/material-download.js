@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withCorrelation } from '../middleware/with-correlation.js';
 import { getMaterialState } from '../services/state-store.js';
 import { BlobSASPermissions, generateBlobSASQueryParameters, StorageSharedKeyCredential, SASProtocol } from '@azure/storage-blob';
 import { validateFrontDoorId } from '../services/auth-utils.js';
@@ -9,7 +10,7 @@ app.http('material-download', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'material-download',
-    handler: async (request, context) => {
+    handler: withCorrelation(async (request, context) => {
         if (!validateFrontDoorId(request)) {
             return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         }
@@ -66,5 +67,5 @@ app.http('material-download', {
             context.error('[Material Download] Error:', err);
             return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Error al generar descarga' }) };
         }
-    },
+    }),
 });

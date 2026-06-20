@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withCorrelation } from '../../../middleware/with-correlation.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../../../services/auth-utils.js';
 import { getEnrollment, listPendingCorrections, listCorrections } from '../../../services/state-store.js';
 
@@ -33,7 +34,7 @@ app.http('get-pending-reports', {
   methods: ['GET'],
   authLevel: 'anonymous',
   route: 'corrections-pending',
-  handler: async (request, context) => {
+  handler: withCorrelation(async (request, context) => {
     if (!validateFrontDoorId(request)) {
       return {
         status: 403,
@@ -174,5 +175,5 @@ app.http('get-pending-reports', {
         }),
       };
     }
-  },
+  }),
 });

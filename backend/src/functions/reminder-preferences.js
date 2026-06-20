@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withCorrelation } from '../middleware/with-correlation.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { getTableClient } from '../services/storage.js';
 
@@ -36,7 +37,7 @@ app.http('reminder-preferences-get', {
   methods: ['GET'],
   route: 'reminder-preferences',
   authLevel: 'anonymous',
-  handler: async (request, context) => {
+  handler: withCorrelation(async (request, context) => {
     if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
     const principal = parseClientPrincipal(request);
     const userId = principal?.oid || 'pilot-user';
@@ -48,14 +49,14 @@ app.http('reminder-preferences-get', {
       context.error(`[ReminderPreferences] Error reading for userId=${userId}:`, error);
       return jsonResponse(500, { error: 'Error al leer preferencias de recordatorios.' });
     }
-  },
+  }),
 });
 
 app.http('reminder-preferences-post', {
   methods: ['POST', 'PUT'],
   route: 'reminder-preferences',
   authLevel: 'anonymous',
-  handler: async (request, context) => {
+  handler: withCorrelation(async (request, context) => {
     if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
     const principal = parseClientPrincipal(request);
     const userId = principal?.oid || 'pilot-user';
@@ -92,5 +93,5 @@ app.http('reminder-preferences-post', {
       context.error(`[ReminderPreferences] Error saving for userId=${userId}:`, error);
       return jsonResponse(500, { error: 'Error al guardar preferencias de recordatorios.' });
     }
-  },
+  }),
 });

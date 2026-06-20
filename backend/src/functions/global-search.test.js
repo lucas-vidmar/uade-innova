@@ -48,6 +48,7 @@ const correlationMocks = {
     resolveTraceContext: mock.fn(() => ({ traceparent: '00-trace-id-span-id-01', tracestate: null, traceId: 'trace-id', spanId: 'span-id' })),
     buildDependencyHeaders: mock.fn((cid) => ({ 'x-correlation-id': cid })),
     withCorrelationResponseHeaders: mock.fn((cid, headers) => ({ ...headers, 'x-correlation-id': cid })),
+    generateCorrelationId: mock.fn(() => 'test-correlation-id'),
 };
 
 mock.module('../services/ai.js', { namedExports: openaiMocks });

@@ -1,3 +1,4 @@
+import { withCorrelation } from '../middleware/with-correlation.js';
 import { validateFrontDoorId, parseClientPrincipal, getAuthenticatedUser } from '../services/auth-utils.js';
 import { getEnrollment, upsertCorrection, RATINGS_TABLE } from '../services/state-store.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -27,7 +28,7 @@ app.http('get-chat-history', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'chat-history',
-    handler: async (request, context) => {
+    handler: withCorrelation(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         const subjectId = request.query.get('subjectId');
         const { userId, sanitizedId } = getAuthenticatedUser(request);
@@ -88,7 +89,7 @@ app.http('get-chat-history', {
             context.error('Error cargando historial de chat:', error);
             return { status: 500, body: 'Error interno cargando historial' };
         }
-    }
+    })
 });
 
 
@@ -97,7 +98,7 @@ app.http('delete-chat-history', {
     methods: ['DELETE'],
     authLevel: 'anonymous',
     route: 'chat-history',
-    handler: async (request, context) => {
+    handler: withCorrelation(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         const subjectId = request.query.get('subjectId');
         const { userId, sanitizedId } = getAuthenticatedUser(request);
@@ -133,7 +134,7 @@ app.http('delete-chat-history', {
             context.error('Error eliminando historial:', err);
             return { status: 500, body: 'Error interno' };
         }
-    }
+    })
 });
 
 // ── POST /api/chat-feedback ──────────────────────────────────────────
@@ -141,7 +142,7 @@ app.http('chat-feedback', {
     methods: ['POST'],
     authLevel: 'anonymous',
     route: 'chat-feedback',
-    handler: async (request, context) => {
+    handler: withCorrelation(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         try {
             const { messageId, subjectId, isPositive } = await request.json();
@@ -189,7 +190,7 @@ app.http('chat-feedback', {
             context.error('Error procesando feedback:', err);
             return { status: 500, body: 'Error interno' };
         }
-    }
+    })
 });
 
 // ── POST /api/chat-rate ──────────────────────────────────────────────
@@ -197,7 +198,7 @@ app.http('chat-rate', {
     methods: ['POST'],
     authLevel: 'anonymous',
     route: 'chat-rate',
-    handler: async (request, context) => {
+    handler: withCorrelation(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         try {
             const { sessionId, messageId, subjectId, classId, rating, comment } = await request.json();
@@ -264,7 +265,7 @@ app.http('chat-rate', {
             context.error('Error guardando rating:', err);
             return { status: 500, body: JSON.stringify({ error: 'Error interno' }) };
         }
-    }
+    })
 });
 
 // ── POST /api/chat-report-issue ──────────────────────────────────────
@@ -272,7 +273,7 @@ app.http('chat-report-issue', {
     methods: ['POST'],
     authLevel: 'anonymous',
     route: 'chat-report-issue',
-    handler: async (request, context) => {
+    handler: withCorrelation(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         try {
             const { messageId, subjectId, issueDetail } = await request.json();
@@ -346,7 +347,7 @@ app.http('chat-report-issue', {
             context.error('Error reportando issue de chat:', err);
             return { status: 500, body: JSON.stringify({ error: 'Error interno' }) };
         }
-    }
+    })
 });
 
 // ── GET /api/teacher/ai-feedback-alerts?subjectId={id}&limit={n} ─────
@@ -354,7 +355,7 @@ app.http('teacher-ai-feedback-alerts', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'teacher/ai-feedback-alerts',
-    handler: async (request, context) => {
+    handler: withCorrelation(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
 
         const principal = parseClientPrincipal(request);
@@ -404,5 +405,5 @@ app.http('teacher-ai-feedback-alerts', {
             context.error('Error obteniendo alertas de feedback IA:', err);
             return { status: 500, body: JSON.stringify({ error: 'Error interno' }) };
         }
-    },
+    }),
 });

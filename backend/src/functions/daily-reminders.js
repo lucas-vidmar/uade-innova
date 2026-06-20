@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withCorrelationTimer } from '../middleware/with-correlation.js';
 import { loadJson, listBlobs } from '../services/storage.js';
 import { upsertNotificationForSubject } from '../services/notification-store.js';
 import { listClassesBySubject, listMaterialsByClass } from '../services/state-store.js';
@@ -75,7 +76,7 @@ export async function runDailyReminders(context = { log: () => {}, error: () => 
 
 app.timer('daily-reminders', {
   schedule: process.env.DAILY_REMINDERS_TIMER_CRON || '0 0 8 * * *',
-  handler: async (_timer, context) => {
+  handler: withCorrelationTimer(async (_timer, context) => {
     await runDailyReminders(context);
-  },
+  }),
 });

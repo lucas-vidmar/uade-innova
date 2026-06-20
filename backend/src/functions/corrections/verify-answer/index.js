@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withCorrelation } from '../../../middleware/with-correlation.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../../../services/auth-utils.js';
 import { getEnrollment, getCorrection, upsertCorrection, deletePendingCorrection } from '../../../services/state-store.js';
 import { generateEmbedding } from '../../../services/ai.js';
@@ -16,7 +17,7 @@ app.http('verify-answer', {
   methods: ['POST'],
   authLevel: 'anonymous',
   route: 'corrections-verify',
-  handler: async (request, context) => {
+  handler: withCorrelation(async (request, context) => {
     if (!validateFrontDoorId(request)) {
       return {
         status: 403,
@@ -261,5 +262,5 @@ app.http('verify-answer', {
         }),
       };
     }
-  },
+  }),
 });

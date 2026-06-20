@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withCorrelationTimer } from '../middleware/with-correlation.js';
 import { getIndexStats } from '../services/vector-store.js';
 import { saveJson, loadJson } from '../services/storage.js';
 import { trackVectorIndexAnomalyAlert } from '../services/telemetry.js';
@@ -105,7 +106,7 @@ function isValidBaseline(baseline) {
 
 app.timer('vector-health-monitor', {
     schedule: getEnv('VECTOR_HEALTH_ALERT_CRON', '0 */15 * * * *'),
-    handler: async (myTimer, context) => {
+    handler: withCorrelationTimer(async (myTimer, context) => {
         const startMs = Date.now();
         const indexName = process.env.PINECONE_INDEX_NAME || 'unknown';
         const thresholds = getThresholds();
@@ -208,5 +209,5 @@ app.timer('vector-health-monitor', {
 
         const elapsed = Date.now() - startMs;
         context.log(`[VectorHealthMonitor] Run complete in ${elapsed}ms | vectors: ${vectorCount} | fullness: ${(fullness * 100).toFixed(1)}%`);
-    },
+    }),
 });

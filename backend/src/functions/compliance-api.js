@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withCorrelation } from '../middleware/with-correlation.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
 import { loadJson } from '../services/storage.js';
 import { trackNotificationInteraction } from '../services/telemetry.js';
@@ -108,12 +109,12 @@ app.http('get-compliance-retention-policy', {
   methods: ['GET'],
   authLevel: 'anonymous',
   route: 'compliance/retention-policy',
-  handler: handleGetPolicy,
+  handler: withCorrelation(handleGetPolicy),
 });
 
 app.http('get-compliance-retention-export', {
   methods: ['GET'],
   authLevel: 'anonymous',
   route: 'compliance/retention-export',
-  handler: handleExport,
+  handler: withCorrelation(handleExport),
 });

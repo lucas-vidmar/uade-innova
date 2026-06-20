@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withCorrelation } from '../middleware/with-correlation.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { getEnrollment } from '../services/state-store.js';
 import * as notificationStore from '../services/notification-store.js';
@@ -104,7 +105,7 @@ app.http('get-notifications', {
   methods: ['GET'],
   authLevel: 'anonymous',
   route: 'notifications',
-  handler: async (request, context) => {
+    handler: withCorrelation(async (request, context) => {
     if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
     const principal = parseClientPrincipal(request);
     const { userId, forbidden } = resolveEffectiveUserId(request, principal);
@@ -172,14 +173,14 @@ app.http('get-notifications', {
     context.log(`[notifications] returning ${data.length} records (subjectId=${subjectId || 'all'}, userId=${userId || 'anonymous'}, skip=${skip}, type=${typeFilter || 'all'})`);
     trackNotificationInteraction({ action: 'fetch_feed', status: 'success', userId, subjectId, notificationId: 'feed' }).catch((err) => context.error('[Telemetry] Error emitting NotificationInteraction:', err));
     return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) };
-  },
+  }),
 });
 
 app.http('mark-notification-read', {
   methods: ['PATCH'],
   authLevel: 'anonymous',
   route: 'notifications/{id}/read',
-  handler: async (request, context) => {
+    handler: withCorrelation(async (request, context) => {
     if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
 
     const notificationId = request.params?.id;
@@ -218,14 +219,14 @@ app.http('mark-notification-read', {
       trackNotificationInteraction({ action: 'mark_read', status: 'error', userId, subjectId, notificationId }).catch((telemetryErr) => context.error('[Telemetry] Error emitting NotificationInteraction:', telemetryErr));
       return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Unable to mark notification as read' }) };
     }
-  },
+  }),
 });
 
 app.http('stream-notifications', {
   methods: ['GET'],
   authLevel: 'anonymous',
   route: 'notifications/stream',
-  handler: async (request, context) => {
+    handler: withCorrelation(async (request, context) => {
     if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
     const principal = parseClientPrincipal(request);
     const { userId, forbidden } = resolveEffectiveUserId(request, principal);
@@ -349,14 +350,14 @@ app.http('stream-notifications', {
       },
       body: stream,
     };
-  },
+  }),
 });
 
 app.http('mark-notifications-read', {
   methods: ['POST'],
   authLevel: 'anonymous',
   route: 'notifications/read',
-  handler: async (request, context) => {
+    handler: withCorrelation(async (request, context) => {
     if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
     const principal = parseClientPrincipal(request);
     const body = await request.json().catch(() => null);
@@ -397,5 +398,5 @@ app.http('mark-notifications-read', {
       trackNotificationInteraction({ action: 'mark_read_bulk', status: 'error', userId, subjectId, notificationId: 'bulk' }).catch((telemetryErr) => context.error('[Telemetry] Error emitting NotificationInteraction:', telemetryErr));
       return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Unable to mark notifications as read' }) };
     }
-  },
+  }),
 });

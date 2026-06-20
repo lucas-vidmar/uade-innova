@@ -110,5 +110,5 @@ development_status:
   # Epic 10: Production Hardening & Tech Debt
   epic-10: in-progress
   10-1-stream-multipart-uploads-to-blob-storage: done
-  10-2-structured-logging-and-debug-observability: ready-for-dev
+  10-2-structured-logging-and-debug-observability: review
   epic-10-retrospective: optional

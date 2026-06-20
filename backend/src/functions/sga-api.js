@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withCorrelation } from '../middleware/with-correlation.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
 
 function buildMockTasks(studentId) {
@@ -104,7 +105,7 @@ app.http('sga-get-tasks', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'sga/tasks',
-    handler: async (request) => {
+    handler: withCorrelation(async (request) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
 
         const studentId = request.query.get('studentId');
@@ -117,14 +118,14 @@ app.http('sga-get-tasks', {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(buildMockTasks(studentId)),
         };
-    },
+    }),
 });
 
 app.http('sga-get-attendance', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'sga/attendance',
-    handler: async (request) => {
+    handler: withCorrelation(async (request) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
 
         const principal = parseClientPrincipal(request);
@@ -143,14 +144,14 @@ app.http('sga-get-attendance', {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(buildMockAttendance(subjectId)),
         };
-    },
+    }),
 });
 
 app.http('sga-get-teacher-alerts', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'sga/teacher-alerts',
-    handler: async (request) => {
+    handler: withCorrelation(async (request) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
 
         const principal = parseClientPrincipal(request);
@@ -169,14 +170,14 @@ app.http('sga-get-teacher-alerts', {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(buildMockTeacherAlerts(subjectId)),
         };
-    },
+    }),
 });
 
 app.http('sga-get-early-alerts', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'sga/early-alerts',
-    handler: async (request) => {
+    handler: withCorrelation(async (request) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
 
         const subjectId = request.query.get('subjectId');
@@ -196,5 +197,5 @@ app.http('sga-get-early-alerts', {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(alerts),
         };
-    },
+    }),
 });

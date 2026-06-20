@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withCorrelation } from '../middleware/with-correlation.js';
 import { loadJson, saveJson } from '../services/storage.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { getEnrollment } from '../services/state-store.js';
@@ -37,7 +38,7 @@ app.http('get-deadlines', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'deadlines',
-    handler: async (request) => {
+    handler: withCorrelation(async (request) => {
         if (!validateFrontDoorId(request)) {
             return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         }
@@ -73,14 +74,14 @@ app.http('get-deadlines', {
 
         const deadlines = await loadJson(CONTAINER_DEADLINES, `${subjectId}.json`) || [];
         return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(deadlines) };
-    },
+    }),
 });
 
 app.http('save-deadline', {
     methods: ['POST', 'PUT'],
     authLevel: 'anonymous',
     route: 'deadlines',
-    handler: async (request) => {
+    handler: withCorrelation(async (request) => {
         if (!validateFrontDoorId(request)) {
             return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         }
@@ -130,14 +131,14 @@ app.http('save-deadline', {
         await saveJson(CONTAINER_DEADLINES, `${subjectId}.json`, next);
 
         return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(deadline) };
-    },
+    }),
 });
 
 app.http('get-deadline-reminders', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'deadline-reminders',
-    handler: async (request) => {
+    handler: withCorrelation(async (request) => {
         if (!validateFrontDoorId(request)) {
             return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         }
@@ -185,5 +186,5 @@ app.http('get-deadline-reminders', {
         });
 
         return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(reminders) };
-    },
+    }),
 });

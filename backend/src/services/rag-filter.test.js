@@ -73,6 +73,7 @@ const correlationMocks = {
     resolveTraceContext: mock.fn(() => ({ traceparent: '00-trace-id-span-id-01', tracestate: null, traceId: 'trace-id', spanId: 'span-id' })),
     buildDependencyHeaders: mock.fn(() => ({})),
     withCorrelationResponseHeaders: mock.fn((cid, headers) => headers || {}),
+    generateCorrelationId: mock.fn(() => 'test-correlation-id'),
 };
 
 // Mock dependencies

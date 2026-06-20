@@ -1,3 +1,4 @@
+import { withCorrelation } from '../middleware/with-correlation.js';
 import { validateFrontDoorId, parseClientPrincipal, getAuthenticatedUser } from '../services/auth-utils.js';
 import { getEnrollment, RATINGS_TABLE } from '../services/state-store.js';
 import { getTableClient } from '../services/storage.js';
@@ -8,7 +9,7 @@ app.http('get-sat-analytics', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'sat-analytics',
-    handler: async (request, context) => {
+    handler: withCorrelation(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
 
         const subjectId = request.query.get('subjectId');
@@ -79,5 +80,5 @@ app.http('get-sat-analytics', {
             context.error(`[sat-analytics] Error subjectId=${subjectId} classId=${classId || 'none'}:`, err);
             return { status: 500, body: JSON.stringify({ error: 'Error interno obteniendo métricas SAT' }) };
         }
-    },
+    }),
 });
