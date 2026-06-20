@@ -69,6 +69,41 @@ export async function uploadFile(containerName, blobName, buffer, contentType, m
 }
 
 /**
+ * Sube un archivo al Blob Storage usando streaming (evita buffering completo en memoria).
+ * @param {string} containerName
+ * @param {string} blobName - ruta dentro del container
+ * @param {ReadableStream} readableStream - stream de lectura con los datos del archivo
+ * @param {string} contentType - MIME type
+ * @param {object} metadata - metadatos del blob (opcional)
+ * @param {object} options - opciones adicionales
+ * @param {number} options.bufferSize - tamaño de buffer por bloque (default: 4MB)
+ * @param {number} options.maxBuffers - máximo de buffers simultáneos (default: 3)
+ * @returns {Promise<object>} { url, blobClient } — blobClient expone abortCopyFromURL() para manejo de errores
+ */
+export async function uploadStream(containerName, blobName, readableStream, contentType, metadata = {}, options = {}) {
+    const { bufferSize = 4 * 1024 * 1024, maxBuffers = 3 } = options;
+    const client = getClient();
+    const containerClient = client.getContainerClient(containerName);
+
+    await containerClient.createIfNotExists();
+
+    const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+
+    const normalizedMetadata = {};
+    for (const [key, value] of Object.entries(metadata)) {
+        const asciiValue = String(value).replace(/[^\x00-\x7F]/g, '');
+        normalizedMetadata[key.toLowerCase()] = asciiValue;
+    }
+
+    await blockBlobClient.uploadStream(readableStream, bufferSize, maxBuffers, {
+        blobHTTPHeaders: { blobContentType: contentType },
+        metadata: normalizedMetadata,
+    });
+
+    return { url: blockBlobClient.url, blobClient: blockBlobClient };
+}
+
+/**
  * Descarga un archivo del Blob Storage.
  * @param {string} containerName
  * @param {string} blobName

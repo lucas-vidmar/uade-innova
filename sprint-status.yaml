@@ -106,3 +106,9 @@ development_status:
   9-2-key-vault-secrets-for-graph-api: done
   9-3-timer-and-queue-trigger-configuration: done
   epic-9-retrospective: optional
+
+  # Epic 10: Production Hardening & Tech Debt
+  epic-10: in-progress
+  10-1-stream-multipart-uploads-to-blob-storage: done
+  10-2-structured-logging-and-debug-observability: ready-for-dev
+  epic-10-retrospective: optional

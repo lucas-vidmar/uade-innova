@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import busboy from 'busboy';
 import { PassThrough } from 'stream';
-import { uploadFile, saveMetricsToTable } from '../services/storage.js';
+import { uploadStream, uploadFile, saveMetricsToTable } from '../services/storage.js';
 import { upsertMaterialState, getEnrollment } from '../services/state-store.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
 import { getMaterialPriority } from '../services/material-classification.js';
@@ -22,7 +22,7 @@ app.http('ingest-material', {
 
         try {
             context.log(`[Ingest] Received request for ${request.url}`);
-            const { fileBuffer, fileContentType, fileName, classIds, subjectId, materialType } = await parseMultipart(request, context);
+            const { fileReadable, fileHeader, fileContentType, fileName, classIds, subjectId, materialType } = await parseMultipart(request, context);
             
             context.log(`[Ingest] Multipart parsed successfully: ${fileName} (${fileContentType}), subjectId=${subjectId}, materialType=${materialType}, classIds=${JSON.stringify(classIds)}`);
 
@@ -52,7 +52,7 @@ app.http('ingest-material', {
                 return structuredErrorResponse(400, 'Faltan campos requeridos: classIds, subjectId, materialType', ErrorCategory.VALIDATION, 'MISSING_FIELDS');
             }
 
-            if (!validateFileType(fileBuffer, materialType, context)) {
+            if (!validateFileType(fileHeader, materialType, context)) {
                 return structuredErrorResponse(400, `El tipo de archivo no coincide con el tipo de material "${materialType}". Formatos aceptados: TXT, VTT, DOCX, PDF, PPTX.`, ErrorCategory.VALIDATION, 'INVALID_FILE_TYPE');
             }
 
@@ -73,23 +73,31 @@ app.http('ingest-material', {
                 await upsertMaterialState(material);
 
                 const blobName = `${subjectId}/${materialId}${path.extname(fileName)}`;
-                context.log(`[Ingest] Uploading file to blob storage: ${blobName}`);
+                context.log(`[Ingest] Uploading file to blob storage via stream: ${blobName}`);
 
-                const blobUrl = await uploadFile(
-                    process.env.AZURE_STORAGE_CONTAINER_MATERIALS || 'class-materials',
-                    blobName,
-                    fileBuffer,
-                    fileContentType,
-                    {
-                        materialId,
-                        subjectId,
-                        materialType,
-                        classIds: JSON.stringify(classIds),
-                        fileName
-                    }
-                );
+                let uploadResult;
+                try {
+                    uploadResult = await uploadStream(
+                        process.env.AZURE_STORAGE_CONTAINER_MATERIALS || 'class-materials',
+                        blobName,
+                        fileReadable,
+                        fileContentType,
+                        {
+                            materialId,
+                            subjectId,
+                            materialType,
+                            classIds: JSON.stringify(classIds),
+                            fileName
+                        }
+                    );
+                } catch (streamErr) {
+                    context.error(`[Ingest] Upload stream failed for ${materialId}:`, streamErr);
+                    const categorized = normalizeCategorizedError(streamErr, ErrorCategory.STORAGE);
+                    return structuredErrorResponse(500, 'Error al subir el archivo. Intentá de nuevo.', categorized.errorCategory, 'UPLOAD_STREAM_FAILED');
+                }
 
-                context.log(`[Ingest] File uploaded successfully: ${blobUrl}`);
+                const blobUrl = uploadResult.url;
+                context.log(`[Ingest] File uploaded successfully via stream: ${blobUrl}`);
 
                 const updatedMaterial = await upsertMaterialState({
                     ...material,
@@ -191,7 +199,8 @@ async function parseMultipart(request, context) {
             }
         });
 
-        let fileBuffer = null;
+        let fileReadable = null;
+        let fileHeader = null;
         let fileContentType = '';
         let fileName = '';
         const fields = {};
@@ -202,10 +211,11 @@ async function parseMultipart(request, context) {
         const checkCompletion = () => {
             if (busboyFinished && (fileStreamFinished || !fileName)) {
                 if (limitReached) return reject(new Error(`El archivo excede el límite permitido de ${MAX_FILE_SIZE / (1024 * 1024)}MB`));
-                if (!fileBuffer && fileName) return reject(new Error('No se recibió el contenido del archivo'));
+                if (!fileReadable && fileName) return reject(new Error('No se recibió el contenido del archivo'));
                 
                 resolve({
-                    fileBuffer,
+                    fileReadable,
+                    fileHeader,
                     fileContentType,
                     fileName,
                     classIds: fields.classIds || (fields.classId ? [fields.classId] : []),
@@ -220,17 +230,27 @@ async function parseMultipart(request, context) {
             const { filename, mimeType } = info;
             fileName = filename;
             fileContentType = mimeType;
-            const chunks = [];
 
-            file.on('data', d => chunks.push(d));
+            const passThrough = new PassThrough();
+            fileReadable = passThrough;
+
+            file.on('data', d => {
+                if (!fileHeader || fileHeader.length < 8192) {
+                    fileHeader = fileHeader ? Buffer.concat([fileHeader, d]) : d;
+                }
+                const canContinue = passThrough.write(d);
+                if (!canContinue) {
+                    file.pause();
+                    passThrough.once('drain', () => file.resume());
+                }
+            });
             file.on('limit', () => {
                 limitReached = true;
+                passThrough.destroy(new Error(`El archivo excede el límite permitido de ${MAX_FILE_SIZE / (1024 * 1024)}MB`));
                 file.resume();
             });
             file.on('end', () => {
-                if (!limitReached) {
-                    fileBuffer = Buffer.concat(chunks);
-                }
+                passThrough.end();
                 fileStreamFinished = true;
                 checkCompletion();
             });
