@@ -12,6 +12,9 @@ app.http('get-sat-analytics', {
 
         const subjectId = request.query.get('subjectId');
         const classId = request.query.get('classId') || '';
+        const rawDays = request.query.get('days');
+        const ALLOWED_DAYS = [7, 14, 30];
+        const days = ALLOWED_DAYS.includes(Number(rawDays)) ? Number(rawDays) : 30;
 
         if (!subjectId) {
             return { status: 400, body: JSON.stringify({ error: 'Falta subjectId' }) };
@@ -35,8 +38,14 @@ app.http('get-sat-analytics', {
                 },
             });
 
+            const startDate = new Date();
+            startDate.setUTCHours(0, 0, 0, 0);
+            startDate.setUTCDate(startDate.getUTCDate() - (days - 1));
+
             for await (const entity of result) {
                 if (classId && entity.classId !== classId) continue;
+                const createdAt = entity.createdAt ? new Date(entity.createdAt) : null;
+                if (!createdAt || isNaN(createdAt) || createdAt < startDate) continue;
                 entities.push(entity);
             }
 
@@ -60,7 +69,7 @@ app.http('get-sat-analytics', {
             return {
                 status: 200,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ segments: resultArray, total: entities.length, filter: { subjectId, classId: classId || null } }),
+                body: JSON.stringify({ segments: resultArray, total: entities.length, filter: { subjectId, classId: classId || null, windowDays: days } }),
             };
         } catch (err) {
             context.error(`[sat-analytics] Error subjectId=${subjectId} classId=${classId || 'none'}:`, err);

@@ -1654,7 +1654,7 @@ export const api = {
             return res.json();
         },
 
-    async getSatAnalytics({ subjectId, classId }) {
+    async getSatAnalytics({ subjectId, classId, days }) {
             if (USE_MOCK) {
                 await delay(300);
                 const segments = [
@@ -1662,10 +1662,11 @@ export const api = {
                     { promptVersion: 'v2', rated: 8, positive: 7, satScore: 0.875 },
                 ];
                 const filtered = classId ? segments.filter(() => false) : [];
-                return { segments: filtered, total: filtered.reduce((s, x) => s + x.rated, 0), filter: { subjectId, classId: classId || null } };
+                return { segments: filtered, total: filtered.reduce((s, x) => s + x.rated, 0), filter: { subjectId, classId: classId || null, windowDays: days || 30 } };
             }
             let url = `${BASE_URL}/sat-analytics?subjectId=${encodeURIComponent(subjectId)}`;
             if (classId) url += `&classId=${encodeURIComponent(classId)}`;
+            if (days) url += `&days=${Number(days)}`;
             const res = await apiFetch(url);
             return res.json();
         },

@@ -23,8 +23,10 @@ export async function renderDirectorSatAnalytics(container) {
     const classes = Array.isArray(classesData) ? classesData : [];
     const segments = satData?.segments || [];
     const total = satData?.total || 0;
+    const initialDays = satData?.filter?.windowDays || 30;
 
     let selectedClassId = '';
+    let selectedDays = initialDays;
 
     container.innerHTML = `
     <div class="card" style="margin-bottom:var(--space-6)">
@@ -35,6 +37,14 @@ export async function renderDirectorSatAnalytics(container) {
         <div>
           <label class="form-label">Materia</label>
           <div style="font-weight:600;padding:8px 0">${activeSubjectId}</div>
+        </div>
+        <div>
+          <label class="form-label">Ventana de tiempo</label>
+          <div style="display:flex;gap:var(--space-2)" id="sat-window-pills">
+            ${[7, 14, 30].map(d => `
+              <button class="btn ${d === selectedDays ? 'btn-primary' : 'btn-secondary'}" data-days="${d}" style="flex:1;min-width:50px">${d} días</button>
+            `).join('')}
+          </div>
         </div>
         <div>
           <label class="form-label" for="sat-class-filter">Clase (opcional)</label>
@@ -110,18 +120,33 @@ export async function renderDirectorSatAnalytics(container) {
 
     const classFilter = container.querySelector('#sat-class-filter');
     const applyBtn = container.querySelector('#sat-apply-filter');
+    const windowPills = container.querySelector('#sat-window-pills');
+
+    windowPills.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-days]');
+      if (!btn) return;
+      selectedDays = Number(btn.dataset.days);
+      windowPills.querySelectorAll('[data-days]').forEach(b => {
+        b.className = `btn ${Number(b.dataset.days) === selectedDays ? 'btn-primary' : 'btn-secondary'}`;
+      });
+      refreshSatData();
+    });
 
     applyBtn.addEventListener('click', async () => {
       selectedClassId = classFilter.value;
+      refreshSatData();
+    });
+
+    async function refreshSatData() {
       container.querySelector('#sat-segments-card').innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Filtrando...</div>`;
       try {
-        const filtered = await api.getSatAnalytics({ subjectId: activeSubjectId, classId: selectedClassId });
-        renderSegmentsTable(container, filtered.segments || [], filtered.total || 0);
+        const result = await api.getSatAnalytics({ subjectId: activeSubjectId, classId: selectedClassId, days: selectedDays });
+        renderSegmentsTable(container, result.segments || [], result.total || 0);
       } catch (err) {
         console.error('[SAT] Error filtering:', err);
         container.querySelector('#sat-segments-card').innerHTML = `<div class="empty-state" style="padding:20px">Error al filtrar datos SAT.</div>`;
       }
-    });
+    }
   } catch (err) {
     console.error('[SAT] Error loading analytics:', err);
     container.innerHTML = `
