@@ -139,7 +139,7 @@ development_status:
   6-158-cost-per-interaction-spike-alerts: done
   6-159-director-dashboard-projected-month-end-a: done
   6-16-api-rate-limiting--ddos-protection: done
-  6-176-director-archive-tier-usage-dashboard-by: backlog
+   6-176-director-archive-tier-usage-dashboard-by: done
   6-177-retention-compliance-snapshot-api: backlog
   6-178-director-retention-compliance-evidence-e: backlog
   6-179-session-metrics-history-pagination-for-l: backlog

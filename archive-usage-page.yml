@@ -1,0 +1,61 @@
+- generic [ref=e2]:
+  - generic:
+    - complementary "Navegación principal" [ref=e3]:
+      - link "Ir al inicio" [ref=e4] [cursor=pointer]:
+        - /url: "#/student/dashboard"
+        - generic [ref=e5]: UI
+        - generic [ref=e6]: UADE Innova
+      - navigation [ref=e7]:
+        - link "Inicio" [ref=e8] [cursor=pointer]:
+          - /url: "#/student/dashboard"
+          - img [ref=e9]
+          - generic [ref=e12]: Inicio
+        - link "Notificaciones" [ref=e13] [cursor=pointer]:
+          - /url: "#/student/notifications"
+          - img [ref=e14]
+          - generic [ref=e17]: Notificaciones
+        - link "Tareas y Notas" [ref=e18] [cursor=pointer]:
+          - /url: "#/student/tasks"
+          - img [ref=e19]
+          - generic [ref=e20]: Tareas y Notas
+        - link "Calendario" [ref=e21] [cursor=pointer]:
+          - /url: "#/student/calendar"
+          - img [ref=e22]
+          - generic [ref=e25]: Calendario
+        - link "Configuración" [ref=e26] [cursor=pointer]:
+          - /url: "#/student/settings"
+          - img [ref=e27]
+          - generic [ref=e30]: Configuración
+        - button "Guía de inicio" [ref=e32] [cursor=pointer]:
+          - img [ref=e33]
+          - generic [ref=e36]: Guía de inicio
+    - banner [ref=e37]:
+      - button "Seleccionar materia activa" [ref=e40] [cursor=pointer]:
+        - generic [ref=e41]: Arquitectura de Software 2026 (2026-1)
+        - img [ref=e42]
+      - generic [ref=e44]:
+        - button "Cambiar tema" [ref=e45] [cursor=pointer]:
+          - img [ref=e46]
+        - button "Abrir centro de notificaciones" [ref=e49] [cursor=pointer]:
+          - img [ref=e50]
+        - generic [ref=e54] [cursor=pointer]: VR
+  - main [ref=e57]:
+    - generic [ref=e59]:
+      - generic [ref=e60]:
+        - generic [ref=e61]:
+          - generic
+          - textbox "Buscar en Arquitectura de Software 2026..." [ref=e62]
+        - generic [ref=e63]:
+          - generic [ref=e96]
+          - generic [ref=e99]
+          - generic [ref=e102]
+      - generic [ref=e70]:
+        - generic [ref=e107]:
+          - img [ref=e109]
+          - heading "Aceptá los términos para usar el chat" [level=3] [ref=e113]
+          - paragraph [ref=e114]: Para poder consultar los materiales de clase, necesitás aceptar los términos de uso y consentimiento de IA.
+          - button "Aceptar términos" [ref=e115] [cursor=pointer]
+        - complementary [ref=e73]:
+          - generic [ref=e74]
+          - generic [ref=e82]
+          - generic [ref=e89]

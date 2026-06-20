@@ -1,0 +1,574 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.41.2.15936",
+      "templateHash": "1998126153182249684"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure region for the Storage Account."
+      }
+    },
+    "name": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the Storage Account (3-24 chars, lowercase alphanumeric)."
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Tags to apply to the resource."
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2023-01-01",
+      "name": "[parameters('name')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "sku": {
+        "name": "Standard_LRS"
+      },
+      "kind": "StorageV2",
+      "properties": {
+        "accessTier": "Hot",
+        "allowBlobPublicAccess": false,
+        "allowSharedKeyAccess": true,
+        "supportsHttpsTrafficOnly": true,
+        "minimumTlsVersion": "TLS1_2",
+        "encryption": {
+          "services": {
+            "blob": {
+              "enabled": true
+            },
+            "file": {
+              "enabled": true
+            }
+          },
+          "keySource": "Microsoft.Storage"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}', parameters('name'), 'default')]",
+      "properties": {
+        "deleteRetentionPolicy": {
+          "enabled": true,
+          "days": 7
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('name'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'class-materials')]",
+      "properties": {
+        "publicAccess": "None",
+        "metadata": {
+          "purpose": "Raw class material files uploaded by teachers"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('name'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'glossary-files')]",
+      "properties": {
+        "publicAccess": "None",
+        "metadata": {
+          "purpose": "Subject-specific technical glossary JSON files for transcription correction"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('name'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'summaries')]",
+      "properties": {
+        "publicAccess": "None",
+        "metadata": {
+          "purpose": "AI-generated and teacher-validated class summaries"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('name'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'compliance')]",
+      "properties": {
+        "publicAccess": "None",
+        "metadata": {
+          "purpose": "Retention policy configuration and compliance evidence exports"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('name'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'processed')]",
+      "properties": {
+        "publicAccess": "None",
+        "metadata": {
+          "purpose": "Processed chunk JSON and pipeline state files"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('name'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'monitor-state')]",
+      "properties": {
+        "publicAccess": "None",
+        "metadata": {
+          "purpose": "Vector health monitor dedup and baseline state"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('name'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'vector-snapshots')]",
+      "properties": {
+        "publicAccess": "None",
+        "metadata": {
+          "purpose": "Periodic vector health snapshots for trend analysis"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('name'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/managementPolicies",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}', parameters('name'), 'default')]",
+      "properties": {
+        "policy": {
+          "rules": [
+            {
+              "enabled": true,
+              "name": "DeleteArchiveAfter2Years",
+              "type": "Lifecycle",
+              "definition": {
+                "actions": {
+                  "baseBlob": {
+                    "delete": {
+                      "daysAfterModificationGreaterThan": 730
+                    }
+                  }
+                },
+                "filters": {
+                  "blobTypes": [
+                    "blockBlob"
+                  ],
+                  "prefixMatch": [
+                    "class-materials/",
+                    "processed/"
+                  ]
+                }
+              }
+            },
+            {
+              "enabled": true,
+              "name": "ArchiveOldSemesterMaterials",
+              "type": "Lifecycle",
+              "definition": {
+                "actions": {
+                  "baseBlob": {
+                    "tierToArchive": {
+                      "daysAfterModificationGreaterThan": 180
+                    }
+                  }
+                },
+                "filters": {
+                  "blobTypes": [
+                    "blockBlob"
+                  ],
+                  "prefixMatch": [
+                    "class-materials/semester-",
+                    "processed/semester-"
+                  ]
+                }
+              }
+            },
+            {
+              "enabled": true,
+              "name": "DeleteVectorSnapshotsAfter2Years",
+              "type": "Lifecycle",
+              "definition": {
+                "actions": {
+                  "baseBlob": {
+                    "delete": {
+                      "daysAfterModificationGreaterThan": 730
+                    }
+                  }
+                },
+                "filters": {
+                  "blobTypes": [
+                    "blockBlob"
+                  ],
+                  "prefixMatch": [
+                    "vector-snapshots/"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('name'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/tableServices",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}', parameters('name'), 'default')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('name'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'UserProfiles')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'SessionMetrics')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'materials')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'classes')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/queueServices",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}', parameters('name'), 'default')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('name'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/queueServices/queues",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'ingestion-tasks')]",
+      "properties": {
+        "metadata": {
+          "purpose": "Async ingestion processing tasks for Queue-triggered functions"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/queueServices', parameters('name'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/queueServices/queues",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'notification-queue')]",
+      "properties": {
+        "metadata": {
+          "purpose": "Async notification dispatch for reminders, alerts, and updates"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/queueServices', parameters('name'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'Enrollments')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'UserConsent')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'Corrections')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'CorrectionsPending')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'Conversations')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'ConversationRatings')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'NotificationPreferences')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'UserEvents')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'Interventions')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'RiskThresholds')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
+      ]
+    }
+  ],
+  "outputs": {
+    "accountName": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the Storage Account."
+      },
+      "value": "[parameters('name')]"
+    },
+    "accountId": {
+      "type": "string",
+      "metadata": {
+        "description": "The resource ID of the Storage Account."
+      },
+      "value": "[resourceId('Microsoft.Storage/storageAccounts', parameters('name'))]"
+    },
+    "blobEndpoint": {
+      "type": "string",
+      "metadata": {
+        "description": "The primary blob endpoint URL."
+      },
+      "value": "[reference(resourceId('Microsoft.Storage/storageAccounts', parameters('name')), '2023-01-01').primaryEndpoints.blob]"
+    },
+    "classMaterialsContainerName": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the class-materials container."
+      },
+      "value": "class-materials"
+    },
+    "processedContainerName": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the processed container."
+      },
+      "value": "processed"
+    },
+    "glossaryFilesContainerName": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the glossary-files container."
+      },
+      "value": "glossary-files"
+    },
+    "summariesContainerName": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the summaries container."
+      },
+      "value": "summaries"
+    },
+    "complianceContainerName": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the compliance container."
+      },
+      "value": "compliance"
+    },
+    "materialsTableName": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the materials table."
+      },
+      "value": "materials"
+    },
+    "classesTableName": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the classes table."
+      },
+      "value": "classes"
+    },
+    "enrollmentsTableName": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the Enrollments table."
+      },
+      "value": "Enrollments"
+    },
+    "userConsentTableName": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the UserConsent table."
+      },
+      "value": "UserConsent"
+    },
+    "correctionsTableName": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the Corrections table."
+      },
+      "value": "Corrections"
+    },
+    "correctionsPendingTableName": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the CorrectionsPending table."
+      },
+      "value": "CorrectionsPending"
+    },
+    "conversationsTableName": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the Conversations table."
+      },
+      "value": "Conversations"
+    },
+    "conversationRatingsTableName": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the ConversationRatings table."
+      },
+      "value": "ConversationRatings"
+    },
+    "notificationPreferencesTableName": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the NotificationPreferences table."
+      },
+      "value": "NotificationPreferences"
+    },
+    "userEventsTableName": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the UserEvents table."
+      },
+      "value": "UserEvents"
+    },
+    "interventionsTableName": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the Interventions table."
+      },
+      "value": "Interventions"
+    },
+    "riskThresholdsTableName": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the RiskThresholds table."
+      },
+      "value": "RiskThresholds"
+    },
+    "vectorSnapshotsContainerName": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the vector-snapshots container."
+      },
+      "value": "vector-snapshots"
+    },
+    "ingestionQueueName": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the ingestion tasks queue."
+      },
+      "value": "ingestion-tasks"
+    },
+    "notificationQueueName": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the notification queue."
+      },
+      "value": "notification-queue"
+    }
+  }
+}
