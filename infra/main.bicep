@@ -75,6 +75,10 @@ param budgetAmount int = 100
 @description('Lista de correos para notificaciones de presupuesto.')
 param notificationEmail string = ''
 
+@secure()
+@description('Optional webhook URI for Teams/HTTP anomaly alert notifications (e.g. Teams connector URL).')
+param webhookUri string = ''
+
 @minValue(1)
 @description('TTFT P95 threshold in milliseconds for the anomaly alert rule.')
 param ttftAnomalyThresholdMs int = 2000
@@ -286,6 +290,7 @@ module anomalousUsageAlert './modules/anomalous-usage-alert.bicep' = if (!empty(
     location: location
     workspaceId: appInsights.outputs.logAnalyticsWorkspaceId
     notificationEmail: notificationEmail
+    webhookUri: webhookUri
     scheduledQueryRuleName: anomalousUsageAlertName
     actionGroupName: anomalousUsageActionGroupName
     subjectTokenThreshold: 500000
@@ -301,6 +306,7 @@ module ttftAnomalyAlert './modules/ttft-anomaly-alert.bicep' = if (!empty(notifi
     location: location
     workspaceId: appInsights.outputs.logAnalyticsWorkspaceId
     notificationEmail: notificationEmail
+    webhookUri: webhookUri
     scheduledQueryRuleName: ttftAnomalyAlertName
     actionGroupName: ttftAnomalyActionGroupName
     ttftThresholdMs: ttftAnomalyThresholdMs

@@ -56,6 +56,9 @@
         "notificationEmail": {
             "value": "${notificationEmail}"
         },
+        "webhookUri": {
+            "value": "${webhookUri}"
+        },
         "pineconeApiKey": {
             "value": "${PINECONE_API_KEY}"
         }

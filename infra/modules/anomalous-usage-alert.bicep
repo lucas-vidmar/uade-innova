@@ -12,6 +12,13 @@ param workspaceId string
 @description('Email destination for alert notifications.')
 param notificationEmail string
 
+@secure()
+@maxLength(2000)
+@description('Optional webhook URI for Teams/HTTP notification channel (e.g. Teams connector). Empty string disables webhook.')
+param webhookUri string = ''
+
+var trimmedWebhookUri = trim(webhookUri)
+
 @description('Name of the scheduled query alert rule.')
 param scheduledQueryRuleName string = 'alert-anomalous-token-usage'
 
@@ -82,6 +89,13 @@ resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
         useCommonAlertSchema: true
       }
     ]
+    webhookReceivers: !empty(trimmedWebhookUri) ? [
+      {
+        name: 'operations-webhook'
+        serviceUri: trimmedWebhookUri
+        useCommonAlertSchema: true
+      }
+    ] : []
   }
 }
 
