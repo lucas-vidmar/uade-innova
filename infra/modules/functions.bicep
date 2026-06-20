@@ -198,6 +198,15 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           name: 'AZURE_OPENAI_TTS_DEPLOYMENT'
           value: openAiTtsDeployment
         }
+        // Azure Resource Management (Storage Lifecycle Drift Detection)
+        {
+          name: 'AZURE_SUBSCRIPTION_ID'
+          value: subscription().subscriptionId
+        }
+        {
+          name: 'AZURE_RESOURCE_GROUP_NAME'
+          value: resourceGroup().name
+        }
         // Storage — Uses Managed Identity + RBAC (no access key in App Settings)
         {
           name: 'AZURE_STORAGE_ACCOUNT_NAME'

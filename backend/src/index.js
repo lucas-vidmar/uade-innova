@@ -36,3 +36,4 @@ import './functions/corrections-transcription/reject-suggestion/index.js';
 import './functions/compliance-api.js';
 import './functions/subject-weights-api.js';
 import './functions/vector-backup.js';
+import './functions/storage-lifecycle.js';
