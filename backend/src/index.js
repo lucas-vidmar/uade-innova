@@ -37,3 +37,4 @@ import './functions/compliance-api.js';
 import './functions/subject-weights-api.js';
 import './functions/vector-backup.js';
 import './functions/storage-lifecycle.js';
+import './functions/sat-analytics.js';
