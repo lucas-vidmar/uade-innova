@@ -271,6 +271,23 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           name: 'VECTOR_BACKUP_WINDOW_CRON'
           value: '0 0 3 * * *'
         }
+        // Vector health monitor (Issue #150)
+        {
+          name: 'VECTOR_HEALTH_ALERT_CRON'
+          value: '0 */15 * * * *'
+        }
+        {
+          name: 'VECTOR_HEALTH_FULLNESS_THRESHOLD'
+          value: '0.80'
+        }
+        {
+          name: 'VECTOR_HEALTH_GROWTH_SPIKE_MULTIPLIER'
+          value: '3'
+        }
+        {
+          name: 'VECTOR_HEALTH_DEDUP_WINDOW_MINUTES'
+          value: '60'
+        }
         // Graph API (Teams notifications)
         {
           name: 'GRAPH_API_CLIENT_ID'

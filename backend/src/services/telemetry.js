@@ -427,6 +427,54 @@ export async function trackNotificationInteraction({
  * @param {string} [params.errorCategory] - Normalized error category on failure
  * @param {string} [params.errorMessage]  - Error details on failure (truncated to 500)
  */
+/**
+ * Tracks a vector index anomaly alert event for ops monitoring.
+ *
+ * Emitted by the vector-health-monitor timer function when index fullness,
+ * document growth, or connectivity thresholds are breached.
+ *
+ * @param {object} params
+ * @param {string} params.alertType       - 'fullness' | 'growthSpike' | 'connectivity'
+ * @param {string} params.indexName       - Pinecone index name
+ * @param {number} params.observedValue   - The observed metric value that triggered the alert
+ * @param {number} params.threshold       - The threshold that was breached
+ * @param {number} params.dedupWindowMinutes - Dedup window in minutes (prevents alert storms)
+ * @param {number} [params.vectorCount]   - Total vector count at time of alert
+ * @param {number} [params.indexFullness] - Index fullness ratio at time of alert
+ * @param {string} [params.errorMessage]  - Error details for connectivity alerts
+ */
+export async function trackVectorIndexAnomalyAlert({
+    alertType = 'fullness',
+    indexName,
+    observedValue,
+    threshold,
+    dedupWindowMinutes = 60,
+    vectorCount,
+    indexFullness,
+    errorMessage,
+}) {
+    const client = await getClient();
+    if (!client) return;
+
+    client.trackEvent({
+        name: 'VectorIndexAnomalyAlert',
+        properties: {
+            alertType,
+            indexName: indexName || process.env.PINECONE_INDEX_NAME || 'unknown',
+            dedupWindowMinutes: String(dedupWindowMinutes),
+            ...(errorMessage && { errorMessage: String(errorMessage).slice(0, 500) }),
+        },
+        measurements: {
+            observedValue: Number.isFinite(observedValue) ? observedValue : 0,
+            threshold: Number.isFinite(threshold) ? threshold : 0,
+            vectorCount: Number.isFinite(vectorCount) ? vectorCount : 0,
+            indexFullness: Number.isFinite(indexFullness) ? indexFullness : 0,
+        },
+    });
+
+    await client.flush({ isAppCrashing: true });
+}
+
 export async function trackVectorBackupRun({
     runId,
     mode = 'backup-only',

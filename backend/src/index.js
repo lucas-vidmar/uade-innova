@@ -40,3 +40,4 @@ import './functions/vector-backup-scheduler.js';
 import './functions/backup-approval-api.js';
 import './functions/storage-lifecycle.js';
 import './functions/sat-analytics.js';
+import './functions/vector-health-monitor.js';

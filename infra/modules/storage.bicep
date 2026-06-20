@@ -109,6 +109,18 @@ resource processedContainer 'Microsoft.Storage/storageAccounts/blobServices/cont
   }
 }
 
+// ─── Container: monitor-state (vector health monitor state) ─────
+resource monitorStateContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
+  parent: blobService
+  name: 'monitor-state'
+  properties: {
+    publicAccess: 'None'
+    metadata: {
+      purpose: 'Vector health monitor dedup and baseline state'
+    }
+  }
+}
+
 // ─── Lifecycle Management Policy (2-Year Retention) ─────────────
 resource blobLifecyclePolicy 'Microsoft.Storage/storageAccounts/managementPolicies@2023-01-01' = {
   parent: storageAccount
