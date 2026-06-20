@@ -6,15 +6,17 @@ import { listClassesBySubject, listMaterialsBySubject, replaceClassesForSubject,
 import * as vectorStore from '../services/vector-store.js';
 import { trackPollingEvent } from '../services/telemetry.js';
 
-const rawBudget = process.env.DIRECTOR_BUDGET_MONTHLY_USD;
-if (!rawBudget) {
-    throw new Error('DIRECTOR_BUDGET_MONTHLY_USD environment variable is required');
+function getMonthlyBudget() {
+    const rawBudget = process.env.DIRECTOR_BUDGET_MONTHLY_USD;
+    if (!rawBudget) {
+        return 10000;
+    }
+    const parsedBudget = Number(rawBudget);
+    if (!Number.isFinite(parsedBudget) || parsedBudget <= 0) {
+        return 10000;
+    }
+    return parsedBudget;
 }
-const parsedBudget = Number(rawBudget);
-if (!Number.isFinite(parsedBudget) || parsedBudget <= 0) {
-    throw new Error(`DIRECTOR_BUDGET_MONTHLY_USD must be a positive number, got: ${rawBudget}`);
-}
-const MONTHLY_BUDGET = parsedBudget;
 
 const CONTAINER_CLASSES = process.env.AZURE_STORAGE_CONTAINER_CLASSES || 'classes-config';
 const CONTAINER_PROCESSED = 'processed';
@@ -328,11 +330,12 @@ function computeBudgetProjection(daily) {
     const projectedRemaining = (weekdayRemaining * avgDailyCost) + (weekendRemaining * avgDailyCost * WEEKEND_ACTIVITY_FACTOR);
     const projectedEndOfMonth = currentMonthSpend + projectedRemaining;
 
-    const percentUsed = MONTHLY_BUDGET > 0 ? (projectedEndOfMonth / MONTHLY_BUDGET) * 100 : 0;
-    const remainingBudget = Math.max(0, MONTHLY_BUDGET - currentMonthSpend);
+    const monthlyBudget = getMonthlyBudget();
+    const percentUsed = monthlyBudget > 0 ? (projectedEndOfMonth / monthlyBudget) * 100 : 0;
+    const remainingBudget = Math.max(0, monthlyBudget - currentMonthSpend);
 
     return {
-        monthlyLimit: MONTHLY_BUDGET,
+        monthlyLimit: monthlyBudget,
         currentSpend: Number(currentMonthSpend.toFixed(6)),
         projectedEndOfMonth: Number(projectedEndOfMonth.toFixed(6)),
         remainingBudget: Number(remainingBudget.toFixed(6)),

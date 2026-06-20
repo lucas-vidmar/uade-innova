@@ -330,6 +330,10 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           name: 'AZURE_STORAGE_CONTAINER_SUMMARIES'
           value: summariesContainerName
         }
+        {
+          name: 'DIRECTOR_BUDGET_MONTHLY_USD'
+          value: '10000'
+        }
       ]
     }
   }
