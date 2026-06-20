@@ -25,8 +25,9 @@ param tags object = {}
 @description('TTFT P95 threshold in milliseconds. Alert fires when P95 exceeds this value.')
 param ttftThresholdMs int = 2000
 
-@description('Lookback window for the alert query in ISO 8601 duration format.')
-param lookbackWindow string = 'PT15M'
+@minValue(1)
+@description('Lookback window in minutes for both the KQL ago() and windowSize.')
+param lookbackMinutes int = 15
 
 @minValue(1)
 @description('Minimum number of samples required to prevent false positives during no-traffic periods.')
@@ -40,10 +41,13 @@ param severity int = 2
 @description('How often the alert query is evaluated, in ISO 8601 duration format.')
 param evaluationFrequency string = 'PT5M'
 
+var kqlLookback = format('{0}m', lookbackMinutes)
+var isoTimespan = format('PT{0}M', lookbackMinutes)
+
 var ttftQueryTemplate = '''
 AppEvents
 | where Name == "RagQuery.Executed"
-| where TimeGenerated >= ago({lookbackWindow})
+| where TimeGenerated >= ago({kqlLookback})
 | where isnotempty(tostring(Measurements.llmFirstTokenLatencyMs))
 | extend subjectId = tostring(Properties.subjectId), llmFirstTokenLatencyMs = todouble(Measurements.llmFirstTokenLatencyMs)
 | summarize
@@ -57,7 +61,7 @@ AppEvents
 
 var ttftQuery = replace(
   replace(
-    replace(ttftQueryTemplate, '{lookbackWindow}', lookbackWindow),
+    replace(ttftQueryTemplate, '{kqlLookback}', kqlLookback),
     '{minimumSamples}', format('{0}', minimumSamples)
   ),
   '{ttftThresholdMs}', format('{0}', ttftThresholdMs)
@@ -85,15 +89,15 @@ resource ttftAnomalyRule 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = {
   location: location
   tags: tags
   properties: {
-    description: 'Triggers when TTFT P95 exceeds ${ttftThresholdMs}ms over the last ${lookbackWindow} (minimum ${minimumSamples} samples required).'
-    displayName: 'TTFT P95 anomaly (>${ttftThresholdMs}ms over ${lookbackWindow})'
+    description: 'Triggers when TTFT P95 exceeds ${ttftThresholdMs}ms over ${lookbackMinutes} minutes (minimum ${minimumSamples} samples required).'
+    displayName: 'TTFT P95 anomaly (>${ttftThresholdMs}ms over ${lookbackMinutes} min)'
     severity: severity
     enabled: true
     scopes: [
       workspaceId
     ]
     evaluationFrequency: evaluationFrequency
-    windowSize: lookbackWindow
+    windowSize: isoTimespan
     criteria: {
       allOf: [
         {
@@ -130,3 +134,4 @@ output ttftThresholdMsValue int = ttftThresholdMs
 output minimumSamplesValue int = minimumSamples
 output severityValue int = severity
 output evaluationFrequencyValue string = evaluationFrequency
+output lookbackMinutesValue int = lookbackMinutes

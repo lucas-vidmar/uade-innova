@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.41.2.15936",
-      "templateHash": "7281100021859218862"
+      "templateHash": "2278176936647440587"
     }
   },
   "parameters": {
@@ -56,11 +56,12 @@
         "description": "TTFT P95 threshold in milliseconds. Alert fires when P95 exceeds this value."
       }
     },
-    "lookbackWindow": {
-      "type": "string",
-      "defaultValue": "PT15M",
+    "lookbackMinutes": {
+      "type": "int",
+      "defaultValue": 15,
+      "minValue": 1,
       "metadata": {
-        "description": "Lookback window for the alert query in ISO 8601 duration format."
+        "description": "Lookback window in minutes for both the KQL ago() and windowSize."
       }
     },
     "minimumSamples": {
@@ -88,6 +89,12 @@
       }
     }
   },
+  "variables": {
+    "kqlLookback": "[format('{0}m', parameters('lookbackMinutes'))]",
+    "isoTimespan": "[format('PT{0}M', parameters('lookbackMinutes'))]",
+    "ttftQueryTemplate": "AppEvents\n| where Name == \"RagQuery.Executed\"\n| where TimeGenerated >= ago({kqlLookback})\n| where isnotempty(tostring(Measurements.llmFirstTokenLatencyMs))\n| extend subjectId = tostring(Properties.subjectId), llmFirstTokenLatencyMs = todouble(Measurements.llmFirstTokenLatencyMs)\n| summarize\n    ttftP95Ms = percentile(llmFirstTokenLatencyMs, 95),\n    sampleCount = count()\n    by subjectId\n| where sampleCount >= {minimumSamples}\n| where ttftP95Ms > {ttftThresholdMs}\n| project subjectId, ttftP95Ms, sampleCount\n",
+    "ttftQuery": "[replace(replace(replace(variables('ttftQueryTemplate'), '{kqlLookback}', variables('kqlLookback')), '{minimumSamples}', format('{0}', parameters('minimumSamples'))), '{ttftThresholdMs}', format('{0}', parameters('ttftThresholdMs')))]"
+  },
   "resources": [
     {
       "type": "Microsoft.Insights/actionGroups",
@@ -114,19 +121,19 @@
       "location": "[parameters('location')]",
       "tags": "[parameters('tags')]",
       "properties": {
-        "description": "[format('Triggers when TTFT P95 exceeds {0}ms over the last {1} (minimum {2} samples required).', parameters('ttftThresholdMs'), parameters('lookbackWindow'), parameters('minimumSamples'))]",
-        "displayName": "[format('TTFT P95 anomaly (>{0}ms over {1})', parameters('ttftThresholdMs'), parameters('lookbackWindow'))]",
+        "description": "[format('Triggers when TTFT P95 exceeds {0}ms over {1} minutes (minimum {2} samples required).', parameters('ttftThresholdMs'), parameters('lookbackMinutes'), parameters('minimumSamples'))]",
+        "displayName": "[format('TTFT P95 anomaly (>{0}ms over {1} min)', parameters('ttftThresholdMs'), parameters('lookbackMinutes'))]",
         "severity": "[parameters('severity')]",
         "enabled": true,
         "scopes": [
           "[parameters('workspaceId')]"
         ],
         "evaluationFrequency": "[parameters('evaluationFrequency')]",
-        "windowSize": "[parameters('lookbackWindow')]",
+        "windowSize": "[variables('isoTimespan')]",
         "criteria": {
           "allOf": [
             {
-              "query": "let ttftFromCustomEvents =\ncustomEvents\n| where name == \"RagQuery.Executed\"\n| where timestamp >= ago(${lookbackWindow})\n| where isnotempty(tostring(customMeasurements.llmFirstTokenLatencyMs))\n| extend subjectId = tostring(customDimensions.subjectId)\n| project timestamp, subjectId, llmFirstTokenLatencyMs = todouble(customMeasurements.llmFirstTokenLatencyMs);\nlet ttftFromAppEvents =\nAppEvents\n| where Name == \"RagQuery.Executed\"\n| where timestamp >= ago(${lookbackWindow})\n| where isnotempty(tostring(Measurements.llmFirstTokenLatencyMs))\n| extend subjectId = tostring(Properties.subjectId)\n| project timestamp=TimeGenerated, subjectId, llmFirstTokenLatencyMs = todouble(Measurements.llmFirstTokenLatencyMs);\nunion isfuzzy=true ttftFromCustomEvents, ttftFromAppEvents\n| summarize\n    ttftP95Ms = percentile(llmFirstTokenLatencyMs, 95),\n    sampleCount = count()\n    by subjectId\n| where sampleCount >= ${minimumSamples}\n| where ttftP95Ms > ${ttftThresholdMs}\n| project subjectId, ttftP95Ms, sampleCount\n",
+              "query": "[variables('ttftQuery')]",
               "timeAggregation": "Count",
               "operator": "GreaterThanOrEqual",
               "threshold": 1,
@@ -147,7 +154,6 @@
           ]
         },
         "autoMitigate": true,
-        "muteActionsDuration": "PT15M",
         "actions": {
           "actionGroups": [
             "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
@@ -183,6 +189,10 @@
     "evaluationFrequencyValue": {
       "type": "string",
       "value": "[parameters('evaluationFrequency')]"
+    },
+    "lookbackMinutesValue": {
+      "type": "int",
+      "value": "[parameters('lookbackMinutes')]"
     }
   }
 }

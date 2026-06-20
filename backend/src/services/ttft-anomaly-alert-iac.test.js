@@ -32,14 +32,14 @@ test('TTFT anomaly alert module defines a scheduled query rule', async () => {
   assert.match(content, /RagQuery\.Executed/);
   assert.match(content, /llmFirstTokenLatencyMs/);
   assert.match(content, /percentile\(llmFirstTokenLatencyMs,\s*95\)/);
-  assert.match(content, /windowSize:\s*lookbackWindow/);
+  assert.match(content, /windowSize:\s*isoTimespan/);
 });
 
 test('TTFT anomaly alert module has configurable parameters', async () => {
   const content = await readRepoFile('infra/modules/ttft-anomaly-alert.bicep');
 
   assert.match(content, /param\s+ttftThresholdMs\s+int\s*=\s*2000/);
-  assert.match(content, /param\s+lookbackWindow\s+string\s*=\s*'PT15M'/);
+  assert.match(content, /param\s+lookbackMinutes\s+int\s*=\s*15/);
   assert.match(content, /param\s+minimumSamples\s+int\s*=\s*3/);
   assert.match(content, /param\s+severity\s+int\s*=\s*2/);
   assert.match(content, /param\s+evaluationFrequency\s+string\s*=\s*'PT5M'/);
@@ -77,7 +77,7 @@ test('main.bicep wires TTFT anomaly alert behind notification email', async () =
   assert.match(content, /notificationEmail:\s*notificationEmail/);
   assert.match(content, /ttftThresholdMs:\s*ttftAnomalyThresholdMs/);
   assert.match(content, /severity:\s*ttftAnomalySeverity/);
-  assert.match(content, /lookbackWindow:\s*'PT15M'/);
+  assert.match(content, /lookbackMinutes:\s*15/);
   assert.match(content, /minimumSamples:\s*3/);
 });
 

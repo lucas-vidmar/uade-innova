@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.41.2.15936",
-      "templateHash": "679000521931157415"
+      "templateHash": "11619045962253992107"
     }
   },
   "parameters": {
@@ -54,10 +54,23 @@
       "metadata": {
         "description": "Threshold for per-subject token anomaly alert (tokens per userId+subjectId over 24h)."
       }
+    },
+    "warningTokenThreshold": {
+      "type": "int",
+      "defaultValue": 750000,
+      "metadata": {
+        "description": "Threshold for warning-tier token anomaly alert (tokens per user over 24h, before critical threshold)."
+      }
     }
   },
   "variables": {
-    "tokenThreshold": 1000000
+    "tokenThreshold": 1000000,
+    "perSubjectQueryTemplate": "AppEvents\n| where Name == \"RAGInteraction\"\n| where TimeGenerated >= ago(24h)\n| where isnotempty(tostring(Properties.userId)) and isnotempty(tostring(Properties.subjectId))\n| extend userId = tostring(Properties.userId), subjectId = tostring(Properties.subjectId), totalTokens = todouble(Measurements.totalTokens)\n| summarize tokens24h = sum(coalesce(totalTokens, 0.0)) by userId, subjectId\n| where tokens24h > {threshold}\n| project userId, subjectId, tokens24h\n",
+    "perSubjectQuery": "[replace(variables('perSubjectQueryTemplate'), '{threshold}', format('{0}', parameters('subjectTokenThreshold')))]",
+    "warningQueryTemplate": "AppEvents\n| where Name == \"RAGInteraction\"\n| where TimeGenerated >= ago(24h)\n| where isnotempty(tostring(Properties.userId))\n| extend userId = tostring(Properties.userId), totalTokens = todouble(Measurements.totalTokens)\n| summarize tokens24h = sum(coalesce(totalTokens, 0.0)) by userId\n| where tokens24h > {threshold}\n| project userId, tokens24h\n",
+    "warningQuery": "[replace(variables('warningQueryTemplate'), '{threshold}', format('{0}', parameters('warningTokenThreshold')))]",
+    "criticalQueryTemplate": "AppEvents\n| where Name == \"RAGInteraction\"\n| where TimeGenerated >= ago(24h)\n| where isnotempty(tostring(Properties.userId))\n| extend userId = tostring(Properties.userId), totalTokens = todouble(Measurements.totalTokens)\n| summarize tokens24h = sum(coalesce(totalTokens, 0.0)) by userId\n| where tokens24h > {threshold}\n| project userId, tokens24h\n",
+    "criticalQuery": "[replace(variables('criticalQueryTemplate'), '{threshold}', format('{0}', variables('tokenThreshold')))]"
   },
   "resources": [
     {
@@ -97,7 +110,7 @@
         "criteria": {
           "allOf": [
             {
-              "query": "let ragFromCustomEvents =\ncustomEvents\n| where name == \"RAGInteraction\"\n| project timestamp, userId=tostring(customDimensions.userId), totalTokens=todouble(customMeasurements.totalTokens);\nlet ragFromAppEvents =\nAppEvents\n| where Name == \"RAGInteraction\"\n| project timestamp=TimeGenerated, userId=tostring(Properties.userId), totalTokens=todouble(Measurements.totalTokens);\nunion isfuzzy=true ragFromCustomEvents, ragFromAppEvents\n| where timestamp >= ago(24h)\n| where isnotempty(userId)\n| summarize tokens24h = sum(coalesce(totalTokens, 0.0)) by userId\n| where tokens24h > 1000000\n| project userId, tokens24h\n",
+              "query": "[variables('criticalQuery')]",
               "timeAggregation": "Count",
               "operator": "GreaterThanOrEqual",
               "threshold": 1,
@@ -118,7 +131,6 @@
           ]
         },
         "autoMitigate": true,
-        "muteActionsDuration": "PT1H",
         "actions": {
           "actionGroups": [
             "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
@@ -148,7 +160,7 @@
         "criteria": {
           "allOf": [
             {
-              "query": "let ragFromCustomEvents =\ncustomEvents\n| where name == \"RAGInteraction\"\n| project timestamp, userId=tostring(customDimensions.userId), subjectId=tostring(customDimensions.subjectId), totalTokens=todouble(customMeasurements.totalTokens);\nlet ragFromAppEvents =\nAppEvents\n| where Name == \"RAGInteraction\"\n| project timestamp=TimeGenerated, userId=tostring(Properties.userId), subjectId=tostring(Properties.subjectId), totalTokens=todouble(Measurements.totalTokens);\nunion isfuzzy=true ragFromCustomEvents, ragFromAppEvents\n| where timestamp >= ago(24h)\n| where isnotempty(userId) and isnotempty(subjectId)\n| summarize tokens24h = sum(coalesce(totalTokens, 0.0)) by userId, subjectId\n| where tokens24h > ${subjectTokenThreshold}\n| project userId, subjectId, tokens24h\n",
+              "query": "[variables('perSubjectQuery')]",
               "timeAggregation": "Count",
               "operator": "GreaterThanOrEqual",
               "threshold": 1,
@@ -176,7 +188,56 @@
           ]
         },
         "autoMitigate": true,
-        "muteActionsDuration": "PT1H",
+        "actions": {
+          "actionGroups": [
+            "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-12-01",
+      "name": "[format('{0}-warning', parameters('scheduledQueryRuleName'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "[format('Triggers when a single user exceeds {0} tokens over the last 24 hours (warning tier before critical threshold).', parameters('warningTokenThreshold'))]",
+        "displayName": "[format('Elevated token usage (>{0} tokens / 24h per user)', parameters('warningTokenThreshold'))]",
+        "severity": 1,
+        "enabled": true,
+        "scopes": [
+          "[parameters('workspaceId')]"
+        ],
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT24H",
+        "criteria": {
+          "allOf": [
+            {
+              "query": "[variables('warningQuery')]",
+              "timeAggregation": "Count",
+              "operator": "GreaterThanOrEqual",
+              "threshold": 1,
+              "dimensions": [
+                {
+                  "name": "userId",
+                  "operator": "Include",
+                  "values": [
+                    "*"
+                  ]
+                }
+              ],
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 1,
+                "minFailingPeriodsToAlert": 1
+              }
+            }
+          ]
+        },
+        "autoMitigate": true,
         "actions": {
           "actionGroups": [
             "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
@@ -201,6 +262,10 @@
       "type": "string",
       "value": "[resourceId('Microsoft.Insights/scheduledQueryRules', format('{0}-per-subject', parameters('scheduledQueryRuleName')))]"
     },
+    "warningScheduledQueryRuleId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Insights/scheduledQueryRules', format('{0}-warning', parameters('scheduledQueryRuleName')))]"
+    },
     "threshold": {
       "type": "int",
       "value": "[variables('tokenThreshold')]"
@@ -208,6 +273,10 @@
     "subjectTokenThresholdValue": {
       "type": "int",
       "value": "[parameters('subjectTokenThreshold')]"
+    },
+    "warningTokenThresholdValue": {
+      "type": "int",
+      "value": "[parameters('warningTokenThreshold')]"
     }
   }
 }

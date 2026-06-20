@@ -299,7 +299,7 @@ module ttftAnomalyAlert './modules/ttft-anomaly-alert.bicep' = if (!empty(notifi
     actionGroupName: ttftAnomalyActionGroupName
     ttftThresholdMs: ttftAnomalyThresholdMs
     severity: ttftAnomalySeverity
-    lookbackWindow: 'PT15M'
+    lookbackMinutes: 15
     minimumSamples: 3
     tags: tags
   }
