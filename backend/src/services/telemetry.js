@@ -372,3 +372,46 @@ export async function trackNotificationInteraction({
         },
     });
 }
+
+/**
+ * Tracks a vector backup/cleanup run for ops dashboard monitoring.
+ *
+ * @param {object} params
+ * @param {string} params.runId         - Unique run identifier (UUID)
+ * @param {string} params.mode          - 'backup-only' or 'backup+cleanup'
+ * @param {string} [params.subjectScope] - Subject ID scope, or 'all' for full index
+ * @param {number} params.durationMs    - Wall-clock execution time in milliseconds
+ * @param {number} params.vectorCount   - Number of vectors processed
+ * @param {boolean} params.success      - Whether the run completed successfully
+ * @param {string} [params.errorCategory] - Normalized error category on failure
+ * @param {string} [params.errorMessage]  - Error details on failure (truncated to 500)
+ */
+export async function trackVectorBackupRun({
+    runId,
+    mode = 'backup-only',
+    subjectScope = 'all',
+    durationMs = 0,
+    vectorCount = 0,
+    success = true,
+    errorCategory,
+    errorMessage,
+}) {
+    const client = await getClient();
+    if (!client) return;
+
+    client.trackEvent({
+        name: 'VectorBackupRun',
+        properties: {
+            runId,
+            mode,
+            subjectScope: subjectScope || 'all',
+            success: String(success),
+            ...(errorCategory && { errorCategory }),
+            ...(errorMessage && { errorMessage: String(errorMessage).slice(0, 500) }),
+        },
+        measurements: {
+            durationMs: Math.max(0, Number(durationMs) || 0),
+            vectorCount: Math.max(0, Number(vectorCount) || 0),
+        },
+    });
+}
