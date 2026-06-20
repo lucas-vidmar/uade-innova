@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.41.2.15936",
-      "templateHash": "17348834006731436724"
+      "templateHash": "7738392776462125647"
     }
   },
   "parameters": {
@@ -136,6 +136,55 @@
       "metadata": {
         "description": "Lista de correos para notificaciones de presupuesto."
       }
+    },
+    "webhookUri": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Optional webhook URI for Teams/HTTP anomaly alert notifications (e.g. Teams connector URL)."
+      }
+    },
+    "ttftAnomalyThresholdMs": {
+      "type": "int",
+      "defaultValue": 2000,
+      "minValue": 1,
+      "metadata": {
+        "description": "TTFT P95 threshold in milliseconds for the anomaly alert rule."
+      }
+    },
+    "ttftAnomalySeverity": {
+      "type": "int",
+      "defaultValue": 2,
+      "minValue": 0,
+      "maxValue": 4,
+      "metadata": {
+        "description": "Alert severity for TTFT anomaly (0=Critical, 1=Error, 2=Warning)."
+      }
+    },
+    "graphApiClientId": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Client ID of the Entra ID app registration for Microsoft Graph API (Teams notifications)."
+      }
+    },
+    "graphApiClientSecret": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Client secret of the Entra ID app registration for Microsoft Graph API."
+      }
+    },
+    "graphApiTenantId": {
+      "type": "string",
+      "defaultValue": "[subscription().tenantId]",
+      "metadata": {
+        "description": "Tenant ID for Microsoft Graph API. Defaults to the subscription's tenant ID."
+      }
+    },
+    "pineconeApiKey": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Pinecone vector database API key."
+      }
     }
   },
   "variables": {
@@ -264,12 +313,25 @@
     "keyVaultName": "[format('kv-edu-{0}', take(variables('resourceToken'), 17))]",
     "frontDoorName": "[format('afd-dashboard-{0}', variables('resourceToken'))]",
     "workbookName": "[guid(resourceGroup().id, 'cost-per-interaction-workbook')]",
+    "latencyWorkbookName": "[guid(resourceGroup().id, 'latency-percentiles-workbook')]",
     "anomalousUsageAlertName": "[format('alert-anomalous-token-usage-{0}', take(variables('resourceToken'), 8))]",
     "anomalousUsageActionGroupName": "[format('ag-token-usage-{0}', take(variables('resourceToken'), 8))]",
-    "expectedCorsOrigin": "[format('https://{0}.azurestaticapps.net', variables('staticWebAppName'))]",
+    "ttftAnomalyAlertName": "[format('alert-ttft-anomaly-{0}', take(variables('resourceToken'), 8))]",
+    "ttftAnomalyActionGroupName": "[format('ag-ttft-anomaly-{0}', take(variables('resourceToken'), 8))]",
+    "allowedCorsOrigins": [
+      "*"
+    ],
     "safeStorageName": "[take(replace(variables('storageAccountName'), '-', ''), 24)]"
   },
   "resources": [
+    {
+      "type": "Microsoft.KeyVault/vaults/secrets",
+      "apiVersion": "2023-07-01",
+      "name": "[format('{0}/AZURE-STORAGE-CONNECTION-STRING', variables('keyVaultName'))]",
+      "properties": {
+        "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', variables('safeStorageName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('safeStorageName')), '2023-01-01').keys[0].value, environment().suffixes.storage)]"
+      }
+    },
     {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
@@ -684,7 +746,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "14234142691511470269"
+              "templateHash": "1998126153182249684"
             }
           },
           "parameters": {
@@ -769,11 +831,81 @@
             {
               "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
               "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'glossary-files')]",
+              "properties": {
+                "publicAccess": "None",
+                "metadata": {
+                  "purpose": "Subject-specific technical glossary JSON files for transcription correction"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('name'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'summaries')]",
+              "properties": {
+                "publicAccess": "None",
+                "metadata": {
+                  "purpose": "AI-generated and teacher-validated class summaries"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('name'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'compliance')]",
+              "properties": {
+                "publicAccess": "None",
+                "metadata": {
+                  "purpose": "Retention policy configuration and compliance evidence exports"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('name'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2023-01-01",
               "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'processed')]",
               "properties": {
                 "publicAccess": "None",
                 "metadata": {
                   "purpose": "Processed chunk JSON and pipeline state files"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('name'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'monitor-state')]",
+              "properties": {
+                "publicAccess": "None",
+                "metadata": {
+                  "purpose": "Vector health monitor dedup and baseline state"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('name'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'vector-snapshots')]",
+              "properties": {
+                "publicAccess": "None",
+                "metadata": {
+                  "purpose": "Periodic vector health snapshots for trend analysis"
                 }
               },
               "dependsOn": [
@@ -832,6 +964,28 @@
                           ]
                         }
                       }
+                    },
+                    {
+                      "enabled": true,
+                      "name": "DeleteVectorSnapshotsAfter2Years",
+                      "type": "Lifecycle",
+                      "definition": {
+                        "actions": {
+                          "baseBlob": {
+                            "delete": {
+                              "daysAfterModificationGreaterThan": 730
+                            }
+                          }
+                        },
+                        "filters": {
+                          "blobTypes": [
+                            "blockBlob"
+                          ],
+                          "prefixMatch": [
+                            "vector-snapshots/"
+                          ]
+                        }
+                      }
                     }
                   ]
                 }
@@ -881,6 +1035,40 @@
               ]
             },
             {
+              "type": "Microsoft.Storage/storageAccounts/queueServices",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}', parameters('name'), 'default')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('name'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/queueServices/queues",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'ingestion-tasks')]",
+              "properties": {
+                "metadata": {
+                  "purpose": "Async ingestion processing tasks for Queue-triggered functions"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/queueServices', parameters('name'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/queueServices/queues",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'notification-queue')]",
+              "properties": {
+                "metadata": {
+                  "purpose": "Async notification dispatch for reminders, alerts, and updates"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/queueServices', parameters('name'), 'default')]"
+              ]
+            },
+            {
               "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
               "apiVersion": "2023-01-01",
               "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'Enrollments')]",
@@ -892,6 +1080,70 @@
               "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
               "apiVersion": "2023-01-01",
               "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'UserConsent')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'Corrections')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'CorrectionsPending')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'Conversations')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'ConversationRatings')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'NotificationPreferences')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'UserEvents')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'Interventions')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'RiskThresholds')]",
               "dependsOn": [
                 "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('name'), 'default')]"
               ]
@@ -933,6 +1185,27 @@
               },
               "value": "processed"
             },
+            "glossaryFilesContainerName": {
+              "type": "string",
+              "metadata": {
+                "description": "The name of the glossary-files container."
+              },
+              "value": "glossary-files"
+            },
+            "summariesContainerName": {
+              "type": "string",
+              "metadata": {
+                "description": "The name of the summaries container."
+              },
+              "value": "summaries"
+            },
+            "complianceContainerName": {
+              "type": "string",
+              "metadata": {
+                "description": "The name of the compliance container."
+              },
+              "value": "compliance"
+            },
             "materialsTableName": {
               "type": "string",
               "metadata": {
@@ -953,6 +1226,90 @@
                 "description": "The name of the Enrollments table."
               },
               "value": "Enrollments"
+            },
+            "userConsentTableName": {
+              "type": "string",
+              "metadata": {
+                "description": "The name of the UserConsent table."
+              },
+              "value": "UserConsent"
+            },
+            "correctionsTableName": {
+              "type": "string",
+              "metadata": {
+                "description": "The name of the Corrections table."
+              },
+              "value": "Corrections"
+            },
+            "correctionsPendingTableName": {
+              "type": "string",
+              "metadata": {
+                "description": "The name of the CorrectionsPending table."
+              },
+              "value": "CorrectionsPending"
+            },
+            "conversationsTableName": {
+              "type": "string",
+              "metadata": {
+                "description": "The name of the Conversations table."
+              },
+              "value": "Conversations"
+            },
+            "conversationRatingsTableName": {
+              "type": "string",
+              "metadata": {
+                "description": "The name of the ConversationRatings table."
+              },
+              "value": "ConversationRatings"
+            },
+            "notificationPreferencesTableName": {
+              "type": "string",
+              "metadata": {
+                "description": "The name of the NotificationPreferences table."
+              },
+              "value": "NotificationPreferences"
+            },
+            "userEventsTableName": {
+              "type": "string",
+              "metadata": {
+                "description": "The name of the UserEvents table."
+              },
+              "value": "UserEvents"
+            },
+            "interventionsTableName": {
+              "type": "string",
+              "metadata": {
+                "description": "The name of the Interventions table."
+              },
+              "value": "Interventions"
+            },
+            "riskThresholdsTableName": {
+              "type": "string",
+              "metadata": {
+                "description": "The name of the RiskThresholds table."
+              },
+              "value": "RiskThresholds"
+            },
+            "vectorSnapshotsContainerName": {
+              "type": "string",
+              "metadata": {
+                "description": "The name of the vector-snapshots container."
+              },
+              "value": "vector-snapshots"
+            },
+            "ingestionQueueName": {
+              "type": "string",
+              "metadata": {
+                "description": "The name of the ingestion tasks queue."
+              },
+              "value": "ingestion-tasks"
+            },
+            "notificationQueueName": {
+              "type": "string",
+              "metadata": {
+                "description": "The name of the notification queue."
+              },
+              "value": "notification-queue"
             }
           }
         }
@@ -976,6 +1333,18 @@
           },
           "tags": {
             "value": "[variables('tags')]"
+          },
+          "graphApiClientId": {
+            "value": "[parameters('graphApiClientId')]"
+          },
+          "graphApiClientSecret": {
+            "value": "[parameters('graphApiClientSecret')]"
+          },
+          "graphApiTenantId": {
+            "value": "[parameters('graphApiTenantId')]"
+          },
+          "pineconeApiKey": {
+            "value": "[parameters('pineconeApiKey')]"
           }
         },
         "template": {
@@ -985,7 +1354,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "17610874862382873049"
+              "templateHash": "13561317586802559190"
             }
           },
           "parameters": {
@@ -1021,6 +1390,31 @@
               "metadata": {
                 "description": "Secret value for SWA_ROLES_SECRET — used to validate Static Web App role tokens. Auto-generated on each deployment. Override to set a specific value."
               }
+            },
+            "graphApiClientId": {
+              "type": "securestring",
+              "metadata": {
+                "description": "Client ID of the Entra ID app registration for Microsoft Graph API (Teams notifications)."
+              }
+            },
+            "graphApiClientSecret": {
+              "type": "securestring",
+              "metadata": {
+                "description": "Client secret of the Entra ID app registration for Microsoft Graph API."
+              }
+            },
+            "graphApiTenantId": {
+              "type": "string",
+              "defaultValue": "[subscription().tenantId]",
+              "metadata": {
+                "description": "Tenant ID for Microsoft Graph API. Defaults to the subscription's tenant ID."
+              }
+            },
+            "pineconeApiKey": {
+              "type": "securestring",
+              "metadata": {
+                "description": "API key for Pinecone vector database. Must be a valid Pinecone API key for the configured index."
+              }
             }
           },
           "resources": [
@@ -1055,6 +1449,50 @@
               "name": "[format('{0}/{1}', parameters('name'), 'SWA-ROLES-SECRET')]",
               "properties": {
                 "value": "[parameters('swaRolesSecret')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('name'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.KeyVault/vaults/secrets",
+              "apiVersion": "2023-07-01",
+              "name": "[format('{0}/{1}', parameters('name'), 'GRAPH-API-CLIENT-ID')]",
+              "properties": {
+                "value": "[parameters('graphApiClientId')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('name'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.KeyVault/vaults/secrets",
+              "apiVersion": "2023-07-01",
+              "name": "[format('{0}/{1}', parameters('name'), 'GRAPH-API-CLIENT-SECRET')]",
+              "properties": {
+                "value": "[parameters('graphApiClientSecret')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('name'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.KeyVault/vaults/secrets",
+              "apiVersion": "2023-07-01",
+              "name": "[format('{0}/{1}', parameters('name'), 'GRAPH-API-TENANT-ID')]",
+              "properties": {
+                "value": "[parameters('graphApiTenantId')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('name'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.KeyVault/vaults/secrets",
+              "apiVersion": "2023-07-01",
+              "name": "[format('{0}/{1}', parameters('name'), 'PINECONE-API-KEY')]",
+              "properties": {
+                "value": "[parameters('pineconeApiKey')]"
               },
               "dependsOn": [
                 "[resourceId('Microsoft.KeyVault/vaults', parameters('name'))]"
@@ -1143,6 +1581,9 @@
           "pineconeApiKeySecretName": {
             "value": "[parameters('pineconeApiKeySecretName')]"
           },
+          "pineconeApiKey": {
+            "value": "[parameters('pineconeApiKey')]"
+          },
           "keyVaultUri": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'keyVault'), '2025-04-01').outputs.keyVaultUri.value]"
           },
@@ -1161,8 +1602,47 @@
           "storageAccountId": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.accountId.value]"
           },
-          "allowedCorsOrigin": {
-            "value": "[variables('expectedCorsOrigin')]"
+          "ingestionQueueName": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.ingestionQueueName.value]"
+          },
+          "userConsentTableName": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.userConsentTableName.value]"
+          },
+          "correctionsTableName": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.correctionsTableName.value]"
+          },
+          "correctionsPendingTableName": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.correctionsPendingTableName.value]"
+          },
+          "conversationsTableName": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.conversationsTableName.value]"
+          },
+          "conversationRatingsTableName": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.conversationRatingsTableName.value]"
+          },
+          "notificationPreferencesTableName": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.notificationPreferencesTableName.value]"
+          },
+          "userEventsTableName": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.userEventsTableName.value]"
+          },
+          "interventionsTableName": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.interventionsTableName.value]"
+          },
+          "riskThresholdsTableName": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.riskThresholdsTableName.value]"
+          },
+          "glossaryFilesContainerName": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.glossaryFilesContainerName.value]"
+          },
+          "summariesContainerName": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.summariesContainerName.value]"
+          },
+          "notificationQueueName": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.notificationQueueName.value]"
+          },
+          "allowedCorsOrigins": {
+            "value": "[variables('allowedCorsOrigins')]"
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -1175,7 +1655,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "15113513492900100586"
+              "templateHash": "14876262596353312547"
             }
           },
           "parameters": {
@@ -1261,6 +1741,12 @@
                 "description": "Key Vault secret name that stores the Pinecone API key."
               }
             },
+            "pineconeApiKey": {
+              "type": "securestring",
+              "metadata": {
+                "description": "Pinecone vector database API key."
+              }
+            },
             "keyVaultUri": {
               "type": "string",
               "metadata": {
@@ -1287,11 +1773,20 @@
                 "description": "Name of the Storage container for class materials."
               }
             },
-            "allowedCorsOrigin": {
+            "ingestionQueueName": {
               "type": "string",
-              "defaultValue": "*",
+              "defaultValue": "ingestion-tasks",
               "metadata": {
-                "description": "Allowed CORS origin (e.g., https://myapp.azurestaticapps.net). Use \"*\" only during development."
+                "description": "Name of the ingestion tasks queue for Queue-triggered functions."
+              }
+            },
+            "allowedCorsOrigins": {
+              "type": "array",
+              "defaultValue": [
+                "*"
+              ],
+              "metadata": {
+                "description": "List of allowed CORS origins (e.g., [\"https://myapp.azurestaticapps.net\"]). Default \"*\" allows all origins during development."
               }
             },
             "materialsTableName": {
@@ -1313,6 +1808,90 @@
               "defaultValue": "Enrollments",
               "metadata": {
                 "description": "Table name for enrollment entities."
+              }
+            },
+            "userConsentTableName": {
+              "type": "string",
+              "defaultValue": "UserConsent",
+              "metadata": {
+                "description": "Table name for user consent records."
+              }
+            },
+            "correctionsTableName": {
+              "type": "string",
+              "defaultValue": "Corrections",
+              "metadata": {
+                "description": "Table name for verified answer corrections."
+              }
+            },
+            "correctionsPendingTableName": {
+              "type": "string",
+              "defaultValue": "CorrectionsPending",
+              "metadata": {
+                "description": "Table name for pending correction index."
+              }
+            },
+            "conversationsTableName": {
+              "type": "string",
+              "defaultValue": "Conversations",
+              "metadata": {
+                "description": "Table name for saved conversation threads."
+              }
+            },
+            "conversationRatingsTableName": {
+              "type": "string",
+              "defaultValue": "ConversationRatings",
+              "metadata": {
+                "description": "Table name for conversation ratings."
+              }
+            },
+            "notificationPreferencesTableName": {
+              "type": "string",
+              "defaultValue": "NotificationPreferences",
+              "metadata": {
+                "description": "Table name for notification preferences."
+              }
+            },
+            "userEventsTableName": {
+              "type": "string",
+              "defaultValue": "UserEvents",
+              "metadata": {
+                "description": "Table name for user activity events."
+              }
+            },
+            "interventionsTableName": {
+              "type": "string",
+              "defaultValue": "Interventions",
+              "metadata": {
+                "description": "Table name for intervention records."
+              }
+            },
+            "riskThresholdsTableName": {
+              "type": "string",
+              "defaultValue": "RiskThresholds",
+              "metadata": {
+                "description": "Table name for per-subject risk thresholds."
+              }
+            },
+            "glossaryFilesContainerName": {
+              "type": "string",
+              "defaultValue": "glossary-files",
+              "metadata": {
+                "description": "Name of the glossary-files blob container."
+              }
+            },
+            "summariesContainerName": {
+              "type": "string",
+              "defaultValue": "summaries",
+              "metadata": {
+                "description": "Name of the summaries blob container."
+              }
+            },
+            "notificationQueueName": {
+              "type": "string",
+              "defaultValue": "notification-queue",
+              "metadata": {
+                "description": "Name of the notification dispatch queue."
               }
             }
           },
@@ -1354,9 +1933,7 @@
                   "ipSecurityRestrictions": [],
                   "scmIpSecurityRestrictionsUseMain": true,
                   "cors": {
-                    "allowedOrigins": [
-                      "[parameters('allowedCorsOrigin')]"
-                    ],
+                    "allowedOrigins": "[parameters('allowedCorsOrigins')]",
                     "supportCredentials": false
                   },
                   "appSettings": [
@@ -1405,6 +1982,18 @@
                       "value": "[parameters('openAiTtsDeployment')]"
                     },
                     {
+                      "name": "AZURE_SUBSCRIPTION_ID",
+                      "value": "[subscription().subscriptionId]"
+                    },
+                    {
+                      "name": "AZURE_RESOURCE_GROUP_NAME",
+                      "value": "[resourceGroup().name]"
+                    },
+                    {
+                      "name": "AZURE_STORAGE_CONNECTION_STRING",
+                      "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(parameters('storageAccountId'), '2023-01-01').keys[0].value, environment().suffixes.storage)]"
+                    },
+                    {
                       "name": "AZURE_STORAGE_ACCOUNT_NAME",
                       "value": "[parameters('classMaterialsStorageAccount')]"
                     },
@@ -1442,7 +2031,11 @@
                     },
                     {
                       "name": "PINECONE_API_KEY",
-                      "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/{1}/)', parameters('keyVaultUri'), parameters('pineconeApiKeySecretName'))]"
+                      "value": "[parameters('pineconeApiKey')]"
+                    },
+                    {
+                      "name": "AZURE_STORAGE_ACCESS_KEY",
+                      "value": "[listKeys(parameters('storageAccountId'), '2023-01-01').keys[0].value]"
                     },
                     {
                       "name": "NODE_ENV",
@@ -1455,6 +2048,94 @@
                     {
                       "name": "FRONT_DOOR_ID",
                       "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/FRONT-DOOR-ID/)', parameters('keyVaultUri'))]"
+                    },
+                    {
+                      "name": "VECTOR_BACKUP_WINDOW_CRON",
+                      "value": "0 0 3 * * *"
+                    },
+                    {
+                      "name": "VECTOR_HEALTH_ALERT_CRON",
+                      "value": "0 */15 * * * *"
+                    },
+                    {
+                      "name": "VECTOR_HEALTH_FULLNESS_THRESHOLD",
+                      "value": "0.80"
+                    },
+                    {
+                      "name": "VECTOR_HEALTH_GROWTH_SPIKE_MULTIPLIER",
+                      "value": "3"
+                    },
+                    {
+                      "name": "VECTOR_HEALTH_DEDUP_WINDOW_MINUTES",
+                      "value": "60"
+                    },
+                    {
+                      "name": "GRAPH_API_CLIENT_ID",
+                      "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/GRAPH-API-CLIENT-ID/)', parameters('keyVaultUri'))]"
+                    },
+                    {
+                      "name": "GRAPH_API_CLIENT_SECRET",
+                      "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/GRAPH-API-CLIENT-SECRET/)', parameters('keyVaultUri'))]"
+                    },
+                    {
+                      "name": "GRAPH_API_TENANT_ID",
+                      "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/GRAPH-API-TENANT-ID/)', parameters('keyVaultUri'))]"
+                    },
+                    {
+                      "name": "AZURE_STORAGE_QUEUE_INGESTION",
+                      "value": "[parameters('ingestionQueueName')]"
+                    },
+                    {
+                      "name": "AZURE_STORAGE_QUEUE_NOTIFICATION",
+                      "value": "[parameters('notificationQueueName')]"
+                    },
+                    {
+                      "name": "AZURE_TABLE_USER_CONSENT",
+                      "value": "[parameters('userConsentTableName')]"
+                    },
+                    {
+                      "name": "AZURE_TABLE_CORRECTIONS",
+                      "value": "[parameters('correctionsTableName')]"
+                    },
+                    {
+                      "name": "AZURE_TABLE_CORRECTIONS_PENDING",
+                      "value": "[parameters('correctionsPendingTableName')]"
+                    },
+                    {
+                      "name": "AZURE_TABLE_CONVERSATIONS",
+                      "value": "[parameters('conversationsTableName')]"
+                    },
+                    {
+                      "name": "AZURE_TABLE_CONVERSATION_RATINGS",
+                      "value": "[parameters('conversationRatingsTableName')]"
+                    },
+                    {
+                      "name": "AZURE_TABLE_NOTIFICATION_PREFERENCES",
+                      "value": "[parameters('notificationPreferencesTableName')]"
+                    },
+                    {
+                      "name": "AZURE_TABLE_USER_EVENTS",
+                      "value": "[parameters('userEventsTableName')]"
+                    },
+                    {
+                      "name": "AZURE_TABLE_INTERVENTIONS",
+                      "value": "[parameters('interventionsTableName')]"
+                    },
+                    {
+                      "name": "AZURE_TABLE_RISK_THRESHOLDS",
+                      "value": "[parameters('riskThresholdsTableName')]"
+                    },
+                    {
+                      "name": "AZURE_STORAGE_CONTAINER_GLOSSARY",
+                      "value": "[parameters('glossaryFilesContainerName')]"
+                    },
+                    {
+                      "name": "AZURE_STORAGE_CONTAINER_SUMMARIES",
+                      "value": "[parameters('summariesContainerName')]"
+                    },
+                    {
+                      "name": "DIRECTOR_BUDGET_MONTHLY_USD",
+                      "value": "10000"
                     }
                   ]
                 }
@@ -1471,6 +2152,13 @@
                 "description": "The name of the Function App."
               },
               "value": "[parameters('functionAppName')]"
+            },
+            "functionAppPrincipalId": {
+              "type": "string",
+              "metadata": {
+                "description": "The principal ID of the Function App Managed Identity."
+              },
+              "value": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-01-01', 'full').identity.principalId]"
             },
             "functionAppHostName": {
               "type": "string",
@@ -1914,6 +2602,430 @@
       ]
     },
     {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "latencyWorkbook",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "workbookName": {
+            "value": "[variables('latencyWorkbookName')]"
+          },
+          "appInsightsId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appInsights'), '2025-04-01').outputs.appInsightsId.value]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.41.2.15936",
+              "templateHash": "2849356615331565590"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for resources."
+              }
+            },
+            "workbookName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the workbook (GUID-based)."
+              }
+            },
+            "workbookDisplayName": {
+              "type": "string",
+              "defaultValue": "Vector vs LLM Latency Percentiles",
+              "metadata": {
+                "description": "Display name shown in the Azure Portal."
+              }
+            },
+            "appInsightsId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Application Insights instance."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags to apply to resources."
+              }
+            }
+          },
+          "variables": {
+            "workbookContent": {
+              "version": "Notebook/1.0",
+              "items": [
+                {
+                  "type": 1,
+                  "content": {
+                    "json": "## Vector vs LLM Latency Percentiles\nSide-by-side comparison of vector-search (Pinecone) and end-to-end RAG latency. P50/P95/P99 percentiles over time. Includes TTFT (Time to First Token) segmentation by Subject and Prompt Version (Issue #146)."
+                  },
+                  "name": "header"
+                },
+                {
+                  "type": 9,
+                  "content": {
+                    "version": "KqlParameterItem/1.0",
+                    "parameters": [
+                      {
+                        "id": "timeRange",
+                        "version": "KqlParameterItem/1.0",
+                        "name": "TimeRange",
+                        "type": 4,
+                        "isRequired": true,
+                        "value": {
+                          "durationMs": 604800000
+                        },
+                        "typeSettings": {
+                          "selectableValues": [
+                            {
+                              "durationMs": 3600000
+                            },
+                            {
+                              "durationMs": 86400000
+                            },
+                            {
+                              "durationMs": 604800000
+                            },
+                            {
+                              "durationMs": 2592000000
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "id": "subjectFilter",
+                        "version": "KqlParameterItem/1.0",
+                        "name": "SubjectId",
+                        "type": 2,
+                        "query": "customEvents\n| where timestamp {TimeRange}\n| where name == \"RAGInteraction\"\n| distinct tostring(customDimensions.subjectId)\n| where isnotempty(tostring(customDimensions.subjectId))\n| order by tostring(customDimensions.subjectId) asc\n",
+                        "isRequired": false,
+                        "queryType": 0,
+                        "resourceType": "microsoft.insights/components",
+                        "value": "all",
+                        "typeSettings": {
+                          "additionalResourceOptions": [],
+                          "showDefault": true
+                        },
+                        "timeContextFromParameter": "TimeRange",
+                        "timeContext": {
+                          "durationMs": 604800000
+                        },
+                        "defaultValue": "all"
+                      },
+                      {
+                        "id": "promptVersionFilter",
+                        "version": "KqlParameterItem/1.0",
+                        "name": "PromptVersion",
+                        "type": 2,
+                        "query": "customEvents\n| where timestamp {TimeRange}\n| where name == \"RAGInteraction\"\n| distinct tostring(customDimensions.promptVersion)\n| where isnotempty(tostring(customDimensions.promptVersion))\n| order by tostring(customDimensions.promptVersion) asc\n",
+                        "isRequired": false,
+                        "queryType": 0,
+                        "resourceType": "microsoft.insights/components",
+                        "value": "all",
+                        "typeSettings": {
+                          "additionalResourceOptions": [],
+                          "showDefault": true
+                        },
+                        "timeContextFromParameter": "TimeRange",
+                        "timeContext": {
+                          "durationMs": 604800000
+                        },
+                        "defaultValue": "all"
+                      }
+                    ],
+                    "style": "pills",
+                    "queryType": 0,
+                    "resourceType": "microsoft.insights/components"
+                  },
+                  "name": "parameters"
+                },
+                {
+                  "type": 12,
+                  "content": {
+                    "version": "NotebookGroup/1.0",
+                    "groupType": "editable",
+                    "items": [
+                      {
+                        "type": 3,
+                        "content": {
+                          "version": "KqlItem/1.0",
+                          "query": "dependencies\n| where timestamp {TimeRange}\n| where name == \"vector.search\"\n| where '{SubjectId}' == 'all' or tostring(customDimensions.subjectId) == '{SubjectId}'\n| summarize\n    P50 = percentile(duration, 50),\n    P95 = percentile(duration, 95),\n    P99 = percentile(duration, 99)\n    by bin(timestamp, 1h)\n| order by timestamp asc\n",
+                          "size": 1,
+                          "title": "Vector Search Latency (ms) — P50/P95/P99",
+                          "timeContextFromParameter": "TimeRange",
+                          "queryType": 0,
+                          "resourceType": "microsoft.insights/components",
+                          "visualization": "linechart",
+                          "chartSettings": {
+                            "xAxis": "timestamp",
+                            "ySettings": {
+                              "unit": 2
+                            }
+                          }
+                        },
+                        "name": "vectorSearchLatency",
+                        "customWidth": "50%"
+                      },
+                      {
+                        "type": 3,
+                        "content": {
+                          "version": "KqlItem/1.0",
+                          "query": "customEvents\n| where timestamp {TimeRange}\n| where name == \"RAGInteraction\"\n| where '{SubjectId}' == 'all' or tostring(customDimensions.subjectId) == '{SubjectId}'\n| where '{PromptVersion}' == 'all' or tostring(customDimensions.promptVersion) == '{PromptVersion}'\n| extend durationMs = todouble(customMeasurements.durationMs)\n| where isnotempty(durationMs)\n| summarize\n    P50 = percentile(durationMs, 50),\n    P95 = percentile(durationMs, 95),\n    P99 = percentile(durationMs, 99)\n    by bin(timestamp, 1h)\n| order by timestamp asc\n",
+                          "size": 1,
+                          "title": "RAG Interaction Latency (ms) — P50/P95/P99",
+                          "timeContextFromParameter": "TimeRange",
+                          "queryType": 0,
+                          "resourceType": "microsoft.insights/components",
+                          "visualization": "linechart",
+                          "chartSettings": {
+                            "xAxis": "timestamp",
+                            "ySettings": {
+                              "unit": 2
+                            }
+                          }
+                        },
+                        "name": "ragLatency",
+                        "customWidth": "50%"
+                      }
+                    ]
+                  },
+                  "name": "chartsGroup",
+                  "styleSettings": {
+                    "showBorder": false
+                  }
+                },
+                {
+                  "type": 12,
+                  "content": {
+                    "version": "NotebookGroup/1.0",
+                    "groupType": "editable",
+                    "items": [
+                      {
+                        "type": 3,
+                        "content": {
+                          "version": "KqlItem/1.0",
+                          "query": "customEvents\n| where timestamp {TimeRange}\n| where name == \"RAGInteraction\"\n| where '{SubjectId}' == 'all' or tostring(customDimensions.subjectId) == '{SubjectId}'\n| where '{PromptVersion}' == 'all' or tostring(customDimensions.promptVersion) == '{PromptVersion}'\n| extend ttftMs = todouble(customMeasurements.ttftMs)\n| where ttftMs > 0\n| summarize\n    P95 = percentile(ttftMs, 95),\n    SampleCount = count()\n    by bin(timestamp, 1h), Subject = tostring(customDimensions.subjectId)\n| where SampleCount > 2\n| order by timestamp asc\n",
+                          "size": 1,
+                          "title": "TTFT P95 by Subject (ms) — segmented by subjectId",
+                          "timeContextFromParameter": "TimeRange",
+                          "queryType": 0,
+                          "resourceType": "microsoft.insights/components",
+                          "visualization": "linechart",
+                          "chartSettings": {
+                            "xAxis": "timestamp",
+                            "series": [
+                              {
+                                "field": "P95",
+                                "splitBy": "Subject"
+                              }
+                            ],
+                            "ySettings": {
+                              "unit": 2
+                            }
+                          }
+                        },
+                        "name": "ttftBySubjectChart",
+                        "customWidth": "50%"
+                      },
+                      {
+                        "type": 3,
+                        "content": {
+                          "version": "KqlItem/1.0",
+                          "query": "customEvents\n| where timestamp {TimeRange}\n| where name == \"RAGInteraction\"\n| where '{SubjectId}' == 'all' or tostring(customDimensions.subjectId) == '{SubjectId}'\n| where '{PromptVersion}' == 'all' or tostring(customDimensions.promptVersion) == '{PromptVersion}'\n| extend ttftMs = todouble(customMeasurements.ttftMs)\n| where ttftMs > 0\n| summarize\n    P50 = percentile(ttftMs, 50),\n    P90 = percentile(ttftMs, 90),\n    P95 = percentile(ttftMs, 95),\n    SampleCount = count()\n    by Subject = tostring(customDimensions.subjectId)\n| where SampleCount > 2\n| order by Subject asc\n",
+                          "size": 1,
+                          "title": "TTFT Summary by Subject — P50/P90/P95",
+                          "timeContextFromParameter": "TimeRange",
+                          "queryType": 0,
+                          "resourceType": "microsoft.insights/components",
+                          "visualization": "table",
+                          "gridSettings": {
+                            "formatters": [
+                              {
+                                "columnMatch": "Subject",
+                                "columnType": "string"
+                              },
+                              {
+                                "columnMatch": "P50",
+                                "columnType": "number",
+                                "round": 0
+                              },
+                              {
+                                "columnMatch": "P90",
+                                "columnType": "number",
+                                "round": 0
+                              },
+                              {
+                                "columnMatch": "P95",
+                                "columnType": "number",
+                                "round": 0
+                              },
+                              {
+                                "columnMatch": "SampleCount",
+                                "columnType": "number",
+                                "round": 0
+                              }
+                            ]
+                          }
+                        },
+                        "name": "ttftBySubjectTable",
+                        "customWidth": "50%"
+                      }
+                    ]
+                  },
+                  "name": "ttftBySubjectGroup",
+                  "styleSettings": {
+                    "showBorder": true
+                  }
+                },
+                {
+                  "type": 12,
+                  "content": {
+                    "version": "NotebookGroup/1.0",
+                    "groupType": "editable",
+                    "items": [
+                      {
+                        "type": 3,
+                        "content": {
+                          "version": "KqlItem/1.0",
+                          "query": "customEvents\n| where timestamp {TimeRange}\n| where name == \"RAGInteraction\"\n| where '{SubjectId}' == 'all' or tostring(customDimensions.subjectId) == '{SubjectId}'\n| where '{PromptVersion}' == 'all' or tostring(customDimensions.promptVersion) == '{PromptVersion}'\n| extend ttftMs = todouble(customMeasurements.ttftMs)\n| where ttftMs > 0\n| summarize\n    P95 = percentile(ttftMs, 95),\n    SampleCount = count()\n    by bin(timestamp, 1h), PromptVersion = tostring(customDimensions.promptVersion)\n| where SampleCount > 2\n| order by timestamp asc\n",
+                          "size": 1,
+                          "title": "TTFT P95 by Prompt Version (ms) — segmented by promptVersion",
+                          "timeContextFromParameter": "TimeRange",
+                          "queryType": 0,
+                          "resourceType": "microsoft.insights/components",
+                          "visualization": "linechart",
+                          "chartSettings": {
+                            "xAxis": "timestamp",
+                            "series": [
+                              {
+                                "field": "P95",
+                                "splitBy": "PromptVersion"
+                              }
+                            ],
+                            "ySettings": {
+                              "unit": 2
+                            }
+                          }
+                        },
+                        "name": "ttftByVersionChart",
+                        "customWidth": "50%"
+                      },
+                      {
+                        "type": 3,
+                        "content": {
+                          "version": "KqlItem/1.0",
+                          "query": "customEvents\n| where timestamp {TimeRange}\n| where name == \"RAGInteraction\"\n| where '{SubjectId}' == 'all' or tostring(customDimensions.subjectId) == '{SubjectId}'\n| where '{PromptVersion}' == 'all' or tostring(customDimensions.promptVersion) == '{PromptVersion}'\n| extend ttftMs = todouble(customMeasurements.ttftMs)\n| where ttftMs > 0\n| summarize\n    P50 = percentile(ttftMs, 50),\n    P90 = percentile(ttftMs, 90),\n    P95 = percentile(ttftMs, 95),\n    SampleCount = count()\n    by PromptVersion = tostring(customDimensions.promptVersion)\n| where SampleCount > 2\n| order by PromptVersion asc\n",
+                          "size": 1,
+                          "title": "TTFT Summary by Prompt Version — P50/P90/P95",
+                          "timeContextFromParameter": "TimeRange",
+                          "queryType": 0,
+                          "resourceType": "microsoft.insights/components",
+                          "visualization": "table",
+                          "gridSettings": {
+                            "formatters": [
+                              {
+                                "columnMatch": "PromptVersion",
+                                "columnType": "string"
+                              },
+                              {
+                                "columnMatch": "P50",
+                                "columnType": "number",
+                                "round": 0
+                              },
+                              {
+                                "columnMatch": "P90",
+                                "columnType": "number",
+                                "round": 0
+                              },
+                              {
+                                "columnMatch": "P95",
+                                "columnType": "number",
+                                "round": 0
+                              },
+                              {
+                                "columnMatch": "SampleCount",
+                                "columnType": "number",
+                                "round": 0
+                              }
+                            ]
+                          }
+                        },
+                        "name": "ttftByVersionTable",
+                        "customWidth": "50%"
+                      }
+                    ]
+                  },
+                  "name": "ttftByVersionGroup",
+                  "styleSettings": {
+                    "showBorder": true
+                  }
+                },
+                {
+                  "type": 1,
+                  "content": {
+                    "json": "### KQL Queries Reference\n\n**Vector Search Latency:** Queries `dependencies` table filtered by `name == \"vector.search\"`. Duration is in milliseconds. Filtered by SubjectId.\n\n**RAG Interaction Latency:** Queries `customEvents` table filtered by `name == \"RAGInteraction\"`. Duration comes from `customMeasurements.durationMs`. Filtered by SubjectId and PromptVersion.\n\n**TTFT by Subject:** Queries `customEvents` filtered by `name == \"RAGInteraction\"`. TTFT from `customMeasurements.ttftMs`. Segmented by `subjectId` with P50/P90/P95 and a minimum sample count guard (>2 samples) to suppress low-volume segments.\n\n**TTFT by Prompt Version:** Same as above, segmented by `promptVersion`.\n\nAll queries use adaptive bin size based on the selected time range."
+                  },
+                  "name": "kqlReference"
+                }
+              ],
+              "fallbackResourceIds": [
+                "[parameters('appInsightsId')]"
+              ],
+              "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Insights/workbooks",
+              "apiVersion": "2022-04-01",
+              "name": "[parameters('workbookName')]",
+              "location": "[parameters('location')]",
+              "tags": "[union(parameters('tags'), createObject('purpose', 'latency-percentiles-observability'))]",
+              "kind": "shared",
+              "properties": {
+                "displayName": "[parameters('workbookDisplayName')]",
+                "serializedData": "[string(variables('workbookContent'))]",
+                "version": "1.0",
+                "sourceId": "[parameters('appInsightsId')]",
+                "category": "workbook"
+              }
+            }
+          ],
+          "outputs": {
+            "workbookId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Insights/workbooks', parameters('workbookName'))]"
+            },
+            "workbookDisplayName": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Insights/workbooks', parameters('workbookName')), '2022-04-01').displayName]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'appInsights')]"
+      ]
+    },
+    {
       "condition": "[not(empty(parameters('notificationEmail')))]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
@@ -1933,11 +3045,20 @@
           "notificationEmail": {
             "value": "[parameters('notificationEmail')]"
           },
+          "webhookUri": {
+            "value": "[parameters('webhookUri')]"
+          },
           "scheduledQueryRuleName": {
             "value": "[variables('anomalousUsageAlertName')]"
           },
           "actionGroupName": {
             "value": "[variables('anomalousUsageActionGroupName')]"
+          },
+          "subjectTokenThreshold": {
+            "value": 500000
+          },
+          "warningTokenThreshold": {
+            "value": 750000
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -1950,7 +3071,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "11922469376180291838"
+              "templateHash": "6256496882556963497"
             }
           },
           "parameters": {
@@ -1970,6 +3091,14 @@
               "type": "string",
               "metadata": {
                 "description": "Email destination for alert notifications."
+              }
+            },
+            "webhookUri": {
+              "type": "securestring",
+              "defaultValue": "",
+              "maxLength": 2000,
+              "metadata": {
+                "description": "Optional webhook URI for Teams/HTTP notification channel (e.g. Teams connector). Empty string disables webhook."
               }
             },
             "scheduledQueryRuleName": {
@@ -1992,10 +3121,31 @@
               "metadata": {
                 "description": "Tags to apply to resources."
               }
+            },
+            "subjectTokenThreshold": {
+              "type": "int",
+              "defaultValue": 500000,
+              "metadata": {
+                "description": "Threshold for per-subject token anomaly alert (tokens per userId+subjectId over 24h)."
+              }
+            },
+            "warningTokenThreshold": {
+              "type": "int",
+              "defaultValue": 750000,
+              "metadata": {
+                "description": "Threshold for warning-tier token anomaly alert (tokens per user over 24h, before critical threshold)."
+              }
             }
           },
           "variables": {
-            "tokenThreshold": 1000000
+            "trimmedWebhookUri": "[trim(parameters('webhookUri'))]",
+            "tokenThreshold": 1000000,
+            "perSubjectQueryTemplate": "AppEvents\n| where Name == \"RAGInteraction\"\n| where TimeGenerated >= ago(24h)\n| where isnotempty(tostring(Properties.userId)) and isnotempty(tostring(Properties.subjectId))\n| extend userId = tostring(Properties.userId), subjectId = tostring(Properties.subjectId), totalTokens = todouble(Measurements.totalTokens)\n| summarize tokens24h = sum(coalesce(totalTokens, 0.0)) by userId, subjectId\n| where tokens24h > {threshold}\n| project userId, subjectId, tokens24h\n",
+            "perSubjectQuery": "[replace(variables('perSubjectQueryTemplate'), '{threshold}', format('{0}', parameters('subjectTokenThreshold')))]",
+            "warningQueryTemplate": "AppEvents\n| where Name == \"RAGInteraction\"\n| where TimeGenerated >= ago(24h)\n| where isnotempty(tostring(Properties.userId))\n| extend userId = tostring(Properties.userId), totalTokens = todouble(Measurements.totalTokens)\n| summarize tokens24h = sum(coalesce(totalTokens, 0.0)) by userId\n| where tokens24h > {threshold}\n| project userId, tokens24h\n",
+            "warningQuery": "[replace(variables('warningQueryTemplate'), '{threshold}', format('{0}', parameters('warningTokenThreshold')))]",
+            "criticalQueryTemplate": "AppEvents\n| where Name == \"RAGInteraction\"\n| where TimeGenerated >= ago(24h)\n| where isnotempty(tostring(Properties.userId))\n| extend userId = tostring(Properties.userId), totalTokens = todouble(Measurements.totalTokens)\n| summarize tokens24h = sum(coalesce(totalTokens, 0.0)) by userId\n| where tokens24h > {threshold}\n| project userId, tokens24h\n",
+            "criticalQuery": "[replace(variables('criticalQueryTemplate'), '{threshold}', format('{0}', variables('tokenThreshold')))]"
           },
           "resources": [
             {
@@ -2013,7 +3163,8 @@
                     "emailAddress": "[parameters('notificationEmail')]",
                     "useCommonAlertSchema": true
                   }
-                ]
+                ],
+                "webhookReceivers": "[if(not(empty(variables('trimmedWebhookUri'))), createArray(createObject('name', 'operations-webhook', 'serviceUri', variables('trimmedWebhookUri'), 'useCommonAlertSchema', true())), createArray())]"
               }
             },
             {
@@ -2035,10 +3186,19 @@
                 "criteria": {
                   "allOf": [
                     {
-                      "query": "let ragFromCustomEvents =\ncustomEvents\n| where name == \"RAGInteraction\"\n| project timestamp, userId=tostring(customDimensions.userId), totalTokens=todouble(customMeasurements.totalTokens);\nlet ragFromAppEvents =\nAppEvents\n| where Name == \"RAGInteraction\"\n| project timestamp=TimeGenerated, userId=tostring(Properties.userId), totalTokens=todouble(Measurements.totalTokens);\nunion isfuzzy=true ragFromCustomEvents, ragFromAppEvents\n| where timestamp >= ago(24h)\n| where isnotempty(userId)\n| summarize tokens24h = sum(coalesce(totalTokens, 0.0)) by userId\n| where tokens24h > 1000000\n| project userId, tokens24h\n",
+                      "query": "[variables('criticalQuery')]",
                       "timeAggregation": "Count",
                       "operator": "GreaterThanOrEqual",
                       "threshold": 1,
+                      "dimensions": [
+                        {
+                          "name": "userId",
+                          "operator": "Include",
+                          "values": [
+                            "*"
+                          ]
+                        }
+                      ],
                       "failingPeriods": {
                         "numberOfEvaluationPeriods": 1,
                         "minFailingPeriodsToAlert": 1
@@ -2047,7 +3207,113 @@
                   ]
                 },
                 "autoMitigate": true,
-                "muteActionsDuration": "PT1H",
+                "actions": {
+                  "actionGroups": [
+                    "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-12-01",
+              "name": "[format('{0}-per-subject', parameters('scheduledQueryRuleName'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "description": "[format('Triggers when a user exceeds {0} tokens in a single subject over the last 24 hours.', parameters('subjectTokenThreshold'))]",
+                "displayName": "[format('Per-subject anomalous token usage (>{0} tokens / 24h per subject+user)', parameters('subjectTokenThreshold'))]",
+                "severity": 2,
+                "enabled": true,
+                "scopes": [
+                  "[parameters('workspaceId')]"
+                ],
+                "evaluationFrequency": "PT5M",
+                "windowSize": "PT24H",
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "[variables('perSubjectQuery')]",
+                      "timeAggregation": "Count",
+                      "operator": "GreaterThanOrEqual",
+                      "threshold": 1,
+                      "dimensions": [
+                        {
+                          "name": "userId",
+                          "operator": "Include",
+                          "values": [
+                            "*"
+                          ]
+                        },
+                        {
+                          "name": "subjectId",
+                          "operator": "Include",
+                          "values": [
+                            "*"
+                          ]
+                        }
+                      ],
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 1,
+                        "minFailingPeriodsToAlert": 1
+                      }
+                    }
+                  ]
+                },
+                "autoMitigate": true,
+                "actions": {
+                  "actionGroups": [
+                    "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-12-01",
+              "name": "[format('{0}-warning', parameters('scheduledQueryRuleName'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "description": "[format('Triggers when a single user exceeds {0} tokens over the last 24 hours (warning tier before critical threshold).', parameters('warningTokenThreshold'))]",
+                "displayName": "[format('Elevated token usage (>{0} tokens / 24h per user)', parameters('warningTokenThreshold'))]",
+                "severity": 1,
+                "enabled": true,
+                "scopes": [
+                  "[parameters('workspaceId')]"
+                ],
+                "evaluationFrequency": "PT5M",
+                "windowSize": "PT24H",
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "[variables('warningQuery')]",
+                      "timeAggregation": "Count",
+                      "operator": "GreaterThanOrEqual",
+                      "threshold": 1,
+                      "dimensions": [
+                        {
+                          "name": "userId",
+                          "operator": "Include",
+                          "values": [
+                            "*"
+                          ]
+                        }
+                      ],
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 1,
+                        "minFailingPeriodsToAlert": 1
+                      }
+                    }
+                  ]
+                },
+                "autoMitigate": true,
                 "actions": {
                   "actionGroups": [
                     "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
@@ -2068,9 +3334,283 @@
               "type": "string",
               "value": "[resourceId('Microsoft.Insights/scheduledQueryRules', parameters('scheduledQueryRuleName'))]"
             },
+            "perSubjectScheduledQueryRuleId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Insights/scheduledQueryRules', format('{0}-per-subject', parameters('scheduledQueryRuleName')))]"
+            },
+            "warningScheduledQueryRuleId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Insights/scheduledQueryRules', format('{0}-warning', parameters('scheduledQueryRuleName')))]"
+            },
             "threshold": {
               "type": "int",
               "value": "[variables('tokenThreshold')]"
+            },
+            "subjectTokenThresholdValue": {
+              "type": "int",
+              "value": "[parameters('subjectTokenThreshold')]"
+            },
+            "warningTokenThresholdValue": {
+              "type": "int",
+              "value": "[parameters('warningTokenThreshold')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'appInsights')]"
+      ]
+    },
+    {
+      "condition": "[not(empty(parameters('notificationEmail')))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "ttftAnomalyAlert",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "workspaceId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appInsights'), '2025-04-01').outputs.logAnalyticsWorkspaceId.value]"
+          },
+          "notificationEmail": {
+            "value": "[parameters('notificationEmail')]"
+          },
+          "webhookUri": {
+            "value": "[parameters('webhookUri')]"
+          },
+          "scheduledQueryRuleName": {
+            "value": "[variables('ttftAnomalyAlertName')]"
+          },
+          "actionGroupName": {
+            "value": "[variables('ttftAnomalyActionGroupName')]"
+          },
+          "ttftThresholdMs": {
+            "value": "[parameters('ttftAnomalyThresholdMs')]"
+          },
+          "severity": {
+            "value": "[parameters('ttftAnomalySeverity')]"
+          },
+          "lookbackMinutes": {
+            "value": 15
+          },
+          "minimumSamples": {
+            "value": 3
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.41.2.15936",
+              "templateHash": "8904285809544132746"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for monitor resources."
+              }
+            },
+            "workspaceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Log Analytics Workspace connected to App Insights."
+              }
+            },
+            "notificationEmail": {
+              "type": "string",
+              "metadata": {
+                "description": "Email destination for alert notifications."
+              }
+            },
+            "webhookUri": {
+              "type": "securestring",
+              "defaultValue": "",
+              "maxLength": 2000,
+              "metadata": {
+                "description": "Optional webhook URI for Teams/HTTP notification channel (e.g. Teams connector). Empty string disables webhook."
+              }
+            },
+            "scheduledQueryRuleName": {
+              "type": "string",
+              "defaultValue": "alert-ttft-anomaly",
+              "metadata": {
+                "description": "Name of the scheduled query alert rule."
+              }
+            },
+            "actionGroupName": {
+              "type": "string",
+              "defaultValue": "ag-ttft-anomaly",
+              "metadata": {
+                "description": "Name of the action group that sends email notifications."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags to apply to resources."
+              }
+            },
+            "ttftThresholdMs": {
+              "type": "int",
+              "defaultValue": 2000,
+              "minValue": 1,
+              "metadata": {
+                "description": "TTFT P95 threshold in milliseconds. Alert fires when P95 exceeds this value."
+              }
+            },
+            "lookbackMinutes": {
+              "type": "int",
+              "defaultValue": 15,
+              "minValue": 1,
+              "metadata": {
+                "description": "Lookback window in minutes for both the KQL ago() and windowSize."
+              }
+            },
+            "minimumSamples": {
+              "type": "int",
+              "defaultValue": 3,
+              "minValue": 1,
+              "metadata": {
+                "description": "Minimum number of samples required to prevent false positives during no-traffic periods."
+              }
+            },
+            "severity": {
+              "type": "int",
+              "defaultValue": 2,
+              "minValue": 0,
+              "maxValue": 4,
+              "metadata": {
+                "description": "Alert severity (0=Critical, 1=Error, 2=Warning, 3=Informational, 4=Verbose)."
+              }
+            },
+            "evaluationFrequency": {
+              "type": "string",
+              "defaultValue": "PT5M",
+              "metadata": {
+                "description": "How often the alert query is evaluated, in ISO 8601 duration format."
+              }
+            }
+          },
+          "variables": {
+            "trimmedWebhookUri": "[trim(parameters('webhookUri'))]",
+            "kqlLookback": "[format('{0}m', parameters('lookbackMinutes'))]",
+            "isoTimespan": "[format('PT{0}M', parameters('lookbackMinutes'))]",
+            "ttftQueryTemplate": "AppEvents\n| where Name == \"RagQuery.Executed\"\n| where TimeGenerated >= ago({kqlLookback})\n| where isnotempty(tostring(Measurements.llmFirstTokenLatencyMs))\n| extend subjectId = tostring(Properties.subjectId), llmFirstTokenLatencyMs = todouble(Measurements.llmFirstTokenLatencyMs)\n| summarize\n    ttftP95Ms = percentile(llmFirstTokenLatencyMs, 95),\n    sampleCount = count()\n    by subjectId\n| where sampleCount >= {minimumSamples}\n| where ttftP95Ms > {ttftThresholdMs}\n| project subjectId, ttftP95Ms, sampleCount\n",
+            "ttftQuery": "[replace(replace(replace(variables('ttftQueryTemplate'), '{kqlLookback}', variables('kqlLookback')), '{minimumSamples}', format('{0}', parameters('minimumSamples'))), '{ttftThresholdMs}', format('{0}', parameters('ttftThresholdMs')))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Insights/actionGroups",
+              "apiVersion": "2023-01-01",
+              "name": "[parameters('actionGroupName')]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "groupShortName": "TTFTAlert",
+                "enabled": true,
+                "emailReceivers": [
+                  {
+                    "name": "operations-email",
+                    "emailAddress": "[parameters('notificationEmail')]",
+                    "useCommonAlertSchema": true
+                  }
+                ],
+                "webhookReceivers": "[if(not(empty(variables('trimmedWebhookUri'))), createArray(createObject('name', 'operations-webhook', 'serviceUri', variables('trimmedWebhookUri'), 'useCommonAlertSchema', true())), createArray())]"
+              }
+            },
+            {
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-12-01",
+              "name": "[parameters('scheduledQueryRuleName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "description": "[format('Triggers when TTFT P95 exceeds {0}ms over {1} minutes (minimum {2} samples required).', parameters('ttftThresholdMs'), parameters('lookbackMinutes'), parameters('minimumSamples'))]",
+                "displayName": "[format('TTFT P95 anomaly (>{0}ms over {1} min)', parameters('ttftThresholdMs'), parameters('lookbackMinutes'))]",
+                "severity": "[parameters('severity')]",
+                "enabled": true,
+                "scopes": [
+                  "[parameters('workspaceId')]"
+                ],
+                "evaluationFrequency": "[parameters('evaluationFrequency')]",
+                "windowSize": "[variables('isoTimespan')]",
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "[variables('ttftQuery')]",
+                      "timeAggregation": "Count",
+                      "operator": "GreaterThanOrEqual",
+                      "threshold": 1,
+                      "dimensions": [
+                        {
+                          "name": "subjectId",
+                          "operator": "Include",
+                          "values": [
+                            "*"
+                          ]
+                        }
+                      ],
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 1,
+                        "minFailingPeriodsToAlert": 1
+                      }
+                    }
+                  ]
+                },
+                "autoMitigate": true,
+                "actions": {
+                  "actionGroups": [
+                    "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "actionGroupId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+            },
+            "scheduledQueryRuleId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Insights/scheduledQueryRules', parameters('scheduledQueryRuleName'))]"
+            },
+            "ttftThresholdMsValue": {
+              "type": "int",
+              "value": "[parameters('ttftThresholdMs')]"
+            },
+            "minimumSamplesValue": {
+              "type": "int",
+              "value": "[parameters('minimumSamples')]"
+            },
+            "severityValue": {
+              "type": "int",
+              "value": "[parameters('severity')]"
+            },
+            "evaluationFrequencyValue": {
+              "type": "string",
+              "value": "[parameters('evaluationFrequency')]"
+            },
+            "lookbackMinutesValue": {
+              "type": "int",
+              "value": "[parameters('lookbackMinutes')]"
             }
           }
         }
