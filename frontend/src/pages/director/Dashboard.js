@@ -7,6 +7,7 @@ import { renderHeader } from '../../components/Header.js';
 export async function renderDirectorDashboard(container) {
     renderHeader('Panel Directivo');
     container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando datos directivos...</div>`;
+    let _kpiData = null;
 
     const [data = {}, powerBiMetrics = null, vectorHealth = null] = await Promise.all([
         api.getDirectorStats(),
@@ -42,6 +43,7 @@ export async function renderDirectorDashboard(container) {
             : '';
 
     const costPerActiveStudent = data.costPerActiveStudent || 0;
+    _kpiData = data;
 
     container.innerHTML = `
     ${budget.warningLevel && budget.warningLevel !== 'none' ? `
@@ -50,6 +52,16 @@ export async function renderDirectorDashboard(container) {
         <span>${budgetText}</span>
       </div>
     ` : ''}
+
+    <!-- Export controls -->
+    <div style="display:flex;justify-content:flex-end;gap:var(--space-3);margin-bottom:var(--space-4)" id="kpi-export-bar">
+      <button class="btn btn-secondary btn-sm" id="btn-export-csv" style="display:inline-flex;align-items:center;gap:var(--space-2)">
+        <span>&#x2193;</span> Exportar CSV
+      </button>
+      <button class="btn btn-secondary btn-sm" id="btn-export-pdf" style="display:inline-flex;align-items:center;gap:var(--space-2)">
+        <span>&#x2193;</span> Exportar PDF
+      </button>
+    </div>
 
     <!-- KPIs -->
     <div class="grid-4" style="margin-bottom:var(--space-8)">
@@ -285,6 +297,183 @@ export async function renderDirectorDashboard(container) {
         }, 200);
     };
     window.addEventListener('resize', window._dashboardResizeHandler);
+
+    // Export button handlers
+    document.getElementById('btn-export-csv')?.addEventListener('click', () => handleExportCsv(_kpiData));
+    document.getElementById('btn-export-pdf')?.addEventListener('click', () => handleExportPdf(_kpiData));
+}
+
+// ── KPI Export handlers ─────────────────────────────────────
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function buildKpiCsv(data) {
+  const lines = [];
+  const push = (s, m, v) => lines.push(`${s},${m},${v}`);
+  lines.push('seccion,metrica,valor');
+  push('General','Usuarios activos (hoy)', data.dau || 0);
+  push('General','Clases procesadas', data.classesProcessed || 0);
+  push('General','Interacciones RAG', data.ragInteractions || 0);
+  push('General','Adopcion global', (data.adoptionRate || 0) + '%');
+  push('General','Costo por alumno activo', '$' + Number(data.costPerActiveStudent || 0).toFixed(4));
+  lines.push('');
+  push('Presupuesto','Presupuesto mensual', '$' + Number(data.budget?.monthlyLimit || 0).toFixed(2));
+  push('Presupuesto','Gasto actual', '$' + Number(data.budget?.currentSpend || 0).toFixed(2));
+  push('Presupuesto','Proyectado fin de mes', '$' + Number(data.budget?.projectedEndOfMonth || 0).toFixed(2));
+  push('Presupuesto','Porcentaje usado', Number(data.budget?.percentUsed || 0).toFixed(1) + '%');
+  lines.push('');
+  const ea = data.earlyAlertSummary || {};
+  push('Alertas','Total en riesgo', ea.totalStudentsAtRisk || 0);
+  push('Alertas','Riesgo alto', ea.highRiskCount || 0);
+  push('Alertas','Riesgo medio', ea.mediumRiskCount || 0);
+  lines.push('');
+  lines.push('seccion,materia,costo_usd');
+  (data.costBySubject || []).forEach(s => {
+    const total = (s.dailyCost || []).reduce((sum, d) => sum + (d.cost || 0), 0);
+    push('Costo por materia', s.subjectName || s.subjectId, total.toFixed(6));
+  });
+  lines.push('');
+  lines.push('seccion,materia,semana_actual');
+  (data.wausBySubject || []).forEach(s => push('WAUS', s.subjectName || s.subjectId, s.currentWeek || 0));
+  lines.push('');
+  lines.push('seccion,docente,transcripciones,presentaciones,apuntes,bibliografia,total');
+  (data.materialUploads?.byTeacher || []).forEach(t => {
+    push('Carga de materiales', t.teacherId, `${t.transcripts||0},${t.presentations||0},${t.notes||0},${t.bibliography||0},${t.total||0}`);
+  });
+  lines.push('');
+  lines.push(`generado_en,${new Date().toISOString()}`);
+  return lines.join('\n');
+}
+
+async function handleExportCsv(data) {
+  const btn = document.getElementById('btn-export-csv');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.innerHTML = '<span>&#x21bb;</span> Exportando...';
+  try {
+    const blob = await api.getDirectorKpiExport('csv');
+    if (blob) {
+      const date = new Date().toISOString().slice(0, 10);
+      downloadBlob(blob, `kpi-snapshot-${date}.csv`);
+    } else {
+      const csv = buildKpiCsv(data);
+      downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `kpi-snapshot-${new Date().toISOString().slice(0, 10)}.csv`);
+    }
+  } catch (err) {
+    console.error('[Dashboard] CSV export error:', err);
+    const csv = buildKpiCsv(data);
+    downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `kpi-snapshot-${new Date().toISOString().slice(0, 10)}.csv`);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span>&#x2193;</span> Exportar CSV';
+  }
+}
+
+async function handleExportPdf(data) {
+  const btn = document.getElementById('btn-export-pdf');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.innerHTML = '<span>&#x21bb;</span> Exportando...';
+  try {
+    const blob = await api.getDirectorKpiExport('pdf');
+    if (blob) {
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      URL.revokeObjectURL(url);
+    } else {
+      openPrintView(data);
+    }
+  } catch (err) {
+    console.error('[Dashboard] PDF export error:', err);
+    openPrintView(data);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span>&#x2193;</span> Exportar PDF';
+  }
+}
+
+function openPrintView(data) {
+  const t = (v) => String(v ?? '');
+  const budget = data.budget || {};
+  const ea = data.earlyAlertSummary || {};
+  const costRows = (data.costBySubject || []).map(s => {
+    const total = (s.dailyCost || []).reduce((sum, d) => sum + (d.cost || 0), 0);
+    return `<tr><td>${t(s.subjectName || s.subjectId)}</td><td>$${total.toFixed(6)}</td></tr>`;
+  }).join('');
+  const wausRows = (data.wausBySubject || []).map(s =>
+    `<tr><td>${t(s.subjectName || s.subjectId)}</td><td>${s.currentWeek || 0}</td></tr>`
+  ).join('');
+  const materialRows = (data.materialUploads?.byTeacher || []).map(tm =>
+    `<tr><td>${t(tm.teacherId)}</td><td>${tm.transcripts||0}</td><td>${tm.presentations||0}</td><td>${tm.notes||0}</td><td>${tm.bibliography||0}</td><td>${tm.total||0}</td></tr>`
+  ).join('');
+
+  const printWin = window.open('', '_blank', 'width=800,height=600');
+  if (!printWin) return;
+  printWin.document.write(`<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="utf-8"><title>KPIs - Dashboard Directivo</title>
+<style>
+  @page { margin: 15mm; }
+  body { font-family: helvetica, arial, sans-serif; font-size: 11pt; color: #1a1a2e; }
+  h1 { font-size: 18pt; border-bottom: 2px solid #0077AB; padding-bottom: 4px; }
+  h2 { font-size: 14pt; margin-top: 20px; color: #0077AB; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+  th, td { text-align: left; padding: 4px 8px; border: 1px solid #ccc; }
+  th { background: #f0f4f8; font-weight: 600; font-size: 10pt; }
+  td { font-size: 10pt; }
+  .kpi-grid { display: flex; gap: 12px; flex-wrap: wrap; margin: 10px 0; }
+  .kpi-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 14px; min-width: 140px; }
+  .kpi-value { font-size: 16pt; font-weight: 700; color: #0077AB; }
+  .kpi-label { font-size: 9pt; color: #64748b; }
+  .footer { margin-top: 24px; font-size: 9pt; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 8px; }
+</style></head>
+<body>
+  <h1>Dashboard Directivo — KPIs</h1>
+  <p>Generado: ${new Date().toISOString().slice(0, 16).replace('T', ' ')} &mdash; Datos anonimizados, sin PII</p>
+  <h2>M&eacute;tricas Generales</h2>
+  <div class="kpi-grid">
+    <div class="kpi-item"><div class="kpi-value">${t(data.dau)}</div><div class="kpi-label">Usuarios activos (hoy)</div></div>
+    <div class="kpi-item"><div class="kpi-value">${t(data.classesProcessed)}</div><div class="kpi-label">Clases procesadas</div></div>
+    <div class="kpi-item"><div class="kpi-value">${t(data.ragInteractions)}</div><div class="kpi-label">Interacciones RAG</div></div>
+    <div class="kpi-item"><div class="kpi-value">${t(data.adoptionRate)}%</div><div class="kpi-label">Adopci&oacute;n global</div></div>
+    <div class="kpi-item"><div class="kpi-value">$${Number(data.costPerActiveStudent || 0).toFixed(4)}</div><div class="kpi-label">Costo por alumno activo</div></div>
+  </div>
+  <h2>Presupuesto</h2>
+  <table><thead><tr><th>M&eacute;trica</th><th>Valor</th></tr></thead>
+  <tbody>
+    <tr><td>Presupuesto mensual</td><td>$${Number(budget.monthlyLimit || 0).toFixed(2)}</td></tr>
+    <tr><td>Gasto actual</td><td>$${Number(budget.currentSpend || 0).toFixed(2)}</td></tr>
+    <tr><td>Proyectado fin de mes</td><td>$${Number(budget.projectedEndOfMonth || 0).toFixed(2)}</td></tr>
+    <tr><td>Porcentaje usado</td><td>${Number(budget.percentUsed || 0).toFixed(1)}%</td></tr>
+  </tbody></table>
+  <h2>Alertas Tempranas</h2>
+  <table><thead><tr><th>M&eacute;trica</th><th>Valor</th></tr></thead>
+  <tbody>
+    <tr><td>Total en riesgo</td><td>${t(ea.totalStudentsAtRisk)}</td></tr>
+    <tr><td>Riesgo alto</td><td>${t(ea.highRiskCount)}</td></tr>
+    <tr><td>Riesgo medio</td><td>${t(ea.mediumRiskCount)}</td></tr>
+    <tr><td>Asistencia &lt; 60%</td><td>${t(ea.attendanceBelow60Count)}</td></tr>
+    <tr><td>Asistencia 60-75%</td><td>${t(ea.attendance60To75Count)}</td></tr>
+  </tbody></table>
+  <h2>Costo por Materia (30 d&iacute;as)</h2>
+  <table><thead><tr><th>Materia</th><th>Costo (USD)</th></tr></thead>
+  <tbody>${costRows || '<tr><td colspan="2">Sin datos</td></tr>'}</tbody></table>
+  <h2>Usuarios Activos Semanales</h2>
+  <table><thead><tr><th>Materia</th><th>Semana actual</th></tr></thead>
+  <tbody>${wausRows || '<tr><td colspan="2">Sin datos</td></tr>'}</tbody></table>
+  <h2>Carga de Materiales por Docente</h2>
+  <table><thead><tr><th>Docente</th><th>Transcripciones</th><th>Presentaciones</th><th>Apuntes</th><th>Bibliograf&iacute;a</th><th>Total</th></tr></thead>
+  <tbody>${materialRows || '<tr><td colspan="6">Sin datos</td></tr>'}</tbody></table>
+  <div class="footer">Este informe contiene datos agregados y anonimizados. No incluye informaci&oacute;n personal identificable (PII).</div>
+</body></html>`);
+  printWin.document.close();
+  setTimeout(() => { printWin.focus(); printWin.print(); }, 500);
 }
 
 function escapeHtml(str) {

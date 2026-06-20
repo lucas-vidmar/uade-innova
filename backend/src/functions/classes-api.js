@@ -28,7 +28,7 @@ const DEFAULT_SUBJECTS = [
 ];
 
 const SESSION_METRICS_TABLE = 'SessionMetrics';
-const POWERBI_DEFAULT_DAYS = 14;
+export const POWERBI_DEFAULT_DAYS = 14;
 
 function toIsoDate(value) {
     const date = value instanceof Date ? value : new Date(value);
@@ -114,7 +114,7 @@ function createSubjectDailyBucket(date, subjectId) {
     };
 }
 
-async function computeDirectorMetrics(context, requestedDays = POWERBI_DEFAULT_DAYS) {
+export async function computeDirectorMetrics(context, requestedDays = POWERBI_DEFAULT_DAYS) {
     const days = Math.min(Math.max(Number(requestedDays) || POWERBI_DEFAULT_DAYS, 1), 90);
     const rows = await loadSessionMetricsRows(context);
     const today = new Date();
@@ -293,7 +293,7 @@ async function computeDirectorMetrics(context, requestedDays = POWERBI_DEFAULT_D
     };
 }
 
-function computeBudgetProjection(daily) {
+export function computeBudgetProjection(daily) {
     const now = new Date();
     const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
     const year = todayUtc.getUTCFullYear();
@@ -344,7 +344,7 @@ function computeBudgetProjection(daily) {
     };
 }
 
-function computeCostSpikeAlert(daily) {
+export function computeCostSpikeAlert(daily) {
     if (daily.length < 8) return null;
     const today = daily[daily.length - 1];
     const sevenDaySlice = daily.slice(daily.length - 8, daily.length - 1);

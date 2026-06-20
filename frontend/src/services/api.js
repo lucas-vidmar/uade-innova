@@ -1230,6 +1230,44 @@ export const api = {
         }
     },
 
+    async getDirectorKpiExport(format) {
+      const qs = `?format=${encodeURIComponent(format)}`;
+      const url = `${BASE_URL}/director/kpi-export${qs}`;
+      if (USE_MOCK) {
+        await delay(500);
+        const stats = MOCK_DIRECTOR_STATS;
+        if (format === 'csv') {
+          const lines = [
+            'seccion,metrica,valor',
+            `General,Usuarios activos (hoy),${stats.dau}`,
+            `General,Clases procesadas,${stats.classesProcessed}`,
+            `General,Interacciones RAG,${stats.ragInteractions}`,
+            `General,Adopcion global,${stats.adoptionRate}%`,
+            '',
+            'seccion,materia,costo_usd',
+            ...(stats.costBySubject || []).map(s => {
+              const total = (s.dailyCost || []).reduce((sum, d) => sum + (d.cost || 0), 0);
+              return `Costo por materia,${s.subjectName || s.subjectId},${total.toFixed(6)}`;
+            }),
+            '',
+            'seccion,materia,usuarios_semana_actual',
+            ...(stats.wausBySubject || []).map(s => `WAUS,${s.subjectName || s.subjectId},${s.currentWeek || 0}`),
+          ];
+          return new Blob([lines.join('\n') + '\n'], { type: 'text/csv;charset=utf-8' });
+        }
+        return new Blob([JSON.stringify({ export: 'kpi-snapshot', generatedAt: new Date().toISOString(), data: stats }, null, 2)], { type: 'application/json' });
+      }
+      try {
+        const res = await fetchWithTimeout(url, { timeout: 8000 });
+        if (!res.ok) return null;
+        if (format === 'csv') return res.blob();
+        return res.blob();
+      } catch (err) {
+        console.error('[API] getDirectorKpiExport failed:', err);
+        return null;
+      }
+    },
+
     async getDirectorPowerBiMetrics(days = 14) {
         if (USE_MOCK) {
             await delay(400);

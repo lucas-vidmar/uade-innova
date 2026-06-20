@@ -161,7 +161,7 @@ development_status:
   7-125-centralize-correlation-handling-in-share: backlog
   7-146-ttft-dashboard-segmentation-by-subject-a: review
   7-147-ttft-sla-anomaly-alerts-using-p95-thresh: backlog
-  7-148-rag-latency-decomposition-network-vs-mod: backlog
+  7-148-rag-latency-decomposition-network-vs-mod: done
   7-149-persist-vector-health-snapshots-for-tren: backlog
   7-150-vector-index-fullness-anomaly-alerts: backlog
   7-151-expose-vector-search-latency-and-failure: backlog
