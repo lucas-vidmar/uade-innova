@@ -149,11 +149,12 @@ export async function upsertChunks(vectors) {
     }
 }
 
-export async function querySimilar(embedding, filter, topK = 5) {
-    return querySimilarWithTelemetry(embedding, filter, topK);
+export async function querySimilar(embedding, filter, topK = 5, deps = {}) {
+    return querySimilarWithTelemetry(embedding, filter, topK, deps);
 }
 
 export async function querySimilarWithTelemetry(embedding, filter, topK = 5, deps = {}) {
+    const { correlationId } = deps;
     const dependencyTracker = typeof deps.trackDependency === 'function'
         ? deps.trackDependency
         : trackVectorSearchDependency;
@@ -198,6 +199,7 @@ export async function querySimilarWithTelemetry(embedding, filter, topK = 5, dep
             durationMs: elapsed,
             success: true,
             resultCode: 200,
+            correlationId,
         });
 
         recordVectorOperation(elapsed, true);
@@ -214,6 +216,7 @@ export async function querySimilarWithTelemetry(embedding, filter, topK = 5, dep
             durationMs: elapsed,
             success: false,
             resultCode: err?.status || err?.code || 500,
+            correlationId,
         });
 
         recordVectorOperation(elapsed, false);

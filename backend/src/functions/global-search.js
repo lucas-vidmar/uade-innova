@@ -111,7 +111,7 @@ app.http('global-search', {
                 materialType: { $in: ['transcript', 'bibliography'] },
             };
 
-            const matches = await querySimilar(embedding, filter, MAX_GLOBAL_RESULTS);
+            const matches = await querySimilar(embedding, filter, MAX_GLOBAL_RESULTS, { correlationId });
             const boostedResults = matches.map((match) => {
                 const text = match.metadata?.text || '';
                 const filename = match.metadata?.sourceFilename || '';

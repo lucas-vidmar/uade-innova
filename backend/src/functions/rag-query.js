@@ -421,7 +421,7 @@ app.http('rag-query', {
         let verifiedAnswerText = '';
 
         try {
-            const verifiedMatches = await querySimilar(questionEmbedding, verifiedFilter, 5);
+            const verifiedMatches = await querySimilar(questionEmbedding, verifiedFilter, 5, { correlationId });
             const topVerified = verifiedMatches[0];
             if (topVerified && topVerified.score > VERIFIED_SCORE_THRESHOLD) {
                 verifiedMatch = topVerified;
@@ -480,7 +480,7 @@ app.http('rag-query', {
         // ── 4. Búsqueda de similitud en Pinecone ──────────────────
         let matches;
         try {
-            matches = await querySimilar(questionEmbedding, filter, RETRIEVAL_CANDIDATES);
+            matches = await querySimilar(questionEmbedding, filter, RETRIEVAL_CANDIDATES, { correlationId });
         } catch (err) {
             const categorizedError = normalizeCategorizedError(err, ErrorCategory.RETRIEVAL_FAILURE);
             context.error('Error consultando Pinecone:', categorizedError);

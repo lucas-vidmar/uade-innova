@@ -48,7 +48,7 @@ test('querySimilarWithTelemetry emits success dependency telemetry including pro
         [0.1, 0.2, 0.3],
         { subjectId: { $eq: 'arq-software-2026' } },
         5,
-        { trackDependency },
+        { trackDependency, correlationId: 'test-corr-id-001' },
     );
 
     assert.strictEqual(Array.isArray(matches), true);
@@ -62,6 +62,7 @@ test('querySimilarWithTelemetry emits success dependency telemetry including pro
     assert.strictEqual(payload.provider, 'pinecone');
     assert.strictEqual(payload.index, 'test-index');
     assert.strictEqual(payload.resultCode, 200);
+    assert.strictEqual(payload.correlationId, 'test-corr-id-001');
     assert.ok(Number(payload.durationMs) >= 0);
 });
 
@@ -79,7 +80,7 @@ test('querySimilarWithTelemetry emits failed dependency telemetry when Pinecone 
             [0.1, 0.2, 0.3],
             { subjectId: { $eq: 'arq-software-2026' } },
             5,
-            { trackDependency },
+            { trackDependency, correlationId: 'test-corr-id-002' },
         ),
     );
 
@@ -89,6 +90,7 @@ test('querySimilarWithTelemetry emits failed dependency telemetry when Pinecone 
     assert.strictEqual(payload.provider, 'pinecone');
     assert.strictEqual(payload.index, 'test-index');
     assert.strictEqual(payload.resultCode, 503);
+    assert.strictEqual(payload.correlationId, 'test-corr-id-002');
     assert.ok(Number(payload.durationMs) >= 0);
 });
 

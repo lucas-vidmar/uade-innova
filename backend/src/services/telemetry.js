@@ -115,6 +115,7 @@ export async function trackRAGInteraction({
  * @param {number} params.durationMs     - Dependency latency in milliseconds
  * @param {boolean} [params.success]     - Whether dependency call succeeded
  * @param {string|number} [params.resultCode] - Result code / status code
+ * @param {string} [params.correlationId] - Trace correlation ID for joining with request telemetry in KQL
  */
 export async function trackVectorSearchDependency({
     provider = 'pinecone',
@@ -125,6 +126,7 @@ export async function trackVectorSearchDependency({
     durationMs,
     success = true,
     resultCode,
+    correlationId,
 }) {
     const client = await getClient();
     if (!client) return;
@@ -144,6 +146,7 @@ export async function trackVectorSearchDependency({
             provider,
             index: resolvedIndex,
             indexName: resolvedIndex,
+            ...(correlationId && { correlationId }),
         },
     });
 }

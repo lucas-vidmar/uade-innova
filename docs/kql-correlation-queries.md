@@ -44,6 +44,63 @@ customEvents
             durationMs = toint(customMeasurements.durationMs)
 ```
 
+## Vector Dependency Correlation
+
+When the SDK context is not available (e.g., dependency telemetry from non-HTTP pipelines), join vector search dependency events with RAG interactions using the custom `correlationId` field:
+
+```kusto
+// Join Pinecone dependency telemetry with RAG interactions by correlationId
+dependencies
+| where dependencyTypeName == "Pinecone"
+| where isnotempty(tostring(customDimensions.correlationId))
+| where timestamp between(startofday(now()) .. now())
+| project timestamp,
+            correlationId = tostring(customDimensions.correlationId),
+            operation = name,
+            target,
+            dependencyDurationMs = duration,
+            success,
+            resultCode
+| join kind=leftouter (
+    customEvents
+    | where name == "RAGInteraction"
+    | project correlationId = tostring(customDimensions.correlationId),
+              ragTimestamp = timestamp,
+              userId = tostring(customDimensions.userId),
+              subjectId = tostring(customDimensions.subjectId),
+              sourceMix = tostring(customDimensions.sourceMix),
+              ragDurationMs = toint(customMeasurements.durationMs),
+              totalTokens = toint(customMeasurements.totalTokens)
+) on correlationId
+| order by timestamp desc
+```
+
+```kusto
+// Full trace of a single request across all telemetry types
+let targetCorrelationId = "your-correlation-id-here";
+union
+    customEvents
+    | where customDimensions.correlationId == targetCorrelationId
+    | extend eventType = "customEvent", eventName = name,
+              durationMs = toint(customMeasurements.durationMs)
+    | project timestamp, eventType, eventName, durationMs,
+              details = strcat("userId: ", tostring(customDimensions.userId)),
+              correlationId = tostring(customDimensions.correlationId),
+              subjectId = tostring(customDimensions.subjectId),
+              provider = "",
+    dependencies
+    | where dependencyTypeName == "Pinecone"
+    | where tostring(customDimensions.correlationId) == targetCorrelationId
+    | extend eventType = "dependency", eventName = name,
+              durationMs = duration,
+              details = strcat("target: ", target, " success: ", success)
+    | project timestamp, eventType, eventName, durationMs, details,
+              correlationId = tostring(customDimensions.correlationId),
+              subjectId = "",
+              provider = tostring(customDimensions.provider)
+| order by timestamp asc
+```
+
 ## Trace Events from a Specific Correlation
 
 ```kusto
