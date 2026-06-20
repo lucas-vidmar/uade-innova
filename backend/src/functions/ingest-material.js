@@ -55,11 +55,15 @@ app.http('ingest-material', {
                 return structuredErrorResponse(400, 'Faltan campos requeridos: classIds, subjectId, materialType', ErrorCategory.VALIDATION, 'MISSING_FIELDS');
             }
 
-            if (!validateFileType(fileHeader, materialType, context)) {
-                return structuredErrorResponse(400, `El tipo de archivo no coincide con el tipo de material "${materialType}". Formatos aceptados: TXT, VTT, DOCX, PDF, PPTX.`, ErrorCategory.VALIDATION, 'INVALID_FILE_TYPE');
+            const materialId = uuidv4();
+            if (!validateFileType(fileHeader, materialType, fileName, materialId, context)) {
+                const message = materialType === 'transcript'
+                    ? 'El archivo no es un texto válido (UTF-8). Verificá el formato.'
+                    : `El tipo de archivo no coincide con el tipo de material "${materialType}". Formatos aceptados: TXT, VTT, DOCX, PDF, PPTX.`;
+                const code = materialType === 'transcript' ? 'FILE_CONTENT_INVALID' : 'INVALID_FILE_TYPE';
+                return structuredErrorResponse(400, message, ErrorCategory.VALIDATION, code);
             }
 
-            const materialId = uuidv4();
             const material = {
                 materialId,
                 subjectId,
@@ -144,19 +148,72 @@ app.http('ingest-material', {
     })
 });
 
+function sanitizeFileName(name) {
+    if (typeof name !== 'string') return 'unknown';
+    return name.length > 120 ? name.slice(0, 120) + '...' : name.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '?');
+}
+
 /**
  * Server-side file type validation by magic bytes.
  * Rejects files whose content doesn't match the declared materialType.
  */
-function validateFileType(buffer, materialType, context) {
+function validateFileType(buffer, materialType, fileName, materialId, context) {
     if (!Buffer.isBuffer(buffer) || buffer.length < 4) return false;
     const header = buffer.slice(0, 8).toString('hex').toLowerCase();
-    const fileNameCheck = ''; // will be set if a filename is available
+    const safeName = sanitizeFileName(fileName);
+    const logWarn = (...args) => context?.log?.warn?.(...args);
 
     switch (materialType) {
-        case 'transcript':
-            // TXT, VTT — plain text. No magic bytes, check for printable ASCII / UTF-8.
+        case 'transcript': {
+            if (typeof fileName !== 'string' || !fileName) {
+                logWarn(`[Ingest] Transcript rejected: invalid fileName`);
+                return false;
+            }
+            const allowedExts = ['.txt', '.vtt'];
+            const ext = path.extname(fileName).toLowerCase();
+            if (!allowedExts.includes(ext)) {
+                logWarn(`[Ingest] Transcript file rejected materialId=${materialId} reason=extension_not_allowed ext=${ext}`);
+                return false;
+            }
+            if (header.startsWith('fffe') || header.startsWith('feff')) {
+                logWarn(`[Ingest] Transcript file rejected materialId=${materialId} reason=utf16_bom_detected`);
+                return false;
+            }
+            const scanLen = Math.min(buffer.length, 4096);
+            let offset = 0;
+            if (header.startsWith('efbbbf') && scanLen >= 3) {
+                offset = 3;
+            }
+            const content = buffer.slice(offset, scanLen);
+            if (content.length === 0) {
+                logWarn(`[Ingest] Transcript file rejected materialId=${materialId} reason=empty_content`);
+                return false;
+            }
+            for (let i = 0; i < content.length; i++) {
+                if (content[i] === 0x00) {
+                    logWarn(`[Ingest] Transcript file rejected materialId=${materialId} reason=nul_byte position=${i + offset}`);
+                    return false;
+                }
+            }
+            try {
+                new TextDecoder('utf-8', { fatal: true }).decode(content);
+            } catch {
+                logWarn(`[Ingest] Transcript file rejected materialId=${materialId} reason=invalid_utf8`);
+                return false;
+            }
+            let nonPrintableCount = 0;
+            for (let i = 0; i < content.length; i++) {
+                const byte = content[i];
+                if (!((byte >= 0x20 && byte <= 0x7E) || byte === 0x09 || byte === 0x0A || byte === 0x0D || byte >= 0x80)) {
+                    nonPrintableCount++;
+                }
+            }
+            if (nonPrintableCount * 100 > content.length) {
+                logWarn(`[Ingest] Transcript file rejected materialId=${materialId} reason=control_chars_exceeded nonPrintablePct=${((nonPrintableCount / content.length) * 100).toFixed(1)}`);
+                return false;
+            }
             return true;
+        }
         case 'presentation':
             // PPTX — ZIP-based (PK\x03\x04)
             if (header.startsWith('504b0304')) return true;
@@ -183,6 +240,8 @@ function validateFileType(buffer, materialType, context) {
             return true;
     }
 }
+
+export { validateFileType };
 
 /**
  * Parsea el cuerpo de la petición multipart/form-data usando busboy.
