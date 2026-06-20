@@ -112,6 +112,22 @@ azure-educational-dashboard/
 ├── .env.local                   # Variables locales (NO commitear, en .gitignore)
 ├── infra/                       # IaC (Bicep) - ver sección 7
 │
+├── _bmad/                       # BMad framework (workflows, agents, config)
+│   ├── config.toml              # Config principal del proyecto
+│   ├── core/                    # Módulo Core de BMad
+│   ├── bmm/                     # Módulo BMad Method (análisis, planificación, impl.)
+│   ├── custom/                  # Overrides personalizados
+│   └── stories/                 # Story files activos
+│
+├── _bmad-output/                # Artefactos generados por BMad
+│   ├── planning-artifacts/      # PRDs, UX, arquitectura, epics
+│   └── implementation-artifacts/# Specs, stories, code reviews, sprint status
+│
+├── docs/                        # Conocimiento del proyecto (project_knowledge)
+│   ├── Documento de Alcance Funcional.md
+│   ├── architecture-review.md
+│   └── ... (ver §17)
+│
 ├── frontend/                    # Dashboard web (HTML + Vanilla JS o React)
 │   ├── index.html
 │   ├── src/
@@ -159,8 +175,8 @@ azure-educational-dashboard/
 ### **9.3. Workflow de Sprint**
 
 1. **Consultar estado:** Antes de cualquier análisis de sprint, el agente debe ejecutar `gh issue list` para obtener la lista actualizada de issues desde GitHub.
-2. **No inferir desde archivos locales:** Los archivos en `docs/` (como `us*-implementation-plan.md` o `us*-walkthrough.md`) son **artefactos históricos** y no reflejan el estado actual del backlog. **NUNCA** usarlos para determinar el estado de una historia.
-3. **Sprint status:** El archivo `sprint-status.yaml` se genera automáticamente a partir de los issues de GitHub y se actualiza mediante `bmad-sprint-planning`.
+2. **No inferir desde archivos locales:** Los artefactos históricos (implementation plans, walkthroughs) se mantienen en `_bmad-output/implementation-artifacts/` pero **no reflejan el estado actual del backlog**. **NUNCA** usarlos para determinar el estado de una historia.
+3. **Sprint status:** El archivo `sprint-status.yaml` se genera automáticamente a partir de los issues de GitHub y se actualiza mediante `bmad-sprint-planning`. Se encuentra en `_bmad-output/implementation-artifacts/sprint-status.yaml`.
 
 ### **9.4. Comandos de Referencia para GitHub**
 
@@ -408,3 +424,24 @@ Para garantizar la calidad y disponibilidad del dashboard, se establece el sigui
 2.  **Prueba en Producción/Staging**: No es suficiente con pruebas locales. El agente DEBE acceder a la URL pública de la Azure Static Web App utilizando las herramientas de navegación (Chrome).
 3.  **Verificación E2E**: Se debe verificar el funcionamiento de la característica implementada directamente en el navegador, asegurando que la integración con Azure Functions y otros servicios sea correcta.
 4.  **Cierre de Tarea**: Una tarea solo se considera finalizada una vez que se ha confirmado visualmente su funcionamiento en el entorno desplegado.
+
+---
+
+## **17. Índice de Conocimiento del Proyecto (`docs/`)**
+
+El directorio `docs/` es la fuente de `project_knowledge` (configurado en `_bmad/bmm/config.yaml`). Contiene documentación persistente del proyecto. Los agentes deben leer estos archivos según corresponda al contexto de la tarea.
+
+| Archivo | Descripción |
+|---|---|
+| `docs/Documento de Alcance Funcional.md` | Alcance funcional completo del dashboard educativo |
+| `docs/Dashboard educativo inteligente con IA integrando transcripts de Microsoft Stream.txt` | Contexto y visión del proyecto |
+| `docs/architecture-review.md` | Decisiones y revisión de arquitectura del sistema |
+| `docs/api-error-contracts.md` | Contratos de errores para las APIs del backend |
+| `docs/correlation-middleware.md` | Documentación del middleware de correlación para trazabilidad |
+| `docs/graph-api-credentials.md` | Configuración de credenciales para Microsoft Graph API |
+| `docs/kql-correlation-queries.md` | Consultas KQL para correlación en Application Insights |
+| `docs/notifications-api.json` | Especificación OpenAPI del sistema de notificaciones |
+| `docs/project-scan-report.json` | Reporte de escaneo del proyecto |
+| `docs/project-status.md` | Estado general del proyecto |
+| `docs/reindex-vector-classid-migration.md` | Plan de migración de índices vectoriales con nuevo classId |
+| `docs/sga-openapi.json` | Especificación OpenAPI del SGA (Sistema de Gestión Académica) |
