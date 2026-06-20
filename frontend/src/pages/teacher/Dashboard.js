@@ -22,11 +22,24 @@ export async function renderTeacherDashboard(container) {
   }
 
   const activeSubjectName = user.subjects?.find(s => s.id === activeSubjectId)?.name || 'Materia';
-  const [classes = [], deadlines = [], aiFeedbackAlerts = []] = await Promise.all([
-    api.getClasses(activeSubjectId),
-    api.getDeadlines(activeSubjectId),
-    api.getTeacherAiFeedbackAlerts(activeSubjectId, 5),
-  ]);
+
+  let classes = [], deadlines = [], corrections = [];
+  try {
+    [classes = [], deadlines = [], corrections = []] = await Promise.all([
+      api.getClasses(activeSubjectId),
+      api.getDeadlines(activeSubjectId),
+      api.getCorrectionsPending(activeSubjectId, undefined, 'all').catch(() => []),
+    ]);
+  } catch {
+    classes = classes || [];
+    deadlines = deadlines || [];
+  }
+
+  const pendingCorrections = corrections.filter(c => c.status === 'pending');
+  const reviewedCorrections = corrections.filter(c => c.status === 'reviewed');
+  pendingCorrections.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  reviewedCorrections.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  const topAlerts = [...pendingCorrections, ...reviewedCorrections].slice(0, 5);
 
   const complete = (classes || []).filter(c => c.summaryReady);
   const processing = (classes || []).filter(c => {
@@ -142,23 +155,34 @@ export async function renderTeacherDashboard(container) {
     <div class="card">
       <div class="card-header">
         <span class="card-title">Reportes de alumnos</span>
-        <span class="badge badge-warning">${aiFeedbackAlerts.length}</span>
+        <span class="badge badge-warning">${pendingCorrections.length}</span>
       </div>
-      <div class="class-list">
-        ${aiFeedbackAlerts.length > 0 ? aiFeedbackAlerts.map((item) => `
-          <div class="class-list-item" style="align-items:flex-start">
+      <div class="class-list" id="dashboard-alerts-list">
+        ${topAlerts.length > 0 ? topAlerts.map((item) => `
+          <div class="class-list-item" style="align-items:flex-start" data-correction-id="${escapeHtml(item.correctionId)}">
             <div class="class-list-date">${icon('alert')}</div>
             <div class="class-list-info">
               <div class="class-list-title">${escapeHtml(item.question || 'Consulta sin título')}</div>
               <div class="class-list-topics">${escapeHtml(item.issueDetail || 'Sin detalle provisto.')}</div>
-              <div class="class-list-files">Reporte: ${new Date(item.createdAt).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>
+              <div class="class-list-files">Reporte: ${item.createdAt ? (() => { const d = new Date(item.createdAt); return isNaN(d.getTime()) ? '---' : d.toLocaleDateString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); })() : '---'}</div>
             </div>
-            <div class="class-list-actions">
-              <span class="badge badge-error">${item.status === 'open' ? 'Abierto' : 'Revisado'}</span>
+            <div class="class-list-actions" style="gap:var(--space-2)">
+              <span class="badge ${item.status === 'pending' ? 'badge-error' : 'badge-warning'}">${item.status === 'pending' ? 'Pendiente' : 'Revisado'}</span>
+              ${item.status === 'pending' ? `
+                <button class="btn btn-secondary btn-sm dashboard-mark-reviewed" data-correction-id="${escapeHtml(item.correctionId)}">Revisado</button>
+                <button class="btn btn-secondary btn-sm dashboard-mark-resolved" data-correction-id="${escapeHtml(item.correctionId)}">Resuelto</button>
+              ` : `
+                <button class="btn btn-secondary btn-sm dashboard-mark-resolved" data-correction-id="${escapeHtml(item.correctionId)}">Resuelto</button>
+              `}
             </div>
           </div>
         `).join('') : '<div class="empty-state" style="padding:24px">No hay reportes de calidad IA para esta materia.</div>'}
       </div>
+      ${corrections.length > 5 ? `
+        <div style="padding:var(--space-3);text-align:center;border-top:1px solid var(--border-subtle)">
+          <a href="#/teacher/corrections" class="btn btn-secondary btn-sm">Ver todas (${corrections.length})</a>
+        </div>
+      ` : ''}
     </div>
 
     <div id="weights-section"></div>
@@ -200,6 +224,46 @@ export async function renderTeacherDashboard(container) {
       await api.saveDeadline({ ...deadline, title: newTitle });
       toast('success', 'Deadline actualizado', 'Los cambios se guardaron correctamente.');
       renderTeacherDashboard(container);
+    });
+  });
+
+  let dashboardUpdating = false;
+
+  container.querySelectorAll('.dashboard-mark-reviewed').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (dashboardUpdating) return;
+      dashboardUpdating = true;
+      btn.disabled = true;
+      const correctionId = btn.getAttribute('data-correction-id');
+      try {
+        await api.updateCorrectionStatus(activeSubjectId, correctionId, 'reviewed');
+        toast('success', 'Estado actualizado', 'La corrección fue marcada como revisada.');
+        renderTeacherDashboard(container);
+      } catch (err) {
+        toast('error', 'Error', err.message || 'No se pudo actualizar el estado.');
+        btn.disabled = false;
+        dashboardUpdating = false;
+      }
+    });
+  });
+
+  container.querySelectorAll('.dashboard-mark-resolved').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (dashboardUpdating) return;
+      dashboardUpdating = true;
+      btn.disabled = true;
+      const correctionId = btn.getAttribute('data-correction-id');
+      try {
+        await api.updateCorrectionStatus(activeSubjectId, correctionId, 'resolved');
+        toast('success', 'Estado actualizado', 'La corrección fue marcada como resuelta.');
+        renderTeacherDashboard(container);
+      } catch (err) {
+        toast('error', 'Error', err.message || 'No se pudo actualizar el estado.');
+        btn.disabled = false;
+        dashboardUpdating = false;
+      }
     });
   });
 

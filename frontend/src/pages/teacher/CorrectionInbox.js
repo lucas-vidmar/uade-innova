@@ -3,6 +3,23 @@ import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
 import { toast } from '../../components/Toast.js';
 
+function statusBadge(status) {
+  const map = {
+    pending: '<span class="badge badge-error">Pendiente</span>',
+    reviewed: '<span class="badge badge-warning">Revisado</span>',
+    resolved: '<span class="badge badge-success">Resuelto</span>',
+    verified: '<span class="badge badge-primary">Verificado</span>',
+  };
+  return map[status] || `<span class="badge badge-neutral">${escapeHtml(status)}</span>`;
+}
+
+function statusLabel(status) {
+  const map = { pending: 'Pendiente', reviewed: 'Revisado', resolved: 'Resuelto', verified: 'Verificado' };
+  return map[status] || status;
+}
+
+const STATUS_ORDER = { pending: 0, reviewed: 1, resolved: 2, verified: 3 };
+
 export async function renderCorrectionInbox(container) {
   renderHeader('Bandeja de Correcciones');
   container.innerHTML = '<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando correcciones...</div>';
@@ -16,14 +33,16 @@ export async function renderCorrectionInbox(container) {
 
   let corrections = [];
   let classes = [];
+  let loadError = false;
   try {
     [classes = [], corrections = []] = await Promise.all([
       api.getClasses(activeSubjectId),
-      api.getCorrectionsPending(activeSubjectId),
+      api.getCorrectionsPending(activeSubjectId, undefined, 'all'),
     ]);
   } catch (err) {
     console.error('[CorrectionInbox] Failed to load corrections:', err);
-    toast('error', 'Error cargando correcciones', 'No se pudieron cargar los reportes pendientes. Intentá de nuevo.');
+    toast('error', 'Error cargando correcciones', 'No se pudieron cargar los reportes. Intentá de nuevo.');
+    loadError = true;
     try {
       classes = await api.getClasses(activeSubjectId);
     } catch (classErr) {
@@ -31,12 +50,53 @@ export async function renderCorrectionInbox(container) {
     }
   }
 
+  corrections.sort((a, b) => {
+    const aOrder = STATUS_ORDER[a.status] ?? 99;
+    const bOrder = STATUS_ORDER[b.status] ?? 99;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+  });
+
   const classMap = {};
   for (const c of classes) {
     classMap[c.id] = c.title;
   }
 
   let selectedClassId = '';
+
+  let updatingIds = new Set();
+
+  async function handleStatusChange(correctionId, newStatus) {
+    if (updatingIds.has(correctionId)) return;
+    updatingIds.add(correctionId);
+
+    const btns = container.querySelectorAll(`[data-correction-id="${escapeHtml(correctionId)}"]`);
+    btns.forEach(b => b.disabled = true);
+
+    try {
+      const result = await api.updateCorrectionStatus(activeSubjectId, correctionId, newStatus);
+      if (result.success) {
+        const idx = corrections.findIndex(c => c.correctionId === correctionId);
+        if (idx !== -1) {
+          corrections[idx].status = newStatus;
+        }
+        corrections.sort((a, b) => {
+          const aOrder = STATUS_ORDER[a.status] ?? 99;
+          const bOrder = STATUS_ORDER[b.status] ?? 99;
+          if (aOrder !== bOrder) return aOrder - bOrder;
+          return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+        });
+        const msg = newStatus === 'reviewed' ? 'marcada como revisada' : 'marcada como resuelta';
+        toast('success', 'Estado actualizado', `La corrección fue ${msg}.`);
+        render();
+      }
+    } catch (err) {
+      toast('error', 'Error', err.message || 'No se pudo actualizar el estado.');
+      btns.forEach(b => b.disabled = false);
+    } finally {
+      updatingIds.delete(correctionId);
+    }
+  }
 
   function renderList(classId) {
     const filtered = classId
@@ -47,19 +107,21 @@ export async function renderCorrectionInbox(container) {
     if (!listEl) return;
 
     if (filtered.length === 0) {
-      listEl.innerHTML = '<div class="empty-state" style="padding:24px">No hay reportes pendientes para esta clase.</div>';
+      listEl.innerHTML = '<div class="empty-state" style="padding:24px">No hay reportes para esta clase.</div>';
       return;
     }
 
     listEl.innerHTML = filtered.map(c => {
-      const date = c.createdAt
-        ? new Date(c.createdAt).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-        : '---';
+      const date = c.createdAt ? (() => {
+        const d = new Date(c.createdAt);
+        return isNaN(d.getTime()) ? '---' : d.toLocaleDateString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+      })() : '---';
       const classTitle = classMap[c.classId] || c.classId || 'Sin clase';
       const answerExcerpt = (c.originalAnswer || '').slice(0, 240);
+      const isActionable = c.status === 'pending' || c.status === 'reviewed';
 
       return `
-        <div class="class-list-item" style="align-items:flex-start;cursor:pointer" data-correction-id="${escapeHtml(c.correctionId)}">
+        <div class="class-list-item" style="align-items:flex-start">
           <div class="class-list-date" style="min-width:40px">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--color-warning)">
               <path d="M10.3 3.86 1.82 18a2 2 0 0 0 1.72 3h16.92a2 2 0 0 0 1.72-3L13.7 3.86a2 2 0 0 0-3.4 0Z"/>
@@ -74,8 +136,19 @@ export async function renderCorrectionInbox(container) {
               ${c.issueDetail ? `· "${escapeHtml(c.issueDetail)}"` : ''}
             </div>
           </div>
-          <div class="class-list-actions">
-            <span class="badge badge-error">${c.status === 'pending' ? 'Pendiente' : c.status}</span>
+          <div class="class-list-actions" style="gap:var(--space-2)">
+            ${statusBadge(c.status)}
+            <div style="display:flex;gap:var(--space-2);margin-top:var(--space-2)">
+              ${c.status === 'pending' ? `
+                <button class="btn btn-secondary btn-sm btn-mark-reviewed" data-correction-id="${escapeHtml(c.correctionId)}">Revisado</button>
+              ` : ''}
+              ${isActionable ? `
+                <button class="btn btn-secondary btn-sm btn-mark-resolved" data-correction-id="${escapeHtml(c.correctionId)}">Resuelto</button>
+              ` : ''}
+              ${c.status === 'pending' ? `
+                <a href="#/teacher/correction/${escapeHtml(c.correctionId)}" class="btn btn-primary btn-sm">Corregir</a>
+              ` : ''}
+            </div>
           </div>
         </div>
       `;
@@ -83,6 +156,10 @@ export async function renderCorrectionInbox(container) {
   }
 
   function render() {
+    const totalPending = corrections.filter(c => c.status === 'pending').length;
+    const totalReviewed = corrections.filter(c => c.status === 'reviewed').length;
+    const totalResolved = corrections.filter(c => c.status === 'resolved' || c.status === 'verified').length;
+
     const classOptions = [
       '<option value="">Todas las clases</option>',
       ...classes.map(c => {
@@ -95,6 +172,23 @@ export async function renderCorrectionInbox(container) {
     container.innerHTML = `
       <div class="section-title"><h2>Reportes de Calidad IA</h2><div class="line"></div></div>
 
+      ${loadError ? '<div style="padding:var(--space-3);margin-bottom:var(--space-4);background:var(--color-error-bg);border-radius:var(--radius-md);color:var(--color-error);text-align:center">Error al cargar algunos datos. Los reportes pueden estar incompletos.</div>' : ''}
+
+      <div class="grid-3" style="margin-bottom:var(--space-6)">
+        <div class="kpi-card">
+          <div class="kpi-label">Pendientes</div>
+          <div class="kpi-value" style="color:var(--color-error)">${totalPending}</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Revisados</div>
+          <div class="kpi-value" style="color:var(--color-warning)">${totalReviewed}</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Resueltos</div>
+          <div class="kpi-value" style="color:var(--color-success)">${totalResolved}</div>
+        </div>
+      </div>
+
       <div class="card" style="margin-bottom:var(--space-6)">
         <div class="card-header">
           <span class="card-title">Filtrar por clase</span>
@@ -105,15 +199,15 @@ export async function renderCorrectionInbox(container) {
           </select>
           <span class="badge badge-warning" style="margin-left:var(--space-3)">
             ${selectedClassId
-              ? corrections.filter(c => c.classId === selectedClassId).length
-              : corrections.length} pendientes
+              ? corrections.filter(c => c.classId === selectedClassId && c.status === 'pending').length
+              : totalPending} pendientes
           </span>
         </div>
       </div>
 
       <div class="card">
         <div class="card-header">
-          <span class="card-title">Correcciones Pendientes</span>
+          <span class="card-title">Correcciones</span>
           <span class="badge badge-error">${corrections.length}</span>
         </div>
         <div class="class-list" id="corrections-list">
@@ -129,12 +223,19 @@ export async function renderCorrectionInbox(container) {
 
     renderList(selectedClassId);
 
-    // Attach click handlers to correction rows for Story 4.2 navigation
-    container.querySelectorAll('#corrections-list .class-list-item[data-correction-id]').forEach(row => {
-      row.addEventListener('click', () => {
-        const correctionId = row.getAttribute('data-correction-id');
-        // Navigate to correction detail form (Story 4.2 placeholder)
-        window.location.hash = `#/teacher/correction/${correctionId}`;
+    container.querySelectorAll('.btn-mark-reviewed').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const correctionId = btn.getAttribute('data-correction-id');
+        handleStatusChange(correctionId, 'reviewed');
+      });
+    });
+
+    container.querySelectorAll('.btn-mark-resolved').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const correctionId = btn.getAttribute('data-correction-id');
+        handleStatusChange(correctionId, 'resolved');
       });
     });
   }

@@ -1772,7 +1772,7 @@ async getTeacherAiFeedbackAlerts(subjectId, limit = 10) {
              }
          },
 
-    async getCorrectionsPending(subjectId, classId) {
+    async getCorrectionsPending(subjectId, classId, status) {
             if (!subjectId) return [];
             if (USE_MOCK) {
                 await delay(250);
@@ -1781,10 +1781,10 @@ async getTeacherAiFeedbackAlerts(subjectId, limit = 10) {
             try {
                 const params = new URLSearchParams({ subjectId });
                 if (classId) params.append('classId', classId);
+                if (status) params.append('status', status);
                 const res = await fetchWithTimeout(`${BASE_URL}/corrections-pending?${params.toString()}`, { timeout: 4000 });
                 if (!res.ok) {
-                    const body = await res.text();
-                    throw new Error(`Server error ${res.status}: ${body}`);
+                    throw new Error(`Error del servidor (${res.status}) al cargar correcciones.`);
                 }
                 const json = await res.json();
                 return json.data || [];
@@ -1811,6 +1811,24 @@ async getTeacherAiFeedbackAlerts(subjectId, limit = 10) {
              }
              return res.json();
          },
+
+     async updateCorrectionStatus(subjectId, correctionId, status) {
+              if (USE_MOCK) {
+                  await delay(300);
+                  return { success: true, data: { correctionId, status } };
+              }
+              const res = await apiFetch(`${BASE_URL}/corrections-status`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ correctionId, subjectId, status }),
+              });
+              if (!res.ok) {
+                  let message = 'Error al actualizar estado';
+                  try { const err = await res.json(); if (err?.error?.message) message = err.error.message; } catch {}
+                  throw new Error(message);
+              }
+              return res.json();
+          },
 
      async getCorrection(subjectId, correctionId) {
              if (USE_MOCK) {

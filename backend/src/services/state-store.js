@@ -441,6 +441,67 @@ export async function listPendingCorrections(subjectId) {
   return all.map(fromCorrectionEntity);
 }
 
+export async function listCorrections(subjectId, statusFilter) {
+  if (!subjectId) return [];
+  await ensureTable(CORRECTIONS_TABLE);
+  const client = getTableClient(CORRECTIONS_TABLE);
+  const filter = `PartitionKey eq '${escapeODataValue(subjectId)}'`;
+  const all = [];
+  for await (const entity of client.listEntities({ queryOptions: { filter } })) {
+    if (!statusFilter || entity.status === statusFilter) {
+      all.push(entity);
+    }
+  }
+  all.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  return all.map(fromCorrectionEntity);
+}
+
+export async function updateCorrectionStatus(subjectId, correctionId, newStatus) {
+  if (!subjectId || !correctionId || !newStatus) {
+    throw new Error('updateCorrectionStatus requires subjectId, correctionId, and newStatus');
+  }
+
+  const correction = await getCorrection(subjectId, correctionId);
+  if (!correction) {
+    throw new Error('Corrección no encontrada.');
+  }
+
+  const validStatuses = ['pending', 'reviewed', 'resolved', 'verified'];
+  if (!validStatuses.includes(newStatus)) {
+    throw new Error(`Estado inválido: ${newStatus}`);
+  }
+
+  correction.status = newStatus;
+  if (newStatus === 'resolved' || newStatus === 'verified') {
+    correction.resolvedAt = new Date().toISOString();
+  }
+
+  const mainEntity = toCorrectionEntity(correction);
+  await ensureTable(CORRECTIONS_TABLE);
+  const client = getTableClient(CORRECTIONS_TABLE);
+  await client.upsertEntity(mainEntity, 'Replace');
+
+  // Sync CorrectionsPending table: remove if no longer pending, add if now pending
+  await ensureTable(CORRECTIONS_PENDING_TABLE);
+  const pendingClient = getTableClient(CORRECTIONS_PENDING_TABLE);
+  if (newStatus !== 'pending') {
+    try {
+      await pendingClient.deleteEntity('pending', correctionId);
+    } catch (err) {
+      if (err.statusCode !== 404) throw err;
+    }
+  } else {
+    try {
+      await pendingClient.getEntity('pending', correctionId);
+    } catch {
+      const pendingEntity = toCorrectionPendingEntity(correction);
+      await pendingClient.upsertEntity(pendingEntity, 'Replace');
+    }
+  }
+
+  return correction;
+}
+
 // ─── Transcription Corrections Operations ─────────────────────
 
 export async function listTranscriptionSuggestions(subjectId, statusFilter = 'all') {

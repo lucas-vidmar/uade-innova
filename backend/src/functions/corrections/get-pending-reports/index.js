@@ -1,6 +1,6 @@
 import { app } from '@azure/functions';
 import { validateFrontDoorId, parseClientPrincipal } from '../../../services/auth-utils.js';
-import { getEnrollment, listPendingCorrections } from '../../../services/state-store.js';
+import { getEnrollment, listPendingCorrections, listCorrections } from '../../../services/state-store.js';
 
 function canReadTeacherAlerts(principal) {
   if (process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development') return true;
@@ -59,6 +59,7 @@ app.http('get-pending-reports', {
 
     const subjectId = request.query.get('subjectId');
     const classId = request.query.get('classId');
+    const statusFilter = request.query.get('status');
 
     if (!subjectId) {
       return {
@@ -100,7 +101,33 @@ app.http('get-pending-reports', {
     }
 
     try {
-      const corrections = await listPendingCorrections(subjectId);
+      let corrections;
+      if (statusFilter === 'all') {
+        corrections = await listCorrections(subjectId);
+      } else if (statusFilter) {
+        const validFilters = ['pending', 'reviewed', 'resolved', 'verified'];
+        if (!validFilters.includes(statusFilter)) {
+          return {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              success: false,
+              error: { code: 'INVALID_STATUS', message: `Filtro de estado inválido: ${statusFilter}. Valores permitidos: ${validFilters.join(', ')}.` },
+            }),
+          };
+        }
+        corrections = await listCorrections(subjectId, statusFilter);
+      } else {
+        corrections = await listPendingCorrections(subjectId);
+      }
+
+      const statusOrder = { pending: 0, reviewed: 1, resolved: 2, verified: 3 };
+      corrections.sort((a, b) => {
+        const aOrder = statusOrder[a.status] ?? 99;
+        const bOrder = statusOrder[b.status] ?? 99;
+        if (aOrder !== bOrder) return aOrder - bOrder;
+        return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+      });
 
       let data = corrections.map((c) => ({
         correctionId: c.correctionId,
