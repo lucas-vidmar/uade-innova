@@ -89,11 +89,19 @@ export async function renderDirectorSatAnalytics(container) {
               <th>Positivas</th>
               <th>SAT Score</th>
               <th>Barra</th>
+              <th>Ganador</th>
             </tr>
           </thead>
           <tbody>
             ${segments.map(s => {
       const pct = Math.max(0, Math.min(100, Math.round((s.satScore || 0) * 100)));
+      const w = satData?.winner || { state: 'insufficient_data' };
+      const isWinner = w.state === 'declared' && w.winnerPromptVersion === s.promptVersion;
+      const badge = isWinner
+        ? '<span class="badge badge-success" style="font-size:0.8rem">✓ Ganador</span>'
+        : w.state === 'tie'
+          ? '<span class="badge badge-warning" style="font-size:0.8rem">Empate</span>'
+          : '<span class="badge badge-secondary" style="font-size:0.8rem">Insuficiente</span>';
       return `
               <tr>
                 <td><code>${esc(s.promptVersion)}</code></td>
@@ -105,6 +113,7 @@ export async function renderDirectorSatAnalytics(container) {
                     <div class="progress-fill" style="--progress-value:${pct}%;background:var(--color-success)"></div>
                   </div>
                 </td>
+                <td>${badge}</td>
               </tr>
             `;
     }).join('')}
@@ -141,7 +150,7 @@ export async function renderDirectorSatAnalytics(container) {
       container.querySelector('#sat-segments-card').innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Filtrando...</div>`;
       try {
         const result = await api.getSatAnalytics({ subjectId: activeSubjectId, classId: selectedClassId, days: selectedDays });
-        renderSegmentsTable(container, result.segments || [], result.total || 0);
+        renderSegmentsTable(container, result.segments || [], result.total || 0, result.winner);
       } catch (err) {
         console.error('[SAT] Error filtering:', err);
         container.querySelector('#sat-segments-card').innerHTML = `<div class="empty-state" style="padding:20px">Error al filtrar datos SAT.</div>`;
@@ -160,7 +169,8 @@ export async function renderDirectorSatAnalytics(container) {
   }
 }
 
-function renderSegmentsTable(container, segments, total) {
+function renderSegmentsTable(container, segments, total, winner) {
+  const w = winner || { state: 'insufficient_data' };
   const card = container.querySelector('#sat-segments-card');
   if (!card) return;
 
@@ -199,11 +209,18 @@ function renderSegmentsTable(container, segments, total) {
             <th>Positivas</th>
             <th>SAT Score</th>
             <th>Barra</th>
+            <th>Ganador</th>
           </tr>
         </thead>
         <tbody>
           ${segments.map(s => {
     const pct = Math.max(0, Math.min(100, Math.round((s.satScore || 0) * 100)));
+    const isWinner = w.state === 'declared' && w.winnerPromptVersion === s.promptVersion;
+    const badge = isWinner
+      ? '<span class="badge badge-success" style="font-size:0.8rem">✓ Ganador</span>'
+      : w.state === 'tie'
+        ? '<span class="badge badge-warning" style="font-size:0.8rem">Empate</span>'
+        : '<span class="badge badge-secondary" style="font-size:0.8rem">Insuficiente</span>';
     return `
             <tr>
               <td><code>${esc(s.promptVersion)}</code></td>
@@ -215,6 +232,7 @@ function renderSegmentsTable(container, segments, total) {
                   <div class="progress-fill" style="--progress-value:${pct}%;background:var(--color-success)"></div>
                 </div>
               </td>
+              <td>${badge}</td>
             </tr>
           `;
   }).join('')}

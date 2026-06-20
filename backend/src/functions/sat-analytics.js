@@ -1,6 +1,7 @@
 import { validateFrontDoorId, parseClientPrincipal, getAuthenticatedUser } from '../services/auth-utils.js';
 import { getEnrollment, RATINGS_TABLE } from '../services/state-store.js';
 import { getTableClient } from '../services/storage.js';
+import { computeWinner } from '../services/significance.js';
 import { app } from '@azure/functions';
 
 app.http('get-sat-analytics', {
@@ -66,10 +67,13 @@ app.http('get-sat-analytics', {
                 seg.satScore = seg.rated > 0 ? Math.round((seg.positive / seg.rated) * 100) / 100 : 0;
             }
 
+            const minRated = Number(process.env.SAT_MIN_RATED_THRESHOLD) || 10;
+            const winner = computeWinner(resultArray, minRated);
+
             return {
                 status: 200,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ segments: resultArray, total: entities.length, filter: { subjectId, classId: classId || null, windowDays: days } }),
+                body: JSON.stringify({ segments: resultArray, total: entities.length, filter: { subjectId, classId: classId || null, windowDays: days }, winner }),
             };
         } catch (err) {
             context.error(`[sat-analytics] Error subjectId=${subjectId} classId=${classId || 'none'}:`, err);

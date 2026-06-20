@@ -1689,7 +1689,12 @@ export const api = {
                     { promptVersion: 'v2', rated: 8, positive: 7, satScore: 0.875 },
                 ];
                 const filtered = classId ? segments.filter(() => false) : [];
-                return { segments: filtered, total: filtered.reduce((s, x) => s + x.rated, 0), filter: { subjectId, classId: classId || null, windowDays: days || 30 } };
+                return {
+                    segments: filtered,
+                    total: filtered.reduce((s, x) => s + x.rated, 0),
+                    filter: { subjectId, classId: classId || null, windowDays: days || 30 },
+                    winner: { state: 'insufficient_data', reason: 'insufficient_data_both' },
+                };
             }
             let url = `${BASE_URL}/sat-analytics?subjectId=${encodeURIComponent(subjectId)}`;
             if (classId) url += `&classId=${encodeURIComponent(classId)}`;
