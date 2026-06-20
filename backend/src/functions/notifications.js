@@ -208,9 +208,10 @@ app.http('mark-notification-read', {
       if (!target) return { status: 404, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Notification not found for subject' }) };
       if (!canReceiveNotification(target, userId)) return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Notification does not belong to user' }) };
 
-      await notificationStore.markNotificationReadForUser(subjectId, notificationId, userId);
-      context.log(`[notifications] marked as read id=${notificationId} subjectId=${subjectId} userId=${userId}`);
+      const { success: marked, retryAttempts } = await notificationStore.markNotificationReadForUser(subjectId, notificationId, userId);
+      context.log(`[notifications] marked as read id=${notificationId} subjectId=${subjectId} userId=${userId} retryAttempts=${retryAttempts}`);
       trackNotificationInteraction({ action: 'mark_read', status: 'success', userId, subjectId, notificationId }).catch((err) => context.error('[Telemetry] Error emitting NotificationInteraction:', err));
+      if (!marked) return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Failed to persist read status' }) };
       return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: notificationId, unread: false }) };
     } catch (err) {
       context.error(`[notifications] failed to mark read id=${notificationId} subjectId=${subjectId}: ${err.message}`);
@@ -385,7 +386,7 @@ app.http('mark-notifications-read', {
           target = notifications.find((item) => item.id === notificationId);
         }
         if (!target || !canReceiveNotification(target, userId)) continue;
-        const marked = await notificationStore.markNotificationReadForUser(subjectId, notificationId, userId);
+        const { success: marked } = await notificationStore.markNotificationReadForUser(subjectId, notificationId, userId);
         if (marked) updated += 1;
       }
 

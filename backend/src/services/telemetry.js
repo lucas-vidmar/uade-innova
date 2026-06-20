@@ -225,6 +225,8 @@ export async function trackUserLogin({ userId, roles = [] }) {
  * @param {number} params.skipped         - Items skipped (future date, not ready, etc.)
  * @param {number} params.errors          - Count of errors caught during the run
  * @param {number} params.durationMs      - Wall-clock execution time in milliseconds
+ * @param {number} [params.retryAttempts] - Total retry attempts across all upsert operations
+ * @param {number} [params.deadLetterWrites] - Total dead-letter blobs written due to exhaustion
  * @param {string} [params.errorDetails]  - Concatenated error context for troubleshooting (subjectId/classId)
  */
 export async function trackDispatcherRun({
@@ -234,6 +236,8 @@ export async function trackDispatcherRun({
     dispatched = 0,
     skipped = 0,
     errors = 0,
+    retryAttempts = 0,
+    deadLetterWrites = 0,
     durationMs = 0,
     errorDetails,
 }) {
@@ -252,7 +256,41 @@ export async function trackDispatcherRun({
             dispatched: Math.max(0, Number(dispatched) || 0),
             skipped: Math.max(0, Number(skipped) || 0),
             errors: Math.max(0, Number(errors) || 0),
+            retryAttempts: Math.max(0, Number(retryAttempts) || 0),
+            deadLetterWrites: Math.max(0, Number(deadLetterWrites) || 0),
             durationMs: Math.max(0, Number(durationMs) || 0),
+        },
+    });
+}
+
+/**
+ * Tracks a dead-letter write event when a notification payload exhausts all retries.
+ *
+ * @param {object} params
+ * @param {string} params.subjectId     - Subject identifier
+ * @param {string} params.notificationId - Original notification ID
+ * @param {string} params.blobPath      - Dead-letter blob path in storage
+ * @param {number} params.retryCount    - Number of retry attempts before dead-letter
+ * @param {string} params.originalError - Truncated error message from the last saveJson attempt
+ */
+export async function trackDeadLetterWrite({
+    subjectId,
+    notificationId,
+    blobPath,
+    retryCount,
+    originalError,
+}) {
+    const client = await getClient();
+    if (!client) return;
+
+    client.trackEvent({
+        name: 'DeadLetterWrite',
+        properties: {
+            subjectId: subjectId || 'unknown',
+            notificationId: notificationId || 'unknown',
+            blobPath: blobPath || 'unknown',
+            retryCount: String(retryCount || 0),
+            originalError: originalError ? String(originalError).slice(0, 500) : '',
         },
     });
 }

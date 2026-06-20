@@ -1,6 +1,49 @@
 import { loadJson, saveJson } from './storage.js';
 
 const CONTAINER_NOTIFICATIONS = 'notifications';
+const CONTAINER_CLASS_MATERIALS = process.env.AZURE_STORAGE_CONTAINER_MATERIALS || 'class-materials';
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 200;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function saveJsonWithRetry(container, blobName, data) {
+  let lastError;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      await saveJson(container, blobName, data);
+      return { retryAttempts: attempt - 1, deadLetterWritten: false };
+    } catch (err) {
+      lastError = err;
+      if (attempt < MAX_RETRIES) {
+        await sleep(BASE_DELAY_MS * 2 ** (attempt - 1));
+      }
+    }
+  }
+
+  const subjectId = data?.subjectId || 'unknown';
+  const notificationId = data?.id || 'unknown';
+  const dlBlobName = `dead-letter/notifications/${subjectId}/${Date.now()}-${notificationId}.json`;
+  const dlPayload = {
+    originalPayload: data,
+    _dlMeta: {
+      originalError: lastError.message,
+      retryCount: MAX_RETRIES,
+      failedAt: new Date().toISOString(),
+    },
+  };
+  try {
+    await saveJson(CONTAINER_CLASS_MATERIALS, dlBlobName, dlPayload);
+    return { retryAttempts: MAX_RETRIES, deadLetterWritten: true };
+  } catch (dlErr) {
+    console.error(
+      `[notification-store] saveJson failed after ${MAX_RETRIES} retries and dead-letter write also failed: ${lastError.message} | dl: ${dlErr.message}`
+    );
+    return { retryAttempts: MAX_RETRIES, deadLetterWritten: false, dlWriteError: dlErr.message };
+  }
+}
 
 function normalizeRecipientUserIds(value) {
   if (!Array.isArray(value)) return [];
@@ -48,7 +91,7 @@ export async function listNotificationsSince(subjectId, sinceTimestamp) {
 }
 
 export async function upsertNotificationForSubject(subjectId, notification) {
-  if (!subjectId) return false;
+  if (!subjectId) return { success: false, retryAttempts: 0, deadLetterWrites: 0 };
   const current = await listNotificationsBySubject(subjectId);
   const normalized = normalizeNotification({ ...notification, subjectId }, current.length);
   const idx = current.findIndex((item) => item.id === normalized.id);
@@ -61,16 +104,20 @@ export async function upsertNotificationForSubject(subjectId, notification) {
   }
 
   next.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  await saveJson(CONTAINER_NOTIFICATIONS, `${subjectId}.json`, next);
-  return true;
+  const result = await saveJsonWithRetry(CONTAINER_NOTIFICATIONS, `${subjectId}.json`, next);
+  return {
+    success: !result.deadLetterWritten && !result.dlWriteError,
+    retryAttempts: result.retryAttempts,
+    deadLetterWrites: result.deadLetterWritten ? 1 : 0,
+  };
 }
 
 export async function markNotificationReadForUser(subjectId, notificationId, userId) {
-  if (!subjectId || !notificationId || !userId) return false;
+  if (!subjectId || !notificationId || !userId) return { success: false, retryAttempts: 0, deadLetterWrites: 0 };
 
   const current = await listNotificationsBySubject(subjectId);
   const idx = current.findIndex((item) => item.id === notificationId);
-  if (idx < 0) return false;
+  if (idx < 0) return { success: false, retryAttempts: 0, deadLetterWrites: 0 };
 
   const target = current[idx];
   const readByUserIds = normalizeReadByUserIds(target.readByUserIds);
@@ -80,6 +127,10 @@ export async function markNotificationReadForUser(subjectId, notificationId, use
 
   const next = [...current];
   next[idx] = { ...target, readByUserIds };
-  await saveJson(CONTAINER_NOTIFICATIONS, `${subjectId}.json`, next);
-  return true;
+  const result = await saveJsonWithRetry(CONTAINER_NOTIFICATIONS, `${subjectId}.json`, next);
+  return {
+    success: !result.deadLetterWritten && !result.dlWriteError,
+    retryAttempts: result.retryAttempts,
+    deadLetterWrites: result.deadLetterWritten ? 1 : 0,
+  };
 }

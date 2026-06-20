@@ -52,6 +52,8 @@ export async function runPostClassSummaryDispatcher(context = { log: () => {}, e
   let classCount = 0;
   let skipped = 0;
   let errors = 0;
+  let retryAttempts = 0;
+  let deadLetterWrites = 0;
   const errorEntries = [];
 
   for (const subjectId of subjectIds) {
@@ -68,7 +70,7 @@ export async function runPostClassSummaryDispatcher(context = { log: () => {}, e
         }
 
         const classId = String(classData.id);
-        await upsertNotificationForSubject(subjectId, {
+        const { retryAttempts: retries, deadLetterWrites: dlWrites } = await upsertNotificationForSubject(subjectId, {
           id: notificationIdForClass(subjectId, classId),
           type: 'summary',
           title: 'Resumen validado por docente',
@@ -81,6 +83,8 @@ export async function runPostClassSummaryDispatcher(context = { log: () => {}, e
           origin: 'post-class-summary-timer',
         });
 
+        retryAttempts += retries;
+        deadLetterWrites += dlWrites;
         dispatched += 1;
       } catch (err) {
         errors += 1;
@@ -92,7 +96,7 @@ export async function runPostClassSummaryDispatcher(context = { log: () => {}, e
 
   const durationMs = Date.now() - startedAt;
 
-  context.log(`[post-class-summary-dispatcher] completed; subjects=${subjectIds.length} classes=${classCount} dispatched=${dispatched} skipped=${skipped} errors=${errors} duration=${durationMs}ms`);
+  context.log(`[post-class-summary-dispatcher] completed; subjects=${subjectIds.length} classes=${classCount} dispatched=${dispatched} skipped=${skipped} errors=${errors} retryAttempts=${retryAttempts} deadLetterWrites=${deadLetterWrites} duration=${durationMs}ms`);
 
   try {
     await trackDispatcherRun({
@@ -102,6 +106,8 @@ export async function runPostClassSummaryDispatcher(context = { log: () => {}, e
       dispatched,
       skipped,
       errors,
+      retryAttempts,
+      deadLetterWrites,
       durationMs,
       errorDetails: errorEntries.length > 0 ? errorEntries.join(' | ') : undefined,
     });
@@ -109,7 +115,7 @@ export async function runPostClassSummaryDispatcher(context = { log: () => {}, e
     context.error(`[post-class-summary-dispatcher] telemetry error: ${telemetryErr.message}`);
   }
 
-  return { dispatched, subjectCount: subjectIds.length, classCount, skipped, errors, durationMs };
+  return { dispatched, subjectCount: subjectIds.length, classCount, skipped, errors, retryAttempts, deadLetterWrites, durationMs };
 }
 
 app.timer('post-class-summary-dispatcher', {

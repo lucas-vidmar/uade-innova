@@ -3,6 +3,7 @@ import moment from 'moment-timezone';
 import { listBlobs, loadJson, getTableClient } from '../services/storage.js';
 import { listNotificationsBySubject, upsertNotificationForSubject } from '../services/notification-store.js';
 import { getEnrollmentsBySubject } from '../services/state-store.js';
+import { trackDispatcherRun } from '../services/telemetry.js';
 
 const CONTAINER_DEADLINES = 'deadlines';
 const DEFAULT_TIMEZONE = 'America/Argentina/Buenos_Aires';
@@ -89,6 +90,7 @@ function buildReminderNotification({ subjectId, deadline, thresholdHours, dueAt,
 }
 
 export async function runDeadlineProximityDispatcher(context = { log: () => {}, error: () => {} }, now = new Date()) {
+  const startedAt = Date.now();
   const windowHours = normalizeWindowHours(process.env.DEADLINE_PROXIMITY_WINDOW_HOURS);
   const weightThreshold = Number(process.env.DEADLINE_HIGH_PRIORITY_WEIGHT_THRESHOLD) || 25;
   const deadlineBlobs = await listBlobs(CONTAINER_DEADLINES);
@@ -98,6 +100,10 @@ export async function runDeadlineProximityDispatcher(context = { log: () => {}, 
     .filter(Boolean);
 
   let dispatched = 0;
+  let errors = 0;
+  let retryAttempts = 0;
+  let deadLetterWrites = 0;
+  const errorEntries = [];
 
   for (const subjectId of subjectIds) {
     const deadlines = await loadJson(CONTAINER_DEADLINES, `${subjectId}.json`);
@@ -153,18 +159,41 @@ export async function runDeadlineProximityDispatcher(context = { log: () => {}, 
 
           if (existingIds.has(notification.id)) continue;
 
-          await upsertNotificationForSubject(subjectId, notification);
+          const { retryAttempts: retries, deadLetterWrites: dlWrites } = await upsertNotificationForSubject(subjectId, notification);
+          retryAttempts += retries;
+          deadLetterWrites += dlWrites;
           existingIds.add(notification.id);
           dispatched += 1;
         }
       } catch (err) {
+        errors += 1;
+        errorEntries.push(`subject=${subjectId} deadline=${deadline?.id || 'unknown'}`);
         context.error(`[deadline-proximity-dispatcher] subject=${subjectId} deadline=${deadline?.id || 'unknown'} timezone=${resolveTimezone(deadline)} error=${err.message}`);
       }
     }
   }
 
-  context.log(`[deadline-proximity-dispatcher] completed; notifications upserted=${dispatched}; subjects=${subjectIds.length}`);
-  return { dispatched, subjectCount: subjectIds.length };
+  const durationMs = Date.now() - startedAt;
+  context.log(`[deadline-proximity-dispatcher] completed; notifications upserted=${dispatched} errors=${errors} retryAttempts=${retryAttempts} deadLetterWrites=${deadLetterWrites} subjects=${subjectIds.length} duration=${durationMs}ms`);
+
+  try {
+    await trackDispatcherRun({
+      dispatcherName: 'deadline-proximity',
+      subjectCount: subjectIds.length,
+      classCount: 0,
+      dispatched,
+      skipped: 0,
+      errors,
+      retryAttempts,
+      deadLetterWrites,
+      durationMs,
+      errorDetails: errorEntries.length > 0 ? errorEntries.join(' | ') : undefined,
+    });
+  } catch (telemetryErr) {
+    context.error(`[deadline-proximity-dispatcher] telemetry error: ${telemetryErr.message}`);
+  }
+
+  return { dispatched, subjectCount: subjectIds.length, errors, retryAttempts, deadLetterWrites, durationMs };
 }
 
 app.timer('deadline-proximity-dispatcher', {

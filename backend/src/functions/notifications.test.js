@@ -9,7 +9,7 @@ const authMocks = {
 const notificationStoreMocks = {
     listNotificationsBySubject: mock.fn(async () => []),
     listNotificationsSince: mock.fn(async () => []),
-    markNotificationReadForUser: mock.fn(async () => true),
+    markNotificationReadForUser: mock.fn(async () => ({ success: true, retryAttempts: 0, deadLetterWrites: 0 })),
 };
 
 const telemetryMocks = {
