@@ -191,6 +191,123 @@ customEvents
 | order by Events desc
 ```
 
+## RAG Latency Decomposition Analysis
+
+The `RAGInteraction` event includes three latency measurements for root-cause analysis:
+
+| Measurement | Type | Description | Present in |
+|---|---|---|---|
+| `durationMs` | `customMeasurements` | Full end-to-end wall-clock latency from handler start to response completion | Stream & Blocking |
+| `networkSetupMs` | `customMeasurements` | Time spent before the LLM call: request parsing, auth, embedding, Pinecone search, context building | Stream & Blocking |
+| `ttftMs` | `customMeasurements` | Time-to-first-token: from handler start until the first content token is emitted by the LLM | Stream only |
+
+**Decomposition formula:** `durationMs ≈ networkSetupMs + (ttftMs - networkSetupMs) + postProcessingMs`
+
+For blocking mode, `ttftMs` is absent and model inference time can be approximated as `durationMs - networkSetupMs`.
+
+### Per-Interaction Latency Breakdown
+
+```kusto
+customEvents
+| where name == "RAGInteraction"
+| where timestamp between(startofday(now()) .. now())
+| project timestamp,
+          correlationId = tostring(customDimensions.correlationId),
+          subjectId = tostring(customDimensions.subjectId),
+          sourceMix = tostring(customDimensions.sourceMix),
+          durationMs = toint(customMeasurements.durationMs),
+          networkSetupMs = toint(customMeasurements.networkSetupMs),
+          ttftMs = toint(customMeasurements.ttftMs),
+          totalTokens = toint(customMeasurements.totalTokens)
+| extend
+    // Model response latency (diff between setup end and first token)
+    modelResponseMs = ttftMs - networkSetupMs,
+    // Inference-only time for blocking mode (approximate)
+    inferenceMs = durationMs - networkSetupMs,
+    // What % of total time was spent on setup/network vs model
+    setupPct = round(networkSetupMs * 100.0 / durationMs, 1),
+    modelPct = round((ttftMs - networkSetupMs) * 100.0 / ttftMs, 1)
+| order by timestamp desc
+```
+
+### Bottleneck Detection — High Setup Latency
+
+```kusto
+// Find interactions where setup/network was >50% of total time (potential Pinecone or embedding bottleneck)
+customEvents
+| where name == "RAGInteraction"
+| where timestamp > ago(24h)
+| where isnotempty(todouble(customMeasurements.networkSetupMs))
+| where todouble(customMeasurements.networkSetupMs) > 0
+| project timestamp,
+          correlationId = tostring(customDimensions.correlationId),
+          subjectId = tostring(customDimensions.subjectId),
+          sourceMix = tostring(customDimensions.sourceMix),
+          durationMs = toint(customMeasurements.durationMs),
+          networkSetupMs = toint(customMeasurements.networkSetupMs)
+| extend setupPct = round(networkSetupMs * 100.0 / durationMs, 1)
+| where setupPct > 50
+| order by setupPct desc
+```
+
+### Bottleneck Detection — High TTFT (Model Slow)
+
+```kusto
+// Find interactions with slow model response (TTFT > 5s)
+customEvents
+| where name == "RAGInteraction"
+| where timestamp > ago(24h)
+| where isnotempty(todouble(customMeasurements.ttftMs))
+| where todouble(customMeasurements.ttftMs) > 0
+| project timestamp,
+          correlationId = tostring(customDimensions.correlationId),
+          subjectId = tostring(customDimensions.subjectId),
+          durationMs = toint(customMeasurements.durationMs),
+          networkSetupMs = toint(customMeasurements.networkSetupMs),
+          ttftMs = toint(customMeasurements.ttftMs),
+          totalTokens = toint(customMeasurements.totalTokens)
+| extend modelResponseMs = ttftMs - networkSetupMs
+| where modelResponseMs > 5000
+| order by modelResponseMs desc
+```
+
+### Streaming vs Blocking Latency Comparison
+
+```kusto
+// Compare average latency profile between stream and blocking modes
+customEvents
+| where name == "RAGInteraction"
+| where timestamp > ago(7d)
+| summarize
+    Count = count(),
+    AvgDurationMs = avg(todouble(customMeasurements.durationMs)),
+    P95DurationMs = percentile(todouble(customMeasurements.durationMs), 95),
+    AvgNetworkSetupMs = avg(todouble(customMeasurements.networkSetupMs)),
+    P95NetworkSetupMs = percentile(todouble(customMeasurements.networkSetupMs), 95),
+    AvgTotalTokens = avg(todouble(customMeasurements.totalTokens)),
+    // Only stream events have ttftMs
+    AvgTTFTMs = avg(todouble(customMeasurements.ttftMs)),
+    P95TTFTMs = percentile(todouble(customMeasurements.ttftMs), 95)
+```
+
+### Subject-Level Latency Profile
+
+```kusto
+// Latency profile grouped by subject for capacity planning
+customEvents
+| where name == "RAGInteraction"
+| where timestamp > ago(7d)
+| summarize
+    Interactions = count(),
+    AvgDurationMs = round(avg(todouble(customMeasurements.durationMs)), 1),
+    AvgNetworkSetupMs = round(avg(todouble(customMeasurements.networkSetupMs)), 1),
+    AvgTTFTMs = round(avg(todouble(customMeasurements.ttftMs)), 1),
+    AvgTotalTokens = round(avg(todouble(customMeasurements.totalTokens)), 0)
+    by subjectId = tostring(customDimensions.subjectId)
+| extend setupPct = round(AvgNetworkSetupMs * 100.0 / AvgDurationMs, 1)
+| order by AvgDurationMs desc
+```
+
 ## Ingestion Failures
 
 ```kusto

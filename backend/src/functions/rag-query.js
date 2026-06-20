@@ -629,6 +629,8 @@ ${contextText}
                     let firstTokenAt = null;
                     let ttftMs = null;
 
+                    const networkSetupMs = Date.now() - startTime;
+
                     try {
                         const stream = await chatCompletion(messages, true, { headers: openAiHeaders });
                         for await (const chunk of stream) {
@@ -637,7 +639,7 @@ ${contextText}
                                 if (!firstTokenAt) {
                                     firstTokenAt = new Date().toISOString();
                                     ttftMs = Date.now() - startTime;
-                                    context.log(`[Telemetry] TTFT captured: ${ttftMs}ms | interactionId=${interactionId}`);
+                                    context.log(`[Telemetry] TTFT captured: ${ttftMs}ms | networkSetupMs: ${networkSetupMs}ms | interactionId=${interactionId}`);
                                 }
                                 fullAnswer += delta;
                                 controller.enqueue(encoder.encode(`event: delta\ndata: ${JSON.stringify({ content: delta })}\n\n`));
@@ -662,6 +664,7 @@ ${contextText}
                             completionTokens: finalUsage?.completion_tokens || 0,
                             totalTokens: totalInteractionTokens,
                             durationMs,
+                            networkSetupMs,
                             ttftMs,
                             promptVersion: promptId,
                             interactionId,
@@ -737,6 +740,7 @@ ${contextText}
         }
 
         // ── Standard Blocking Mode (Legacy) ───────────────────────
+        const networkSetupMs = Date.now() - startTime;
         let answer;
         let chatUsage;
         try {
@@ -778,6 +782,7 @@ ${contextText}
             completionTokens: chatUsage?.completion_tokens || 0,
             totalTokens: totalInteractionTokens,
             durationMs,
+            networkSetupMs,
             promptVersion: promptId,
             interactionId: uuidv4(),
             filterType,

@@ -53,6 +53,7 @@ async function getClient() {
  * @param {number} params.completionTokens  - Tokens consumed in the completion
  * @param {number} params.totalTokens       - Total tokens (prompt + completion)
  * @param {number} params.durationMs        - Wall-clock latency of the full RAG pipeline (ms)
+ * @param {number} [params.networkSetupMs]  - Latency of the network/setup phase before the LLM call (ms)
  * @param {number} [params.ttftMs]          - Time to first token in stream mode (ms)
  * @param {string} params.promptVersion     - A/B prompt version ID (Issue #80)
  * @param {string} [params.interactionId]   - Unique ID for this chat turn
@@ -68,6 +69,7 @@ export async function trackRAGInteraction({
     completionTokens,
     totalTokens,
     durationMs,
+    networkSetupMs,
     ttftMs,
     promptVersion,
     interactionId,
@@ -97,6 +99,7 @@ export async function trackRAGInteraction({
             completionTokens: completionTokens || 0,
             totalTokens: totalTokens || 0,
             durationMs: durationMs || 0,
+            networkSetupMs: Number.isFinite(networkSetupMs) ? networkSetupMs : 0,
             ttftMs: Number.isFinite(ttftMs) ? ttftMs : 0,
             selectedClassCount: Number.isFinite(selectedClassCount) ? selectedClassCount : 0,
         },
