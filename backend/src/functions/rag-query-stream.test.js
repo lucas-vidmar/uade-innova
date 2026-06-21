@@ -147,6 +147,102 @@ test('rag-query should stream SSE when stream=true', async (t) => {
     assert.ok(Boolean(telemetryPayload.firstTokenAt), 'Should include firstTokenAt timestamp');
 });
 
+test('rag-query stream should abort cleanly on AbortError', async () => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.generateEmbedding.mock.resetCalls();
+    telemetryMocks.trackRAGError.mock.resetCalls();
+
+    // Make chatCompletion throw AbortError on stream call
+    openaiMocks.chatCompletion.mock.mockImplementation(async (messages, stream) => {
+        if (!stream) return { content: 'sync', usage: { total_tokens: 10 } };
+        const abortErr = new Error('The operation was aborted');
+        abortErr.name = 'AbortError';
+        throw abortErr;
+    });
+
+    const mockContext = {
+        log: mock.fn(),
+        error: mock.fn()
+    };
+
+    const mockRequest = {
+        json: async () => ({
+            question: 'Test abort?',
+            subjectId: 'materia1',
+            stream: true
+        }),
+        user: { id: 'test-user' },
+        signal: { aborted: false, addEventListener: () => {} }
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(response.headers['Content-Type'], 'text/event-stream');
+
+    // Read stream to verify clean close (no error event)
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let allText = '';
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        allText += decoder.decode(value);
+    }
+
+    // Should NOT contain an error event
+    assert.ok(!allText.includes('event: error'), 'Should not emit error SSE event on abort');
+    assert.strictEqual(telemetryMocks.trackRAGError.mock.callCount(), 1, 'Should emit exactly one RAG error telemetry event on abort');
+});
+
+test('rag-query stream should complete normally with signal present', async () => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.generateEmbedding.mock.resetCalls();
+
+    openaiMocks.chatCompletion.mock.mockImplementation(async (messages, stream) => {
+        if (!stream) return { content: 'sync', usage: { total_tokens: 10 } };
+        return (async function* () {
+            yield { choices: [{ delta: { content: 'Normal ' } }] };
+            yield { choices: [{ delta: { content: 'response' } }] };
+            yield { usage: { prompt_tokens: 5, completion_tokens: 5, total_tokens: 10 } };
+        })();
+    });
+
+    const mockContext = {
+        log: mock.fn(),
+        error: mock.fn()
+    };
+
+    const mockRequest = {
+        json: async () => ({
+            question: 'Normal test?',
+            subjectId: 'materia1',
+            stream: true
+        }),
+        user: { id: 'test-user' },
+        signal: { aborted: false }
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(response.headers['Content-Type'], 'text/event-stream');
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let allText = '';
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        allText += decoder.decode(value);
+    }
+
+    assert.ok(allText.includes('event: metadata'), 'Should have metadata event');
+    assert.ok(allText.includes('event: delta'), 'Should have delta events');
+    assert.ok(allText.includes('event: done'), 'Should have done event');
+    assert.ok(allText.includes('"answer":"Normal response"'), 'Should contain final answer in done event');
+});
+
 test('rag-query stream should rewrite follow-up question before retrieval', async () => {
     openaiMocks.generateEmbedding.mock.resetCalls();
     openaiMocks.chatCompletion.mock.resetCalls();

@@ -139,7 +139,7 @@ export async function chatCompletion(messages, stream = false, overrides = {}) {
     const client = getChatClient();
     const isDeepSeek = !(client instanceof AzureOpenAI);
     
-    const { headers, ...modelOverrides } = overrides || {};
+    const { headers, signal, ...modelOverrides } = overrides || {};
     
     // Si es DeepSeek, usamos el nombre del modelo de Foundry. Si es Azure OpenAI, el deployment.
     const model = isDeepSeek 
@@ -157,10 +157,10 @@ export async function chatCompletion(messages, stream = false, overrides = {}) {
 
     try {
         if (stream) {
-            return await client.chat.completions.create(options, { headers });
+            return await client.chat.completions.create(options, { headers, signal });
         }
 
-        const response = await client.chat.completions.create(options, { headers });
+        const response = await client.chat.completions.create(options, { headers, signal });
         return {
             content: response.choices[0].message.content,
             usage: response.usage

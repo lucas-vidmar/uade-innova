@@ -628,8 +628,14 @@ ${contextText}
 
                     const networkSetupMs = Date.now() - startTime;
 
+                    if (request.signal?.aborted) {
+                        context.log(`[RAG] Client already disconnected before stream start — aborting immediately`);
+                        try { controller.close(); } catch (_) {}
+                        return;
+                    }
+
                     try {
-                        const stream = await chatCompletion(messages, true, { headers: dependencyHeaders });
+                        const stream = await chatCompletion(messages, true, { headers: dependencyHeaders, signal: request.signal });
                         for await (const chunk of stream) {
                             const delta = chunk.choices?.[0]?.delta?.content || '';
                             if (delta) {
@@ -706,6 +712,23 @@ ${contextText}
                         controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ usage: finalUsage, answer: fullAnswer })}\n\n`));
                         controller.close();
                     } catch (err) {
+                        if (err?.name === 'AbortError' || err?.code === 'ABORT_ERR') {
+                            const latencyBeforeAbortMs = Date.now() - startTime;
+                            const charsGenerated = fullAnswer?.length || 0;
+                            const estimatedTokens = Math.round(charsGenerated / 4);
+                            context.log(`[RAG] Stream aborted by client disconnect — interactionId=${interactionId}, subjectId=${subjectId}, chars=${charsGenerated}, latency=${latencyBeforeAbortMs}ms`);
+                            trackRAGError({
+                                errorCategory: 'CLIENT_ABORT',
+                                code: 'STREAM_ABORTED',
+                                message: `Stream aborted after ${latencyBeforeAbortMs}ms, ${estimatedTokens} estimated tokens sent`,
+                                subjectId,
+                                userId,
+                                classIds,
+                                correlationId,
+                            }).catch(e => context.error('[Telemetry] Error emitting RAGErrorCategorized (CLIENT_ABORT):', e));
+                            try { controller.close(); } catch (_) {}
+                            return;
+                        }
                         const categorizedError = normalizeCategorizedError(err, ErrorCategory.LLM);
                         context.error('Error durante el stream:', categorizedError);
                         trackRAGError({
