@@ -4,6 +4,11 @@ import { getTableClient } from '../services/storage.js';
 import { downloadFile } from '../services/storage.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { v4 as uuidv4 } from 'uuid';
+import { readFileSync, existsSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const CONSENT_TABLE = 'UserConsent';
 const LEGAL_CONTAINER = 'legal';
@@ -143,6 +148,19 @@ app.http('consent-post', {
     }),
 });
 
+function loadTermsFromDisk() {
+    const localPaths = [
+        resolve(__dirname, '../../../legal/terms-v1.md'),
+        resolve(process.cwd(), 'legal/terms-v1.md'),
+    ];
+    for (const p of localPaths) {
+        if (existsSync(p)) {
+            return readFileSync(p, 'utf-8');
+        }
+    }
+    return null;
+}
+
 app.http('terms-get', {
     methods: ['GET'],
     route: 'terms',
@@ -153,28 +171,37 @@ app.http('terms-get', {
 
         context.log(`[Consent] GET terms`);
 
+        // 1. Try Blob Storage first
         try {
             const content = await downloadFile(LEGAL_CONTAINER, 'terms-v1.md');
-            if (!content) {
-                return jsonResponse(404, {
-                    success: false,
-                    error: { code: 'TERMS_NOT_FOUND', message: 'No se encontraron los términos de uso.' },
+            if (content) {
+                const text = content.toString('utf-8');
+                return jsonResponse(200, {
+                    success: true,
+                    data: { content: text, version: 'v1' },
                     meta: { timestamp: new Date().toISOString(), requestId: correlationId },
                 });
             }
-            const text = content.toString('utf-8');
+        } catch (error) {
+            context.warn('[Consent] Blob download failed, trying local fallback:', error.message);
+        }
+
+        // 2. Fallback: read from local disk (development)
+        const localContent = loadTermsFromDisk();
+        if (localContent) {
+            context.log('[Consent] Served terms from local filesystem');
             return jsonResponse(200, {
                 success: true,
-                data: { content: text, version: 'v1' },
-                meta: { timestamp: new Date().toISOString(), requestId: correlationId },
-            });
-        } catch (error) {
-            context.error('[Consent] Error fetching terms:', error);
-            return jsonResponse(500, {
-                success: false,
-                error: { code: 'TERMS_NOT_FOUND', message: 'No se encontraron los términos de uso.' },
+                data: { content: localContent, version: 'v1' },
                 meta: { timestamp: new Date().toISOString(), requestId: correlationId },
             });
         }
+
+        // 3. Not found anywhere
+        return jsonResponse(404, {
+            success: false,
+            error: { code: 'TERMS_NOT_FOUND', message: 'No se encontraron los términos de uso.' },
+            meta: { timestamp: new Date().toISOString(), requestId: correlationId },
+        });
     }),
 });
