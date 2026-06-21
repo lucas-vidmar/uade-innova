@@ -117,4 +117,5 @@ development_status:
   10-8-surface-localstorage-write-failures: done
   10-9-file-size-guard: done
   10-5-exclude-mock-data-from-production-bundle: done
+  10-7-extract-rag-ranking-logic-from-rag-query-js: done
   epic-10-retrospective: optional
