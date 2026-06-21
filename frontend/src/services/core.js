@@ -9,7 +9,11 @@ export const USE_MOCK = (() => {
         const envFlag = String(import.meta.env.VITE_USE_MOCK || '').trim().toLowerCase();
         if (envFlag) return envFlag === 'true';
     }
-    return true;
+    const isDev = typeof import.meta !== 'undefined' && import.meta.env?.DEV;
+    if (!isDev) {
+        console.warn('[MOCK] Mocks disabled in production. Set VITE_USE_MOCK=true or localStorage uade_use_mock=true to enable.');
+    }
+    return isDev;
 })();
 
 export const LOCAL_SUBJECTS_KEY = 'uade.local.subjects';

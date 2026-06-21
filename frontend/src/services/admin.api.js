@@ -2,19 +2,19 @@ import {
     USE_MOCK, BASE_URL, apiFetch, fetchWithTimeout, delay
 } from './core.js';
 
-import { MOCK_DIRECTOR_STATS } from './mocks/data.js';
+import { getMock } from './mocks/accessor.js';
 
 export async function getDirectorStats() {
-    if (USE_MOCK) { await delay(500); return MOCK_DIRECTOR_STATS; }
+    if (USE_MOCK) { await delay(500); return getMock('MOCK_DIRECTOR_STATS', {}); }
     try {
         const res = await fetchWithTimeout(`${BASE_URL}/director/stats`, { timeout: 4000 });
-        if (!res.ok) return MOCK_DIRECTOR_STATS;
+        if (!res.ok) return getMock('MOCK_DIRECTOR_STATS', {});
         const text = await res.text();
-        if (!text) return MOCK_DIRECTOR_STATS;
+        if (!text) return getMock('MOCK_DIRECTOR_STATS', {});
         return JSON.parse(text);
     } catch (err) {
         console.error('[API] getDirectorStats failed:', err);
-        return MOCK_DIRECTOR_STATS;
+        return getMock('MOCK_DIRECTOR_STATS', {});
     }
 }
 
@@ -23,7 +23,7 @@ export async function getDirectorKpiExport(format) {
     const url = `${BASE_URL}/director/kpi-export${qs}`;
     if (USE_MOCK) {
         await delay(500);
-        const stats = MOCK_DIRECTOR_STATS;
+        const stats = await getMock('MOCK_DIRECTOR_STATS', {});
         if (format === 'csv') {
             const lines = [
                 'seccion,metrica,valor',

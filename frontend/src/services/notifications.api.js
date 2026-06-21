@@ -2,7 +2,7 @@ import {
     USE_MOCK, BASE_URL, apiFetch, fetchWithTimeout, delay
 } from './core.js';
 
-import { MOCK_NOTIFICATIONS } from './mocks/data.js';
+import { getMock } from './mocks/accessor.js';
 
 function normalizeNotification(item = {}, idx = 0) {
     const fallbackId = item.id || `notif-${Date.now()}-${idx}`;
@@ -19,9 +19,10 @@ function normalizeNotification(item = {}, idx = 0) {
     };
 }
 
-function buildFallbackNotifications(subjectId, limit = 10) {
+async function buildFallbackNotifications(subjectId, limit = 10) {
     const safeLimit = Math.min(Math.max(Number(limit) || 10, 1), 50);
-    const scoped = MOCK_NOTIFICATIONS
+    const mocks = await getMock('MOCK_NOTIFICATIONS', []);
+    const scoped = mocks
         .filter((item) => !subjectId || item.subjectId === subjectId)
         .map((item, idx) => normalizeNotification(item, idx));
 
@@ -33,7 +34,7 @@ function buildFallbackNotifications(subjectId, limit = 10) {
 export async function getNotifications({ userId, subjectId, limit = 10, skip = 0, type } = {}) {
     if (USE_MOCK) {
         await delay(250);
-        return buildFallbackNotifications(subjectId, limit);
+        return await buildFallbackNotifications(subjectId, limit);
     }
 
     try {
@@ -48,12 +49,12 @@ export async function getNotifications({ userId, subjectId, limit = 10, skip = 0
         const res = await fetchWithTimeout(`${BASE_URL}/notifications${query ? `?${query}` : ''}`, { timeout: 3500 });
 
         if (!res.ok) {
-            return buildFallbackNotifications(subjectId, limit);
+            return await buildFallbackNotifications(subjectId, limit);
         }
 
         const data = await res.json();
         if (!Array.isArray(data)) {
-            return buildFallbackNotifications(subjectId, limit);
+            return await buildFallbackNotifications(subjectId, limit);
         }
 
         return data
@@ -62,7 +63,7 @@ export async function getNotifications({ userId, subjectId, limit = 10, skip = 0
             .slice(0, Math.min(Math.max(Number(limit) || 10, 1), 50));
     } catch (err) {
         console.error('[API] getNotifications failed:', err);
-        return buildFallbackNotifications(subjectId, limit);
+        return await buildFallbackNotifications(subjectId, limit);
     }
 }
 
@@ -122,7 +123,8 @@ export async function markNotificationsRead({ notificationIds = [], userId, subj
 
 export async function subscribeNotificationStream({ userId, subjectId, signal } = {}, onEvent) {
     if (USE_MOCK) {
-        onEvent('snapshot', { notifications: buildFallbackNotifications(subjectId, 10), userId });
+        const fallback = await buildFallbackNotifications(subjectId, 10);
+        onEvent('snapshot', { notifications: fallback, userId });
         return;
     }
 

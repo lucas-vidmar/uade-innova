@@ -246,3 +246,16 @@ export const MOCK_RAG_RESPONSES = [
         verified: false,
     },
 ];
+
+export const MOCK_TASKS = [
+    { id: 't-01', studentId: '', title: 'TP1: Diagrama de Arquitectura C4', dueDate: '2026-03-28', weight: 25, status: 'pending', classIds: ['class-01', 'class-02'], grade: null, subjectId: 'arq-software-2026' },
+    { id: 't-02', studentId: '', title: 'Quiz Online — Estilos Arquitectónicos', dueDate: '2026-03-20', weight: 10, status: 'completed', classIds: ['class-02'], grade: 8.5, subjectId: 'arq-software-2026' },
+    { id: 't-03', studentId: '', title: 'Parcial 1 — Arquitectura y Patrones', dueDate: '2026-04-16', weight: 35, status: 'pending', classIds: ['class-01', 'class-02', 'class-03', 'class-04'], grade: null, subjectId: 'arq-software-2026' },
+    { id: 't-04', studentId: '', title: 'Lectura: "Clean Architecture" (caps 1-5)', dueDate: '2026-03-19', weight: 5, status: 'completed', classIds: ['class-01'], grade: 10, subjectId: 'arq-software-2026' },
+];
+
+export const MOCK_EARLY_ALERTS = [
+    { id: 'alu-012', studentId: 'alu-012', name: 'Tomás García', subjectId: 'arq-software-2026', subject: 'Arq. de Software', risk: 'high', interventionFlag: 'at_risk', attendance: '45%', avgGrade: 4.2 },
+    { id: 'alu-031', studentId: 'alu-031', name: 'Lucía Martínez', subjectId: 'diseno-sistemas-2026', subject: 'Sistemas Dist.', risk: 'medium', interventionFlag: 'watchlist', attendance: '62%', avgGrade: 5.1 },
+    { id: 'alu-008', studentId: 'alu-008', name: 'Nicolás Peralta', subjectId: 'arq-software-2026', subject: 'Arq. de Software', risk: 'medium', interventionFlag: 'watchlist', attendance: '70%', avgGrade: 5.8 },
+];

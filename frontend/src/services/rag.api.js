@@ -2,13 +2,14 @@ import {
     USE_MOCK, BASE_URL, apiFetch, fetchWithTimeout, delay
 } from './core.js';
 
-import { MOCK_GLOBAL_SEARCH_RESULTS, MOCK_RAG_RESPONSES } from './mocks/data.js';
+import { getMock } from './mocks/accessor.js';
 
 export async function ragQuery({ question, classIds, subjectId, conversationHistory = [], historyWindowSize = 4, transcriptFocus = null }) {
     if (USE_MOCK) {
         await delay(1200);
         const q = question.toLowerCase();
-        const match = MOCK_RAG_RESPONSES.find(r => r.question.some(kw => q.includes(kw)));
+        const responses = await getMock('MOCK_RAG_RESPONSES', []);
+        const match = responses.find(r => r.question.some(kw => q.includes(kw)));
         const response = match || {
             answer: `Basándome en las clases seleccionadas (${classIds.length} clase${classIds.length !== 1 ? 's' : ''}), no encontré una respuesta específica para tu consulta sobre "${question}". Sin embargo, te recomiendo revisar los apuntes de las clases sobre patrones arquitectónicos y el resumen de la Clase 1.`,
             sources: [],
@@ -141,7 +142,8 @@ export async function globalSearch({ query, subjectId }) {
     if (USE_MOCK) {
         await delay(450);
         const needle = String(query || '').toLowerCase();
-        const results = MOCK_GLOBAL_SEARCH_RESULTS.filter(item =>
+        const searchResults = await getMock('MOCK_GLOBAL_SEARCH_RESULTS', []);
+        const results = searchResults.filter(item =>
             item.snippet.toLowerCase().includes(needle) || item.sourceFilename.toLowerCase().includes(needle)
         );
         return { query, subjectId, total: results.length, results };

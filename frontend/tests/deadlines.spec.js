@@ -47,7 +47,7 @@ test('teacher can create a deadline and student sees it on dashboard and calenda
     });
   });
 
-  await page.route('**/api/deadlines', async route => {
+  await page.route(url => url.pathname === '/api/deadlines', async route => {
     if (route.request().method() === 'POST') {
       const payload = route.request().postDataJSON();
       requests.push(payload);
@@ -103,7 +103,7 @@ test('teacher can create a deadline and student sees it on dashboard and calenda
   });
 
   await page.goto('/#/student/calendar');
-  await expect(page.locator('.cal-deadline-dot')).toHaveCount(1);
+  await expect(page.locator('.cal-deadline-dot')).toHaveCount(2);
 
   await page.locator('.cal-cell[data-has-class="true"]').first().click();
   await expect(page.locator('.class-list-item')).toContainText('Final Project');
