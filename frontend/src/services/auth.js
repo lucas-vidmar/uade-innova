@@ -3,6 +3,7 @@
    ============================================================ */
 import { api } from './api.js';
 import { enrollments as enrollmentService } from './enrollments.js';
+import { safeSetItem, safeGetItem } from './local-storage.js';
 
 const AI_CONSENT_KEY = 'edu_ai_consent_accepted';
 
@@ -124,7 +125,7 @@ export const auth = {
         },
 
     getConsentAccepted() {
-        return localStorage.getItem('edu_consent_accepted') === 'true' || sessionStorage.getItem('edu_consent_accepted') === 'true';
+        return safeGetItem('edu_consent_accepted') === 'true' || sessionStorage.getItem('edu_consent_accepted') === 'true';
     },
 
     getAIConsentAccepted() {
@@ -168,7 +169,7 @@ export const auth = {
         };
         
         // Persist locally immediately to handle offline/dev modes
-        localStorage.setItem('edu_consent_accepted', 'true');
+        safeSetItem('edu_consent_accepted', 'true');
         sessionStorage.setItem('edu_consent_accepted', 'true');
         window.dispatchEvent(new CustomEvent('auth:consentAccepted'));
 
@@ -315,7 +316,7 @@ export const auth = {
             if (profile) {
                 const accepted = profile.consentAccepted ? 'true' : 'false';
                 sessionStorage.setItem('edu_consent_accepted', accepted);
-                localStorage.setItem('edu_consent_accepted', accepted);
+                safeSetItem('edu_consent_accepted', accepted);
                 if (profile.theme) sessionStorage.setItem('edu_theme', profile.theme);
                 if (profile.language) sessionStorage.setItem('edu_lang', profile.language);
             }

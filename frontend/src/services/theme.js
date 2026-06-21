@@ -1,12 +1,13 @@
 /* ============================================================
    Theme Manager — Handle light/dark mode and persistence
    ============================================================ */
+import { safeSetItem, safeGetItem } from './local-storage.js';
 
 export const themeManager = {
     key: 'uade_innova_theme',
 
     init() {
-        const saved = localStorage.getItem(this.key);
+        const saved = safeGetItem(this.key);
         if (saved) {
             this.setTheme(saved);
         } else {
@@ -17,7 +18,7 @@ export const themeManager = {
 
         // Listen to system changes if no preference is set
         window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
-            if (!localStorage.getItem(this.key)) {
+            if (!safeGetItem(this.key)) {
                 this.setTheme(e.matches ? 'dark' : 'light');
             }
         });
@@ -25,7 +26,7 @@ export const themeManager = {
 
     setTheme(theme) {
         document.documentElement.setAttribute('data-theme', theme);
-        localStorage.setItem(this.key, theme);
+        safeSetItem(this.key, theme);
         // Dispatch event for components to react if needed
         window.dispatchEvent(new CustomEvent('themeChanged', { detail: { theme } }));
     },

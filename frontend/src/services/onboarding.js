@@ -3,6 +3,7 @@
    Dependencies: OnboardingOverlay (renders the UI), Toast (notifications)
    ============================================================ */
 import { toast } from '../components/Toast.js';
+import { safeSetItem, safeGetItem, safeRemoveItem } from './local-storage.js';
 
 const STORAGE_KEY_PREFIX = 'onboarding-';
 let _activeInstance = null;
@@ -12,13 +13,9 @@ function getKey(role) {
 }
 
 function safeStorage(method, key, value) {
-  try {
-    if (method === 'get') return localStorage.getItem(key);
-    if (method === 'set') localStorage.setItem(key, value);
-    if (method === 'remove') localStorage.removeItem(key);
-  } catch {
-    return method === 'get' ? null : undefined;
-  }
+  if (method === 'get') return safeGetItem(key);
+  if (method === 'set') { safeSetItem(key, value); return; }
+  if (method === 'remove') { safeRemoveItem(key); return; }
 }
 
 export function isOnboardingCompleted(role = 'teacher') {

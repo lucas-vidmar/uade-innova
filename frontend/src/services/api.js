@@ -3,6 +3,8 @@
    Contracts follow AGENTS.md section 10
    ============================================================ */
 
+import { safeSetItem, safeGetItem } from './local-storage.js';
+
 const USE_MOCK = true;
 const configuredBaseUrl = (typeof import.meta !== 'undefined' && import.meta.env)
     ? String(import.meta.env.VITE_API_BASE_URL || '').trim()
@@ -114,11 +116,7 @@ function readLocalJson(key, fallbackValue) {
 }
 
 function writeLocalJson(key, value) {
-    try {
-        window.localStorage.setItem(key, JSON.stringify(value));
-    } catch {
-        // Ignore localStorage quota/privacy mode errors
-    }
+    safeSetItem(key, JSON.stringify(value));
 }
 
 function getLocalSubjects() {
