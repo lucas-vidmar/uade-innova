@@ -180,6 +180,15 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
           value: 'true'
         }
+        // Linux Consumption content share — required for V4 Node.js on Linux
+        {
+          name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING'
+          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${listKeys(storageAccountId, '2023-01-01').keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
+        }
+        {
+          name: 'WEBSITE_CONTENTSHARE'
+          value: 'func-content-${uniqueString(resourceGroup().id)}'
+        }
         // Observability
         {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
