@@ -15,6 +15,9 @@ import { ErrorCategory, CategorizedError } from './error-categories.js';
 
 const CONTAINER_PROCESSED = 'processed';
 const CONTAINER_SUMMARIES = 'class-summaries';
+
+// Tests can override this function for deterministic token counting
+export let _estimateTokenCount = (text) => Math.ceil(text.length / 4);
 const BATCH_SIZE = 20;
 
 /**
@@ -40,14 +43,16 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
         context.log(`[Pipeline] Texto extraído: ${text.length} caracteres`);
 
         // 1a. Pre-flight token check (Story 10.9)
-        const MAX_MATERIAL_TOKENS = parseInt(process.env.MAX_MATERIAL_TOKENS, 10) || 500000;
-        const estimatedTokens = Math.ceil(text.length / 4);
-        if (estimatedTokens > MAX_MATERIAL_TOKENS) {
+        const maxTokens = Number.isFinite(Number(process.env.MAX_MATERIAL_TOKENS))
+            ? Number(process.env.MAX_MATERIAL_TOKENS)
+            : 500000;
+        const estimatedTokens = _estimateTokenCount(text);
+        if (estimatedTokens > maxTokens) {
             context.log.warn(`[Pipeline] Material rejected: too large`, {
                 materialId,
                 textLength: text.length,
                 tokenEstimate: estimatedTokens,
-                maxTokens: MAX_MATERIAL_TOKENS
+                maxTokens
             });
             throw new CategorizedError('Material demasiado grande. Dividilo en partes.', {
                 errorCategory: ErrorCategory.VALIDATION,

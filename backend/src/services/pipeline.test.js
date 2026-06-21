@@ -184,6 +184,7 @@ test('runPipeline attaches slideTitle to vector metadata for presentation materi
     parserMocks.extractPptxSlideTitles.mock.mockImplementation(() => ({
         1: 'Arquitectura Hexagonal',
     }));
+    parserMocks.parseFile.mock.mockImplementation(async () => 'mocked text');
 
     const mockContext = {
         log: mock.fn(),
@@ -220,8 +221,9 @@ test('runPipeline attaches slideTitle to vector metadata for presentation materi
     assert.strictEqual(errorCalls.length, 0, 'No errors should be logged');
 });
 
-test('runPipeline rejects material exceeding MAX_MATERIAL_TOKENS with MATERIAL_TOO_LARGE', async () => {
+test('runPipeline rejects material exceeding MAX_MATERIAL_TOKENS with MATERIAL_TOO_LARGE', async (t) => {
     const largeText = 'x'.repeat(2000001);
+    parserMocks.chunkText.mock.resetCalls();
     parserMocks.parseFile.mock.mockImplementation(async () => largeText);
 
     const logWarn = mock.fn();
@@ -245,19 +247,21 @@ test('runPipeline rejects material exceeding MAX_MATERIAL_TOKENS with MATERIAL_T
     }, mockContext);
 
     const errorCalls = mockContext.error.mock.calls;
-    const tooLargeLogged = errorCalls.some(call =>
-        call.arguments?.[0]?.includes('mat-large')
-    );
-    assert.strictEqual(tooLargeLogged, true, 'Should log error for large material');
-    assert.strictEqual(logWarn.mock.calls.some(call =>
-        call.arguments?.[0]?.includes('[Pipeline] Material rejected: too large')
+    const entry = errorCalls.find(c => c.arguments?.[0]?.includes('mat-large'));
+    assert.ok(entry, 'Should log error for large material');
+    const err = entry.arguments[1];
+    assert.strictEqual(err.code, 'MATERIAL_TOO_LARGE', 'Error code should be MATERIAL_TOO_LARGE');
+    assert.strictEqual(err.errorCategory, 'VALIDATION', 'Category should be VALIDATION');
+    assert.strictEqual(err.status, 413, 'Status should be 413');
+    assert.strictEqual(logWarn.mock.calls.some(c =>
+        c.arguments?.[0]?.includes('[Pipeline] Material rejected: too large')
     ), true, 'Should warn about oversized material');
+    assert.strictEqual(parserMocks.chunkText.mock.calls.length, 0, 'Pipeline should halt before chunking');
 });
 
 test('runPipeline allows material at MAX_MATERIAL_TOKENS boundary', async () => {
     const boundaryText = 'x'.repeat(1999999);
     parserMocks.parseFile.mock.mockImplementation(async () => boundaryText);
-    parserMocks.chunkText.mock.mockImplementation(() => ['chunk 1', 'chunk 2']);
 
     const mockContext = {
         log: mock.fn(),
@@ -276,14 +280,13 @@ test('runPipeline allows material at MAX_MATERIAL_TOKENS boundary', async () => 
         blobUrl: 'http://test',
     }, mockContext);
 
-    const errorCalls = mockContext.error.mock.calls;
-    assert.strictEqual(errorCalls.length, 0, 'Boundary-sized material should not error');
+    assert.strictEqual(mockContext.error.mock.calls.length, 0, 'Boundary material should not error');
 });
 
-test('runPipeline honors MAX_MATERIAL_TOKENS env var override', async () => {
+test('runPipeline rejects with low MAX_MATERIAL_TOKENS env var and restores it', async (t) => {
+    const prev = process.env.MAX_MATERIAL_TOKENS;
     process.env.MAX_MATERIAL_TOKENS = '100';
-    const smallText = 'a'.repeat(500);
-    parserMocks.parseFile.mock.mockImplementation(async () => smallText);
+    parserMocks.parseFile.mock.mockImplementation(async () => 'a'.repeat(500));
 
     const logWarn = mock.fn();
     const logFn = mock.fn();
@@ -294,27 +297,60 @@ test('runPipeline honors MAX_MATERIAL_TOKENS env var override', async () => {
         error: mock.fn(),
     };
 
-    await runPipeline({
-        fileBuffer: Buffer.from('test'),
-        fileContentType: 'text/plain',
-        fileName: 'env-override.txt',
-        classIds: ['class1'],
-        subjectId: 'subj1',
-        materialType: 'notes',
-        materialId: 'mat-env',
-        blobUrl: 'http://test',
-    }, mockContext);
+    try {
+        await runPipeline({
+            fileBuffer: Buffer.from('test'),
+            fileContentType: 'text/plain',
+            fileName: 'env-override.txt',
+            classIds: ['class1'],
+            subjectId: 'subj1',
+            materialType: 'notes',
+            materialId: 'mat-env',
+            blobUrl: 'http://test',
+        }, mockContext);
 
-    const errorCalls = mockContext.error.mock.calls;
-    assert.strictEqual(errorCalls.length > 0, true, 'Should reject with low MAX_MATERIAL_TOKENS');
+        assert.strictEqual(mockContext.error.mock.calls.length > 0, true, 'Should reject with low MAX_MATERIAL_TOKENS');
+    } finally {
+        if (prev !== undefined) process.env.MAX_MATERIAL_TOKENS = prev;
+        else delete process.env.MAX_MATERIAL_TOKENS;
+    }
+});
 
-    delete process.env.MAX_MATERIAL_TOKENS;
+test('runPipeline falls back to default when MAX_MATERIAL_TOKENS env var is non-numeric', async () => {
+    const prev = process.env.MAX_MATERIAL_TOKENS;
+    process.env.MAX_MATERIAL_TOKENS = 'not-a-number';
+    parserMocks.parseFile.mock.mockImplementation(async () => 'x'.repeat(1000));
+
+    const mockContext = {
+        log: mock.fn(),
+        warn: mock.fn(),
+        error: mock.fn(),
+    };
+
+    try {
+        await runPipeline({
+            fileBuffer: Buffer.from('test'),
+            fileContentType: 'text/plain',
+            fileName: 'invalid-env.txt',
+            classIds: ['class1'],
+            subjectId: 'subj1',
+            materialType: 'notes',
+            materialId: 'mat-invalid',
+            blobUrl: 'http://test',
+        }, mockContext);
+
+        assert.strictEqual(mockContext.error.mock.calls.length, 0, 'Non-numeric env var should fallback to default');
+    } finally {
+        if (prev !== undefined) process.env.MAX_MATERIAL_TOKENS = prev;
+        else delete process.env.MAX_MATERIAL_TOKENS;
+    }
 });
 
 test('runPipeline does not include slideTitle for non-presentation materials', async () => {
     vectorStoreMocks.upsertChunks.mock.resetCalls();
     parserMocks.chunkText.mock.mockImplementation(() => ['chunk 1', 'chunk 2']);
     parserMocks.extractPptxSlideTitles.mock.mockImplementation(() => ({}));
+    parserMocks.parseFile.mock.mockImplementation(async () => 'mocked text');
 
     const mockContext = {
         log: mock.fn(),
