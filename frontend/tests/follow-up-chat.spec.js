@@ -6,6 +6,7 @@ test('student can ask follow-up question and keep logical flow', async ({ page }
   const capturedRequests = [];
 
   await page.addInitScript(() => {
+    localStorage.setItem('uade_use_mock', 'false');
     localStorage.setItem('onboarding-student-completed', 'true');
     localStorage.setItem('onboarding-teacher-completed', 'true');
     localStorage.setItem('onboarding-director-completed', 'true');

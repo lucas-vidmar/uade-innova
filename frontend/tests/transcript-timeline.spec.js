@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test('student clicks transcript hit-point and sees transcript section activated and chat link updated', async ({ page }) => {
   await page.addInitScript(() => {
+    localStorage.setItem('uade_use_mock', 'false');
     localStorage.setItem('onboarding-student-completed', 'true');
     localStorage.setItem('onboarding-teacher-completed', 'true');
     localStorage.setItem('onboarding-director-completed', 'true');

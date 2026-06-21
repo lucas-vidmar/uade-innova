@@ -7,6 +7,7 @@ test('teacher sees global toast when processing finishes after navigation', asyn
   let classesCallCount = 0;
 
   await page.addInitScript(() => {
+    localStorage.setItem('uade_use_mock', 'false');
     localStorage.setItem('onboarding-student-completed', 'true');
     localStorage.setItem('onboarding-teacher-completed', 'true');
     localStorage.setItem('onboarding-director-completed', 'true');
@@ -136,6 +137,7 @@ test('upload status badge transitions from Procesando to Listo without refresh',
   let materialStatusCallCount = 0;
 
   await page.addInitScript(() => {
+    localStorage.setItem('uade_use_mock', 'false');
     sessionStorage.setItem('edu_role', 'teacher');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');
@@ -206,6 +208,7 @@ test('grouped success toast when multiple materials finish within 3s window', as
   let materialStatusCallCount = 0;
 
   await page.addInitScript(() => {
+    localStorage.setItem('uade_use_mock', 'false');
     sessionStorage.setItem('edu_role', 'teacher');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');
@@ -272,7 +275,7 @@ test('grouped success toast when multiple materials finish within 3s window', as
   await page.goto('/#/teacher/dashboard');
 
   // Wait for grouped toast to appear (poll 250ms + flush 3000ms = ~3250ms; use 8000ms buffer)
-  const toastLocator = page.locator('#toast-container .toast.success');
+  const toastLocator = page.locator('#toast-container .toast.success').filter({ hasText: 'materiales procesados' });
   await expect(toastLocator).toContainText('3 materiales procesados correctamente', { timeout: 8000 });
 
   // Should list filenames

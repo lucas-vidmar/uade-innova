@@ -4,6 +4,7 @@
 import { api } from './api.js';
 import { enrollments as enrollmentService } from './enrollments.js';
 import { safeSetItem, safeGetItem } from './local-storage.js';
+import { mergeSubjectsWithLocal } from './subjects.api.js';
 
 const AI_CONSENT_KEY = 'edu_ai_consent_accepted';
 
@@ -34,8 +35,6 @@ function correlationHeaders() {
     }
     return headers;
 }
-
-const LOCAL_SUBJECTS_KEY = 'uade.local.subjects';
 
 const USERS = {
     student: {
@@ -354,25 +353,4 @@ export const auth = {
     }
 };
 
-function mergeSubjectsWithLocal(baseSubjects) {
-    const base = Array.isArray(baseSubjects) ? baseSubjects : [];
-    let local = [];
 
-    try {
-        const raw = localStorage.getItem(LOCAL_SUBJECTS_KEY);
-        const parsed = raw ? JSON.parse(raw) : [];
-        local = Array.isArray(parsed) ? parsed : [];
-    } catch {
-        local = [];
-    }
-
-    const byId = new Map();
-    base.forEach((subject) => {
-        if (subject?.id) byId.set(subject.id, subject);
-    });
-    local.forEach((subject) => {
-        if (subject?.id) byId.set(subject.id, { ...(byId.get(subject.id) || {}), ...subject });
-    });
-
-    return Array.from(byId.values());
-}

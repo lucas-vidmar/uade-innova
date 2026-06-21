@@ -4,6 +4,7 @@ test('teacher can create a deadline and student sees it on dashboard and calenda
   const requests = [];
 
   await page.addInitScript(() => {
+    localStorage.setItem('uade_use_mock', 'false');
     localStorage.setItem('onboarding-student-completed', 'true');
     localStorage.setItem('onboarding-teacher-completed', 'true');
     localStorage.setItem('onboarding-director-completed', 'true');

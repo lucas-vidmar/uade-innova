@@ -5,6 +5,7 @@ test.use({ channel: 'chrome' });
 test('director can review DAU, token and cost metrics for Power BI', async ({ page }) => {
 
   await page.addInitScript(() => {
+    localStorage.setItem('uade_use_mock', 'false');
     localStorage.setItem('onboarding-student-completed', 'true');
     localStorage.setItem('onboarding-teacher-completed', 'true');
     localStorage.setItem('onboarding-director-completed', 'true');

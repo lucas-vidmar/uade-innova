@@ -4,6 +4,7 @@ test.use({ channel: 'chrome' });
 
 test('student sees primary and secondary material tags in chat sources', async ({ page }) => {
   await page.addInitScript(() => {
+    localStorage.setItem('uade_use_mock', 'false');
     localStorage.setItem('onboarding-student-completed', 'true');
     localStorage.setItem('onboarding-teacher-completed', 'true');
     localStorage.setItem('onboarding-director-completed', 'true');

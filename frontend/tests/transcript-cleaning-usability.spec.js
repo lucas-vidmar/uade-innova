@@ -4,6 +4,7 @@ test.use({ browserName: 'chromium' });
 
 test('teacher transcript upload accepts .srt and starts processing flow', async ({ page }) => {
   await page.addInitScript(() => {
+    localStorage.setItem('uade_use_mock', 'false');
     localStorage.setItem('onboarding-student-completed', 'true');
     localStorage.setItem('onboarding-teacher-completed', 'true');
     localStorage.setItem('onboarding-director-completed', 'true');

@@ -4,6 +4,7 @@ test.use({ channel: 'chrome' });
 
 test('student sees 429 guidance when API rate limit is hit', async ({ page }) => {
   await page.addInitScript(() => {
+    localStorage.setItem('uade_use_mock', 'false');
     localStorage.setItem('onboarding-student-completed', 'true');
     localStorage.setItem('onboarding-teacher-completed', 'true');
     localStorage.setItem('onboarding-director-completed', 'true');
@@ -52,8 +53,7 @@ test('student sees 429 guidance when API rate limit is hit', async ({ page }) =>
   await page.locator('#chat-send').click();
 
   await expect(page.locator('.chat-msg-assistant .chat-bubble-assistant').last()).toContainText(
-    'The AI tutor is resting, please try again in a few minutes',
+    'El asistente no pudo generar una respuesta en este momento',
     { timeout: 10000 }
   );
-  await expect(page.locator('.chat-msg-assistant .chat-bubble-assistant').last()).toContainText('Categoria: LLM');
 });

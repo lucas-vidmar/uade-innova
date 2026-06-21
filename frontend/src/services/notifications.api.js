@@ -1,0 +1,186 @@
+import {
+    USE_MOCK, BASE_URL, apiFetch, fetchWithTimeout, delay
+} from './core.js';
+
+import { MOCK_NOTIFICATIONS } from './mocks/data.js';
+
+function normalizeNotification(item = {}, idx = 0) {
+    const fallbackId = item.id || `notif-${Date.now()}-${idx}`;
+    const type = ['grade', 'summary', 'material', 'deadline'].includes(item.type) ? item.type : 'material';
+    return {
+        id: fallbackId,
+        type,
+        title: String(item.title || 'Nueva notificación'),
+        message: String(item.message || 'Tienes una actualización académica.'),
+        createdAt: item.createdAt || new Date().toISOString(),
+        unread: item.unread !== false,
+        targetHash: item.targetHash || '#/student/dashboard',
+        subjectId: item.subjectId || null,
+    };
+}
+
+function buildFallbackNotifications(subjectId, limit = 10) {
+    const safeLimit = Math.min(Math.max(Number(limit) || 10, 1), 50);
+    const scoped = MOCK_NOTIFICATIONS
+        .filter((item) => !subjectId || item.subjectId === subjectId)
+        .map((item, idx) => normalizeNotification(item, idx));
+
+    return scoped
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        .slice(0, safeLimit);
+}
+
+export async function getNotifications({ userId, subjectId, limit = 10, skip = 0, type } = {}) {
+    if (USE_MOCK) {
+        await delay(250);
+        return buildFallbackNotifications(subjectId, limit);
+    }
+
+    try {
+        const params = new URLSearchParams();
+        if (userId) params.set('userId', userId);
+        if (subjectId) params.set('subjectId', subjectId);
+        if (limit) params.set('limit', String(limit));
+        if (skip > 0) params.set('skip', String(skip));
+        if (type) params.set('type', type);
+
+        const query = params.toString();
+        const res = await fetchWithTimeout(`${BASE_URL}/notifications${query ? `?${query}` : ''}`, { timeout: 3500 });
+
+        if (!res.ok) {
+            return buildFallbackNotifications(subjectId, limit);
+        }
+
+        const data = await res.json();
+        if (!Array.isArray(data)) {
+            return buildFallbackNotifications(subjectId, limit);
+        }
+
+        return data
+            .map((item, idx) => normalizeNotification(item, idx))
+            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+            .slice(0, Math.min(Math.max(Number(limit) || 10, 1), 50));
+    } catch (err) {
+        console.error('[API] getNotifications failed:', err);
+        return buildFallbackNotifications(subjectId, limit);
+    }
+}
+
+export async function markNotificationRead({ notificationId, userId, subjectId } = {}) {
+    if (!notificationId || !userId || !subjectId) {
+        throw new Error('Missing required fields: notificationId, userId, subjectId');
+    }
+
+    const res = await apiFetch(`${BASE_URL}/notifications/${encodeURIComponent(notificationId)}/read`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, subjectId }),
+    });
+
+    if (!res.ok) {
+        let message = `Error ${res.status}: No se pudo marcar la notificación como leída`;
+        try {
+            const payload = await res.json();
+            if (payload?.error) message = payload.error;
+        } catch {
+            // no-op
+        }
+        throw new Error(message);
+    }
+
+    return res.json();
+}
+
+export async function markNotificationsRead({ notificationIds = [], userId, subjectId } = {}) {
+    if (!userId || !subjectId) {
+        throw new Error('Missing required fields: userId, subjectId');
+    }
+
+    const ids = Array.isArray(notificationIds)
+        ? Array.from(new Set(notificationIds.map((item) => String(item || '').trim()).filter(Boolean)))
+        : [];
+
+    const res = await apiFetch(`${BASE_URL}/notifications/read`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, subjectId, notificationIds: ids }),
+    });
+
+    if (!res.ok) {
+        let message = `Error ${res.status}: No se pudieron marcar las notificaciones como leídas`;
+        try {
+            const payload = await res.json();
+            if (payload?.error) message = payload.error;
+        } catch {
+            // no-op
+        }
+        throw new Error(message);
+    }
+
+    return res.json();
+}
+
+export async function subscribeNotificationStream({ userId, subjectId, signal } = {}, onEvent) {
+    if (USE_MOCK) {
+        onEvent('snapshot', { notifications: buildFallbackNotifications(subjectId, 10), userId });
+        return;
+    }
+
+    const params = new URLSearchParams();
+    if (userId) params.set('userId', userId);
+    if (subjectId) params.set('subjectId', subjectId);
+
+    const query = params.toString();
+    const response = await apiFetch(`${BASE_URL}/notifications/stream${query ? `?${query}` : ''}`);
+
+    if (!response.ok) {
+        const body = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(body.error || `Stream connection failed (${response.status})`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    try {
+        while (true) {
+            if (signal?.aborted) break;
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const parts = buffer.split('\n\n');
+            buffer = parts.pop();
+
+            if (buffer.length > 50000) {
+                buffer = '';
+            }
+
+            for (const part of parts) {
+                if (!part.trim()) continue;
+                const lines = part.split('\n');
+                let eventType = 'message';
+                let data = null;
+
+                for (const line of lines) {
+                    if (line.startsWith('event: ')) {
+                        eventType = line.slice(7).trim();
+                    } else if (line.startsWith('data: ')) {
+                        try {
+                            data = JSON.parse(line.slice(6));
+                        } catch {
+                            // skip unparseable data
+                        }
+                    }
+                }
+
+                if (data && typeof onEvent === 'function') {
+                    onEvent(eventType, data);
+                }
+            }
+        }
+    } catch (err) {
+        if (signal?.aborted) return;
+        throw err;
+    }
+}

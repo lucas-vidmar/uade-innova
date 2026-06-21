@@ -10,6 +10,7 @@ test('student can report issue and teacher sees alert', async ({ page }) => {
   const teacherAlerts = [];
 
   await page.addInitScript(() => {
+    localStorage.setItem('uade_use_mock', 'false');
     localStorage.setItem('onboarding-student-completed', 'true');
     localStorage.setItem('onboarding-teacher-completed', 'true');
     localStorage.setItem('onboarding-director-completed', 'true');
@@ -86,7 +87,7 @@ test('student can report issue and teacher sees alert', async ({ page }) => {
     teacherAlerts.unshift({
       id: `ai-issue-${payload.messageId}`,
       type: 'ai-feedback-issue',
-      status: 'open',
+      status: 'pending',
       subjectId: payload.subjectId,
       messageId: payload.messageId,
       question: '¿Qué es arquitectura hexagonal?',
@@ -109,13 +110,21 @@ test('student can report issue and teacher sees alert', async ({ page }) => {
     });
   });
 
+  await page.route('**/api/corrections-pending?**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: teacherAlerts }),
+    });
+  });
+
   await page.goto('/#/student/dashboard');
 
   const reportBtn = page.locator('.report-issue-btn').first();
   await expect(reportBtn).toBeVisible();
   await reportBtn.click();
 
-  await page.fill('#dialog-prompt-input', 'La respuesta necesita más contexto de la clase.');
+  await page.fill('#report-detail-input', 'La respuesta necesita más contexto de la clase.');
   await page.click('.dialog-confirm');
 
   await expect(page.locator('.report-issue-btn').first()).toHaveText('✅ Reportado');

@@ -4,6 +4,7 @@ test('student chat request sends x-correlation-id header', async ({ page, browse
   test.skip(browserName !== 'chromium', 'Chrome/Chromium-only verification required');
 
   await page.addInitScript(() => {
+    localStorage.setItem('uade_use_mock', 'false');
     localStorage.setItem('onboarding-student-completed', 'true');
     localStorage.setItem('onboarding-teacher-completed', 'true');
     localStorage.setItem('onboarding-director-completed', 'true');
