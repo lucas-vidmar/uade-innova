@@ -1,6 +1,7 @@
 import { app } from '@azure/functions';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { trackUserLogin } from '../services/telemetry.js';
+import { withCorrelation } from '../middleware/with-correlation.js';
 
 const tableName = "UserProfiles";
 
