@@ -11,6 +11,7 @@ import { trackIngestionInteraction } from './telemetry.js';
 import { buildDependencyHeaders } from './correlation.js';
 import { getMaterialPriority } from './material-classification.js';
 import { detectGlossaryErrors } from './transcription-corrector.js';
+import { ErrorCategory, CategorizedError } from './error-categories.js';
 
 const CONTAINER_PROCESSED = 'processed';
 const CONTAINER_SUMMARIES = 'class-summaries';
@@ -37,6 +38,23 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
         context.log(`[Pipeline] Parseando archivo: ${fileName} (${fileContentType})`);
         const text = await parseFile(fileBuffer, fileContentType, fileName);
         context.log(`[Pipeline] Texto extraído: ${text.length} caracteres`);
+
+        // 1a. Pre-flight token check (Story 10.9)
+        const MAX_MATERIAL_TOKENS = parseInt(process.env.MAX_MATERIAL_TOKENS, 10) || 500000;
+        const estimatedTokens = Math.ceil(text.length / 4);
+        if (estimatedTokens > MAX_MATERIAL_TOKENS) {
+            context.log.warn(`[Pipeline] Material rejected: too large`, {
+                materialId,
+                textLength: text.length,
+                tokenEstimate: estimatedTokens,
+                maxTokens: MAX_MATERIAL_TOKENS
+            });
+            throw new CategorizedError('Material demasiado grande. Dividilo en partes.', {
+                errorCategory: ErrorCategory.VALIDATION,
+                code: 'MATERIAL_TOO_LARGE',
+                status: 413,
+            });
+        }
 
         // 1b. Extraer títulos de diapositiva si es presentación (Story 2.161)
         let slideTitles = null;
@@ -241,6 +259,8 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
 
     } catch (err) {
         context.error(`[Pipeline] Error crítico para material ${materialId}:`, err);
+
+        const errorCode = err.code || undefined;
         
         const errorState = {
             materialId,
@@ -252,6 +272,7 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
             blobUrl,
             errorMessage: err.message,
             error: err.message,
+            errorCode,
             stack: err.stack,
             uploadedAt: new Date(startTime).toISOString(),
             processedAt: new Date().toISOString(),
@@ -266,6 +287,7 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
             totalTokens,
             durationMs: Date.now() - startTime,
             status: 'error',
+            errorCode,
             correlationId,
         }).catch(e => context.error('[Telemetry] Error logging IngestionInteraction failure:', e));
 

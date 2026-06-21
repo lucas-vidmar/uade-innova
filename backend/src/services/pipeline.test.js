@@ -220,6 +220,97 @@ test('runPipeline attaches slideTitle to vector metadata for presentation materi
     assert.strictEqual(errorCalls.length, 0, 'No errors should be logged');
 });
 
+test('runPipeline rejects material exceeding MAX_MATERIAL_TOKENS with MATERIAL_TOO_LARGE', async () => {
+    const largeText = 'x'.repeat(2000001);
+    parserMocks.parseFile.mock.mockImplementation(async () => largeText);
+
+    const logWarn = mock.fn();
+    const logFn = mock.fn();
+    logFn.warn = logWarn;
+    const mockContext = {
+        log: logFn,
+        warn: mock.fn(),
+        error: mock.fn(),
+    };
+
+    await runPipeline({
+        fileBuffer: Buffer.from('test'),
+        fileContentType: 'text/plain',
+        fileName: 'large.txt',
+        classIds: ['class1'],
+        subjectId: 'subj1',
+        materialType: 'notes',
+        materialId: 'mat-large',
+        blobUrl: 'http://test',
+    }, mockContext);
+
+    const errorCalls = mockContext.error.mock.calls;
+    const tooLargeLogged = errorCalls.some(call =>
+        call.arguments?.[0]?.includes('mat-large')
+    );
+    assert.strictEqual(tooLargeLogged, true, 'Should log error for large material');
+    assert.strictEqual(logWarn.mock.calls.some(call =>
+        call.arguments?.[0]?.includes('[Pipeline] Material rejected: too large')
+    ), true, 'Should warn about oversized material');
+});
+
+test('runPipeline allows material at MAX_MATERIAL_TOKENS boundary', async () => {
+    const boundaryText = 'x'.repeat(1999999);
+    parserMocks.parseFile.mock.mockImplementation(async () => boundaryText);
+    parserMocks.chunkText.mock.mockImplementation(() => ['chunk 1', 'chunk 2']);
+
+    const mockContext = {
+        log: mock.fn(),
+        warn: mock.fn(),
+        error: mock.fn(),
+    };
+
+    await runPipeline({
+        fileBuffer: Buffer.from('test'),
+        fileContentType: 'text/plain',
+        fileName: 'boundary.txt',
+        classIds: ['class1'],
+        subjectId: 'subj1',
+        materialType: 'notes',
+        materialId: 'mat-boundary',
+        blobUrl: 'http://test',
+    }, mockContext);
+
+    const errorCalls = mockContext.error.mock.calls;
+    assert.strictEqual(errorCalls.length, 0, 'Boundary-sized material should not error');
+});
+
+test('runPipeline honors MAX_MATERIAL_TOKENS env var override', async () => {
+    process.env.MAX_MATERIAL_TOKENS = '100';
+    const smallText = 'a'.repeat(500);
+    parserMocks.parseFile.mock.mockImplementation(async () => smallText);
+
+    const logWarn = mock.fn();
+    const logFn = mock.fn();
+    logFn.warn = logWarn;
+    const mockContext = {
+        log: logFn,
+        warn: mock.fn(),
+        error: mock.fn(),
+    };
+
+    await runPipeline({
+        fileBuffer: Buffer.from('test'),
+        fileContentType: 'text/plain',
+        fileName: 'env-override.txt',
+        classIds: ['class1'],
+        subjectId: 'subj1',
+        materialType: 'notes',
+        materialId: 'mat-env',
+        blobUrl: 'http://test',
+    }, mockContext);
+
+    const errorCalls = mockContext.error.mock.calls;
+    assert.strictEqual(errorCalls.length > 0, true, 'Should reject with low MAX_MATERIAL_TOKENS');
+
+    delete process.env.MAX_MATERIAL_TOKENS;
+});
+
 test('runPipeline does not include slideTitle for non-presentation materials', async () => {
     vectorStoreMocks.upsertChunks.mock.resetCalls();
     parserMocks.chunkText.mock.mockImplementation(() => ['chunk 1', 'chunk 2']);
