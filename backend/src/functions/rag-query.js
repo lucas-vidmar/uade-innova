@@ -3,7 +3,7 @@
  * Motor RAG: embedding de la pregunta → similitud Pinecone → chat con contexto
  */
 import { app } from '@azure/functions';
-import { generateEmbedding, chatCompletion } from '../services/ai.js';
+import { generateEmbedding, chatCompletion, getChatModelName } from '../services/ai.js';
 import { querySimilar } from '../services/vector-store.js';
 import { saveJson, saveMetricsToTable } from '../services/storage.js';
 import { getShadowPrompt } from '../services/prompts.js';
@@ -169,7 +169,7 @@ app.http('rag-query', {
         const isTeacherOrDirector = userRoles.includes('Docente') || userRoles.includes('Director');
 
 
-        if (!isTeacherOrDirector) {
+        if (!isTeacherOrDirector && principal) {
             if (!enrollment || enrollment.status !== 'active') {
                 context.log(`[Enrollment] Access denied: userId=${userId}, subjectId=${subjectId}`);
                 return jsonResponse(403, {
@@ -180,7 +180,7 @@ app.http('rag-query', {
         }
 
         // ── 1c. AI content consent check ────────────────────────────────
-        if (!isTeacherOrDirector) {
+        if (!isTeacherOrDirector && principal) {
             const consentAccepted = await getConsentStatus(userId).catch(() => false);
             if (!consentAccepted) {
                 context.log(`[Consent] Consent required: userId=${userId}`);
@@ -260,7 +260,7 @@ app.http('rag-query', {
                 const responseStream = new ReadableStream({
                     start(controller) {
                         const encoder = new TextEncoder();
-                        controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ interactionId, sources: verifiedSources, verified: true, verifiedBy: verifiedMatch.metadata?.teacherId })}\n\n`));
+                        controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ interactionId, sources: verifiedSources, verified: true, verifiedBy: verifiedMatch.metadata?.teacherId, model: getChatModelName() })}\n\n`));
                         controller.enqueue(encoder.encode(`event: delta\ndata: ${JSON.stringify({ content: verifiedAnswerText })}\n\n`));
                         controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ answer: verifiedAnswerText })}\n\n`));
                         controller.close();
@@ -352,7 +352,7 @@ app.http('rag-query', {
                     start(controller) {
                         const encoder = new TextEncoder();
                         // 1. Enviar metadatos vacíos para inicializar el footer
-                        controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ sources: [] })}\n\n`));
+                        controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ sources: [], model: getChatModelName() })}\n\n`));
                         
                         // 2. Enviar el mensaje como un delta para que la UI lo anime/muestre progresivamente si quiere, 
                         // o al menos use el path más probado del frontend.
@@ -434,7 +434,7 @@ ${contextText}
                     const encoder = new TextEncoder();
 
                     // Enviar metadatos iniciales
-                    controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ interactionId, sources })}\n\n`));
+                    controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ interactionId, sources, model: getChatModelName() })}\n\n`));
 
                     let fullAnswer = '';
                     let finalUsage = null;

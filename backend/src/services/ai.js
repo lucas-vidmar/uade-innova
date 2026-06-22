@@ -64,10 +64,18 @@ function getChatClient() {
 
         if (dsEndpoint && dsKey) {
             _chatClient = new OpenAI({
-                baseURL: dsEndpoint.endsWith('/v1') ? dsEndpoint : `${dsEndpoint.replace(/\/$/, '')}/v1`,
+                baseURL: dsEndpoint.replace(/\/$/, ''),
                 apiKey: dsKey,
+                fetch: async (url, init) => {
+                    const headers = new Headers(init.headers);
+                    headers.set('api-key', dsKey);
+                    headers.delete('authorization');
+                    const parsedUrl = new URL(url);
+                    parsedUrl.searchParams.set('api-version', '2024-08-01-preview');
+                    return fetch(parsedUrl.toString(), { ...init, headers });
+                },
             });
-            console.log('[AI] Chat Client (DeepSeek V4 Flash via Foundry) initialized');
+            console.log('[AI] Chat Client (DeepSeek V4 Flash via Azure AI Services) initialized');
         } else {
             const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
             if (!endpoint) {
@@ -96,7 +104,15 @@ export async function generateEmbeddingsBatch(texts, options = {}) {
     const executeWithRetry = async (fn, retries = 3, delay = 1000) => {
         try {
             return await fn();
-        } catch (err) {
+    } catch (err) {
+        console.error('[AI] Chat completion error:', JSON.stringify({
+            message: err?.message,
+            code: err?.code,
+            status: err?.status,
+            type: err?.type,
+            url: err?.url,
+            stack: err?.stack?.split('\n').slice(0, 3).join('\n'),
+        }));
             const isRateLimit = err.status === 429 || err.message?.includes('Too Many Requests');
             if (retries > 0 && isRateLimit) {
                 const nextDelay = delay * 2;
@@ -131,13 +147,24 @@ export async function generateEmbedding(text, options = {}) {
     return { embedding: embeddings[0], usage };
 }
 
+export function isChatUsingDeepSeek() {
+    return !!(process.env.AI_FOUNDRY_DEEPSEEK_ENDPOINT && process.env.AI_FOUNDRY_DEEPSEEK_KEY);
+}
+
+export function getChatModelName() {
+    if (isChatUsingDeepSeek()) {
+        return process.env.AI_FOUNDRY_DEEPSEEK_MODEL || 'deepseek-v4-flash';
+    }
+    return process.env.AZURE_OPENAI_CHAT_DEPLOYMENT || 'gpt-4o-mini';
+}
+
 /**
  * Chat Completion (Generación de respuestas)
  * Usa DeepSeek V4 Flash por defecto si está configurado.
  */
 export async function chatCompletion(messages, stream = false, overrides = {}) {
     const client = getChatClient();
-    const isDeepSeek = !(client instanceof AzureOpenAI);
+    const isDeepSeek = isChatUsingDeepSeek();
     
     const { headers, signal, ...modelOverrides } = overrides || {};
     

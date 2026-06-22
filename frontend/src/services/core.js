@@ -83,7 +83,8 @@ export function withCorrelationHeaders(headers = {}) {
     }
 
     const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    if (isLocalDev) {
+    const isPreviewEnv = window.location.hostname.includes('.azurestaticapps.net');
+    if (isLocalDev || isPreviewEnv) {
         const mockRole = sessionStorage.getItem('edu_role') || 'student';
         normalized.set('x-mock-role', mockRole);
     }

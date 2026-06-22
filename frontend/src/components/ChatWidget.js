@@ -194,6 +194,8 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
           
           ${showFuentes ? renderFuentesSection(msg.sources) : ''}
 
+          ${msg.model ? `<div class="model-name-indicator" style="font-size:11px;color:var(--color-text-muted,#9ca3af);margin-top:6px;padding:0 2px;margin-bottom:8px;">Powered by ${msg.model}</div>` : ''}
+
           <div class="chat-msg-footer mt-3 flex justify-between items-end gap-4">
             ${msg.sources?.length > 0 ? `
               <div class="chat-sources flex flex-wrap gap-2">
@@ -399,6 +401,7 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         if (type === 'metadata') {
           assistantMsg.sources = data.sources || [];
           assistantMsg.verified = data.verified || false;
+          assistantMsg.model = data.model || '';
           const footerEl = msgEl.querySelector('.chat-msg-footer');
           if (footerEl && assistantMsg.sources.length > 0) {
             footerEl.innerHTML = `
@@ -445,20 +448,36 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
             scrollToBottom();
           }
         }
- else if (type === 'done') {
+  else if (type === 'done') {
           assistantMsg.content = data.answer;
           assistantMsg.streaming = false;
           const msgEl = getMsgEl();
-          if (msgEl && hasCitations(data.answer) && assistantMsg.sources?.length > 0) {
+          if (msgEl) {
             const body = msgEl.querySelector('.chat-msg-body');
-            const verifiedBadge = body?.querySelector('.verified-badge');
-            const fuentesDiv = document.createElement('div');
-            fuentesDiv.innerHTML = renderFuentesSection(assistantMsg.sources);
-            if (verifiedBadge) {
-              verifiedBadge.after(fuentesDiv.firstElementChild);
-            } else {
-              const bubble = body?.querySelector('.chat-bubble-assistant');
-              if (bubble) bubble.after(fuentesDiv.firstElementChild);
+            if (body) {
+              // Add model name indicator if available
+              if (assistantMsg.model) {
+                const existingIndicator = body.querySelector('.model-name-indicator');
+                if (!existingIndicator) {
+                  const modelIndicator = document.createElement('div');
+                  modelIndicator.className = 'model-name-indicator';
+                  modelIndicator.style.cssText = 'font-size:11px;color:var(--color-text-muted, #9ca3af);margin-top:6px;padding:0 2px;';
+                  modelIndicator.textContent = `Powered by ${assistantMsg.model}`;
+                  const bubble = body.querySelector('.chat-bubble-assistant');
+                  if (bubble) bubble.after(modelIndicator);
+                }
+              }
+              if (hasCitations(data.answer) && assistantMsg.sources?.length > 0) {
+                const verifiedBadge = body.querySelector('.verified-badge');
+                const fuentesDiv = document.createElement('div');
+                fuentesDiv.innerHTML = renderFuentesSection(assistantMsg.sources);
+                if (verifiedBadge) {
+                  verifiedBadge.after(fuentesDiv.firstElementChild);
+                } else {
+                  const bubble = body?.querySelector('.chat-bubble-assistant');
+                  if (bubble) bubble.after(fuentesDiv.firstElementChild);
+                }
+              }
             }
           }
         }
