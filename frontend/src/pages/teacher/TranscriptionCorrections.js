@@ -20,6 +20,7 @@ export async function renderTranscriptionCorrections(container) {
         <button class="btn btn-sm tc-filter-btn" data-status="applied">Aplicadas</button>
         <button class="btn btn-sm tc-filter-btn" data-status="rejected">Rechazadas</button>
         <button class="btn btn-sm tc-filter-btn" data-status="all">Todas</button>
+        <button class="btn btn-sm btn-primary" id="btn-apply-all" style="margin-left:auto;">Aplicar todas</button>
       </div>
     </div>
     <div class="card" id="tc-list">
@@ -44,6 +45,31 @@ export async function renderTranscriptionCorrections(container) {
     container.querySelectorAll('.tc-filter-btn').forEach((btn) => {
       btn.classList.toggle('active', btn.dataset.status === status);
     });
+  }
+
+  async function applyAllPending() {
+    try {
+      const pending = await api.getTranscriptionSuggestions(subjectId, 'pending');
+      if (!pending || pending.length === 0) {
+        const { toast } = await import('../../components/Toast.js');
+        toast('info', 'Sin pendientes', 'No hay sugerencias pendientes para aplicar.');
+        return;
+      }
+      const btn = container.querySelector('#btn-apply-all');
+      if (btn) { btn.disabled = true; btn.textContent = 'Aplicando...'; }
+      const results = await Promise.allSettled(
+        pending.map(s => api.applyTranscriptionCorrection({ suggestionId: s.rowKey || s.id, subjectId }))
+      );
+      const applied = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.filter(r => r.status === 'rejected').length;
+      const { toast } = await import('../../components/Toast.js');
+      if (applied > 0) toast('success', `Aplicadas ${applied} correcciones`, failed > 0 ? `${failed} fallaron.` : '');
+      if (failed > 0 && applied === 0) toast('error', 'Error', `No se pudieron aplicar ${failed} correcciones.`);
+      loadSuggestions(currentStatus);
+    } catch (err) {
+      const { toast } = await import('../../components/Toast.js');
+      toast('error', 'Error', err.message || 'No se pudieron aplicar las correcciones.');
+    }
   }
 
   function renderList(suggestions) {
@@ -77,6 +103,8 @@ export async function renderTranscriptionCorrections(container) {
       </div>
     `;
   }
+
+  container.querySelector('#btn-apply-all')?.addEventListener('click', applyAllPending);
 
   container.querySelectorAll('.tc-filter-btn').forEach((btn) => {
     btn.addEventListener('click', () => loadSuggestions(btn.dataset.status));
