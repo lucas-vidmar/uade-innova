@@ -5,7 +5,7 @@
 import { app } from '@azure/functions';
 import { generateEmbedding, chatCompletion, getChatModelName } from '../services/ai.js';
 import { querySimilar } from '../services/vector-store.js';
-import { saveJson, saveMetricsToTable } from '../services/storage.js';
+import { saveJson, loadJson, saveMetricsToTable } from '../services/storage.js';
 import { getShadowPrompt } from '../services/prompts.js';
 import { trackRAGInteraction, trackRAGError } from '../services/telemetry.js';
 import { parseClientPrincipal, validateFrontDoorId, getAuthenticatedUser } from '../services/auth-utils.js';
@@ -15,6 +15,7 @@ import { createStructuredLogger } from '../services/structured-logger.js';
 import { v4 as uuidv4 } from 'uuid';
 import { listMaterialsBySubject, listReviewedCorrections } from '../services/state-store.js';
 import { getEnrollment, getConsentStatus } from '../services/state-store.js';
+import { getGlossary } from '../services/glossary-store.js';
 import { getSubjectWeights } from '../services/subject-weights.js';
 import {
     MAX_RAG_CHUNKS, RETRIEVAL_CANDIDATES, MAX_CHUNKS_PER_SOURCE,
@@ -393,6 +394,58 @@ app.http('rag-query', {
             ? `\n\n<transcripcion_foco>\n${transcriptFocus.label}\nUsa este foco para priorizar la respuesta sobre esa seccion de la clase.\n</transcripcion_foco>`
             : '';
 
+        let deadlineBlock = '';
+        const deadlinePatterns = ['entrega', 'vencimiento', 'deadline', 'fecha', 'semana', 'cuándo', 'próxima', 'próximo'];
+        if (deadlinePatterns.some(p => question.toLowerCase().includes(p))) {
+            try {
+                const deadlines = await loadJson('deadlines', `${subjectId}.json`);
+                if (Array.isArray(deadlines) && deadlines.length > 0) {
+                    const now = new Date();
+                    const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+                    const upcoming = deadlines.filter(d => {
+                        const due = new Date(d.dueDate);
+                        return due >= now && due <= weekFromNow;
+                    });
+                    if (upcoming.length > 0) {
+                        deadlineBlock = `\n\n<entregas_semana>\nEntregas de la semana:\n${upcoming.map(d => `- ${d.title}: vence el ${new Date(d.dueDate).toLocaleDateString('es-AR')}`).join('\n')}\n</entregas_semana>`;
+                    } else {
+                        const nextDeadline = deadlines
+                            .filter(d => new Date(d.dueDate) >= now)
+                            .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))[0];
+                        if (nextDeadline) {
+                            deadlineBlock = `\n\n<entregas_semana>\nNo tenés entregas esta semana. Tu próxima entrega es ${nextDeadline.title} el ${new Date(nextDeadline.dueDate).toLocaleDateString('es-AR')}.\n</entregas_semana>`;
+                        }
+                    }
+                }
+            } catch (deadlineErr) {
+                context.warn('[RAG] Error loading deadlines (non-blocking):', deadlineErr.message);
+            }
+        }
+
+        let glossaryBlock = '';
+        const glossaryPattern = /(?:qu[eé]\s*significa|qu[eé]\s*es|definici[oó]n\s*de|definime|explic[aá]|significado\s*de)\s+[""]?([\w\sáéíóúñüÁÉÍÓÚÑÜ]+)[""]?\??/i;
+        const glossaryMatch = question.match(glossaryPattern);
+        if (glossaryMatch) {
+            const searchTerm = glossaryMatch[1].trim().toLowerCase();
+            try {
+                const glossary = await getGlossary(subjectId);
+                if (glossary && Array.isArray(glossary.terms)) {
+                    const found = glossary.terms.find(t =>
+                        t.term.toLowerCase() === searchTerm ||
+                        t.term.toLowerCase().includes(searchTerm) ||
+                        (t.aliases || []).some(a => a.toLowerCase() === searchTerm || a.toLowerCase().includes(searchTerm))
+                    );
+                    if (found) {
+                        glossaryBlock = `\n\n<glosario>\n"${found.term}" está definido en el glosario de la materia.\n</glosario>`;
+                    } else {
+                        glossaryBlock = `\n\n<glosario>\nEl término no está en el glosario de la materia. Informá al usuario que no se encontró y sugerile preguntar al docente.\n</glosario>`;
+                    }
+                }
+            } catch (glossaryErr) {
+                context.warn('[RAG] Error loading glossary (non-blocking):', glossaryErr.message);
+            }
+        }
+
         const { id: promptId, content: systemPromptBase } = getShadowPrompt();
         // Log telemetry explicit event inside standard console output for App Insights Analytics mapping
         context.log(`[A/B Test] Interaction initialized using prompt version: ${promptId}`);
@@ -427,7 +480,7 @@ app.http('rag-query', {
 
 <contexto_rag>
 ${contextText}
-</contexto_rag>${teacherFeedbackBlock}`,
+</contexto_rag>${teacherFeedbackBlock}${deadlineBlock}${glossaryBlock}`,
 
             },
             {

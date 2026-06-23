@@ -293,6 +293,48 @@ export async function reportChatIssue({ messageId, subjectId, issueDetail, quest
     return res.json();
 }
 
+export async function reportMissingInfo({ messageId, subjectId, classId, expectedInfo, question }) {
+    if (USE_MOCK) {
+        await delay(200);
+        const reports = readLocalJson(MOCK_REPORTS_KEY, []);
+        reports.unshift({
+            correctionId: `mi-${Date.now()}`,
+            subjectId,
+            messageId,
+            question: question || '',
+            issueDetail: String(expectedInfo || '').trim(),
+            classId: classId || 'unknown',
+            type: 'missing-info',
+            status: 'pending',
+            studentId: sessionStorage.getItem('edu_uid') || 'alu-001',
+            createdAt: new Date().toISOString(),
+        });
+        writeLocalJson(MOCK_REPORTS_KEY, reports);
+        return { success: true };
+    }
+    const res = await apiFetch(`${BASE_URL}/chat-report-issue`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            messageId,
+            subjectId,
+            issueDetail: String(expectedInfo || '').trim(),
+            question: question || '',
+            type: 'missing-info',
+            classId: classId || '',
+        })
+    });
+    if (!res.ok) {
+        let message = `Error ${res.status}: no se pudo reportar`;
+        try {
+            const err = await res.json();
+            if (err?.error) message = err.error;
+        } catch {}
+        throw new Error(message);
+    }
+    return res.json();
+}
+
 export async function saveConversation({ conversationId, subjectId, messages }) {
     if (USE_MOCK) {
         await delay(300);

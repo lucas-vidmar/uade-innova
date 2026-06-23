@@ -137,6 +137,20 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
 
   const hasCitations = (content) => /\[\d+\]/.test(content || '');
 
+  const isLowConfidence = (content) => {
+    if (!content) return false;
+    const signals = [
+      'no encontré información suficiente',
+      'no tengo información',
+      'no encontré',
+      'no se encontraron materiales',
+      'no hay información disponible',
+      'no pude encontrar',
+      'no está disponible en los materiales',
+    ];
+    return signals.some(s => content.toLowerCase().includes(s));
+  };
+
   const renderMessage = (msg) => {
     if (msg.role === 'user') {
       return `
@@ -187,6 +201,12 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
               <button class="report-issue-btn ${msg.issueReported ? 'active' : ''}" data-message-id="${msg.id || ''}" title="Reportar problema" ${msg.issueReported ? 'disabled' : ''}>
                 ${msg.issueReported ? '✅ Reportado' : 'Reportar respuesta incorrecta'}
               </button>
+              ${isLowConfidence(msg.content) && !msg.missingInfoReported ? `
+              <button class="report-missing-info-btn" data-message-id="${msg.id || ''}" title="Reportar información faltante">
+                Reportar información faltante
+              </button>
+              ` : ''}
+              ${msg.missingInfoReported ? '<span class="text-xs text-text-muted" style="margin-top:4px;display:block;">✅ Información faltante reportada</span>' : ''}
             </div>
           </div>
         </div>
@@ -417,6 +437,18 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
                   if (bubble) bubble.after(modelIndicator);
                 }
               }
+              if (isLowConfidence(assistantMsg.content) && !assistantMsg.missingInfoReported) {
+                const actionsArea = body.querySelector('.chat-msg-actions');
+                if (actionsArea && !actionsArea.querySelector('.report-missing-info-btn')) {
+                  const missingBtn = document.createElement('button');
+                  missingBtn.className = 'report-missing-info-btn';
+                  missingBtn.dataset.messageId = assistantMsg.id;
+                  missingBtn.title = 'Reportar información faltante';
+                  missingBtn.textContent = 'Reportar información faltante';
+                  actionsArea.appendChild(missingBtn);
+                  bindReportIssueEvents(missingBtn.parentElement);
+                }
+              }
             }
           }
           // Auto-save conversation after each response, then notify parent
@@ -486,6 +518,9 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
           ]);
           const msg = messages.find((item) => item.id === messageId);
           if (msg) { msg.feedback = type; msg.rated = true; }
+          if (type === 'positive') {
+            toast('success', 'Respuesta calificada', '');
+          }
         } catch (err) { console.error('Error sending feedback:', err); }
       });
     });
@@ -547,6 +582,75 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
           return;
         }
         cleanup(val);
+      });
+
+      textarea.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') cleanup(null);
+      });
+
+      document.body.appendChild(overlay);
+      setTimeout(() => textarea.focus(), 100);
+    });
+  };
+
+  const showMissingInfoModal = () => {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal-content" style="max-width:560px;width:92%;">
+          <div class="modal-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+            <h3 class="h4" style="margin:0;">Reportar información faltante</h3>
+            <button type="button" class="btn btn-ghost btn-sm dialog-close" aria-label="Cerrar">✕</button>
+          </div>
+          <div class="modal-body">
+            <div style="margin-bottom:16px;">
+              <label class="form-label" for="missing-info-detail" style="font-weight:600;">¿Qué información esperabas encontrar?</label>
+              <textarea id="missing-info-detail" class="form-input" style="min-height:100px;resize:vertical;" placeholder="Ej: esperaba que la respuesta incluyera el concepto de inmutabilidad en DDD..."></textarea>
+              <p id="missing-info-error" style="display:none;margin-top:6px;color:var(--color-error);font-size:13px;"></p>
+            </div>
+            <div>
+              <label class="form-label" for="missing-info-class" style="font-weight:600;">¿En qué clase/material? (opcional)</label>
+              <select id="missing-info-class" class="form-input" style="min-height:44px;">
+                <option value="">No estoy seguro / Cualquier clase</option>
+                ${(classes || []).map(c => `
+                  <option value="${c.id}">${escapeHtml(c.title || c.id)}</option>
+                `).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-ghost dialog-cancel">Cancelar</button>
+            <button type="button" class="btn btn-primary dialog-confirm" id="missing-info-submit-btn" disabled>Enviar reporte</button>
+          </div>
+        </div>
+      `;
+
+      const textarea = overlay.querySelector('#missing-info-detail');
+      const errorEl = overlay.querySelector('#missing-info-error');
+      const submitBtn = overlay.querySelector('#missing-info-submit-btn');
+      const classSelect = overlay.querySelector('#missing-info-class');
+
+      const cleanup = (result) => { overlay.remove(); resolve(result); };
+
+      textarea.addEventListener('input', () => {
+        submitBtn.disabled = (textarea.value || '').trim().length < 10;
+        errorEl.style.display = 'none';
+      });
+
+      overlay.querySelector('.dialog-close')?.addEventListener('click', () => cleanup(null));
+      overlay.querySelector('.dialog-cancel')?.addEventListener('click', () => cleanup(null));
+      overlay.addEventListener('click', (event) => { if (event.target === overlay) cleanup(null); });
+
+      submitBtn.addEventListener('click', () => {
+        const val = (textarea.value || '').trim();
+        if (val.length < 10) {
+          errorEl.textContent = 'Debe tener al menos 10 caracteres.';
+          errorEl.style.display = 'block';
+          textarea.focus();
+          return;
+        }
+        cleanup({ expectedInfo: val, classId: classSelect.value || '' });
       });
 
       textarea.addEventListener('keydown', (event) => {
@@ -645,6 +749,38 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
           toast('success', 'Reporte enviado', 'Tu reporte fue registrado. El docente recibió una alerta.');
         } catch (err) {
           console.error('Error reporting issue:', err);
+          toast('error', 'No se pudo reportar', err?.message || 'Intentá nuevamente en unos segundos.');
+        }
+      });
+    });
+
+    parent.querySelectorAll('.report-missing-info-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const messageId = btn.dataset.messageId;
+        if (!messageId || btn.disabled) return;
+
+        const result = await showMissingInfoModal();
+        if (!result) return;
+
+        const msg = messages.find(m => m.id === messageId);
+        const msgIndex = messages.indexOf(msg);
+        const userMsg = msgIndex > 0 ? messages[msgIndex - 1] : null;
+        const question = userMsg?.role === 'user' ? userMsg.content : '';
+
+        try {
+          await api.reportMissingInfo({
+            messageId,
+            subjectId,
+            classId: result.classId,
+            expectedInfo: result.expectedInfo,
+            question,
+          });
+          if (msg) msg.missingInfoReported = true;
+          btn.disabled = true;
+          btn.textContent = '✅ Reportado';
+          toast('success', 'Reporte enviado', 'El docente recibió una alerta sobre la información faltante.');
+        } catch (err) {
+          console.error('Error reporting missing info:', err);
           toast('error', 'No se pudo reportar', err?.message || 'Intentá nuevamente en unos segundos.');
         }
       });

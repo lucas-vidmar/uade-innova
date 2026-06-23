@@ -276,9 +276,10 @@ app.http('chat-report-issue', {
     handler: withCorrelation(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         try {
-            const { messageId, subjectId, issueDetail, question, answer } = await request.json();
+            const { messageId, subjectId, issueDetail, question, answer, type, classId: reportClassId } = await request.json();
             const { userId, sanitizedId } = getAuthenticatedUser(request);
             const detail = String(issueDetail || '').trim();
+            const reportType = type === 'missing-info' ? 'missing-info' : 'ai-feedback-issue';
 
             if (!messageId || !subjectId) {
                 return { status: 400, body: JSON.stringify({ error: 'Faltan campos messageId o subjectId' }) };
@@ -314,7 +315,7 @@ app.http('chat-report-issue', {
             const alertId = `ai-issue-${messageId}`;
             const alert = {
                 id: alertId,
-                type: 'ai-feedback-issue',
+                type: reportType,
                 status: 'open',
                 subjectId,
                 messageId,
@@ -322,6 +323,7 @@ app.http('chat-report-issue', {
                 question: resolvedQuestion,
                 answerExcerpt: String(resolvedAnswer).slice(0, 240),
                 issueDetail: detail || 'Sin detalle adicional provisto por el alumno.',
+                classId: reportClassId || resolvedClassId || '',
                 createdAt: now,
             };
 
@@ -332,12 +334,13 @@ app.http('chat-report-issue', {
               await upsertCorrection({
                 correctionId,
                 subjectId,
-                classId: resolvedClassId || 'unknown',
+                classId: reportClassId || resolvedClassId || 'unknown',
                 studentId: userId,
                 question: resolvedQuestion,
                 originalAnswer: String(resolvedAnswer).slice(0, 2000),
                 issueDetail: detail || 'Sin detalle adicional provisto por el alumno.',
                 messageId,
+                type: reportType,
                 status: 'pending',
                 createdAt: now,
               });
