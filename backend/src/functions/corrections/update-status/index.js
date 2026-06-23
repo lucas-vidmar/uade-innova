@@ -9,7 +9,7 @@ function canReadTeacherAlerts(principal) {
   return roles.includes('Docente') || roles.includes('Director');
 }
 
-const VALID_STATUSES = ['pending', 'reviewed', 'resolved'];
+const VALID_STATUSES = ['pending', 'resolved'];
 
 app.http('update-correction-status', {
   methods: ['PATCH'],
@@ -53,7 +53,7 @@ app.http('update-correction-status', {
       };
     }
 
-    const { correctionId, subjectId, status } = body || {};
+    const { correctionId, subjectId, status, comments } = body || {};
 
     if (!correctionId || !subjectId || !status) {
       return {
@@ -129,20 +129,20 @@ app.http('update-correction-status', {
         };
       }
 
-      if (status === 'reviewed' && correction.status !== 'pending') {
+      if (correction.status !== 'pending') {
         return {
           status: 400,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             success: false,
-            error: { code: 'INVALID_TRANSITION', message: 'Solo se pueden marcar como revisadas las correcciones pendientes.' },
+            error: { code: 'INVALID_TRANSITION', message: 'Solo se pueden resolver correcciones pendientes.' },
           }),
         };
       }
 
       const previousStatus = correction.status;
 
-      const updated = await updateCorrectionStatus(subjectId, correctionId, status);
+      const updated = await updateCorrectionStatus(subjectId, correctionId, status, comments);
 
       // Race condition guard: re-read to confirm this request won the update
       const reRead = await getCorrection(subjectId, correctionId);

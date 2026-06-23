@@ -32,7 +32,7 @@ import {
     subscribeNotificationStream
 } from './notifications.api.js';
 import {
-    getDeadlines, saveDeadline, getDeadlineReminders
+    getDeadlines, saveDeadline, deleteDeadline, getDeadlineReminders
 } from './deadlines.api.js';
 import {
     getTasks, getEarlyAlerts, getAttendanceStats,
@@ -53,7 +53,8 @@ import {
 } from './admin.api.js';
 import {
     getTeacherAiFeedbackAlerts, getCorrectionsPending,
-    verifyAnswer, updateCorrectionStatus, getCorrection,
+    verifyAnswer, updateCorrectionStatus, reviewCorrection, getCorrection,
+    getCorrectionChatContext,
     getGlossary, updateGlossary,
     getTranscriptionSuggestions, applyTranscriptionCorrection,
     rejectTranscriptionSuggestion,
@@ -84,7 +85,7 @@ export const api = {
     getNotifications, markNotificationRead, markNotificationsRead,
     subscribeNotificationStream,
 
-    getDeadlines, saveDeadline, getDeadlineReminders,
+    getDeadlines, saveDeadline, deleteDeadline, getDeadlineReminders,
 
     getTasks, getEarlyAlerts, getAttendanceStats,
     getTeacherAnalytics, getTeacherAlerts,
@@ -101,7 +102,8 @@ export const api = {
     getSubjectWeights, saveSubjectWeights,
 
     getTeacherAiFeedbackAlerts, getCorrectionsPending,
-    verifyAnswer, updateCorrectionStatus, getCorrection,
+    verifyAnswer, updateCorrectionStatus, reviewCorrection, getCorrection,
+    getCorrectionChatContext,
     getGlossary, updateGlossary,
     getTranscriptionSuggestions, applyTranscriptionCorrection,
     rejectTranscriptionSuggestion,

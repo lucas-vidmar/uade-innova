@@ -134,6 +134,53 @@ app.http('save-deadline', {
     }),
 });
 
+app.http('delete-deadline', {
+    methods: ['DELETE'],
+    authLevel: 'anonymous',
+    route: 'deadlines/{deadlineId}',
+    handler: withCorrelation(async (request) => {
+        if (!validateFrontDoorId(request)) {
+            return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+        }
+
+        const principal = parseClientPrincipal(request);
+        const isAuthorized = principal?.userRoles?.some(role => ['Docente', 'Director'].includes(role)) || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
+        if (!isAuthorized) {
+            return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Teacher access required' }) };
+        }
+
+        const deadlineId = request.params.deadlineId;
+        const subjectId = request.query.get('subjectId');
+        if (!subjectId || !deadlineId) {
+            return { status: 400, body: JSON.stringify({ error: 'Faltan campos requeridos: subjectId, deadlineId' }) };
+        }
+
+        const userId = principal?.userId || principal?.oid || 'anonymous';
+        const isDirector = principal?.userRoles?.includes('Director');
+
+        if (!isDirector) {
+            try {
+                const enrollment = await getEnrollment(subjectId, userId);
+                if (!enrollment || enrollment.role !== 'teacher' || enrollment.status !== 'active') {
+                    return {
+                        status: 403,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ error: 'No tienes permisos para modificar fechas en esta materia.' })
+                    };
+                }
+            } catch (enrollmentErr) {
+                return { status: 500, body: JSON.stringify({ error: 'Error al verificar permisos de docente.' }) };
+            }
+        }
+
+        const current = await loadJson(CONTAINER_DEADLINES, `${subjectId}.json`) || [];
+        const next = current.filter(d => d.id !== deadlineId);
+        await saveJson(CONTAINER_DEADLINES, `${subjectId}.json`, next);
+
+        return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: true }) };
+    }),
+});
+
 app.http('get-deadline-reminders', {
     methods: ['GET'],
     authLevel: 'anonymous',

@@ -94,6 +94,7 @@ export class OnboardingEngine {
 
   skip() {
     if (!this.active) return;
+    markOnboardingCompleted(this.role);
     this._cleanup();
     toast('success', 'Guía cerrada', 'Podés volver a ver esta guía desde el menú de ayuda.');
     this._dispatch('onboarding:dismissed');

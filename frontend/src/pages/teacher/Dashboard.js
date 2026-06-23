@@ -15,8 +15,17 @@ export async function renderTeacherDashboard(container) {
   container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando cátedras...</div>`;
 
   const user = auth.getUser();
+  const enrolledSubjects = auth.getEnrolledSubjects();
   const activeSubjectId = auth.getActiveSubjectId();
-  if (!activeSubjectId) {
+
+  const isValidSubject = activeSubjectId && enrolledSubjects.some(s => s.id === activeSubjectId);
+
+  if (!activeSubjectId || !isValidSubject) {
+    if (enrolledSubjects.length > 0) {
+      auth.setActiveSubjectId(enrolledSubjects[0].id);
+      renderTeacherDashboard(container);
+      return;
+    }
     container.innerHTML = `<div class="empty-state">No hay materias vinculadas a tu cuenta.</div>`;
     return;
   }
@@ -36,10 +45,10 @@ export async function renderTeacherDashboard(container) {
   }
 
   const pendingCorrections = corrections.filter(c => c.status === 'pending');
-  const reviewedCorrections = corrections.filter(c => c.status === 'reviewed');
   pendingCorrections.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-  reviewedCorrections.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-  const topAlerts = [...pendingCorrections, ...reviewedCorrections].slice(0, 5);
+  const resolvedCorrections = corrections.filter(c => c.status === 'resolved');
+  resolvedCorrections.sort((a, b) => new Date(b.resolvedAt || b.createdAt || 0) - new Date(a.resolvedAt || a.createdAt || 0));
+  const topAlerts = [...pendingCorrections, ...resolvedCorrections].slice(0, 5);
 
   const complete = (classes || []).filter(c => c.summaryReady);
   const processing = (classes || []).filter(c => {
@@ -60,6 +69,7 @@ export async function renderTeacherDashboard(container) {
       <div class="class-list-actions">
         <span class="badge badge-primary">${deadline.notifyOnDayBefore ? '1 día antes' : 'Solo el día'}</span>
         <button class="btn btn-secondary btn-sm btn-edit-deadline" data-deadline-id="${deadline.id}">Editar</button>
+        <button class="btn btn-danger btn-sm btn-delete-deadline" data-deadline-id="${deadline.id}">Eliminar</button>
       </div>
     </div>
   `;
@@ -110,8 +120,8 @@ export async function renderTeacherDashboard(container) {
 
     <div class="section-title" style="margin-top:var(--space-10)"><h2>${icon('clock')} Deadlines por clase</h2><div class="line"></div></div>
     <div class="card" style="margin-bottom:var(--space-8)">
-      <div class="grid-2">
-        <div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-5)">
+        <div style="display:flex;flex-direction:column;gap:var(--space-4)">
           <div class="form-group">
             <label class="form-label">Título</label>
             <input class="form-input" id="deadline-title" placeholder="Final Project" />
@@ -127,16 +137,16 @@ export async function renderTeacherDashboard(container) {
             <input type="date" class="form-input" id="deadline-date" />
           </div>
         </div>
-        <div>
-          <div class="form-group">
+        <div style="display:flex;flex-direction:column;gap:var(--space-4)">
+          <div class="form-group" style="flex:1">
             <label class="form-label">Descripción</label>
-            <textarea class="form-textarea" id="deadline-description" placeholder="Entrega final del proyecto..."></textarea>
+            <textarea class="form-textarea" id="deadline-description" placeholder="Entrega final del proyecto..." style="min-height:100px;flex:1"></textarea>
           </div>
-          <div class="form-group" style="display:flex;gap:var(--space-4);flex-wrap:wrap">
-            <label class="badge badge-neutral" style="cursor:pointer"><input type="checkbox" id="deadline-before" checked /> Notificar 1 día antes</label>
-            <label class="badge badge-neutral" style="cursor:pointer"><input type="checkbox" id="deadline-day" checked /> Notificar el mismo día</label>
+          <div style="display:flex;gap:var(--space-3);flex-wrap:wrap">
+            <label class="badge badge-neutral" style="cursor:pointer;user-select:none"><input type="checkbox" id="deadline-before" checked /> Notificar 1 día antes</label>
+            <label class="badge badge-neutral" style="cursor:pointer;user-select:none"><input type="checkbox" id="deadline-day" checked /> Notificar el mismo día</label>
           </div>
-          <button class="btn btn-primary" id="deadline-save">Guardar deadline</button>
+          <button class="btn btn-primary" id="deadline-save" style="align-self:flex-start">Guardar deadline</button>
         </div>
       </div>
     </div>
@@ -167,13 +177,10 @@ export async function renderTeacherDashboard(container) {
               <div class="class-list-files">Reporte: ${item.createdAt ? (() => { const d = new Date(item.createdAt); return isNaN(d.getTime()) ? '---' : d.toLocaleDateString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); })() : '---'}</div>
             </div>
             <div class="class-list-actions" style="gap:var(--space-2)">
-              <span class="badge ${item.status === 'pending' ? 'badge-error' : 'badge-warning'}">${item.status === 'pending' ? 'Pendiente' : 'Revisado'}</span>
+              <span class="badge ${item.status === 'pending' ? 'badge-error' : 'badge-success'}">${item.status === 'pending' ? 'Pendiente' : 'Resuelto'}</span>
               ${item.status === 'pending' ? `
-                <button class="btn btn-secondary btn-sm dashboard-mark-reviewed" data-correction-id="${escapeHtml(item.correctionId)}">Revisado</button>
-                <button class="btn btn-secondary btn-sm dashboard-mark-resolved" data-correction-id="${escapeHtml(item.correctionId)}">Resuelto</button>
-              ` : `
-                <button class="btn btn-secondary btn-sm dashboard-mark-resolved" data-correction-id="${escapeHtml(item.correctionId)}">Resuelto</button>
-              `}
+                <button class="btn btn-secondary btn-sm dashboard-review-alert" data-correction-id="${escapeHtml(item.correctionId)}">Revisar</button>
+              ` : ''}
             </div>
           </div>
         `).join('') : '<div class="empty-state" style="padding:24px">No hay reportes de calidad IA para esta materia.</div>'}
@@ -210,60 +217,40 @@ export async function renderTeacherDashboard(container) {
     }
   });
 
+  /* ── Deadline full edit ─────────────────────────────────── */
   container.querySelectorAll('.btn-edit-deadline').forEach(btn => {
-    btn.addEventListener('click', async () => {
+    btn.addEventListener('click', () => {
       const deadline = deadlines.find(d => d.id === btn.dataset.deadlineId);
       if (!deadline) return;
-      const newTitle = await showPromptDialog({
-        title: 'Editar deadline',
-        label: 'Titulo del deadline',
-        initialValue: deadline.title,
-        confirmText: 'Guardar',
-      });
-      if (!newTitle) return;
-      await api.saveDeadline({ ...deadline, title: newTitle });
-      toast('success', 'Deadline actualizado', 'Los cambios se guardaron correctamente.');
-      renderTeacherDashboard(container);
+      showDeadlineEditModal(deadline, classes, activeSubjectId, container);
     });
   });
 
-  let dashboardUpdating = false;
-
-  container.querySelectorAll('.dashboard-mark-reviewed').forEach(btn => {
+  /* ── Deadline delete ────────────────────────────────────── */
+  container.querySelectorAll('.btn-delete-deadline').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      if (dashboardUpdating) return;
-      dashboardUpdating = true;
-      btn.disabled = true;
-      const correctionId = btn.getAttribute('data-correction-id');
+      const deadline = deadlines.find(d => d.id === btn.dataset.deadlineId);
+      if (!deadline) return;
+      if (!confirm(`¿Eliminar el deadline "${deadline.title}"?`)) return;
       try {
-        await api.updateCorrectionStatus(activeSubjectId, correctionId, 'reviewed');
-        toast('success', 'Estado actualizado', 'La corrección fue marcada como revisada.');
+        await api.deleteDeadline(activeSubjectId, deadline.id);
+        toast('success', 'Deadline eliminado', 'El deadline fue eliminado correctamente.');
         renderTeacherDashboard(container);
       } catch (err) {
-        toast('error', 'Error', err.message || 'No se pudo actualizar el estado.');
-        btn.disabled = false;
-        dashboardUpdating = false;
+        toast('error', 'Error', err.message || 'No se pudo eliminar el deadline.');
       }
     });
   });
 
-  container.querySelectorAll('.dashboard-mark-resolved').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
+  /* ── Quality alert review modal ─────────────────────────── */
+  container.querySelectorAll('.dashboard-review-alert').forEach(btn => {
+    btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (dashboardUpdating) return;
-      dashboardUpdating = true;
-      btn.disabled = true;
       const correctionId = btn.getAttribute('data-correction-id');
-      try {
-        await api.updateCorrectionStatus(activeSubjectId, correctionId, 'resolved');
-        toast('success', 'Estado actualizado', 'La corrección fue marcada como resuelta.');
-        renderTeacherDashboard(container);
-      } catch (err) {
-        toast('error', 'Error', err.message || 'No se pudo actualizar el estado.');
-        btn.disabled = false;
-        dashboardUpdating = false;
-      }
+      const correction = corrections.find(c => c.correctionId === correctionId);
+      if (!correction) return;
+      showReviewAlertModal(activeSubjectId, correction, container);
     });
   });
 
@@ -278,6 +265,189 @@ export async function renderTeacherDashboard(container) {
       engine.start();
     }
   });
+}
+
+/* ── Deadline Edit Modal ────────────────────────────────── */
+function showDeadlineEditModal(deadline, classes, subjectId, container) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-content" style="max-width:540px;width:92%">
+      <div class="modal-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <h3 class="h4" style="margin:0">Editar deadline</h3>
+        <button type="button" class="btn btn-ghost btn-sm modal-close-btn" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:var(--space-4)">
+        <div class="form-group">
+          <label class="form-label">Título</label>
+          <input class="form-input" id="edit-deadline-title" value="${escapeHtml(deadline.title)}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Clase</label>
+          <select class="form-select" id="edit-deadline-class">
+            ${(classes || []).map(c => `<option value="${c.id}" ${c.id === deadline.classId ? 'selected' : ''}>${c.title}</option>`).join('')}
+          </select>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4)">
+          <div class="form-group">
+            <label class="form-label">Vencimiento</label>
+            <input type="date" class="form-input" id="edit-deadline-date" value="${deadline.dueDate ? deadline.dueDate.slice(0, 10) : ''}" />
+          </div>
+          <div style="display:flex;flex-direction:column;gap:var(--space-2);justify-content:flex-end;padding-bottom:2px">
+            <label class="badge badge-neutral" style="cursor:pointer;user-select:none"><input type="checkbox" id="edit-deadline-before" ${deadline.notifyOnDayBefore !== false ? 'checked' : ''} /> Notificar 1 día antes</label>
+            <label class="badge badge-neutral" style="cursor:pointer;user-select:none"><input type="checkbox" id="edit-deadline-day" ${deadline.notifyOnDayOf !== false ? 'checked' : ''} /> Notificar el mismo día</label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Descripción</label>
+          <textarea class="form-textarea" id="edit-deadline-description" style="min-height:80px">${escapeHtml(deadline.description || '')}</textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost modal-close-btn">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="edit-deadline-save">Guardar cambios</button>
+      </div>
+    </div>
+  `;
+
+  const cleanup = () => overlay.remove();
+  overlay.querySelectorAll('.modal-close-btn').forEach(el => el.addEventListener('click', cleanup));
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(); });
+
+  overlay.querySelector('#edit-deadline-save').addEventListener('click', async () => {
+    const title = overlay.querySelector('#edit-deadline-title').value.trim();
+    if (!title) return;
+    try {
+      await api.saveDeadline({
+        ...deadline,
+        title,
+        classId: overlay.querySelector('#edit-deadline-class').value,
+        dueDate: overlay.querySelector('#edit-deadline-date').value,
+        description: overlay.querySelector('#edit-deadline-description').value.trim(),
+        notifyOnDayBefore: overlay.querySelector('#edit-deadline-before').checked,
+        notifyOnDayOf: overlay.querySelector('#edit-deadline-day').checked,
+      });
+      cleanup();
+      toast('success', 'Deadline actualizado', 'Los cambios se guardaron correctamente.');
+      renderTeacherDashboard(container);
+    } catch (err) {
+      toast('error', 'Error', err.message || 'No se pudo actualizar el deadline.');
+    }
+  });
+
+  document.body.appendChild(overlay);
+}
+
+/* ── Quality Alert Review Modal ─────────────────────────── */
+function showReviewAlertModal(subjectId, correction, container) {
+  if (!correction) return;
+  let chatContextHtml = '';
+  let contextLoaded = false;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-content" style="max-width:620px;width:92%">
+      <div class="modal-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <h3 class="h4" style="margin:0">Revisar reporte de calidad</h3>
+        <button type="button" class="btn btn-ghost btn-sm modal-close-btn" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:var(--space-4);max-height:70vh;overflow-y:auto">
+        <div style="background:var(--color-surface-2);border-radius:var(--radius-md);padding:var(--space-4)">
+          <div style="font-size:var(--font-size-xs);color:var(--color-text-muted);margin-bottom:var(--space-1)">Consulta del alumno</div>
+          <div style="font-weight:600;font-size:var(--font-size-sm)">${escapeHtml(correction.question || 'Consulta sin título')}</div>
+          ${correction.issueDetail ? `
+            <div style="font-size:var(--font-size-xs);color:var(--color-text-secondary);margin-top:var(--space-2)">${escapeHtml(correction.issueDetail)}</div>
+          ` : ''}
+          ${correction.originalAnswer ? `
+            <div style="margin-top:var(--space-3);padding-top:var(--space-3);border-top:1px solid var(--color-border)">
+              <div style="font-size:var(--font-size-xs);color:var(--color-text-muted);margin-bottom:var(--space-1)">Respuesta original de la IA</div>
+              <div style="font-size:var(--font-size-xs);color:var(--color-text-secondary);line-height:1.5">${escapeHtml(correction.originalAnswer)}</div>
+            </div>
+          ` : ''}
+        </div>
+        <button class="btn btn-secondary btn-sm" id="load-chat-context" style="align-self:flex-start">${icon('clock')} Cargar contexto completo del chat</button>
+        <div id="chat-context-container" style="display:none"></div>
+        <div class="form-group">
+          <label class="form-label">Comentarios del docente</label>
+          <textarea class="form-textarea" id="review-comments" placeholder="Agregá comentarios sobre esta corrección. Estos comentarios servirán como input para futuras consultas del chat..." style="min-height:100px"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex;gap:var(--space-2);justify-content:space-between">
+        <button type="button" class="btn btn-ghost modal-close-btn">Cancelar</button>
+        <div style="display:flex;gap:var(--space-2)">
+          <button type="button" class="btn btn-secondary" id="review-mark-resolved">Resolver sin revisión</button>
+          <button type="button" class="btn btn-primary" id="review-save">Guardar y resolver</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const cleanup = () => overlay.remove();
+  overlay.querySelectorAll('.modal-close-btn').forEach(el => el.addEventListener('click', cleanup));
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(); });
+
+  overlay.querySelector('#load-chat-context').addEventListener('click', async () => {
+    if (contextLoaded) return;
+    const btn = overlay.querySelector('#load-chat-context');
+    btn.disabled = true;
+    btn.textContent = 'Cargando...';
+    try {
+      const context = await api.getCorrectionChatContext(subjectId, correction.correctionId);
+      const containerEl = overlay.querySelector('#chat-context-container');
+      if (context && context.messages && context.messages.length > 0) {
+        containerEl.style.display = 'block';
+        containerEl.innerHTML = `
+          <div style="background:var(--color-surface-2);border-radius:var(--radius-md);padding:var(--space-4)">
+            <div style="font-size:var(--font-size-xs);color:var(--color-text-muted);margin-bottom:var(--space-3)">Conversación completa</div>
+            ${context.messages.map(msg => `
+              <div style="margin-bottom:var(--space-2);padding:var(--space-2);border-radius:var(--radius-sm);background:${msg.role === 'user' ? 'var(--color-surface-3)' : 'var(--color-surface)'};border-left:3px solid ${msg.role === 'user' ? 'var(--color-primary)' : 'var(--color-success)'}">
+                <div style="font-size:var(--font-size-xs);font-weight:600;color:var(--color-text-muted);margin-bottom:2px">${msg.role === 'user' ? 'Alumno' : 'Asistente'}</div>
+                <div style="font-size:var(--font-size-sm);color:var(--color-text-primary);line-height:1.5">${escapeHtml(msg.content)}</div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      } else {
+        containerEl.style.display = 'block';
+        containerEl.innerHTML = '<div style="padding:var(--space-3);text-align:center;color:var(--color-text-muted);font-size:var(--font-size-sm)">No se encontró el contexto del chat.</div>';
+      }
+      contextLoaded = true;
+      btn.textContent = 'Contexto cargado';
+    } catch (err) {
+      const containerEl = overlay.querySelector('#chat-context-container');
+      containerEl.style.display = 'block';
+      containerEl.innerHTML = `<div style="padding:var(--space-3);text-align:center;color:var(--color-text-muted);font-size:var(--font-size-sm)">Error al cargar contexto: ${escapeHtml(err.message)}</div>`;
+      btn.disabled = false;
+      btn.textContent = 'Reintentar';
+    }
+  });
+
+  overlay.querySelector('#review-save').addEventListener('click', async () => {
+    const comments = overlay.querySelector('#review-comments').value.trim();
+    try {
+      await api.reviewCorrection(subjectId, correction.correctionId, 'resolved', comments);
+      cleanup();
+      toast('success', 'Reporte resuelto', comments ? 'Corrección resuelta con comentarios.' : 'Corrección resuelta.');
+      renderTeacherDashboard(container);
+    } catch (err) {
+      toast('error', 'Error al guardar', err.message || 'No se pudo resolver.');
+    }
+  });
+
+  overlay.querySelector('#review-mark-resolved').addEventListener('click', async () => {
+    if (!confirm('¿Resolver sin agregar comentarios?')) return;
+    try {
+      await api.updateCorrectionStatus(subjectId, correction.correctionId, 'resolved');
+      cleanup();
+      toast('success', 'Reporte resuelto', 'La corrección fue marcada como resuelta.');
+      renderTeacherDashboard(container);
+    } catch (err) {
+      toast('error', 'Error al resolver', err.message || 'No se pudo actualizar el estado.');
+    }
+  });
+
+  document.body.appendChild(overlay);
 }
 
 function icon(name) {

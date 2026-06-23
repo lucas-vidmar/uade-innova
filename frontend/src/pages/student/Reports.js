@@ -6,14 +6,12 @@ import { toast } from '../../components/Toast.js';
 
 const STATUS_LABELS = {
   pending: 'Pendiente',
-  reviewed: 'Revisado',
   resolved: 'Resuelto',
   verified: 'Verificado',
 };
 
 const STATUS_BADGE = {
   pending: 'badge-error',
-  reviewed: 'badge-warning',
   resolved: 'badge-success',
   verified: 'badge-primary',
 };
@@ -48,7 +46,6 @@ export async function renderStudentReports(container) {
   }
 
   const pendingCount = reports.filter(r => r.status === 'pending').length;
-  const reviewedCount = reports.filter(r => r.status === 'reviewed').length;
   const resolvedCount = reports.filter(r => r.status === 'resolved' || r.status === 'verified').length;
 
   container.innerHTML = `
@@ -58,14 +55,10 @@ export async function renderStudentReports(container) {
         Los reportes que enviaste sobre respuestas incorrectas del asistente.
       </p>
 
-      <div class="grid-3" style="margin-bottom:var(--space-6)">
+      <div class="grid-2" style="margin-bottom:var(--space-6)">
         <div class="kpi-card">
           <div class="kpi-label">Pendientes</div>
           <div class="kpi-value" style="color:var(--color-error)">${pendingCount}</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-label">Revisados</div>
-          <div class="kpi-value" style="color:var(--color-warning)">${reviewedCount}</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-label">Resueltos</div>
@@ -85,7 +78,7 @@ export async function renderStudentReports(container) {
                 const date = r.createdAt
                   ? new Date(r.createdAt).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
                   : '---';
-                const isActionable = r.status === 'pending' || r.status === 'reviewed';
+                const isResolved = r.status === 'resolved' || r.status === 'verified';
 
                 return `
                   <div class="class-list-item" style="align-items:flex-start">
@@ -98,7 +91,8 @@ export async function renderStudentReports(container) {
                     <div class="class-list-info">
                       <div class="class-list-title"><strong>${escapeHtml(r.question || 'Consulta sin título')}</strong></div>
                       <div class="class-list-topics">${escapeHtml(r.issueDetail || 'Sin detalle')}</div>
-                      <div class="class-list-files">Enviado ${date} ${r.resolvedAt ? `· Resuelto ${new Date(r.resolvedAt).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}` : ''}</div>
+                      ${isResolved && r.comments ? `<div class="class-list-files" style="margin-top:var(--space-2);padding:var(--space-2);background:var(--color-surface-2);border-radius:var(--radius-sm)"><strong>Respuesta del profesor:</strong> ${escapeHtml(r.comments)}</div>` : ''}
+                      <div class="class-list-files" style="margin-top:4px">Enviado ${date} ${isResolved ? `· Resuelto ${r.resolvedAt ? new Date(r.resolvedAt).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }) : ''}` : ''}</div>
                     </div>
                     <div class="class-list-actions" style="gap:var(--space-2)">
                       <span class="badge ${STATUS_BADGE[r.status] || 'badge-neutral'}">${STATUS_LABELS[r.status] || r.status}</span>

@@ -45,6 +45,23 @@ export async function saveDeadline(payload) {
     return res.json();
 }
 
+export async function deleteDeadline(subjectId, deadlineId) {
+    if (USE_MOCK) {
+        await delay(300);
+        return { success: true };
+    }
+
+    const res = await apiFetch(`${BASE_URL}/deadlines/${deadlineId}?subjectId=${encodeURIComponent(subjectId)}`, {
+        method: 'DELETE',
+    });
+
+    if (!res.ok) {
+        throw new Error(`Error ${res.status}: No se pudo eliminar el deadline`);
+    }
+
+    return res.json();
+}
+
 export async function getDeadlineReminders(subjectId, today) {
     if (USE_MOCK) {
         const target = today || new Date().toISOString().slice(0, 10);

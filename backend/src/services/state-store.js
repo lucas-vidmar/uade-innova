@@ -341,12 +341,14 @@ function toCorrectionEntity(correction) {
     originalAnswer: correction.originalAnswer,
     correctedAnswer: correction.correctedAnswer || '',
     explanation: correction.explanation || '',
+    comments: correction.comments || '',
     status: correction.status || 'pending',
     issueDetail: correction.issueDetail || '',
     classId: correction.classId || '',
     messageId: correction.messageId || '',
     createdAt: correction.createdAt || new Date().toISOString(),
     resolvedAt: correction.resolvedAt || '',
+    reviewedAt: correction.reviewedAt || '',
   });
 }
 
@@ -360,12 +362,14 @@ function fromCorrectionEntity(entity) {
     originalAnswer: entity.originalAnswer,
     correctedAnswer: entity.correctedAnswer || '',
     explanation: entity.explanation || '',
+    comments: entity.comments || '',
     status: entity.status || 'pending',
     issueDetail: entity.issueDetail || '',
     classId: entity.classId || '',
     messageId: entity.messageId || '',
     createdAt: entity.createdAt,
     resolvedAt: entity.resolvedAt || '',
+    reviewedAt: entity.reviewedAt || '',
   };
 }
 
@@ -456,7 +460,7 @@ export async function listCorrections(subjectId, statusFilter) {
   return all.map(fromCorrectionEntity);
 }
 
-export async function updateCorrectionStatus(subjectId, correctionId, newStatus) {
+export async function updateCorrectionStatus(subjectId, correctionId, newStatus, comments) {
   if (!subjectId || !correctionId || !newStatus) {
     throw new Error('updateCorrectionStatus requires subjectId, correctionId, and newStatus');
   }
@@ -466,12 +470,16 @@ export async function updateCorrectionStatus(subjectId, correctionId, newStatus)
     throw new Error('Corrección no encontrada.');
   }
 
-  const validStatuses = ['pending', 'reviewed', 'resolved', 'verified'];
+  const validStatuses = ['pending', 'resolved', 'verified'];
   if (!validStatuses.includes(newStatus)) {
     throw new Error(`Estado inválido: ${newStatus}`);
   }
 
   correction.status = newStatus;
+  if (comments) {
+    correction.comments = comments;
+    correction.reviewedAt = new Date().toISOString();
+  }
   if (newStatus === 'resolved' || newStatus === 'verified') {
     correction.resolvedAt = new Date().toISOString();
   }
@@ -500,6 +508,21 @@ export async function updateCorrectionStatus(subjectId, correctionId, newStatus)
   }
 
   return correction;
+}
+
+export async function listReviewedCorrections(subjectId) {
+  if (!subjectId) return [];
+  await ensureTable(CORRECTIONS_TABLE);
+  const client = getTableClient(CORRECTIONS_TABLE);
+  const filter = `PartitionKey eq '${escapeODataValue(subjectId)}'`;
+  const all = [];
+  for await (const entity of client.listEntities({ queryOptions: { filter } })) {
+    if (entity.comments && entity.status === 'resolved') {
+      all.push(fromCorrectionEntity(entity));
+    }
+  }
+  all.sort((a, b) => new Date(b.resolvedAt || b.createdAt || 0) - new Date(a.resolvedAt || a.createdAt || 0));
+  return all;
 }
 
 // ─── Transcription Corrections Operations ─────────────────────

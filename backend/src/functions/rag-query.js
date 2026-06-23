@@ -13,7 +13,7 @@ import { normalizeCategorizedError, ErrorCategory } from '../services/error-cate
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { createStructuredLogger } from '../services/structured-logger.js';
 import { v4 as uuidv4 } from 'uuid';
-import { listMaterialsBySubject } from '../services/state-store.js';
+import { listMaterialsBySubject, listReviewedCorrections } from '../services/state-store.js';
 import { getEnrollment, getConsentStatus } from '../services/state-store.js';
 import { getSubjectWeights } from '../services/subject-weights.js';
 import {
@@ -397,6 +397,29 @@ app.http('rag-query', {
         // Log telemetry explicit event inside standard console output for App Insights Analytics mapping
         context.log(`[A/B Test] Interaction initialized using prompt version: ${promptId}`);
 
+        // ── 6b. Cargar feedback docente (correcciones revisadas) ──
+        let teacherFeedbackBlock = '';
+        try {
+          const reviewedCorrections = await listReviewedCorrections(subjectId);
+          if (reviewedCorrections.length > 0) {
+            const feedbackEntries = reviewedCorrections
+              .slice(0, 5)
+              .map((c, i) => {
+                const date = c.reviewedAt ? new Date(c.reviewedAt).toLocaleDateString('es-AR') : '';
+                return `<feedback indice="${i + 1}">
+  <consulta>${c.question || ''}</consulta>
+  <comentario_docente>${c.comments || ''}</comentario_docente>
+  ${date ? `<fecha_revision>${date}</fecha_revision>` : ''}
+</feedback>`;
+              })
+              .join('\n');
+            teacherFeedbackBlock = `\n\n<feedback_docente>\nA continuacion, feedback y correcciones que el docente ha revisado sobre consultas anteriores. Usa esta informacion para mejorar tus respuestas y evitar errores similares.\n${feedbackEntries}\n</feedback_docente>`;
+            context.log(`[RAG] Loaded ${reviewedCorrections.length} teacher-reviewed corrections for subjectId=${subjectId}`);
+          }
+        } catch (feedbackErr) {
+          context.error('[RAG] Error loading teacher feedback (non-blocking):', feedbackErr);
+        }
+
         const messages = [
             {
                 role: 'system',
@@ -404,7 +427,7 @@ app.http('rag-query', {
 
 <contexto_rag>
 ${contextText}
-</contexto_rag>`,
+</contexto_rag>${teacherFeedbackBlock}`,
 
             },
             {

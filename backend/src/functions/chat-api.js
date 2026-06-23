@@ -1,6 +1,6 @@
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { validateFrontDoorId, parseClientPrincipal, getAuthenticatedUser } from '../services/auth-utils.js';
-import { getEnrollment, upsertCorrection, listCorrections, RATINGS_TABLE } from '../services/state-store.js';
+import { getEnrollment, upsertCorrection, listCorrections, getCorrection, getConversation, RATINGS_TABLE } from '../services/state-store.js';
 import { v4 as uuidv4 } from 'uuid';
 /**
  * chat-api.js — Azure Functions para feedback e historial de chat
@@ -396,6 +396,7 @@ app.http('student-reports', {
                     classId: c.classId,
                     createdAt: c.createdAt,
                     resolvedAt: c.resolvedAt,
+                    comments: c.comments || '',
                 }))
                 .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 
@@ -407,6 +408,74 @@ app.http('student-reports', {
         } catch (err) {
             context.error('[student-reports] Error:', err);
             return { status: 500, body: JSON.stringify({ error: 'Error interno obteniendo reportes.' }) };
+        }
+    }),
+});
+
+// ── GET /api/corrections-chat-context?subjectId={id}&correctionId={id} ─
+app.http('corrections-chat-context', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'corrections-chat-context',
+    handler: withCorrelation(async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden' }) };
+
+        const subjectId = request.query.get('subjectId');
+        const correctionId = request.query.get('correctionId');
+        if (!subjectId || !correctionId) {
+            return { status: 400, body: JSON.stringify({ error: 'Faltan subjectId y correctionId' }) };
+        }
+
+        const principal = parseClientPrincipal(request);
+        const isTeacherOrDirector = principal?.userRoles?.some(r => ['Docente', 'Director'].includes(r)) || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
+        if (!isTeacherOrDirector) {
+            return { status: 403, body: JSON.stringify({ error: 'Acceso denegado.' }) };
+        }
+
+        try {
+            const correction = await getCorrection(subjectId, correctionId);
+            if (!correction) {
+                return { status: 404, body: JSON.stringify({ error: 'Corrección no encontrada.' }) };
+            }
+
+            const { userId } = getAuthenticatedUser(request);
+            const messageId = correction.messageId;
+
+            // 1. Intentar cargar el chat log de ese mensaje específico
+            let chatLog = null;
+            if (messageId) {
+                try {
+                    chatLog = await loadJson(CONTAINER_CHAT, `${userId}/${subjectId}/${messageId}.json`);
+                } catch { }
+            }
+
+            // 2. Si el chat log tiene sessionId, cargar la conversación completa
+            let messages = [];
+            if (chatLog?.sessionId) {
+                try {
+                    const conversation = await getConversation(chatLog.sessionId, subjectId);
+                    if (conversation?.messages) {
+                        messages = conversation.messages;
+                    }
+                } catch { }
+            }
+
+            // 3. Fallback: construir mensajes desde el chat log
+            if (messages.length === 0 && chatLog) {
+                messages = [
+                    { role: 'user', content: chatLog.question || '' },
+                    { role: 'assistant', content: chatLog.answer || '' },
+                ];
+            }
+
+            return {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ success: true, data: { messages, chatLog } }),
+            };
+        } catch (err) {
+            context.error('[corrections-chat-context] Error:', err);
+            return { status: 500, body: JSON.stringify({ error: 'Error interno.' }) };
         }
     }),
 });

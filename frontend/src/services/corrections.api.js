@@ -119,6 +119,24 @@ export async function verifyAnswer(payload) {
     return res.json();
 }
 
+export async function reviewCorrection(subjectId, correctionId, status, comments) {
+    if (USE_MOCK) {
+        await delay(300);
+        return { success: true, data: { correctionId, status } };
+    }
+    const res = await apiFetch(`${BASE_URL}/corrections-status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ correctionId, subjectId, status, comments }),
+    });
+    if (!res.ok) {
+        let message = `Error del servidor (${res.status})`;
+        try { const err = await res.json(); if (err?.error?.message) message = err.error.message; } catch {}
+        throw new Error(message);
+    }
+    return res.json();
+}
+
 export async function updateCorrectionStatus(subjectId, correctionId, status) {
     if (USE_MOCK) {
         await delay(300);
@@ -130,7 +148,7 @@ export async function updateCorrectionStatus(subjectId, correctionId, status) {
         body: JSON.stringify({ correctionId, subjectId, status }),
     });
     if (!res.ok) {
-        let message = 'Error al actualizar estado';
+        let message = `Error del servidor (${res.status})`;
         try { const err = await res.json(); if (err?.error?.message) message = err.error.message; } catch {}
         throw new Error(message);
     }
@@ -158,6 +176,32 @@ export async function getCorrection(subjectId, correctionId) {
     const json = await res.json();
     const data = json.data || [];
     return correctionId ? data.find(c => c.correctionId === correctionId) || null : data;
+}
+
+export async function getCorrectionChatContext(subjectId, correctionId) {
+    if (USE_MOCK) {
+        await delay(300);
+        return {
+            messages: [
+                { role: 'user', content: '¿Qué es la arquitectura hexagonal?' },
+                { role: 'assistant', content: 'La arquitectura hexagonal es un patrón de diseño...' },
+                { role: 'user', content: '¿Y cómo se relaciona con DDD?' },
+                { role: 'assistant', content: 'Se relaciona porque ambos buscan aislar el dominio...' },
+            ],
+        };
+    }
+    try {
+        const res = await fetchWithTimeout(
+            `${BASE_URL}/corrections-chat-context?subjectId=${encodeURIComponent(subjectId)}&correctionId=${encodeURIComponent(correctionId)}`,
+            { timeout: 5000 }
+        );
+        if (!res.ok) throw new Error(`Error ${res.status}`);
+        const json = await res.json();
+        return json?.data || { messages: [] };
+    } catch (err) {
+        console.error('[API] getCorrectionChatContext failed:', err);
+        throw err;
+    }
 }
 
 export async function getGlossary(subjectId) {
