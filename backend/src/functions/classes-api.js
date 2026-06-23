@@ -7,6 +7,7 @@ import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-util
 import { listClassesBySubject, listMaterialsBySubject, replaceClassesForSubject, deleteMaterialStateById, getMaterialState, upsertMaterialState, deleteClassesBySubject, deleteMaterialsBySubject, getEnrollmentsByUser, getEnrollment } from '../services/state-store.js';
 import * as vectorStore from '../services/vector-store.js';
 import { trackPollingEvent } from '../services/telemetry.js';
+import { chatCompletion } from '../services/ai.js';
 
 function getMonthlyBudget() {
     const rawBudget = process.env.DIRECTOR_BUDGET_MONTHLY_USD;
@@ -1233,6 +1234,42 @@ app.http('save-class-map', {
             return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updatedData) };
         } catch (err) {
             return { status: 500, body: JSON.stringify({ error: `Error guardando mapa: ${err.message}` }) };
+        }
+    })
+});
+
+// ── POST /api/class-map/{classId}/generate ─────────────────────────
+app.http('generate-class-map', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'class-map/{classId}/generate',
+    handler: withCorrelation(async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+        const classId = request.params.classId;
+        const principal = parseClientPrincipal(request);
+        const userId = principal?.oid || request.headers.get('x-edu-uid') || 'pilot-user';
+        const CONTAINER_MAPS = 'class-maps';
+        const CONTAINER_SUMMARIES = 'class-summaries';
+        try {
+            const summaryData = await loadJson(CONTAINER_SUMMARIES, `${classId}.json`);
+            const textToMap = typeof summaryData === 'string' ? summaryData : (summaryData?.summary?.content || summaryData?.summary || '');
+            if (!textToMap) {
+                return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'No hay resumen disponible para generar el mapa conceptual.' }) };
+            }
+            const prompt = `Genera un mapa conceptual Mermaid.js (graph TD) para:\n${textToMap.substring(0, 10000)}`;
+            const response = await chatCompletion([
+                { role: 'system', content: 'Generas diagramas Mermaid.js precisos.' },
+                { role: 'user', content: prompt }
+            ], false, { temperature: 0.4, max_tokens: 1500 });
+            const mapCode = response.content.replace(/```mermaid\n?|```/g, '').trim();
+            const mapData = {
+                classId, generatedAt: new Date().toISOString(), mapCode,
+                generatedBy: userId, subjectId: request.query.get('subjectId') || '',
+            };
+            await saveJson(CONTAINER_MAPS, `${classId}.json`, mapData);
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mapData) };
+        } catch (err) {
+            return { status: 500, body: JSON.stringify({ error: `Error generando mapa: ${err.message}` }) };
         }
     })
 });

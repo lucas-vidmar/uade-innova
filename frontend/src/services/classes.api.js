@@ -165,3 +165,18 @@ export async function saveClassTimeline(classId, payload) {
     }
     return res.json();
 }
+
+export async function generateClassMap(classId, subjectId) {
+    if (USE_MOCK) {
+        await delay(1500);
+        return { classId, mapCode: 'graph TD; A[Concepto] --> B[Sub-concepto];', generatedAt: new Date().toISOString() };
+    }
+    const params = subjectId ? `?subjectId=${encodeURIComponent(subjectId)}` : '';
+    const res = await apiFetch(`${BASE_URL}/class-map/${classId}/generate${params}`, { method: 'POST' });
+    if (!res.ok) {
+        let message = `Error ${res.status}: No se pudo generar el mapa`;
+        try { const err = await res.json(); if (err?.error) message = err.error; } catch {}
+        throw new Error(message);
+    }
+    return res.json();
+}

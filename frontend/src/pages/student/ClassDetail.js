@@ -292,11 +292,8 @@ export async function renderClassDetail(container) {
           const btn = container.querySelector('#btn-generate-map');
           if (btn) { btn.disabled = true; btn.textContent = 'Generando...'; }
           try {
-            const summary = await api.getClassSummary(classId);
-            const textToMap = summary?.summary?.content || summary?.summary || '';
-            if (textToMap) {
-              await api.saveClassMap(classId, { mapCode: '', subjectId: activeSubjectId });
-            }
+            const { generateClassMap } = await import('../../services/classes.api.js');
+            await generateClassMap(classId, activeSubjectId);
             renderClassDetail(container);
           } catch {
             if (btn) { btn.disabled = false; btn.textContent = 'Generar mapa conceptual'; }
