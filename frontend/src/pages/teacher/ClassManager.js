@@ -93,6 +93,7 @@ export async function renderClassManager(container) {
                                             <th class="class-col-title">Título</th>
                                             <th class="class-col-date">Fecha</th>
                                             <th class="class-col-materials">Materiales</th>
+                                            <th class="class-col-topics">Tags</th>
                                             <th class="class-col-summary">Resumen IA</th>
                                             <th class="class-col-timeline">Timeline</th>
                                             <th class="class-col-actions" style="text-align:center">Acciones</th>
@@ -123,6 +124,13 @@ export async function renderClassManager(container) {
                                                 <td class="class-col-materials">
                                                     <div style="font-size:0.875rem; color:var(--color-text-muted)">
                                                         ${c.materials.length} archivo(s)
+                                                    </div>
+                                                </td>
+                                                <td class="class-col-topics">
+                                                    <div class="topic-tags-cell" data-idx="${i}" style="display:flex;flex-wrap:wrap;gap:4px;max-width:200px;">
+                                                        ${(c.topics || []).slice(0, 3).map(t => `<span class="badge badge-neutral" style="font-size:10px;padding:2px 6px;">${escapeHtml(t)}</span>`).join('')}
+                                                        ${(c.topics || []).length > 3 ? `<span class="badge badge-info" style="font-size:10px;padding:2px 6px;">+${(c.topics || []).length - 3}</span>` : ''}
+                                                        <button class="btn btn-ghost btn-sm btn-edit-topics" data-idx="${i}" title="Editar tags" style="padding:2px 4px;font-size:10px;">✏️</button>
                                                     </div>
                                                 </td>
                                                 <td class="class-col-summary">
@@ -171,10 +179,109 @@ export async function renderClassManager(container) {
 
             // Agregar clase
             document.getElementById('btn-add-class')?.addEventListener('click', () => {
-                const newId = `class-${String(classes.length + 1).padStart(2, '0')}`;
-                const today = new Date().toISOString().split('T')[0];
-                classes.push({ id: newId, subjectId, title: "Nueva Clase", date: today, topics: [], materials: [] });
-                saveAllClasses(classes);
+                const overlay = document.createElement('div');
+                overlay.className = 'modal-overlay';
+                overlay.innerHTML = `
+                    <div class="modal-content" style="max-width:480px;width:92%;">
+                        <div class="modal-header"><h3 class="h4" style="margin:0;">Agregar clase</h3>
+                        <button type="button" class="btn btn-ghost btn-sm dialog-close">✕</button></div>
+                        <div class="modal-body" style="display:flex;flex-direction:column;gap:var(--space-4)">
+                            <div class="form-group">
+                                <label class="form-label">Título <span class="text-error">*</span></label>
+                                <input class="form-input" id="new-class-title" placeholder="Ej: Clase 4 - Patrones de Diseño" />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Fecha <span class="text-error">*</span></label>
+                                <input type="date" class="form-input" id="new-class-date" value="${new Date().toISOString().split('T')[0]}" />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Temas (uno por línea)</label>
+                                <textarea class="form-input" id="new-class-topics" placeholder="Arquitectura hexagonal&#10;DDD&#10;Puertos y adaptadores" style="min-height:80px;"></textarea>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-ghost dialog-cancel">Cancelar</button>
+                            <button type="button" class="btn btn-primary" id="new-class-save">Guardar</button>
+                        </div>
+                    </div>`;
+                const cleanup = () => overlay.remove();
+                overlay.querySelector('.dialog-close')?.addEventListener('click', cleanup);
+                overlay.querySelector('.dialog-cancel')?.addEventListener('click', cleanup);
+                overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(); });
+                overlay.querySelector('#new-class-save')?.addEventListener('click', () => {
+                    const title = overlay.querySelector('#new-class-title').value.trim();
+                    const date = overlay.querySelector('#new-class-date').value;
+                    const topicsStr = overlay.querySelector('#new-class-topics').value.trim();
+                    if (!title || !date) { toast('error', 'Campos requeridos', 'Completá título y fecha.'); return; }
+                    const newId = `class-${String(classes.length + 1).padStart(2, '0')}`;
+                    const topics = topicsStr ? topicsStr.split('\n').map(t => t.trim()).filter(Boolean) : [];
+                    classes.push({ id: newId, subjectId, title, date, topics, materials: [] });
+                    saveAllClasses(classes);
+                    cleanup();
+                });
+                document.body.appendChild(overlay);
+                setTimeout(() => overlay.querySelector('#new-class-title')?.focus(), 100);
+            });
+
+            // Edit topics
+            container.querySelectorAll('.btn-edit-topics').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const idx = parseInt(btn.dataset.idx);
+                    const c = classes[idx];
+                    if (!c) return;
+                    const overlay = document.createElement('div');
+                    overlay.className = 'modal-overlay';
+                    overlay.innerHTML = `
+                        <div class="modal-content" style="max-width:480px;width:92%;">
+                            <div class="modal-header"><h3 class="h4" style="margin:0;">Administrar tags: ${escapeHtml(c.title)}</h3>
+                            <button type="button" class="btn btn-ghost btn-sm dialog-close">✕</button></div>
+                            <div class="modal-body">
+                                <div style="margin-bottom:12px;display:flex;flex-wrap:wrap;gap:6px" id="tags-list">
+                                    ${(c.topics || []).map(t => `<span class="badge badge-primary" style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;font-size:13px;">${escapeHtml(t)} <button class="tag-remove" data-tag="${escapeHtml(t)}" style="background:none;border:none;cursor:pointer;color:var(--color-text-muted);padding:0;font-size:14px;line-height:1;">×</button></span>`).join('')}
+                                </div>
+                                <div style="display:flex;gap:var(--space-2)">
+                                    <input class="form-input" id="new-tag-input" placeholder="Nuevo tag..." style="flex:1;" />
+                                    <button class="btn btn-secondary btn-sm" id="add-tag-btn">Agregar</button>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-ghost dialog-close">Cerrar</button>
+                                <button type="button" class="btn btn-primary" id="save-tags-btn">Guardar</button>
+                            </div>
+                        </div>`;
+                    const cleanup2 = () => overlay.remove();
+                    overlay.querySelectorAll('.dialog-close').forEach(el => el.addEventListener('click', cleanup2));
+                    overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup2(); });
+                    const tagsList = overlay.querySelector('#tags-list');
+                    overlay.querySelector('#add-tag-btn')?.addEventListener('click', () => {
+                        const input = overlay.querySelector('#new-tag-input');
+                        const val = input.value.trim();
+                        if (!val) return;
+                        const chip = document.createElement('span');
+                        chip.className = 'badge badge-primary';
+                        chip.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:4px 10px;font-size:13px;';
+                        chip.innerHTML = escapeHtml(val) + ' <button class="tag-remove" data-tag="' + escapeHtml(val) + '" style="background:none;border:none;cursor:pointer;color:var(--color-text-muted);padding:0;font-size:14px;line-height:1;">×</button>';
+                        chip.querySelector('.tag-remove').addEventListener('click', () => chip.remove());
+                        tagsList.appendChild(chip);
+                        input.value = '';
+                        input.focus();
+                    });
+                    tagsList.addEventListener('click', (e) => {
+                        if (e.target.classList.contains('tag-remove')) {
+                            e.target.closest('.badge').remove();
+                        }
+                    });
+                    overlay.querySelector('#new-tag-input')?.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); overlay.querySelector('#add-tag-btn')?.click(); }
+                    });
+                    overlay.querySelector('#save-tags-btn')?.addEventListener('click', () => {
+                        const tags = [...tagsList.querySelectorAll('.badge')].map(el => el.textContent.replace('×', '').trim()).filter(Boolean);
+                        classes[idx].topics = tags;
+                        saveAllClasses(classes);
+                        cleanup2();
+                    });
+                    document.body.appendChild(overlay);
+                });
             });
 
             // Borrar clase
