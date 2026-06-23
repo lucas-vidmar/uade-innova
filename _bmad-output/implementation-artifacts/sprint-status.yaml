@@ -7,7 +7,7 @@
 #     para reflejar cambios de estado.
 # =============================================================================
 # generated: 2026-06-20
-# last_updated: 2026-06-21
+# last_updated: 2026-06-23
 # project: UADE Innova Dashboard Educativo
 # project_key: UADE-EDU
 # tracking_system: github-issues
@@ -32,7 +32,7 @@
 #   - done: Retrospective has been completed
 
 generated: "2026-06-20"
-last_updated: "2026-06-21"
+last_updated: "2026-06-23"
 
 project: "UADE Innova Dashboard Educativo"
 project_key: "UADE-EDU"
@@ -119,3 +119,37 @@ development_status:
   10-5-exclude-mock-data-from-production-bundle: done
   10-7-extract-rag-ranking-logic-from-rag-query-js: done
   epic-10-retrospective: optional
+
+  # Epic 11: Post-Test Quality Remediation
+  epic-11: backlog
+  11-1-1-persistent-ai-consent-across-sessions: backlog
+  11-1-2-reportar-respuesta-incorrecta-button-in-chatwidget: backlog
+  11-1-3-thumbs-up-down-feedback-always-visible: backlog
+  11-1-4-report-material-mismatch-missing-info-from-chat: backlog
+  11-1-5-chat-query-about-weekly-deadlines: backlog
+  11-1-6-glossary-lookup-from-chat: backlog
+  11-2-1-grade-disputation-ui: backlog
+  11-2-2-teacher-task-creation-with-deadline: backlog
+  11-2-3-task-to-class-linking-in-teacher-ui: backlog
+  11-3-1-tts-audio-player-component: backlog
+  11-3-2-concept-map-mermaid-renderer: backlog
+  11-4-1-student-initiated-transcription-issue-report: backlog
+  11-4-2-master-source-toggle-in-upload-form: backlog
+  11-4-3-material-delete-confirmation-and-cascade: backlog
+  11-4-4-reprocess-button-for-failed-materials: backlog
+  11-4-5-inline-text-editor-for-extracted-transcripts: backlog
+  11-4-6-summary-approval-rejection-with-editable-preview: backlog
+  11-4-7-milestone-curation-in-class-timeline: backlog
+  11-4-8-topic-tags-management: backlog
+  11-4-9-mark-summary-as-not-suitable: backlog
+  11-4-10-retroactive-content-publication: backlog
+  11-4-11-exam-date-modification: backlog
+  11-4-12-add-new-class-to-schedule: backlog
+  11-4-13-transcription-suggestion-auto-detect-batch-apply: backlog
+  11-4-14-subject-weight-configuration-ui: backlog
+  11-4-15-calendar-ics-export-button: backlog
+  11-5-1-bot-tone-and-response-length-configuration: backlog
+  11-5-2-keyword-concept-reporting-from-chat: backlog
+  11-5-3-student-inactivity-trigger-dashboard-warning: backlog
+  11-5-4-risk-threshold-configuration-ui: backlog
+  epic-11-retrospective: optional

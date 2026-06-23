@@ -8,15 +8,48 @@ export async function renderStudentSettings(container) {
   container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando configuración...</div>`;
 
   const prefs = await api.getReminderPreferences();
+  const [consent] = await Promise.all([
+    api.getConsent().catch(() => ({ accepted: false })),
+  ]);
   const state = {
     enabled: prefs?.enabled !== false,
     cadence: prefs?.cadence || 'both',
     saving: false,
+    consentAccepted: auth.getAIConsentAccepted() || consent?.accepted === true,
+    savingConsent: false,
   };
 
   function render() {
     container.innerHTML = `
       <div class="settings-page" style="max-width:600px;margin:0 auto;padding:var(--space-6)">
+        <h2 class="h3" style="margin-bottom:var(--space-4)">Configuración</h2>
+
+        <!-- AI Consent Section -->
+        <div class="card" style="padding:var(--space-6);margin-bottom:var(--space-6)">
+          <div style="font-weight:600;margin-bottom:var(--space-2)">Consentimiento de IA</div>
+          <p style="font-size:var(--fs-sm);color:var(--color-text-secondary);margin-bottom:var(--space-4)">
+            ${state.consentAccepted
+              ? 'Aceptaste que tus consultas sean procesadas por IA. Podés revocar este consentimiento en cualquier momento.'
+              : 'No aceptaste el consentimiento de IA. El chat estará deshabilitado hasta que aceptes los términos.'}
+          </p>
+          <div style="display:flex;align-items:center;gap:var(--space-3)">
+            <span class="status-badge" style="display:inline-flex;align-items:center;gap:var(--space-1);padding:4px 12px;border-radius:var(--radius-full);font-size:var(--fs-sm);font-weight:500;background:${state.consentAccepted ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)'};color:${state.consentAccepted ? 'var(--color-success)' : 'var(--color-error)'}">
+              <span style="width:8px;height:8px;border-radius:50%;background:${state.consentAccepted ? 'var(--color-success)' : 'var(--color-error)'}"></span>
+              ${state.consentAccepted ? 'Aceptado' : 'No aceptado'}
+            </span>
+            ${state.consentAccepted ? `
+              <button class="btn btn-outline btn-sm" id="revoke-consent-btn" style="color:var(--color-error);border-color:rgba(239,68,68,0.3)" ${state.savingConsent ? 'disabled' : ''}>
+                ${state.savingConsent ? 'Revocando...' : 'Revocar consentimiento'}
+              </button>
+            ` : `
+              <button class="btn btn-primary btn-sm" id="accept-consent-btn" ${state.savingConsent ? 'disabled' : ''}>
+                ${state.savingConsent ? 'Aceptando...' : 'Aceptar consentimiento'}
+              </button>
+            `}
+          </div>
+        </div>
+
+        <!-- Reminder Preferences -->
         <h2 class="h3" style="margin-bottom:var(--space-2)">Preferencias de Recordatorios</h2>
         <p style="color:var(--color-text-secondary);margin-bottom:var(--space-8)">
           Configurá cómo y cuándo recibís recordatorios de vencimientos de entregas.
@@ -69,6 +102,36 @@ export async function renderStudentSettings(container) {
         </div>
       </div>
     `;
+
+    container.querySelector('#revoke-consent-btn')?.addEventListener('click', async (e) => {
+      if (state.savingConsent) return;
+      state.savingConsent = true;
+      render();
+      const success = await auth.revokeAIConsent();
+      if (success) {
+        state.consentAccepted = false;
+        toast('success', 'Consentimiento revocado', 'El consentimiento de IA fue revocado correctamente.');
+      } else {
+        toast('error', 'Error', 'No se pudo revocar el consentimiento.');
+      }
+      state.savingConsent = false;
+      render();
+    });
+
+    container.querySelector('#accept-consent-btn')?.addEventListener('click', async (e) => {
+      if (state.savingConsent) return;
+      state.savingConsent = true;
+      render();
+      const success = await auth.acceptAIConsent();
+      if (success) {
+        state.consentAccepted = true;
+        toast('success', 'Consentimiento aceptado', 'El consentimiento de IA fue aceptado correctamente.');
+      } else {
+        toast('error', 'Error', 'No se pudo aceptar el consentimiento.');
+      }
+      state.savingConsent = false;
+      render();
+    });
 
     container.querySelector('#reminder-toggle')?.addEventListener('change', (e) => {
       state.enabled = e.target.checked;

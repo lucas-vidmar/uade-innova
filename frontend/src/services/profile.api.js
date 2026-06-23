@@ -55,21 +55,24 @@ export async function getConsent() {
     }
 }
 
-export async function saveConsent() {
-    if (USE_MOCK) return { saved: true };
+export async function saveConsent(accepted = true) {
+    if (USE_MOCK) return { saved: true, accepted };
     try {
         const res = await apiFetch(`${BASE_URL}/consent`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ accepted: true }),
+            body: JSON.stringify({ accepted }),
         });
-        if (!res.ok) return null;
+        if (!res.ok) {
+            const errBody = await res.json().catch(() => ({ error: { code: 'UNKNOWN', message: res.statusText } }));
+            throw new Error(errBody?.error?.message || `HTTP ${res.status}`);
+        }
         const data = await res.json();
         if (data?.success && data.data) return data.data;
-        return null;
+        throw new Error('Respuesta inválida del servidor');
     } catch (err) {
         console.error('[API] saveConsent failed:', err);
-        return null;
+        throw err;
     }
 }
 

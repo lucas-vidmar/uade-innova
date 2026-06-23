@@ -138,7 +138,7 @@ export const auth = {
 
     async acceptAIConsent() {
         try {
-            await api.saveConsent();
+            await api.saveConsent(true);
             try {
                 localStorage.setItem(AI_CONSENT_KEY, 'true');
             } catch {
@@ -158,6 +158,22 @@ export const auth = {
             }
             return false;
         }
+    },
+
+    async revokeAIConsent() {
+        try {
+            await api.saveConsent(false);
+        } catch (err) {
+            console.error('[Auth] Error revoking AI consent on backend:', err);
+            return false;
+        }
+        try {
+            localStorage.setItem(AI_CONSENT_KEY, 'false');
+        } catch {
+            sessionStorage.setItem(AI_CONSENT_KEY, 'false');
+        }
+        window.dispatchEvent(new CustomEvent('auth:aiConsentRevoked'));
+        return true;
     },
 
     async acceptPrivacyPolicy() {
@@ -339,15 +355,22 @@ export const auth = {
             console.error('Error fetching reminder preferences:', err);
         }
 
-        // Sync AI consent from backend
+        // Sync AI consent from backend — preserve local accepted consent
         try {
             const consent = await api.getConsent();
             if (consent) {
-                const accepted = consent.accepted ? 'true' : 'false';
-                try {
-                    localStorage.setItem(AI_CONSENT_KEY, accepted);
-                } catch {
-                    sessionStorage.setItem(AI_CONSENT_KEY, accepted);
+                const localValue = (() => {
+                    try { return localStorage.getItem(AI_CONSENT_KEY); } catch { return null; }
+                })();
+                if (consent.accepted === false && localValue === 'true') {
+                    console.warn(`[Auth] Consent local difiere del backend — se usó valor local: backend=${consent.accepted}, local=${localValue}`);
+                } else {
+                    const accepted = consent.accepted ? 'true' : 'false';
+                    try {
+                        localStorage.setItem(AI_CONSENT_KEY, accepted);
+                    } catch {
+                        sessionStorage.setItem(AI_CONSENT_KEY, accepted);
+                    }
                 }
             }
         } catch (err) {

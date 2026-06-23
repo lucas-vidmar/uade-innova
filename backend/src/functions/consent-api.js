@@ -61,8 +61,8 @@ app.http('consent-get', {
                 return jsonResponse(200, {
                     success: true,
                     data: {
-                        accepted: true,
-                        acceptedAt: record.acceptedAt,
+                        accepted: record.accepted === 'true',
+                        acceptedAt: record.accepted === 'true' ? record.acceptedAt : null,
                         version: record.version,
                     },
                     meta: { timestamp: new Date().toISOString(), requestId: correlationId },
@@ -112,10 +112,10 @@ app.http('consent-post', {
                 meta: { timestamp: new Date().toISOString(), requestId: correlationId },
             });
         }
-        if (body?.accepted !== true) {
+        if (typeof body?.accepted !== 'boolean') {
             return jsonResponse(400, {
                 success: false,
-                error: { code: 'CONSENT_NOT_ACCEPTED', message: 'Debés aceptar los términos para continuar.' },
+                error: { code: 'INVALID_CONSENT', message: 'El campo accepted debe ser un booleano.' },
                 meta: { timestamp: new Date().toISOString(), requestId: correlationId },
             });
         }
@@ -126,7 +126,8 @@ app.http('consent-post', {
             const entity = {
                 partitionKey: userId,
                 rowKey: 'consent',
-                acceptedAt: new Date().toISOString(),
+                accepted: body.accepted ? 'true' : 'false',
+                acceptedAt: body.accepted ? new Date().toISOString() : null,
                 version: 'v1',
                 ipAddress,
             };
