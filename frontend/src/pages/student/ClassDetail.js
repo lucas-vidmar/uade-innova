@@ -300,6 +300,8 @@ export async function renderClassDetail(container) {
           }
         });
 
+        initTranscriptionReport(container, classId, activeSubjectId);
+
         container.querySelectorAll('.timeline-hit').forEach((hit) => {
             hit.addEventListener('click', () => {
                 const sectionId = hit.getAttribute('data-section-id');
@@ -331,4 +333,85 @@ export async function renderClassDetail(container) {
         console.error('Error rendering class detail:', err);
         container.innerHTML = `<div class="card" style="padding:40px;text-align:center;color:var(--color-error)">Error al cargar el detalle de la clase. Por favor reintente.</div>`;
     }
+}
+
+function initTranscriptionReport(container, classId, subjectId) {
+    let toolbar = null;
+    const onSelectionChange = () => {
+        const selection = window.getSelection();
+        const selectedText = selection ? selection.toString().trim() : '';
+        const isInTranscript = selection && container.querySelector('#transcript-sections-list')?.contains(selection.anchorNode);
+
+        if (toolbar) { toolbar.remove(); toolbar = null; }
+
+        if (selectedText.length > 0 && isInTranscript) {
+            const range = selection.getRangeAt(0);
+            const rect = range.getBoundingClientRect();
+            toolbar = document.createElement('div');
+            toolbar.className = 'transcript-report-toolbar';
+            toolbar.style.cssText = 'position:fixed;z-index:1000;background:var(--surface-2);border:1px solid var(--border-subtle);border-radius:var(--radius-md);padding:6px 12px;box-shadow:0 4px 12px rgba(0,0,0,0.3);';
+            toolbar.innerHTML = '<button class="btn btn-secondary btn-sm">Reportar error de transcripción</button>';
+            toolbar.style.left = Math.min(rect.left, window.innerWidth - 200) + 'px';
+            toolbar.style.top = (rect.bottom + 8) + 'px';
+
+            toolbar.querySelector('button').addEventListener('click', async () => {
+                toolbar.remove();
+                toolbar = null;
+                window.getSelection().removeAllRanges();
+
+                const overlay = document.createElement('div');
+                overlay.className = 'modal-overlay';
+                overlay.innerHTML = `
+                    <div class="modal-content" style="max-width:500px;width:92%;">
+                        <div class="modal-header"><h3 class="h4" style="margin:0;">Reportar error de transcripción</h3>
+                        <button type="button" class="btn btn-ghost btn-sm dialog-close">✕</button></div>
+                        <div class="modal-body">
+                            <div style="margin-bottom:12px;"><strong>Texto seleccionado:</strong>
+                            <div class="chat-bubble chat-bubble-user" style="margin-top:4px;white-space:pre-wrap;font-size:14px;">${escapeHtml(selectedText)}</div></div>
+                            <div><label class="form-label" for="transcript-correction" style="font-weight:600;">Corrección sugerida</label>
+                            <textarea id="transcript-correction" class="form-input" style="min-height:80px;resize:vertical;" placeholder="Escribí la corrección..."></textarea>
+                            <p id="transcript-correction-error" style="display:none;margin-top:6px;color:var(--color-error);font-size:13px;"></p></div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-ghost dialog-cancel">Cancelar</button>
+                            <button type="button" class="btn btn-primary" id="transcript-correction-submit" disabled>Enviar</button>
+                        </div>
+                    </div>`;
+
+                const ta = overlay.querySelector('#transcript-correction');
+                const errEl = overlay.querySelector('#transcript-correction-error');
+                const submitBtn = overlay.querySelector('#transcript-correction-submit');
+
+                const cleanup = () => overlay.remove();
+                ta.addEventListener('input', () => { submitBtn.disabled = (ta.value || '').trim().length < 3; errEl.style.display = 'none'; });
+                overlay.querySelector('.dialog-close')?.addEventListener('click', cleanup);
+                overlay.querySelector('.dialog-cancel')?.addEventListener('click', cleanup);
+                overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(); });
+
+                submitBtn.addEventListener('click', async () => {
+                    const val = (ta.value || '').trim();
+                    if (val.length < 3) {
+                        errEl.textContent = 'Debe tener al menos 3 caracteres.';
+                        errEl.style.display = 'block'; ta.focus(); return;
+                    }
+                    submitBtn.disabled = true; submitBtn.textContent = 'Enviando...';
+                    try {
+                        const { toast } = await import('../../components/Toast.js');
+                        const messageId = `transcript-${Date.now()}`;
+                        await api.reportChatIssue({ messageId, subjectId, issueDetail: `Error en transcripción: "${selectedText.substring(0, 200)}" — Corrección sugerida: ${val}`, question: '', answer: selectedText });
+                        toast('success', 'Reporte enviado', 'El docente recibió el reporte de error de transcripción.');
+                        cleanup();
+                    } catch (err) {
+                        const { toast } = await import('../../components/Toast.js');
+                        toast('error', 'Error', err?.message || 'No se pudo enviar el reporte.');
+                        submitBtn.disabled = false; submitBtn.textContent = 'Enviar';
+                    }
+                });
+                document.body.appendChild(overlay);
+                setTimeout(() => ta.focus(), 100);
+            });
+            document.body.appendChild(toolbar);
+        }
+    };
+    document.addEventListener('selectionchange', onSelectionChange);
 }
