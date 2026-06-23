@@ -90,6 +90,9 @@ export async function renderStudentDashboard(container) {
     <div class="dashboard-wrapper animate-in bg-bg min-h-screen">
       <div class="container py-8">
         
+        <!-- Inactivity Warning -->
+        ${renderInactivityBanner()}
+
         <!-- Welcome & Search Section -->
         <div class="dashboard-layout-grid mb-2 items-center" style="padding-bottom: 0;">
           <div class="search-container w-full" style="max-width: 100%;">
@@ -476,4 +479,23 @@ export async function renderStudentDashboard(container) {
   });
 
   renderBottomNav();
+}
+
+function renderInactivityBanner() {
+  try {
+    const lastVisit = localStorage.getItem('edu_last_visit');
+    const now = Date.now();
+    localStorage.setItem('edu_last_visit', String(now));
+    if (!lastVisit) return '';
+    const daysSince = Math.floor((now - parseInt(lastVisit, 10)) / 86400000);
+    if (daysSince >= 14) {
+      return '<div class="card" style="margin-bottom:var(--space-4);padding:var(--space-4);background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);border-radius:var(--radius-md);display:flex;align-items:center;gap:var(--space-3)"><span style="font-size:20px;">🔴</span><div><strong>Hacé mucho que no ingresás.</strong> Revisá tus tareas pendientes antes de que se venzan.</div><a href="#/student/tasks" class="btn btn-sm btn-primary" style="margin-left:auto;">Ver tareas</a></div>';
+    }
+    if (daysSince >= 7) {
+      return '<div class="card" style="margin-bottom:var(--space-4);padding:var(--space-4);background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.2);border-radius:var(--radius-md);display:flex;align-items:center;gap:var(--space-3)"><span style="font-size:20px;">🟡</span><div><strong>No visitaste la plataforma en ' + daysSince + ' días.</strong> Revisá las novedades.</div><a href="#/student/notifications" class="btn btn-sm btn-secondary" style="margin-left:auto;">Ver novedades</a></div>';
+    }
+  } catch (e) {
+    console.warn('[Inactivity] localStorage error:', e);
+  }
+  return '';
 }
