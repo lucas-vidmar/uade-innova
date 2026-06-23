@@ -1,10 +1,7 @@
-/* ============================================================
-   Class Detail — Exploration of a specific lecture
-   HU#61: AI Summary + Conceptual Map (Mermaid.js)
-   ============================================================ */
 import { api } from '../../services/api.js';
 import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
+import { marked } from 'marked';
 
 function escapeHtml(value = '') {
     return String(value)
@@ -15,8 +12,50 @@ function escapeHtml(value = '') {
         .replace(/'/g, '&#39;');
 }
 
+function isBinaryContent(text) {
+    if (!text) return false;
+    if (text.startsWith('%PDF')) return true;
+    if (text.startsWith('PK\x03\x04')) return true;
+    if (text.startsWith('Gau')) return true;
+    const pdfKeywords = ['endobj', 'endstream', 'startxref', '%%EOF'];
+    if (pdfKeywords.some(k => text.includes(k))) return true;
+    let printable = 0;
+    const len = Math.min(text.length, 500);
+    for (let i = 0; i < len; i++) {
+        const c = text.charCodeAt(i);
+        if (c >= 32 && c <= 126) printable++;
+    }
+    return (printable / len) < 0.6;
+}
+
+function isPlaceholderSummary(text) {
+    if (!text) return false;
+    const placeholders = [
+        'indícame la materia',
+        'proporciona el texto',
+        'deseas el resumen',
+        'proporcione el texto',
+        'resumen estructurado',
+    ];
+    const lower = text.toLowerCase();
+    return placeholders.some(p => lower.includes(p));
+}
+
+function cleanSections(sections) {
+    return (sections || []).filter(s => !isBinaryContent(s.text));
+}
+
+function cleanMarkers(markers) {
+    return (markers || []).filter(m => {
+        if (isBinaryContent(m.label)) return false;
+        if (m.startSecond === 0 && m.endSecond <= 1) return false;
+        return true;
+    });
+}
+
+const MAX_VISIBLE_SECTIONS = 50;
+
 export async function renderClassDetail(container) {
-    // Get classId from hash (e.g. #/student/class/class-01)
     const hash = window.location.hash || '';
     const parts = hash.split('/');
     const classId = parts[parts.length - 1];
@@ -44,6 +83,23 @@ export async function renderClassDetail(container) {
             return;
         }
 
+        const rawSummary = summaryData?.summary?.content || summaryData?.summary || '';
+        const hasValidSummary = rawSummary && !isPlaceholderSummary(rawSummary);
+
+        const sections = cleanSections(timelineData?.sections);
+        const markers = cleanMarkers(timelineData?.markers);
+        const showAllSections = sections.length <= MAX_VISIBLE_SECTIONS;
+        const visibleSections = showAllSections ? sections : sections.slice(0, MAX_VISIBLE_SECTIONS);
+
+        const audioUrl = api.getClassAudioUrl(classId, activeSubjectId);
+        let audioAvailable = false;
+        try {
+            const headResp = await fetch(audioUrl, { method: 'HEAD' });
+            audioAvailable = headResp.ok;
+        } catch (e) {
+            audioAvailable = false;
+        }
+
         container.innerHTML = `
             <div class="breadcrumb" style="margin-bottom:var(--space-4);font-size:var(--text-sm);color:var(--color-text-secondary)">
                 <a href="#/student/dashboard" style="color:inherit;text-decoration:none">Dashboard</a> / <span style="color:var(--color-text-primary)">${classInfo.title}</span>
@@ -58,18 +114,16 @@ export async function renderClassDetail(container) {
             </div>
 
             <div class="dashboard-grid">
-                <!-- Summary Section -->
                 <div class="card">
                     <div class="card-header">
                         <span class="card-title">📝 Resumen IA</span>
                         ${summaryData?.validated ? '<span class="badge badge-success">✓ Validado por Docente</span>' : '<span class="badge badge-warning">En revisión</span>'}
                     </div>
                     <div class="summary-content markdown-body" style="padding:var(--space-6)">
-                        ${summaryData?.summary?.content || summaryData?.summary || '<p class="empty-text">El resumen todavía no está disponible para esta clase.</p>'}
+                        ${hasValidSummary ? marked.parse(rawSummary, { breaks: true }) : '<p class="empty-text">El resumen todavía no está disponible para esta clase.</p>'}
                     </div>
                 </div>
 
-                <!-- Multimodal Assets Section -->
                 <div class="card">
                     <div class="card-header">
                         <span class="card-title">🗺️ Mapa Conceptual</span>
@@ -86,8 +140,8 @@ export async function renderClassDetail(container) {
                     ` : ''}
                 </div>
 
-                <!-- AI Podcast Section -->
-                <div class="card premium-vibe" style="background: linear-gradient(135deg, var(--color-surface) 0%, var(--color-bg-alt) 100%);">
+                ${audioAvailable ? `
+                <div class="card premium-vibe podcast-card" id="podcast-card" style="background: linear-gradient(135deg, var(--color-surface) 0%, var(--color-bg-alt) 100%);">
                     <div class="card-header">
                         <span class="card-title">🎧 Podcast de Estudio (IA)</span>
                         <span class="badge badge-info">Beta</span>
@@ -101,7 +155,7 @@ export async function renderClassDetail(container) {
                             <p style="margin:var(--space-1) 0 0 0; font-size:var(--text-xs); color:var(--color-text-secondary);">Generado automáticamente con voz Nova</p>
                         </div>
                         <audio controls style="width:100%; height:40px; border-radius:var(--radius-full);">
-                            <source src="${api.getClassAudioUrl(classId, activeSubjectId)}" type="audio/mpeg">
+                            <source src="${audioUrl}" type="audio/mpeg">
                             Tu navegador no soporta el elemento de audio.
                         </audio>
                         <div style="font-size:var(--text-xs); color:var(--color-text-secondary); font-style:italic;">
@@ -109,15 +163,16 @@ export async function renderClassDetail(container) {
                         </div>
                     </div>
                 </div>
+                ` : ''}
             </div>
 
             <div class="card" style="margin-top:var(--space-6)">
                 <div class="card-header">
                     <span class="card-title">⏱️ Timeline de Transcripción</span>
                 </div>
-                ${(timelineData?.markers || []).length > 0 ? `
+                ${markers.length > 0 ? `
                     <div class="timeline-track" id="transcript-timeline-markers">
-                        ${(timelineData.markers || []).map(marker => `
+                        ${markers.map(marker => `
                             <button class="timeline-hit" data-section-id="${marker.sectionId}" data-focus-label="${escapeHtml(marker.label || '')}" title="${escapeHtml(marker.label || '')}">
                                 <span class="timeline-hit-icon">${marker.iconType === 'assignment' ? '📌' : '❓'}</span>
                                 <span class="timeline-hit-time">${Math.floor(marker.startSecond || 0)}s</span>
@@ -135,7 +190,7 @@ export async function renderClassDetail(container) {
                     <span class="card-title">📜 Transcripción Navegable</span>
                 </div>
                 <div class="transcript-sections" id="transcript-sections-list">
-                    ${(timelineData?.sections || []).length > 0 ? (timelineData.sections || []).map(section => `
+                    ${visibleSections.length > 0 ? visibleSections.map(section => `
                         <article class="transcript-section" id="transcript-section-${section.id}" data-section-id="${section.id}">
                             <div class="transcript-section-head">
                                 <span class="badge badge-neutral">${escapeHtml(section.timestampLabel || 'Bloque')}</span>
@@ -149,10 +204,15 @@ export async function renderClassDetail(container) {
                             <p class="transcript-section-text">${escapeHtml(section.text || '')}</p>
                         </article>
                     `).join('') : '<div style="color:var(--color-text-secondary)">No hay secciones de transcripción disponibles.</div>'}
+                    ${!showAllSections && sections.length > MAX_VISIBLE_SECTIONS ? `
+                        <div style="text-align:center;padding:var(--space-4);color:var(--color-text-secondary);font-size:var(--text-sm)">
+                            Mostrando ${MAX_VISIBLE_SECTIONS} de ${sections.length} secciones.
+                            ${sections.length > 200 ? 'La transcripción completa está disponible en los materiales de la clase.' : ''}
+                        </div>
+                    ` : ''}
                 </div>
             </div>
 
-            <!-- Materials List -->
             <div class="section-title" style="margin-top:var(--space-10);display:flex;align-items:center;gap:var(--space-4);margin-bottom:var(--space-6)">
                 <h2 class="h3">📚 Materiales de Referencia</h2>
                 <div style="flex:1;height:1px;background:var(--color-border)"></div>
@@ -178,10 +238,9 @@ export async function renderClassDetail(container) {
             </div>
         `;
 
-        // Initialize Mermaid if code exists
         if (mapData?.mapCode && typeof mermaid !== 'undefined') {
             try {
-                const mermaidEl = document.querySelector('#mermaid-container .mermaid');
+                const mermaidEl = container.querySelector('#mermaid-container .mermaid');
                 if (mermaidEl) {
                     mermaid.run({ nodes: [mermaidEl] });
                 }

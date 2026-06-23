@@ -365,6 +365,8 @@ svg {
   padding: var(--space-8);
   margin-top: calc(var(--top-nav-height) + var(--subject-context-height));
   animation: fadeIn 0.3s ease;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 body.has-subject-context {

@@ -12,8 +12,11 @@
         "postinstall": "playwright install --with-deps chromium"
     },
     "devDependencies": {
-        "@playwright/test": "^1.53.1",
         "@azure/static-web-apps-cli": "^2.0.8",
+        "@playwright/test": "^1.53.1",
         "vite": "^5.4.2"
+    },
+    "dependencies": {
+        "marked": "^18.0.5"
     }
 }
