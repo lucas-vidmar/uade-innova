@@ -1,6 +1,6 @@
 import {
     USE_MOCK, BASE_URL, apiFetch, fetchWithTimeout, delay,
-    readLocalJson
+    readLocalJson, writeLocalJson
 } from './core.js';
 
 const MOCK_REPORTS_KEY = 'uade.mock.ai-reports';
@@ -273,6 +273,34 @@ export async function rejectTranscriptionSuggestion(suggestionId, subjectId) {
     if (!res.ok) {
         let message = 'Error al rechazar sugerencia';
         try { const err = await res.json(); if (err?.error?.message) message = err.error.message; } catch {}
+        throw new Error(message);
+    }
+    return res.json();
+}
+
+export async function submitGradeDispute({ taskId, reason }) {
+    if (USE_MOCK) {
+        await delay(300);
+        const disputes = readLocalJson('uade.mock.disputes', []);
+        disputes.unshift({
+            id: `dispute-${Date.now()}`,
+            taskId,
+            reason: String(reason || '').trim(),
+            status: 'pending',
+            studentId: sessionStorage.getItem('edu_uid') || 'alu-001',
+            createdAt: new Date().toISOString(),
+        });
+        writeLocalJson('uade.mock.disputes', disputes);
+        return { success: true };
+    }
+    const res = await apiFetch(`${BASE_URL}/grade-dispute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId, reason: String(reason || '').trim() }),
+    });
+    if (!res.ok) {
+        let message = `Error ${res.status}: no se pudo enviar la disputa`;
+        try { const err = await res.json(); if (err?.error) message = err.error; } catch {}
         throw new Error(message);
     }
     return res.json();

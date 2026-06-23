@@ -47,3 +47,4 @@ import './functions/vector-health-snapshotter.js';
 import './functions/vector-health-snapshots-api.js';
 import './functions/director-kpi-export.js';
 import './functions/archive-usage.js';
+import './functions/grade-dispute.js';

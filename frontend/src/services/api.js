@@ -59,7 +59,8 @@ import {
     getGlossary, updateGlossary,
     getTranscriptionSuggestions, applyTranscriptionCorrection,
     rejectTranscriptionSuggestion,
-    getStudentReports
+    getStudentReports,
+    submitGradeDispute
 } from './corrections.api.js';
 
 export const api = {
@@ -108,5 +109,5 @@ export const api = {
     getGlossary, updateGlossary,
     getTranscriptionSuggestions, applyTranscriptionCorrection,
     rejectTranscriptionSuggestion,
-    getStudentReports,
+    getStudentReports, submitGradeDispute,
 };

@@ -118,7 +118,10 @@ export async function renderTeacherDashboard(container) {
       }).join('')}
     </div>
 
-    <div class="section-title" style="margin-top:var(--space-10)"><h2>${icon('clock')} Deadlines por clase</h2><div class="line"></div></div>
+    <div class="section-title" style="margin-top:var(--space-10)"><h2>${icon('clock')} Tareas y deadlines</h2><div class="line"></div></div>
+    <div style="margin-bottom:var(--space-4);display:flex;gap:var(--space-3)">
+      <button class="btn btn-primary" id="create-task-btn">${icon('target')} Crear tarea</button>
+    </div>
     <div class="card" style="margin-bottom:var(--space-8)">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-5)">
         <div style="display:flex;flex-direction:column;gap:var(--space-4)">
@@ -198,6 +201,10 @@ export async function renderTeacherDashboard(container) {
   const weightsSection = container.querySelector('#weights-section');
   renderSubjectWeights(weightsSection, activeSubjectId, activeSubjectName);
 
+  container.querySelector('#create-task-btn')?.addEventListener('click', () => {
+    showCreateTaskModal(activeSubjectId, classes, container);
+  });
+
   const saveBtn = container.querySelector('#deadline-save');
   saveBtn?.addEventListener('click', async () => {
     try {
@@ -265,6 +272,101 @@ export async function renderTeacherDashboard(container) {
       engine.start();
     }
   });
+}
+
+/* ── Task Creation Modal ────────────────────────────────── */
+function showCreateTaskModal(subjectId, classes, container) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-content" style="max-width:540px;width:92%">
+      <div class="modal-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <h3 class="h4" style="margin:0">Crear tarea</h3>
+        <button type="button" class="btn btn-ghost btn-sm modal-close-btn" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:var(--space-4)">
+        <div class="form-group">
+          <label class="form-label">Título <span class="text-error">*</span></label>
+          <input class="form-input" id="task-title" placeholder="Ej: Trabajo Práctico N°3" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Descripción</label>
+          <textarea class="form-textarea" id="task-description" placeholder="Descripción de la tarea..." style="min-height:80px"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Clases vinculadas</label>
+          <div style="display:flex;flex-wrap:wrap;gap:var(--space-2)" id="task-classes-container">
+            ${(classes || []).map(c => `
+              <label class="badge badge-neutral" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:4px;padding:6px 12px;">
+                <input type="checkbox" class="task-class-checkbox" value="${c.id}" />
+                ${c.title || c.id}
+              </label>
+            `).join('')}
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4)">
+          <div class="form-group">
+            <label class="form-label">Peso / Porcentaje <span class="text-error">*</span></label>
+            <input type="number" class="form-input" id="task-weight" min="0" max="100" value="10" placeholder="25" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Fecha de entrega <span class="text-error">*</span></label>
+            <input type="date" class="form-input" id="task-duedate" />
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost modal-close-btn">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="task-save-btn">Crear tarea</button>
+      </div>
+    </div>
+  `;
+
+  const cleanup = () => overlay.remove();
+  overlay.querySelectorAll('.modal-close-btn').forEach(btn => btn.addEventListener('click', cleanup));
+  overlay.addEventListener('click', (event) => { if (event.target === overlay) cleanup(); });
+
+  overlay.querySelector('#task-save-btn')?.addEventListener('click', async () => {
+    const title = overlay.querySelector('#task-title').value.trim();
+    const description = overlay.querySelector('#task-description').value.trim();
+    const weight = parseInt(overlay.querySelector('#task-weight').value, 10);
+    const dueDate = overlay.querySelector('#task-duedate').value;
+    const selectedClasses = [...overlay.querySelectorAll('.task-class-checkbox:checked')].map(cb => cb.value);
+
+    if (!title || !dueDate || !weight) {
+      const { toast } = await import('../../components/Toast.js');
+      toast('error', 'Campos requeridos', 'Completá título, peso y fecha de entrega.');
+      return;
+    }
+
+    overlay.querySelector('#task-save-btn').disabled = true;
+    overlay.querySelector('#task-save-btn').textContent = 'Creando...';
+
+    try {
+      await api.saveDeadline({
+        title,
+        description,
+        subjectId,
+        classId: selectedClasses[0] || 'default',
+        dueDate,
+        weight,
+        notifyOnDayBefore: true,
+        notifyOnDayOf: true,
+        status: 'pending',
+      });
+      const { toast } = await import('../../components/Toast.js');
+      toast('success', 'Tarea creada', 'La tarea fue creada y aparecerá en las tareas de los alumnos.');
+      cleanup();
+      renderTeacherDashboard(container);
+    } catch (err) {
+      const { toast } = await import('../../components/Toast.js');
+      toast('error', 'Error', err.message || 'No se pudo crear la tarea.');
+      overlay.querySelector('#task-save-btn').disabled = false;
+      overlay.querySelector('#task-save-btn').textContent = 'Crear tarea';
+    }
+  });
+
+  document.body.appendChild(overlay);
 }
 
 /* ── Deadline Edit Modal ────────────────────────────────── */
