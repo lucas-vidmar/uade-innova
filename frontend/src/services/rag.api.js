@@ -1,6 +1,9 @@
 import {
-    USE_MOCK, BASE_URL, apiFetch, fetchWithTimeout, delay
+    USE_MOCK, BASE_URL, apiFetch, fetchWithTimeout, delay,
+    readLocalJson, writeLocalJson
 } from './core.js';
+
+const MOCK_REPORTS_KEY = 'uade.mock.ai-reports';
 
 import { getMock } from './mocks/accessor.js';
 
@@ -251,12 +254,31 @@ export async function getSatAnalytics({ subjectId, classId, days }) {
     return res.json();
 }
 
-export async function reportChatIssue({ messageId, subjectId, issueDetail }) {
-    if (USE_MOCK) return { success: true, alertId: `ai-issue-${messageId || Date.now()}` };
+export async function reportChatIssue({ messageId, subjectId, issueDetail, question, answer }) {
+    if (USE_MOCK) {
+        await delay(200);
+        const correctionId = `corr-${Date.now()}`;
+        const alertId = `ai-issue-${messageId || Date.now()}`;
+        const reports = readLocalJson(MOCK_REPORTS_KEY, []);
+        reports.unshift({
+            correctionId,
+            subjectId,
+            messageId,
+            question: question || '',
+            originalAnswer: answer || '',
+            issueDetail: String(issueDetail || '').trim(),
+            status: 'pending',
+            classId: 'unknown',
+            studentId: sessionStorage.getItem('edu_uid') || 'alu-001',
+            createdAt: new Date().toISOString(),
+        });
+        writeLocalJson(MOCK_REPORTS_KEY, reports);
+        return { success: true, alertId, correctionId };
+    }
     const res = await apiFetch(`${BASE_URL}/chat-report-issue`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messageId, subjectId, issueDetail: String(issueDetail || '').trim() })
+        body: JSON.stringify({ messageId, subjectId, issueDetail: String(issueDetail || '').trim(), question: question || '', answer: answer || '' })
     });
     if (!res.ok) {
         let message = `Error ${res.status}: no se pudo reportar el problema`;

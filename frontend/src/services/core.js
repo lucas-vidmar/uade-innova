@@ -87,6 +87,8 @@ export function withCorrelationHeaders(headers = {}) {
     if (isLocalDev || isPreviewEnv) {
         const mockRole = sessionStorage.getItem('edu_role') || 'student';
         normalized.set('x-mock-role', mockRole);
+        const eduUid = sessionStorage.getItem('edu_uid');
+        if (eduUid) normalized.set('x-edu-uid', eduUid);
     }
 
     return normalized;

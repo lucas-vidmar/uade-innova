@@ -1,6 +1,45 @@
 import {
-    USE_MOCK, BASE_URL, apiFetch, fetchWithTimeout, delay
+    USE_MOCK, BASE_URL, apiFetch, fetchWithTimeout, delay,
+    readLocalJson
 } from './core.js';
+
+const MOCK_REPORTS_KEY = 'uade.mock.ai-reports';
+
+function readMockReports(subjectId, studentId) {
+    const reports = readLocalJson(MOCK_REPORTS_KEY, []);
+    return reports.filter((r) => {
+        if (r.subjectId !== subjectId) return false;
+        if (studentId && r.studentId && r.studentId !== studentId) return false;
+        return true;
+    });
+}
+
+export async function getStudentReports(subjectId) {
+    if (!subjectId) return [];
+    if (USE_MOCK) {
+        await delay(250);
+        const studentId = sessionStorage.getItem('edu_uid') || 'alu-001';
+        return readMockReports(subjectId, studentId).map((r) => ({
+            correctionId: r.correctionId,
+            question: r.question,
+            issueDetail: r.issueDetail,
+            status: r.status,
+            classId: r.classId,
+            createdAt: r.createdAt,
+            resolvedAt: r.resolvedAt,
+        }));
+    }
+    try {
+        const params = new URLSearchParams({ subjectId });
+        const res = await fetchWithTimeout(`${BASE_URL}/student-reports?${params.toString()}`, { timeout: 4000 });
+        if (!res.ok) return [];
+        const json = await res.json();
+        return json.data || [];
+    } catch (err) {
+        console.error('[API] getStudentReports failed:', err);
+        return [];
+    }
+}
 
 export async function getTeacherAiFeedbackAlerts(subjectId, limit = 10) {
     if (!subjectId) return [];
@@ -28,7 +67,23 @@ export async function getCorrectionsPending(subjectId, classId, status) {
     if (!subjectId) return [];
     if (USE_MOCK) {
         await delay(250);
-        return [];
+        let data = readMockReports(subjectId);
+        if (status && status !== 'all') {
+            data = data.filter((r) => r.status === status);
+        } else if (!status) {
+            data = data.filter((r) => r.status === 'pending');
+        }
+        if (classId) data = data.filter((r) => r.classId === classId);
+        return data.map((r) => ({
+            correctionId: r.correctionId,
+            studentId: r.studentId,
+            question: r.question,
+            originalAnswer: r.originalAnswer,
+            issueDetail: r.issueDetail,
+            classId: r.classId,
+            status: r.status,
+            createdAt: r.createdAt,
+        }));
     }
     try {
         const params = new URLSearchParams({ subjectId });

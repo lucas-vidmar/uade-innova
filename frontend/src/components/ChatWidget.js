@@ -330,6 +330,10 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         if (!msgEl) return;
 
         if (type === 'metadata') {
+          if (data.interactionId && assistantMsg.id !== data.interactionId) {
+            msgEl.id = `msg-${data.interactionId}`;
+            assistantMsg.id = data.interactionId;
+          }
           assistantMsg.sources = data.sources || [];
           assistantMsg.verified = data.verified || false;
           assistantMsg.model = data.model || '';
@@ -633,7 +637,7 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         if (!issueDetail) return;
 
         try {
-          await api.reportChatIssue({ messageId, subjectId, issueDetail });
+          await api.reportChatIssue({ messageId, subjectId, issueDetail, question, answer });
           if (msg) msg.issueReported = true;
           btn.disabled = true;
           btn.classList.add('active');

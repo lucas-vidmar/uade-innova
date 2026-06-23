@@ -14,6 +14,7 @@ const NAV = {
     { id: 'student-dashboard', icon: 'home', label: 'Inicio', path: '#/student/dashboard' },
     { id: 'student-notifications', icon: 'bell', label: 'Notificaciones', path: '#/student/notifications' },
     { id: 'student-tasks', icon: 'tasks', label: 'Tareas y Notas', path: '#/student/tasks' },
+    { id: 'student-reports', icon: 'alert', label: 'Mis Reportes', path: '#/student/reports' },
     { id: 'student-calendar', icon: 'calendar', label: 'Calendario', path: '#/student/calendar' },
     { id: 'student-settings', icon: 'settings', label: 'Configuración', path: '#/student/settings' },
   ],

@@ -1,6 +1,6 @@
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { validateFrontDoorId, parseClientPrincipal, getAuthenticatedUser } from '../services/auth-utils.js';
-import { getEnrollment, upsertCorrection, RATINGS_TABLE } from '../services/state-store.js';
+import { getEnrollment, upsertCorrection, listCorrections, RATINGS_TABLE } from '../services/state-store.js';
 import { v4 as uuidv4 } from 'uuid';
 /**
  * chat-api.js — Azure Functions para feedback e historial de chat
@@ -276,7 +276,7 @@ app.http('chat-report-issue', {
     handler: withCorrelation(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         try {
-            const { messageId, subjectId, issueDetail } = await request.json();
+            const { messageId, subjectId, issueDetail, question, answer } = await request.json();
             const { userId, sanitizedId } = getAuthenticatedUser(request);
             const detail = String(issueDetail || '').trim();
 
@@ -284,22 +284,32 @@ app.http('chat-report-issue', {
                 return { status: 400, body: JSON.stringify({ error: 'Faltan campos messageId o subjectId' }) };
             }
 
-            const blobPath = `${sanitizedId}/${subjectId}/${messageId}.json`;
-            const log = await loadJson(CONTAINER_CHAT, blobPath);
-
-            if (!log) {
-                return { status: 404, body: JSON.stringify({ error: 'Mensaje no encontrado' }) };
-            }
-
             const now = new Date().toISOString();
-            log.reportedIssue = {
-                reportedAt: now,
-                detail: detail || 'Sin detalle adicional provisto por el alumno.',
-                reporterUserId: userId,
-                status: 'open',
-            };
 
-            await saveJson(CONTAINER_CHAT, blobPath, log);
+            let resolvedQuestion = question || '';
+            let resolvedAnswer = answer || '';
+            let resolvedClassId = '';
+            let blobFound = false;
+
+            const blobPath = `${sanitizedId}/${subjectId}/${messageId}.json`;
+            try {
+                const log = await loadJson(CONTAINER_CHAT, blobPath);
+                if (log) {
+                    blobFound = true;
+                    resolvedQuestion = resolvedQuestion || log.question || '';
+                    resolvedAnswer = resolvedAnswer || log.answer || '';
+                    resolvedClassId = log.classId || (Array.isArray(log.classes) ? log.classes[0] : '') || '';
+                    log.reportedIssue = {
+                        reportedAt: now,
+                        detail,
+                        reporterUserId: userId,
+                        status: 'open',
+                    };
+                    await saveJson(CONTAINER_CHAT, blobPath, log);
+                }
+            } catch (blobErr) {
+                context.warn(`[chat-report-issue] Could not load/save chat log blob (non-fatal): ${blobErr?.message || blobErr}`);
+            }
 
             const alertId = `ai-issue-${messageId}`;
             const alert = {
@@ -309,8 +319,8 @@ app.http('chat-report-issue', {
                 subjectId,
                 messageId,
                 reporterUserId: userId,
-                question: log.question || '',
-                answerExcerpt: String(log.answer || '').slice(0, 240),
+                question: resolvedQuestion,
+                answerExcerpt: String(resolvedAnswer).slice(0, 240),
                 issueDetail: detail || 'Sin detalle adicional provisto por el alumno.',
                 createdAt: now,
             };
@@ -322,10 +332,10 @@ app.http('chat-report-issue', {
               await upsertCorrection({
                 correctionId,
                 subjectId,
-                classId: log.classId || (Array.isArray(log.classes) ? log.classes[0] : '') || 'unknown',
+                classId: resolvedClassId || 'unknown',
                 studentId: userId,
-                question: log.question || '',
-                originalAnswer: String(log.answer || '').slice(0, 2000),
+                question: resolvedQuestion,
+                originalAnswer: String(resolvedAnswer).slice(0, 2000),
                 issueDetail: detail || 'Sin detalle adicional provisto por el alumno.',
                 messageId,
                 status: 'pending',
@@ -336,7 +346,7 @@ app.http('chat-report-issue', {
               context.error('[chat-report-issue] Failed to persist correction to tables:', dbErr);
             }
 
-            context.log(`[chat-report-issue] issue reported (subject=${subjectId}, messageId=${messageId})`);
+            context.log(`[chat-report-issue] issue reported (subject=${subjectId}, messageId=${messageId}, blobFound=${blobFound})`);
 
             return {
                 status: 200,
@@ -348,6 +358,57 @@ app.http('chat-report-issue', {
             return { status: 500, body: JSON.stringify({ error: 'Error interno' }) };
         }
     })
+});
+
+// ── GET /api/student-reports?subjectId={id} ──────────────────────────
+app.http('student-reports', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'student-reports',
+    handler: withCorrelation(async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+        const subjectId = request.query.get('subjectId');
+        if (!subjectId) {
+            return { status: 400, body: JSON.stringify({ error: 'Falta subjectId' }) };
+        }
+
+        const { userId, sanitizedId } = getAuthenticatedUser(request);
+
+        const principal = parseClientPrincipal(request);
+        const userRoles = principal?.userRoles || [];
+        const isTeacherOrDirector = userRoles.includes('Docente') || userRoles.includes('Director') || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
+        if (!isTeacherOrDirector) {
+            const enrollment = await getEnrollment(subjectId, userId).catch(() => null);
+            if (!enrollment || enrollment.status !== 'active') {
+                return { status: 403, body: JSON.stringify({ error: 'No estás matriculado en esta materia.' }) };
+            }
+        }
+
+        try {
+            const allCorrections = await listCorrections(subjectId);
+            const myReports = allCorrections
+                .filter(c => c.studentId === userId)
+                .map(c => ({
+                    correctionId: c.correctionId,
+                    question: c.question,
+                    issueDetail: c.issueDetail,
+                    status: c.status,
+                    classId: c.classId,
+                    createdAt: c.createdAt,
+                    resolvedAt: c.resolvedAt,
+                }))
+                .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+
+            return {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ success: true, data: myReports, count: myReports.length }),
+            };
+        } catch (err) {
+            context.error('[student-reports] Error:', err);
+            return { status: 500, body: JSON.stringify({ error: 'Error interno obteniendo reportes.' }) };
+        }
+    }),
 });
 
 // ── GET /api/teacher/ai-feedback-alerts?subjectId={id}&limit={n} ─────

@@ -78,6 +78,7 @@ export const auth = {
     setRole(role) {
         if (USERS[role]) {
             sessionStorage.setItem('edu_role', role);
+            sessionStorage.setItem('edu_uid', USERS[role].id);
 
             // Default active subject for UI
             const user = this.getUser();
@@ -271,9 +272,13 @@ export const auth = {
         if (!authenticated) {
             if (!sessionStorage.getItem('edu_role')) {
                  sessionStorage.setItem('edu_role', 'student');
+                 sessionStorage.setItem('edu_uid', USERS.student.id);
                  if (USERS.student.subjects.length > 0) {
                      sessionStorage.setItem('edu_active_subject', USERS.student.subjects[0].id);
                  }
+            } else if (!sessionStorage.getItem('edu_uid')) {
+                const role = sessionStorage.getItem('edu_role') || 'student';
+                sessionStorage.setItem('edu_uid', USERS[role]?.id || USERS.student.id);
             }
             if (!sessionStorage.getItem('edu_logged_in')) {
                 sessionStorage.setItem('edu_logged_in', 'true');
