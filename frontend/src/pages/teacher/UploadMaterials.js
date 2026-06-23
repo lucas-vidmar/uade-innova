@@ -39,6 +39,7 @@ export async function renderTeacherUpload(container) {
   // By default, select the first valid class or nothing
   let selectedClassIds = classes.length > 0 ? [classes[0].id] : [];
   let activeTab = 'transcript';
+  let isMasterSource = false;
   const activeSubjectIdSafe = activeSubjectId;
 
   const unsubscribeProcessing = processingNotifications.subscribe((event) => {
@@ -140,6 +141,18 @@ export async function renderTeacherUpload(container) {
 
         <div id="upload-zone-wrapper"></div>
 
+        ${activeTab === 'bibliography' ? `
+        <div style="margin-top:var(--space-4);padding:var(--space-4);background:var(--surface-2);border-radius:var(--radius-md)">
+          <label style="display:flex;align-items:center;gap:var(--space-3);cursor:pointer">
+            <input type="checkbox" id="master-source-toggle" ${isMasterSource ? 'checked' : ''} />
+            <div>
+              <div style="font-weight:600">Marcar como Fuente Maestra</div>
+              <div style="font-size:var(--fs-sm);color:var(--color-text-secondary)">Las fuentes maestras tienen prioridad en las respuestas del chat</div>
+            </div>
+          </label>
+        </div>
+        ` : ''}
+
         <!-- AI Validation section (only for classes with summaries) -->
         ${primaryClass?.summaryReady ? `
           <div class="divider"></div>
@@ -183,8 +196,13 @@ export async function renderTeacherUpload(container) {
     container.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         activeTab = btn.dataset.tab;
+        isMasterSource = false;
         render();
       });
+    });
+
+    container.querySelector('#master-source-toggle')?.addEventListener('change', (e) => {
+      isMasterSource = e.target.checked;
     });
 
     document.getElementById('approve-summary')?.addEventListener('click', () => {
@@ -235,6 +253,8 @@ export async function renderTeacherUpload(container) {
         formData.append('file', rawFile);
         formData.append('subjectId', activeSubjectId);
         formData.append('materialType', activeTab);
+
+        if (isMasterSource) formData.append('materialPriority', 'primary');
 
         // Append all selected class IDs
         selectedClassIds.forEach(id => formData.append('classIds', id));
