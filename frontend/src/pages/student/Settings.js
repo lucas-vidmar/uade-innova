@@ -11,12 +11,17 @@ export async function renderStudentSettings(container) {
   const [consent] = await Promise.all([
     api.getConsent().catch(() => ({ accepted: false })),
   ]);
+  const botPrefs = auth.getBotPreferences();
   const state = {
     enabled: prefs?.enabled !== false,
     cadence: prefs?.cadence || 'both',
     saving: false,
+    savingBot: false,
     consentAccepted: auth.getAIConsentAccepted() || consent?.accepted === true,
     savingConsent: false,
+    botTone: botPrefs.tone,
+    botLength: botPrefs.length,
+    botIncludeSources: botPrefs.includeSources,
   };
 
   function render() {
@@ -46,6 +51,35 @@ export async function renderStudentSettings(container) {
                 ${state.savingConsent ? 'Aceptando...' : 'Aceptar consentimiento'}
               </button>
             `}
+          </div>
+        </div>
+
+        <!-- Bot Preferences -->
+        <div class="card" style="padding:var(--space-6);margin-bottom:var(--space-6)">
+          <div style="font-weight:600;margin-bottom:var(--space-4)">Preferencias del Asistente IA</div>
+          <div style="display:flex;flex-direction:column;gap:var(--space-4)">
+            <div class="form-group">
+              <label class="form-label" style="font-weight:500">Tono de respuesta</label>
+              <select class="form-input" id="bot-tone-select" ${state.savingBot ? 'disabled' : ''}>
+                <option value="formal" ${state.botTone === 'formal' ? 'selected' : ''}>Formal</option>
+                <option value="didactic" ${state.botTone === 'didactic' ? 'selected' : ''}>Didáctico</option>
+                <option value="concise" ${state.botTone === 'concise' ? 'selected' : ''}>Resumido</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="font-weight:500">Longitud de respuesta</label>
+              <select class="form-input" id="bot-length-select" ${state.savingBot ? 'disabled' : ''}>
+                <option value="concise" ${state.botLength === 'concise' ? 'selected' : ''}>Concisa</option>
+                <option value="detailed" ${state.botLength === 'detailed' ? 'selected' : ''}>Detallada</option>
+              </select>
+            </div>
+            <label style="display:flex;align-items:center;gap:var(--space-3);cursor:pointer">
+              <input type="checkbox" id="bot-sources-toggle" ${state.botIncludeSources ? 'checked' : ''} ${state.savingBot ? 'disabled' : ''}>
+              <span style="font-size:var(--fs-sm)">Incluir fuentes por defecto</span>
+            </label>
+            <button class="btn btn-primary btn-sm" id="save-bot-prefs-btn" style="align-self:flex-start" ${state.savingBot ? 'disabled' : ''}>
+              ${state.savingBot ? 'Guardando...' : 'Guardar preferencias del asistente'}
+            </button>
           </div>
         </div>
 
@@ -130,6 +164,25 @@ export async function renderStudentSettings(container) {
         toast('error', 'Error', 'No se pudo aceptar el consentimiento.');
       }
       state.savingConsent = false;
+      render();
+    });
+
+    container.querySelector('#save-bot-prefs-btn')?.addEventListener('click', async () => {
+      state.savingBot = true;
+      render();
+      try {
+        const newTone = container.querySelector('#bot-tone-select')?.value || 'formal';
+        const newLength = container.querySelector('#bot-length-select')?.value || 'detailed';
+        const newSources = container.querySelector('#bot-sources-toggle')?.checked !== false;
+        state.botTone = newTone;
+        state.botLength = newLength;
+        state.botIncludeSources = newSources;
+        auth.setBotPreferences({ tone: newTone, length: newLength, includeSources: newSources });
+        toast('success', 'Preferencias guardadas', 'Las preferencias del asistente se actualizaron.');
+      } catch (err) {
+        toast('error', 'Error', 'No se pudieron guardar las preferencias.');
+      }
+      state.savingBot = false;
       render();
     });
 

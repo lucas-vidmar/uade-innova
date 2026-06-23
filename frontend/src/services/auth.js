@@ -111,6 +111,21 @@ export const auth = {
         return sessionStorage.getItem('edu_logged_in') !== 'false';
     },
 
+    getBotPreferences() {
+        return {
+            tone: localStorage.getItem('edu_bot_tone') || 'formal',
+            length: localStorage.getItem('edu_bot_length') || 'detailed',
+            includeSources: localStorage.getItem('edu_bot_include_sources') !== 'false',
+        };
+    },
+
+    setBotPreferences(prefs) {
+        if (prefs.tone) localStorage.setItem('edu_bot_tone', prefs.tone);
+        if (prefs.length) localStorage.setItem('edu_bot_length', prefs.length);
+        if (prefs.includeSources !== undefined) localStorage.setItem('edu_bot_include_sources', String(prefs.includeSources));
+        window.dispatchEvent(new CustomEvent('auth:botPrefsChanged', { detail: prefs }));
+    },
+
     getReminderPreferences() {
             return {
                 enabled: sessionStorage.getItem('edu_reminder_enabled') !== 'false',
