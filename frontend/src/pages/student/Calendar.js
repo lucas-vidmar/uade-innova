@@ -40,7 +40,10 @@ export async function renderStudentCalendar(container) {
         <div class="calendar-header">
           <button class="btn btn-ghost btn-sm" id="cal-prev">← Anterior</button>
           <h2>${MONTHS[month]} ${year}</h2>
-          <button class="btn btn-ghost btn-sm" id="cal-next">Siguiente →</button>
+          <div style="display:flex;gap:var(--space-2)">
+            <button class="btn btn-ghost btn-sm" id="cal-export-ics">📅 Exportar</button>
+            <button class="btn btn-ghost btn-sm" id="cal-next">Siguiente →</button>
+          </div>
         </div>
 
         <div class="calendar-grid">
@@ -143,6 +146,38 @@ export async function renderStudentCalendar(container) {
     document.getElementById('close-panel')?.addEventListener('click', () => overlay.remove());
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
   };
+
+  document.getElementById('cal-export-ics')?.addEventListener('click', () => {
+    const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//UADE Innova//Dashboard//ES'];
+    classes.forEach(c => {
+      if (!c.date) return;
+      const d = c.date.slice(0, 10).replace(/-/g, '');
+      lines.push('BEGIN:VEVENT');
+      lines.push('DTSTART;VALUE=DATE:' + d);
+      lines.push('DTEND;VALUE=DATE:' + d);
+      lines.push('SUMMARY:' + c.title);
+      lines.push('DESCRIPTION:Clase de ' + (c.subjectId || '') + '. Temas: ' + (c.topics || []).join(', '));
+      lines.push('END:VEVENT');
+    });
+    deadlines.forEach(d => {
+      if (!d.dueDate) return;
+      const dd = d.dueDate.slice(0, 10).replace(/-/g, '');
+      lines.push('BEGIN:VEVENT');
+      lines.push('DTSTART;VALUE=DATE:' + dd);
+      lines.push('DTEND;VALUE=DATE:' + dd);
+      lines.push('SUMMARY:Entrega: ' + d.title);
+      lines.push('DESCRIPTION:' + (d.description || 'Entrega de ' + d.title));
+      lines.push('END:VEVENT');
+    });
+    lines.push('END:VCALENDAR');
+    const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'calendario-uade.ics';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
 
   render();
 }

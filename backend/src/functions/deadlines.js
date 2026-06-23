@@ -81,7 +81,7 @@ app.http('save-deadline', {
     methods: ['POST', 'PUT'],
     authLevel: 'anonymous',
     route: 'deadlines',
-    handler: withCorrelation(async (request) => {
+    handler: withCorrelation(async (request, context) => {
         if (!validateFrontDoorId(request)) {
             return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         }
@@ -129,6 +129,33 @@ app.http('save-deadline', {
         ].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 
         await saveJson(CONTAINER_DEADLINES, `${subjectId}.json`, next);
+
+        // Notify students when deadline is created or updated
+        try {
+            const existingDeadline = current.find(d => d.id === deadline.id);
+            const isNew = !existingDeadline;
+            const dateChanged = existingDeadline && existingDeadline.dueDate !== deadline.dueDate;
+            if (isNew || dateChanged) {
+                const { upsertNotificationForSubject } = await import('../services/notification-store.js');
+                await upsertNotificationForSubject(subjectId, {
+                    id: `notif-deadline-change-${deadline.id}`,
+                    type: 'deadline',
+                    title: isNew ? 'Nueva tarea: ' + deadline.title : 'Fecha actualizada: ' + deadline.title,
+                    message: isNew
+                        ? deadline.title + ' — Fecha: ' + new Date(deadline.dueDate).toLocaleDateString('es-AR')
+                        : deadline.title + ' ahora vence el ' + new Date(deadline.dueDate).toLocaleDateString('es-AR'),
+                    createdAt: new Date().toISOString(),
+                    unread: true,
+                    targetHash: '#/student/calendar',
+                    subjectId,
+                    recipientUserIds: [],
+                    origin: 'deadline-save',
+                });
+                context.log('[Deadlines] Notification sent for deadline:', deadline.id);
+            }
+        } catch (notifErr) {
+            context.warn('[Deadlines] Failed to send notification (non-blocking):', notifErr.message);
+        }
 
         return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(deadline) };
     }),
