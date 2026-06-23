@@ -137,6 +137,10 @@ export async function renderClassDetail(container) {
                         <div class="card-footer" style="padding:10px;text-align:center;border-top:1px solid var(--color-border)">
                             <button class="btn btn-ghost btn-sm" id="btn-fullscreen-map">Ver código Mermaid</button>
                         </div>
+                    ` : (summaryData?.summaryReady || hasValidSummary) ? `
+                        <div class="card-footer" style="padding:10px;text-align:center;border-top:1px solid var(--color-border)">
+                            <button class="btn btn-primary btn-sm" id="btn-generate-map">Generar mapa conceptual</button>
+                        </div>
                     ` : ''}
                 </div>
 
@@ -161,6 +165,24 @@ export async function renderClassDetail(container) {
                         <div style="font-size:var(--text-xs); color:var(--color-text-secondary); font-style:italic;">
                             Escucha los conceptos clave mientras te trasladas.
                         </div>
+                    </div>
+                </div>
+                ` : (summaryData?.summaryReady || hasValidSummary) ? `
+                <div class="card premium-vibe" id="podcast-card-generate" style="background: linear-gradient(135deg, var(--color-surface) 0%, var(--color-bg-alt) 100%);">
+                    <div class="card-header">
+                        <span class="card-title">🎧 Podcast de Estudio (IA)</span>
+                        <span class="badge badge-info">Beta</span>
+                    </div>
+                    <div class="podcast-container" style="padding:var(--space-8); display:flex; flex-direction:column; align-items:center; gap:var(--space-6);">
+                        <div class="podcast-visual" style="width:64px; height:64px; border-radius:50%; background:var(--color-surface-2); display:flex; align-items:center; justify-content:center;">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                        </div>
+                        <div style="text-align:center">
+                            <h4 style="margin:0; font-size:var(--text-lg); font-weight:700;">Resumen Audio-Guía</h4>
+                            <p style="margin:var(--space-1) 0 0 0; font-size:var(--text-xs); color:var(--color-text-secondary);">Generado automáticamente con voz Nova</p>
+                        </div>
+                        <button class="btn btn-primary" id="btn-generate-audio">Generar audio</button>
+                        <div id="audio-generation-progress" style="display:none;font-size:var(--text-xs);color:var(--color-text-secondary);">Generando audio... esto puede tomar unos segundos.</div>
                     </div>
                 </div>
                 ` : ''}
@@ -248,6 +270,38 @@ export async function renderClassDetail(container) {
                 console.error('Mermaid render error:', err);
             }
         }
+
+        container.querySelector('#btn-generate-audio')?.addEventListener('click', async () => {
+          const progress = container.querySelector('#audio-generation-progress');
+          const btn = container.querySelector('#btn-generate-audio');
+          if (btn) btn.style.display = 'none';
+          if (progress) progress.style.display = 'block';
+          try {
+            const resp = await fetch(audioUrl);
+            if (resp.ok) {
+              renderClassDetail(container);
+            } else {
+              if (progress) progress.textContent = 'Error al generar el audio. Reintentá más tarde.';
+            }
+          } catch {
+            if (progress) progress.textContent = 'Error de conexión. Reintentá más tarde.';
+          }
+        });
+
+        container.querySelector('#btn-generate-map')?.addEventListener('click', async () => {
+          const btn = container.querySelector('#btn-generate-map');
+          if (btn) { btn.disabled = true; btn.textContent = 'Generando...'; }
+          try {
+            const summary = await api.getClassSummary(classId);
+            const textToMap = summary?.summary?.content || summary?.summary || '';
+            if (textToMap) {
+              await api.saveClassMap(classId, { mapCode: '', subjectId: activeSubjectId });
+            }
+            renderClassDetail(container);
+          } catch {
+            if (btn) { btn.disabled = false; btn.textContent = 'Generar mapa conceptual'; }
+          }
+        });
 
         container.querySelectorAll('.timeline-hit').forEach((hit) => {
             hit.addEventListener('click', () => {
