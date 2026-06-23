@@ -64,4 +64,5 @@ _dev-verify/
 # Session artifacts (Playwright snapshots, temp bundles, screenshots)
 main-chunk.js
 *-snapshot.yml
-**/screenshot*.png
+**/screenshot*.png*.png
+*.png

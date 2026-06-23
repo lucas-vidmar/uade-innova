@@ -196,14 +196,21 @@ Pinecone provides serverless vector storage with free tier for low-volume worklo
 
 ### Current State
 
-- Embedding generation (text-embedding-3-small)
-- Chat/RAG responses (DeepSeek V4 Flash / gpt-4o-mini fallback)
+- Embedding generation (text-embedding-3-small via Azure OpenAI `RS-OPENAI-LLM`)
+- Chat/RAG responses (DeepSeek V4 Flash via Azure AI Services `aiservices-dashboard`)
+- No GPT-4o-mini fallback — DeepSeek V4 Flash handles all chat traffic
 
 ### Finding
 
 For a cost-sensitive pilot with a **$1.50/aluno/mês** target:
 - `DeepSeek V4 Flash` is the most cost-effective option for reasoning and generation.
-- `gpt-4o-mini` remains as a robust fallback in Azure OpenAI.
+- `gpt-4o-mini` was removed as fallback — the pipeline is now 100% DeepSeek.
+
+### Implementation Notes
+
+- **Auth mechanism**: AIServices-kind accounts expect `api-key` header (not `Authorization: Bearer`). The client uses the base `OpenAI` class + custom `fetch` override that removes the Bearer token and sets `api-key` instead.
+- **SDK class**: `OpenAI` (not `AzureOpenAI`) — the `AzureOpenAI` class sends `api-key` but the base `OpenAI` class was chosen because its custom `fetch` hook gives explicit control over auth headers.
+- **Endpoint format**: `{BaseUrl}/openai/deployments/{deployment-name}` (no `/v1` suffix) — the custom fetch appends `api-version=2024-08-01-preview`.
 
 ### Recommendation
 

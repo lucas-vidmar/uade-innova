@@ -122,8 +122,8 @@ export async function renderStudentDashboard(container) {
 
         <div class="dashboard-layout-grid">
           <!-- Left Column: Chat Container -->
-          <section class="h-full" id="chat-widget-mount">
-            <div class="flex items-center justify-center h-[500px] border border-border bg-surface-2 rounded-2xl text-text-muted italic animate-pulse">
+          <section class="h-full flex flex-col" id="chat-widget-mount">
+            <div class="flex items-center justify-center flex-1 border border-border bg-surface-2 rounded-2xl text-text-muted italic animate-pulse">
               Iniciando asistente IA...
             </div>
           </section>
@@ -214,10 +214,17 @@ export async function renderStudentDashboard(container) {
       return '<li class="p-6 flex flex-row items-center justify-center gap-2 text-center text-text-muted bg-surface-2 rounded-xl mt-2 border border-dashed border-border"><span class="opacity-50">' + icon('chat') + '</span><span class="text-xs italic">Sin actividad reciente</span></li>';
     }
     return visibleItems.map(c => `
-      <li class="sidebar-list-item cursor-pointer hover:bg-surface-2 transition-colors" data-chat-session-id="${escapeHtml(c.sessionId)}">
+      <li class="sidebar-list-item cursor-pointer hover:bg-surface-2 transition-colors group" data-chat-session-id="${escapeHtml(c.sessionId)}">
         <div class="chat-history-row">
           <span class="chat-history-title">${escapeHtml(c.title)}</span>
-          <span class="chat-history-date">${new Date(c.lastAt || Date.now()).toLocaleDateString()}</span>
+          <div class="chat-history-actions">
+            <span class="chat-history-date">${new Date(c.lastAt || Date.now()).toLocaleDateString()}</span>
+            <button class="chat-history-delete-btn" data-delete-session-id="${escapeHtml(c.sessionId)}" title="Eliminar conversación">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
         </div>
       </li>
     `).join('');
@@ -244,10 +251,32 @@ export async function renderStudentDashboard(container) {
 
     const bindHistoryClicks = () => {
       sectionHistory.querySelectorAll('[data-chat-session-id]').forEach(item => {
-        item.addEventListener('click', () => {
+        item.addEventListener('click', (e) => {
+          if (e.target.closest('.chat-history-delete-btn')) return;
           const sessionId = item.dataset.chatSessionId;
           if (!sessionId) return;
           window.location.hash = `#/student/dashboard?sessionId=${encodeURIComponent(sessionId)}`;
+        });
+      });
+      sectionHistory.querySelectorAll('[data-delete-session-id]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const sessionId = btn.dataset.deleteSessionId;
+          if (!sessionId) return;
+          try {
+            await api.deleteConversation(sessionId, activeSubjectId);
+            sessionSummariesCache = sessionSummariesCache.filter(s => s.sessionId !== sessionId);
+            const scroll = sectionHistory.querySelector('#chat-history-scroll');
+            if (scroll) {
+              const list = scroll.querySelector('.sidebar-list');
+              if (list) {
+                list.innerHTML = renderHistoryList();
+                bindHistoryClicks();
+              }
+            }
+          } catch (err) {
+            console.error('Error deleting conversation:', err);
+          }
         });
       });
     };

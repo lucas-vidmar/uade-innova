@@ -63,14 +63,7 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
       <div class="chat-sources-bar">
         <div class="chat-sources-top">
           <span class="chat-sources-label">Fuentes de consulta:</span>
-          <button class="chat-new-btn" id="chat-save" title="Guardar conversación" style="${messages.length === 0 ? 'display:none' : ''}">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-            <span>Guardar</span>
-          </button>
-          <button class="chat-new-btn" id="chat-saved-list" title="Mis conversaciones guardadas">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-            <span>Guardadas</span>
-          </button>
+          
           <button class="chat-new-btn" id="chat-clear" title="Nuevo chat">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             <span>Nuevo chat</span>
@@ -139,37 +132,10 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
       </div>
       <h3 class="text-2xl font-extrabold text-text-primary mb-2">¡Hola, ${user.name.split(' ')[0]}!</h3>
       <p class="text-text-secondary text-base font-medium">¿En qué puedo ayudarte hoy?</p>
-      
-      ${selectedClassIds.length === 0 ? `
-        <div class="mt-4 p-3 bg-primary/10 text-primary rounded-xl flex items-center gap-3 border border-primary/20 animate-pulse">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          <span class="text-sm font-bold">Tenés que seleccionar al menos una clase para empezar.</span>
-        </div>
-      ` : ''}
     </div>
   `;
 
   const hasCitations = (content) => /\[\d+\]/.test(content || '');
-
-  const renderFuentesSection = (sources) => {
-    if (!sources || sources.length === 0) return '';
-    const deduped = deduplicateSources(sources);
-    return `
-      <div class="fuentes-section" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border-color, rgba(128,128,128,0.2));">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted, #888);margin-bottom:6px;">Fuentes</div>
-        <div style="display:flex;flex-direction:column;gap:4px;">
-          ${deduped.map((s, i) => `
-            <button class="fuentes-item citation-ref" data-source-index="${i + 1}" style="display:inline-flex;align-items:center;gap:6px;background:none;border:none;padding:3px 6px;border-radius:4px;cursor:pointer;font-size:12px;text-align:left;color:var(--text-primary, inherit);transition:background 0.15s;" title="Ver fragmento">
-              <span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--color-primary, #0066cc);color:#fff;font-size:10px;font-weight:700;flex-shrink:0;">${i + 1}</span>
-              ${materialIcon(s.materialType)}
-              <span class="truncate" style="max-width:160px;">${escapeHtml(s.slideTitle || s.sourceFilename)}</span>
-              ${s.materialPriority ? `<span class="source-priority source-priority-${escapeHtml(s.materialPriority)}" style="font-size:9px;">${s.materialPriority === 'primary' ? 'Primario' : 'Secundario'}</span>` : ''}
-            </button>
-          `).join('')}
-        </div>
-      </div>
-    `;
-  };
 
   const renderMessage = (msg) => {
     if (msg.role === 'user') {
@@ -179,10 +145,11 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         </div>
       `;
     }
+    const isStreaming = msg.streaming === true;
     const contentHtml = renderMarkdown(msg.content);
-    const showFuentes = hasCitations(msg.content) && msg.sources?.length > 0;
+    const streamingClass = isStreaming ? 'streaming' : '';
     return `
-      <div class="chat-msg chat-msg-assistant received animate-fade ${msg.id === highlightMessageId ? 'highlight-msg' : ''}" id="msg-${msg.id || ''}">
+      <div class="chat-msg chat-msg-assistant received animate-fade ${streamingClass} ${msg.id === highlightMessageId ? 'highlight-msg' : ''}" id="msg-${msg.id || ''}">
         <div class="chat-msg-body flex-1 overflow-hidden">
           <div class="chat-bubble chat-bubble-assistant leading-relaxed">${contentHtml}</div>
           
@@ -192,30 +159,31 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
           </div>
           ` : ''}
           
-          ${showFuentes ? renderFuentesSection(msg.sources) : ''}
-
           ${msg.model ? `<div class="model-name-indicator" style="font-size:11px;color:var(--color-text-muted,#9ca3af);margin-top:6px;padding:0 2px;margin-bottom:8px;">Powered by ${msg.model}</div>` : ''}
 
           <div class="chat-msg-footer mt-3 flex justify-between items-end gap-4">
             ${msg.sources?.length > 0 ? `
-              <div class="chat-sources flex flex-wrap gap-2">
-                ${deduplicateSources(msg.sources).map(s => `
-                  <span class="source-chip bg-surface border border-border px-2 py-1 rounded text-[10px] flex items-center gap-1" title="${s.slideTitle ? `${escapeHtml(s.slideTitle)} (${escapeHtml(s.sourceFilename)})` : escapeHtml(s.sourceFilename)}">
+              <div class="chat-sources chat-sources-circles">
+                ${deduplicateSources(msg.sources).map((s, i) => `
+                  <button class="source-circle-item" data-source-index="${i + 1}" title="${s.slideTitle ? `${escapeHtml(s.slideTitle)} (${escapeHtml(s.sourceFilename)})` : escapeHtml(s.sourceFilename)}">
+                    <span class="source-circle-num">${i + 1}</span>
                     ${materialIcon(s.materialType)}
-                    <span class="truncate max-w-[120px]">${escapeHtml(s.slideTitle || s.sourceFilename)}</span>
+                    <span class="truncate">${escapeHtml(s.slideTitle || s.sourceFilename)}</span>
                     ${s.materialPriority ? `<span class="source-priority source-priority-${escapeHtml(s.materialPriority)}">${s.materialPriority === 'primary' ? 'Primario' : 'Secundario'}</span>` : ''}
-                  </span>
+                  </button>
                 `).join('')}
               </div>
             ` : '<span></span>'}
 
-            <div class="chat-feedback-btns flex items-center gap-1" data-message-id="${msg.id || ''}">
-              <button class="feedback-btn p-1 rounded hover:bg-surface-3 transition-colors ${msg.feedback === 'positive' ? 'active text-primary' : 'text-text-muted'}" data-type="positive" title="Útil">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.53l-1.6 7A2 2 0 0 1 18.23 21H7a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h4l.5-1c.9-1.8 1.8-3 3.5-3 1.1 0 2 1.1 2 2.5 0 1-.3 1.5-1 2.38Z"/></svg>
-              </button>
-              <button class="feedback-btn p-1 rounded hover:bg-surface-3 transition-colors ${msg.feedback === 'negative' ? 'active text-error' : 'text-text-muted'}" data-type="negative" title="No es útil">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.53l1.6-7A2 2 0 0 1 5.77 3H17a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-4l-.5 1c-.9 1.8-1.8 3-3.5 3-1.1 0-2-1.1-2-2.5 0-1 .3-1.5 1-2.38Z"/></svg>
-              </button>
+            <div class="chat-msg-actions">
+              <div class="chat-feedback-btns" data-message-id="${msg.id || ''}">
+                <button class="feedback-btn ${msg.feedback === 'positive' ? 'active' : ''}" data-type="positive" title="Útil">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.53l-1.6 7A2 2 0 0 1 18.23 21H7a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h4l.5-1c.9-1.8 1.8-3 3.5-3 1.1 0 2 1.1 2 2.5 0 1-.3 1.5-1 2.38Z"/></svg>
+                </button>
+                <button class="feedback-btn ${msg.feedback === 'negative' ? 'active' : ''}" data-type="negative" title="No es útil">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.53l1.6-7A2 2 0 0 1 5.77 3H17a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-4l-.5 1c-.9 1.8-1.8 3-3.5 3-1.1 0-2-1.1-2-2.5 0-1 .3-1.5 1-2.38Z"/></svg>
+                </button>
+              </div>
               <button class="report-issue-btn ${msg.issueReported ? 'active' : ''}" data-message-id="${msg.id || ''}" title="Reportar problema" ${msg.issueReported ? 'disabled' : ''}>
                 ${msg.issueReported ? '✅ Reportado' : 'Reportar respuesta incorrecta'}
               </button>
@@ -280,50 +248,12 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
     // Report issue
     bindReportIssueEvents(container);
 
-    // Save conversation
-    container.querySelector('#chat-save')?.addEventListener('click', async () => {
-      if (messages.length === 0) return;
-      const msgCount = messages.filter((m) => m.role === 'user' || m.role === 'assistant').length;
-      try {
-        await api.saveConversation({
-          conversationId: currentSessionId,
-          subjectId,
-          messages: messages.map((m) => ({ role: m.role, content: m.content })),
-        });
-        toast('success', 'Conversación guardada', `Se guardaron ${msgCount} mensajes.`);
-      } catch (err) {
-        toast('error', 'No se pudo guardar', err?.message || 'Intentá nuevamente.');
-      }
-    });
-
-    // Saved conversations list
-    container.querySelector('#chat-saved-list')?.addEventListener('click', async () => {
-      const { renderSavedConversationsModal } = await import('./SavedConversationsModal.js');
-      renderSavedConversationsModal({
-        subjectId,
-        onLoad: async (conversation) => {
-          messages = conversation.messages.map((m) => {
-            const msg = { role: m.role, content: m.content };
-            if (m.role === 'assistant') {
-              msg.id = 'ai-' + Date.now() + '-' + Math.random().toString(36).slice(2);
-              msg.sources = [];
-            }
-            return msg;
-          });
-          currentSessionId = conversation.conversationId;
-          render();
-        },
-      });
-    });
-
     // Clear
     container.querySelector('#chat-clear')?.addEventListener('click', () => {
-      const previousSessionId = currentSessionId;
       messages = [];
       currentSessionId = crypto.randomUUID();
       render();
-      toast('success', 'Nuevo chat iniciado', 'Las consultas anteriores se guardaron en el historial.');
-      if (onNewChat) onNewChat({ newSessionId: currentSessionId, previousSessionId });
+      if (onNewChat) onNewChat({ newSessionId: currentSessionId });
     });
 
     // Citation click (event delegation)
@@ -377,8 +307,9 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
     const assistantMsg = {
       id: 'ai-' + Date.now(),
       role: 'assistant',
-      content: '',
-      sources: []
+      content: '<span class="chat-typing-dots"><span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></span>',
+      sources: [],
+      streaming: true
     };
     messages.push(assistantMsg);
     render();
@@ -403,21 +334,29 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
           assistantMsg.verified = data.verified || false;
           assistantMsg.model = data.model || '';
           const footerEl = msgEl.querySelector('.chat-msg-footer');
-          if (footerEl && assistantMsg.sources.length > 0) {
+          if (footerEl) {
             footerEl.innerHTML = `
-              <div class="chat-sources">
-                <span class="chat-sources-label">Fuentes:</span>
-                ${deduplicateSources(assistantMsg.sources).map(s => `
-                  <span class="source-chip" title="${s.slideTitle ? `${escapeHtml(s.slideTitle)} (${escapeHtml(s.sourceFilename)})` : escapeHtml(s.sourceFilename)}">
+              ${assistantMsg.sources.length > 0 ? `
+              <div class="chat-sources chat-sources-circles">
+                ${deduplicateSources(assistantMsg.sources).map((s, i) => `
+                  <button class="source-circle-item" data-source-index="${i + 1}" title="${s.slideTitle ? `${escapeHtml(s.slideTitle)} (${escapeHtml(s.sourceFilename)})` : escapeHtml(s.sourceFilename)}">
+                    <span class="source-circle-num">${i + 1}</span>
                     ${materialIcon(s.materialType)}
-                    ${escapeHtml(s.slideTitle || s.sourceFilename)}
+                    <span class="truncate">${escapeHtml(s.slideTitle || s.sourceFilename)}</span>
                     ${s.materialPriority ? `<span class="source-priority source-priority-${escapeHtml(s.materialPriority)}">${s.materialPriority === 'primary' ? 'Primario' : 'Secundario'}</span>` : ''}
-                  </span>
+                  </button>
                 `).join('')}
               </div>
-              <div class="chat-feedback-btns" data-message-id="${assistantMsg.id}">
-                <button class="feedback-btn" data-type="positive" title="Útil">👍</button>
-                <button class="feedback-btn" data-type="negative" title="No es útil">👎</button>
+              ` : '<span></span>'}
+              <div class="chat-msg-actions">
+                <div class="chat-feedback-btns" data-message-id="${assistantMsg.id}">
+                  <button class="feedback-btn" data-type="positive" title="Útil">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.53l-1.6 7A2 2 0 0 1 18.23 21H7a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h4l.5-1c.9-1.8 1.8-3 3.5-3 1.1 0 2 1.1 2 2.5 0 1-.3 1.5-1 2.38Z"/></svg>
+                  </button>
+                  <button class="feedback-btn" data-type="negative" title="No es útil">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.53l1.6-7A2 2 0 0 1 5.77 3H17a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-4l-.5 1c-.9 1.8-1.8 3-3.5 3-1.1 0-2-1.1-2-2.5 0-1 .3-1.5 1-2.38Z"/></svg>
+                  </button>
+                </div>
                 <button class="report-issue-btn" data-message-id="${assistantMsg.id}" title="Reportar problema">Reportar respuesta incorrecta</button>
               </div>
             `;
@@ -441,6 +380,9 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
           const bubbleEl = msgEl.querySelector('.chat-bubble-assistant');
           if (bubbleEl) bubbleEl.textContent = assistantMsg.content;
         } else if (type === 'delta') {
+          if (assistantMsg.content === '<span class="chat-typing-dots"><span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></span>') {
+            assistantMsg.content = '';
+          }
           assistantMsg.content += data.content;
           const bubbleEl = msgEl.querySelector('.chat-bubble-assistant');
           if (bubbleEl) {
@@ -453,9 +395,13 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
           assistantMsg.streaming = false;
           const msgEl = getMsgEl();
           if (msgEl) {
+            msgEl.classList.remove('streaming');
+            const bubbleEl = msgEl.querySelector('.chat-bubble-assistant');
+            if (bubbleEl) {
+              bubbleEl.innerHTML = renderMarkdown(assistantMsg.content);
+            }
             const body = msgEl.querySelector('.chat-msg-body');
             if (body) {
-              // Add model name indicator if available
               if (assistantMsg.model) {
                 const existingIndicator = body.querySelector('.model-name-indicator');
                 if (!existingIndicator) {
@@ -467,19 +413,21 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
                   if (bubble) bubble.after(modelIndicator);
                 }
               }
-              if (hasCitations(data.answer) && assistantMsg.sources?.length > 0) {
-                const verifiedBadge = body.querySelector('.verified-badge');
-                const fuentesDiv = document.createElement('div');
-                fuentesDiv.innerHTML = renderFuentesSection(assistantMsg.sources);
-                if (verifiedBadge) {
-                  verifiedBadge.after(fuentesDiv.firstElementChild);
-                } else {
-                  const bubble = body?.querySelector('.chat-bubble-assistant');
-                  if (bubble) bubble.after(fuentesDiv.firstElementChild);
-                }
-              }
             }
           }
+          // Auto-save conversation after each response, then notify parent
+          (async () => {
+            try {
+              await api.saveConversation({
+                conversationId: currentSessionId,
+                subjectId,
+                messages: messages.map((m) => ({ role: m.role, content: m.content })),
+              });
+            } catch (err) {
+              console.error('[Chat] Auto-save failed:', err);
+            }
+            if (onMessageSent) onMessageSent({ sessionId: currentSessionId });
+          })();
         }
       });
     } catch (err) {
@@ -487,21 +435,21 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         assistantMsg.content = 'No estás matriculado en esta materia. Contactá a administración.';
         assistantMsg.streaming = false;
         render();
+        if (onMessageSent) onMessageSent({ sessionId: currentSessionId });
         return;
       }
       const category = err?.errorCategory;
       assistantMsg.content = ERROR_MESSAGES[category] || ERROR_MESSAGES.UNKNOWN;
       assistantMsg.streaming = false;
       render();
+      if (onMessageSent) onMessageSent({ sessionId: currentSessionId });
     } finally {
       isLoading = false;
-      // No re-renderizamos todo al final para evitar parpadeo si ya está actualizado vía DOM
       const sendBtn = container.querySelector('#chat-send');
       if (sendBtn) sendBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`;
       if (sendBtn) sendBtn.disabled = false;
       const textarea = container.querySelector('#chat-input');
       if (textarea) textarea.disabled = false;
-      if (onMessageSent) onMessageSent({ sessionId: currentSessionId });
     }
   };
 
@@ -732,7 +680,7 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
     if (!Array.isArray(sources)) return [];
     const seen = new Set();
     return sources.filter(s => {
-      const key = `${s.sourceFilename}|${s.chunkIndex ?? ''}` || s.materialId || JSON.stringify(s);
+      const key = s.materialId || `${s.sourceFilename || ''}|${s.chunkIndex ?? ''}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;

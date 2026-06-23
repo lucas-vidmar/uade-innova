@@ -91,9 +91,10 @@ infra/
 ### **7.3. Recursos a definir en Bicep**
 
 | **Recurso** | **Nombre sugerido** | **Notas clave** |
-|---|---|---|
+|---|---|---|---|
 | Resource Group | `RG_UADE_INNOVA_DEV` | Asignado por UADE. Todos los recursos dentro de este RG. |
-| Azure OpenAI | `RS-OPENAI-LLM` (existente) | Ya provisionado por UADE en eastus2. |
+| Azure OpenAI | `RS-OPENAI-LLM` (existente) | Ya provisionado por UADE en eastus2. Solo para embeddings. |
+| Azure AI Services | `aiservices-dashboard` | **AIServices-kind** (no OpenAI-kind). Hostea DeepSeek V4 Flash con `--model-format DeepSeek`. Requiere `api-key` header. |
 | Azure Functions | `func-dashboard-ingest-{token}` | Runtime: Node.js 20. Plan: **Consumption Y1** (sin VM quota). |
 | Azure Storage | `stdashboard{token}` (max 24 chars) | Contenedores: `class-materials` y `processed`. |
 | Azure Static Web Apps | `stapp-dashboard-{token}` | **Free tier.** CDN global, SSL, 100 GB/mes. Sin VM quota. |
@@ -288,7 +289,7 @@ interface PineconeMetadata {
 }
 ```
 
-**Response `200 OK`:**
+**Response `200 OK` (non-streaming):**
 
 ```json
 {
@@ -298,6 +299,19 @@ interface PineconeMetadata {
   ]
 }
 ```
+
+**Response (SSE streaming):**
+
+`event: metadata`
+`data: {"interactionId":"...","sources":[...],"model":"deepseek-v4-flash"}`
+
+`event: delta`
+`data: {"content":"..."}`
+
+`event: done`
+`data: {"answer":"..."}`
+
+The `model` field in metadata carries the active chat model name (deepseek-v4-flash or gpt-4o-mini). The frontend ChatWidget displays "Powered by {model}" below the assistant bubble.
 
 ---
 
@@ -316,11 +330,16 @@ Estas variables son generadas por `azd provision` y deben estar presentes en `.e
 AZURE_OPENAI_ENDPOINT=https://<rs-openai-llm>.openai.azure.com/
 AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-3-small
 AZURE_OPENAI_TTS_DEPLOYMENT=tts-1
+AZURE_OPENAI_API_KEY=...                    # Key del recurso RS-OPENAI-LLM
 
-# Azure AI Foundry (DeepSeek)
-AI_FOUNDRY_DEEPSEEK_ENDPOINT=https://<model-name>.<region>.models.ai.azure.com/v1
-AI_FOUNDRY_DEEPSEEK_KEY=...
+# DeepSeek V4 Flash (via Azure AI Services — AIServices kind)
+AI_FOUNDRY_DEEPSEEK_ENDPOINT=https://aiservices-dashboard.cognitiveservices.azure.com/openai/deployments/deepseek-v4-flash
+AI_FOUNDRY_DEEPSEEK_KEY=...                 # Key del recurso aiservices-dashboard (key1 o key2)
 AI_FOUNDRY_DEEPSEEK_MODEL=deepseek-v4-flash
+
+# Auth Note: DeepSeek uses base `OpenAI` SDK class + custom `fetch` override that
+# removes `Authorization: Bearer` and sets `api-key` header instead. This is required
+# because AIServices-kind accounts (not OpenAI-kind) reject Bearer tokens.
 
 # Pinecone
 PINECONE_HOST=https://<index-name>-<environment>.svc.pinecone.io
