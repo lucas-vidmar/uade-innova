@@ -48,3 +48,6 @@ import './functions/vector-health-snapshots-api.js';
 import './functions/director-kpi-export.js';
 import './functions/archive-usage.js';
 import './functions/grade-dispute.js';
+import './functions/reminder-preferences.js';
+import './functions/audio-api.js';
+import './functions/material-download.js';

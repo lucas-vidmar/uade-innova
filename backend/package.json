@@ -11,7 +11,8 @@
         "test": "node --experimental-test-module-mocks --test src/**/*.test.js",
         "restore-archive": "node scripts/restore-archive.js",
         "migrate-state-to-tables": "node scripts/migrate-state-to-tables.js",
-        "seed-enrollments": "node scripts/seed-enrollments.js"
+        "seed-enrollments": "node scripts/seed-enrollments.js",
+    "seed-initial-data": "node scripts/seed-initial-data.js"
     },
     "dependencies": {
         "@azure/data-tables": "^13.3.2",
