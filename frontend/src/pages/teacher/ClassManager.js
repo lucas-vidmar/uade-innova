@@ -127,10 +127,10 @@ export async function renderClassManager(container) {
                                                     </div>
                                                 </td>
                                                 <td class="class-col-topics">
-                                                    <div class="topic-tags-cell" data-idx="${i}" style="display:flex;flex-wrap:wrap;gap:4px;max-width:200px;">
-                                                        ${(c.topics || []).slice(0, 3).map(t => `<span class="badge badge-neutral" style="font-size:10px;padding:2px 6px;">${escapeHtml(t)}</span>`).join('')}
-                                                        ${(c.topics || []).length > 3 ? `<span class="badge badge-info" style="font-size:10px;padding:2px 6px;">+${(c.topics || []).length - 3}</span>` : ''}
-                                                        <button class="btn btn-ghost btn-sm btn-edit-topics" data-idx="${i}" title="Editar tags" style="padding:2px 4px;font-size:10px;">✏️</button>
+                                                    <div class="topic-tags-cell" data-idx="${i}">
+                                                        ${(c.topics || []).slice(0, 3).map(t => `<span class="badge badge-neutral topic-tag">${escapeHtml(t)}</span>`).join('')}
+                                                        ${(c.topics || []).length > 3 ? `<span class="badge badge-info" style="font-size:10px;padding:2px 6px;flex-shrink:0;">+${(c.topics || []).length - 3}</span>` : ''}
+                                                        <button class="btn btn-ghost btn-sm btn-edit-topics" data-idx="${i}" title="Editar tags" style="padding:2px 4px;font-size:10px;flex-shrink:0;">✏️</button>
                                                     </div>
                                                 </td>
                                                 <td class="class-col-summary">
