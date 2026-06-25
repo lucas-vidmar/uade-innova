@@ -78,3 +78,6 @@ deploy-*.md
 # Test scripts
 scripts/seed-test-profiles.js
 scripts/test-students-enrollments.csv
+
+# Generated test reports
+test-report/
