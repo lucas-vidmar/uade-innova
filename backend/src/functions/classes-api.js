@@ -1,10 +1,11 @@
 import { app } from '@azure/functions';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { createStructuredLogger } from '../services/structured-logger.js';
-import { loadJson, saveJson, listBlobs, deleteBlob, uploadFile, getTableClient } from '../services/storage.js';
+import { loadJson, saveJson, listBlobs, deleteBlob, uploadFile, downloadFile, getTableClient } from '../services/storage.js';
 import { v4 as uuidv4 } from 'uuid';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { listClassesBySubject, listMaterialsBySubject, replaceClassesForSubject, deleteMaterialStateById, getMaterialState, upsertMaterialState, deleteClassesBySubject, deleteMaterialsBySubject, getEnrollmentsByUser, getEnrollment } from '../services/state-store.js';
+import { runPipeline } from '../services/pipeline.js';
 import * as vectorStore from '../services/vector-store.js';
 import { trackPollingEvent } from '../services/telemetry.js';
 import { chatCompletion } from '../services/ai.js';
@@ -29,6 +30,8 @@ const DEFAULT_SUBJECTS = [
     { id: 'arq-software-2026', name: 'Arquitectura de Software', group: 'GRP-ARQ-SOFT-2026' },
     { id: 'diseno-sistemas-2026', name: 'Diseño de Sistemas', group: 'GRP-DIS-SIST-2026' }
 ];
+
+import path from 'path';
 
 const SESSION_METRICS_TABLE = 'SessionMetrics';
 export const POWERBI_DEFAULT_DAYS = 14;
@@ -1334,47 +1337,58 @@ app.http('get-director-stats', {
         const currentPeriodCost = metrics.totals.totalCost;
         const costPerActiveStudent = uniqueActiveUsers > 0 ? Number((currentPeriodCost / uniqueActiveUsers).toFixed(6)) : 0;
 
-        const MOCK_STATS = {
-            dau: metrics.latest.dau,
-            dauDelta: metrics.deltas.dau,
-            classesProcessed: 14,
-            ragInteractions: metrics.latest.ragInteractions,
-            ragDelta: metrics.deltas.ragInteractions,
-            adoptionRate: 68,
-            subjectAdoption: [
-                { name: 'Arq. de Software', rate: 82 },
-                { name: 'Diseño de BD', rate: 71 },
-                { name: 'Ing. de Software I', rate: 63 },
-                { name: 'Sistemas Distribuidos', rate: 44 },
-            ],
-            earlyAlertSummary: {
-                totalStudentsAtRisk: 3,
-                highRiskCount: 1,
-                mediumRiskCount: 2,
-                lowAttendanceCount: 2,
-                lowGradeCount: 2,
-                attendanceBelow60Count: 1,
-                attendance60To75Count: 2,
-                attendanceAbove75Count: 0,
-            },
-            powerBiSource: {
-                mode: 'continuous-export-db',
-                storage: 'Azure Table Storage',
-                table: SESSION_METRICS_TABLE,
-                windowDays: metrics.windowDays,
-                updatedAt: metrics.updatedAt,
-            },
-            costBySubject: metrics.costBySubject,
-            wausBySubject: metrics.wausBySubject,
-            materialUploads: metrics.materialUploads,
-            budget,
-            spikeAlert,
-            costPerActiveStudent,
-        };
-        return { 
-            status: 200, 
-            headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify(MOCK_STATS) 
+        const allSubjects = await loadSubjects();
+        const subjectAdoption = allSubjects.map(s => ({
+            name: s.name,
+            rate: Math.min(100, Math.round((metrics.wausBySubject.find(w => w.subjectId === s.id)?.currentWeek || 0) / Math.max(Object.values(metrics.wausBySubject).reduce((sum, w) => sum + w.currentWeek, 0) || 1, 1) * 100)),
+        }));
+        const adoptionRate = uniqueActiveUsers > 0 ? Math.min(100, Math.round(uniqueActiveUsers / allSubjects.reduce((sum, s) => sum + (s.enrolledCount || 60), 60) * 100)) : 0;
+
+        let classesProcessed = 0;
+        try {
+            const classesClient = getTableClient(process.env.AZURE_TABLE_CLASSES || 'classes');
+            for await (const _ of classesClient.listEntities()) {
+                classesProcessed++;
+            }
+        } catch (err) {
+            context.log.warn(`[director/stats] Could not count classes: ${err.message}`);
+        }
+
+        return {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                dau: metrics.latest.dau,
+                dauDelta: metrics.deltas.dau,
+                classesProcessed,
+                ragInteractions: metrics.latest.ragInteractions,
+                ragDelta: metrics.deltas.ragInteractions,
+                adoptionRate,
+                subjectAdoption,
+                earlyAlertSummary: {
+                    totalStudentsAtRisk: 0,
+                    highRiskCount: 0,
+                    mediumRiskCount: 0,
+                    lowAttendanceCount: 0,
+                    lowGradeCount: 0,
+                    attendanceBelow60Count: 0,
+                    attendance60To75Count: 0,
+                    attendanceAbove75Count: 0,
+                },
+                powerBiSource: {
+                    mode: 'continuous-export-db',
+                    storage: 'Azure Table Storage',
+                    table: SESSION_METRICS_TABLE,
+                    windowDays: metrics.windowDays,
+                    updatedAt: metrics.updatedAt,
+                },
+                costBySubject: metrics.costBySubject,
+                wausBySubject: metrics.wausBySubject,
+                materialUploads: metrics.materialUploads,
+                budget,
+                spikeAlert,
+                costPerActiveStudent,
+            }),
         };
     })
 });
@@ -1550,39 +1564,46 @@ app.http('reprocess-material', {
                 context.error(`[Reprocess] Error eliminando blob procesado para ${materialId}:`, bErr);
             }
 
-            // 3. Re-subir blob original para re-triggerear el pipeline
+            // 3. Ejecutar pipeline directamente
             const containerName = process.env.AZURE_STORAGE_CONTAINER_MATERIALS || 'class-materials';
-            const classId = Array.isArray(material.classIds) && material.classIds.length > 0 ? material.classIds[0] : 'unknown';
-            const blobName = `${classId}/${materialId}-${material.filename || 'file'}`;
-            const originalBlobUrl = material.blobUrl;
+            const origExt = path.extname(material.filename || 'file');
+            const origBlobName = `${subjectId}/${materialId}${origExt}`;
 
-            if (originalBlobUrl) {
-                try {
-                    const response = await fetch(originalBlobUrl);
-                    if (response.ok) {
-                        const buffer = Buffer.from(await response.arrayBuffer());
-                        const contentType = response.headers.get('content-type') || 'application/octet-stream';
-                        await uploadFile(containerName, blobName, buffer, contentType);
-                        context.log(`[Reprocess] Blob re-subido para ${materialId}`);
-                    }
-                } catch (fetchErr) {
-                    context.error(`[Reprocess] Error re-subiendo blob para ${materialId}:`, fetchErr);
-                }
+            let fileBuffer = null;
+            let fileContentType = 'application/octet-stream';
+            try {
+                fileBuffer = await downloadFile(containerName, origBlobName);
+                context.log(`[Reprocess] Blob descargado para ${materialId} (${fileBuffer.length} bytes)`);
+            } catch (dlErr) {
+                context.error(`[Reprocess] Error descargando blob ${origBlobName}:`, dlErr);
+                return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'No se pudo leer el archivo original del storage.' }) };
             }
 
-            // 4. Resetear estado
-            delete material.processedAt;
-            const updated = await upsertMaterialState({
-                ...material,
-                status: 'pending',
-                errorMessage: '',
-            }, 'Merge');
+            context.log(`[Reprocess] Ejecutando pipeline para ${materialId}...`);
+            try {
+                await runPipeline({
+                    fileBuffer,
+                    fileContentType,
+                    fileName: material.filename,
+                    classIds: material.classIds,
+                    subjectId,
+                    materialType: material.type,
+                    materialId,
+                    userId: 'reprocess',
+                    blobUrl: material.blobUrl,
+                    correlationId: request.headers.get('x-correlation-id') || context.correlationId,
+                    traceContext: context.traceContext,
+                }, context);
 
-            return {
-                status: 200,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ success: true, material: updated }),
-            };
+                return {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ success: true, materialId, status: 'processing' }),
+                };
+            } catch (pipelineErr) {
+                context.error(`[Reprocess] Pipeline error para ${materialId}:`, pipelineErr);
+                return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: pipelineErr.message }) };
+            }
         } catch (err) {
             context.error(err);
             return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: `No se pudo reprocesar el material: ${err.message}` }) };
