@@ -2,105 +2,6 @@ import { app } from '@azure/functions';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
 
-function buildMockTasks(studentId) {
-    const now = new Date();
-    const addDays = (d) => new Date(now.getTime() + d * 86400000).toISOString().slice(0, 10);
-
-    return [
-        { id: `task-${studentId}-001`, studentId, title: 'TP1: Diagrama de Arquitectura C4', dueDate: addDays(7), weight: 25, status: 'pending', classIds: ['class-01', 'class-02'], grade: null, subjectId: 'arq-software-2026' },
-        { id: `task-${studentId}-002`, studentId, title: 'Quiz Online — Estilos Arquitectónicos', dueDate: addDays(-3), weight: 10, status: 'completed', classIds: ['class-02'], grade: 8.5, subjectId: 'arq-software-2026' },
-        { id: `task-${studentId}-003`, studentId, title: 'Parcial 1 — Arquitectura y Patrones', dueDate: addDays(16), weight: 35, status: 'pending', classIds: ['class-01', 'class-02', 'class-03', 'class-04'], grade: null, subjectId: 'arq-software-2026' },
-        { id: `task-${studentId}-004`, studentId, title: 'Lectura: Clean Architecture (caps 1-5)', dueDate: addDays(-7), weight: 5, status: 'completed', classIds: ['class-01'], grade: 10, subjectId: 'arq-software-2026' },
-    ];
-}
-
-function buildMockAttendance(subjectId) {
-    const snapshot = {
-        average: 78,
-        critical: 3,
-        trend: 'stable',
-        subjectId,
-        updatedAt: new Date().toISOString(),
-    };
-    return snapshot;
-}
-
-function buildMockTeacherAlerts(subjectId) {
-    const alerts = [
-        {
-            id: 'teacher-alert-engagement-alu-012',
-            type: 'low_engagement',
-            severity: 'high',
-            subjectId: 'arq-software-2026',
-            classId: 'class-03',
-            studentId: 'alu-012',
-            studentName: 'Tomás García',
-            title: 'Baja participación sostenida',
-            description: 'El alumno acumula 2 semanas con asistencia menor al 50% y sin interacción en consultas.',
-            attendance: '45%',
-            avgGrade: 4.2,
-            createdAt: new Date(Date.now() - 3 * 3600000).toISOString(),
-            recommendedAction: 'Contactar al alumno y reforzar contenidos de Clase 3.',
-        },
-        {
-            id: 'teacher-alert-material-class-03',
-            type: 'material_report',
-            severity: 'medium',
-            subjectId: 'arq-software-2026',
-            classId: 'class-03',
-            materialId: 'm-06',
-            materialType: 'transcript',
-            title: 'Reporte de material: calidad de transcripción',
-            description: '3 estudiantes reportaron baja claridad en la transcripción de la clase.',
-            reportCount: 3,
-            createdAt: new Date(Date.now() - 26 * 3600000).toISOString(),
-            recommendedAction: 'Revisar la transcripción y volver a procesar el archivo si corresponde.',
-        },
-    ];
-
-    return subjectId ? alerts.filter((item) => item.subjectId === subjectId) : alerts;
-}
-
-function buildMockEarlyAlerts(subjectId) {
-    const alerts = [
-        {
-            id: 'early-alert-alu-001',
-            studentId: 'alu-001',
-            name: 'María López',
-            subjectId: 'arq-software-2026',
-            subject: 'Arquitectura de Software',
-            risk: 'low',
-            interventionFlag: 'stable',
-            attendance: '85%',
-            avgGrade: 8.2,
-        },
-        {
-            id: 'early-alert-alu-007',
-            studentId: 'alu-007',
-            name: 'Diego Fernández',
-            subjectId: 'arq-software-2026',
-            subject: 'Arquitectura de Software',
-            risk: 'medium',
-            interventionFlag: 'watchlist',
-            attendance: '62%',
-            avgGrade: 6.0,
-        },
-        {
-            id: 'early-alert-alu-012',
-            studentId: 'alu-012',
-            name: 'Tomás García',
-            subjectId: 'arq-software-2026',
-            subject: 'Arquitectura de Software',
-            risk: 'high',
-            interventionFlag: 'at_risk',
-            attendance: '45%',
-            avgGrade: 4.2,
-        },
-    ];
-
-    return alerts;
-}
-
 app.http('sga-get-tasks', {
     methods: ['GET'],
     authLevel: 'anonymous',
@@ -116,7 +17,7 @@ app.http('sga-get-tasks', {
         return {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(buildMockTasks(studentId)),
+            body: JSON.stringify([]),
         };
     }),
 });
@@ -142,7 +43,7 @@ app.http('sga-get-attendance', {
         return {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(buildMockAttendance(subjectId)),
+            body: JSON.stringify({ average: null, critical: null, trend: null, subjectId, updatedAt: null }),
         };
     }),
 });
@@ -168,7 +69,7 @@ app.http('sga-get-teacher-alerts', {
         return {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(buildMockTeacherAlerts(subjectId)),
+            body: JSON.stringify([]),
         };
     }),
 });
@@ -185,17 +86,10 @@ app.http('sga-get-early-alerts', {
             return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Parámetro requerido: subjectId' }) };
         }
 
-        let alerts = buildMockEarlyAlerts(subjectId);
-
-        const interventionOnly = request.query.get('interventionOnly') === 'true';
-        if (interventionOnly) {
-            alerts = alerts.filter((item) => item.interventionFlag === 'at_risk' && parseInt(item.attendance, 10) < 50);
-        }
-
         return {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(alerts),
+            body: JSON.stringify([]),
         };
     }),
 });
