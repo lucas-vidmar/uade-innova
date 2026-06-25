@@ -1564,46 +1564,41 @@ app.http('reprocess-material', {
                 context.error(`[Reprocess] Error eliminando blob procesado para ${materialId}:`, bErr);
             }
 
-            // 3. Ejecutar pipeline directamente
+            // 3. Re-subir blob para re-triggerear pipeline
             const containerName = process.env.AZURE_STORAGE_CONTAINER_MATERIALS || 'class-materials';
-            const origExt = path.extname(material.filename || 'file');
+            const blobUrlExt = material.blobUrl ? path.extname(new URL(material.blobUrl).pathname) : '';
+            const origExt = blobUrlExt || path.extname(material.filename || 'file');
             const origBlobName = `${subjectId}/${materialId}${origExt}`;
 
-            let fileBuffer = null;
-            let fileContentType = 'application/octet-stream';
             try {
-                fileBuffer = await downloadFile(containerName, origBlobName);
-                context.log(`[Reprocess] Blob descargado para ${materialId} (${fileBuffer.length} bytes)`);
-            } catch (dlErr) {
-                context.error(`[Reprocess] Error descargando blob ${origBlobName}:`, dlErr);
-                return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'No se pudo leer el archivo original del storage.' }) };
-            }
-
-            context.log(`[Reprocess] Ejecutando pipeline para ${materialId}...`);
-            try {
-                await runPipeline({
-                    fileBuffer,
-                    fileContentType,
-                    fileName: material.filename,
-                    classIds: material.classIds,
-                    subjectId,
-                    materialType: material.type,
+                const fileBuffer = await downloadFile(containerName, origBlobName);
+                const extMap = { '.txt': 'text/plain', '.vtt': 'text/vtt', '.pdf': 'application/pdf', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation' };
+                const contentType = extMap[origExt] || 'application/octet-stream';
+                await uploadFile(containerName, origBlobName, fileBuffer, contentType, {
                     materialId,
-                    userId: 'reprocess',
-                    blobUrl: material.blobUrl,
-                    correlationId: request.headers.get('x-correlation-id') || context.correlationId,
-                    traceContext: context.traceContext,
-                }, context);
-
-                return {
-                    status: 200,
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ success: true, materialId, status: 'processing' }),
-                };
-            } catch (pipelineErr) {
-                context.error(`[Reprocess] Pipeline error para ${materialId}:`, pipelineErr);
-                return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: pipelineErr.message }) };
+                    subjectId,
+                    materialType: material.type || '',
+                    classIds: JSON.stringify(material.classIds || []),
+                    filename: material.filename || 'file',
+                });
+                context.log(`[Reprocess] Blob re-subido para ${materialId} (${fileBuffer.length} bytes)`);
+            } catch (reUpErr) {
+                context.error(`[Reprocess] Error re-subiendo blob para ${materialId}:`, reUpErr);
+                return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'No se pudo re-subir el archivo al storage.' }) };
             }
+
+            // 4. Resetear estado
+            const updated = await upsertMaterialState({
+                ...material,
+                status: 'pending',
+                errorMessage: '',
+            }, 'Merge');
+
+            return {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ success: true, material: updated }),
+            };
         } catch (err) {
             context.error(err);
             return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: `No se pudo reprocesar el material: ${err.message}` }) };
