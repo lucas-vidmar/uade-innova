@@ -1,6 +1,7 @@
 import { renderHeader } from '../../components/Header.js';
 import { api } from '../../services/api.js';
 import { auth } from '../../services/auth.js';
+import { enrollments as enrollmentService } from '../../services/enrollments.js';
 import { toast } from '../../components/Toast.js';
 import { showConfirmDialog } from '../../components/Dialog.js';
 
@@ -46,10 +47,13 @@ export async function renderSubjectManagement(container) {
         const entries = await Promise.all(subjects.map(async (subject) => {
             try {
                 const classes = safeArray(await api.getClasses(subject.id));
-                const professorIds = Array.from(new Set(classes.flatMap((cls) => safeArray(cls.professorIds))));
-                return [subject.id, professorIds];
+                const classProfessorIds = Array.from(new Set(classes.flatMap((cls) => safeArray(cls.professorIds))));
+                // Merge class-level with subject-level professorIds
+                const subjectProfessorIds = safeArray(subject.professorIds);
+                const merged = Array.from(new Set([...classProfessorIds, ...subjectProfessorIds]));
+                return [subject.id, merged];
             } catch {
-                return [subject.id, []];
+                return [subject.id, safeArray(subject.professorIds)];
             }
         }));
         subjectProfessorMap = Object.fromEntries(entries);
@@ -73,9 +77,21 @@ export async function renderSubjectManagement(container) {
         return value || 'Sin comentario';
     };
 
+    const getPreviousProfessorIds = (subject) => {
+        const mapped = subjectProfessorMap[subject.id];
+        if (Array.isArray(mapped)) return mapped;
+        if (Array.isArray(subject.professorIds)) return subject.professorIds;
+        if (subject.professorId) return [subject.professorId];
+        return [];
+    };
+
     const saveSubjectProfessorIds = async (subjectId, selectedIds) => {
         const subject = subjects.find((item) => item.id === subjectId);
         if (!subject) return;
+
+        const previousIds = getPreviousProfessorIds(subject);
+        const addedIds = selectedIds.filter(id => !previousIds.includes(id));
+        const removedIds = previousIds.filter(id => !selectedIds.includes(id));
 
         await api.saveSubject({ ...subject, professorIds: selectedIds });
 
@@ -84,6 +100,29 @@ export async function renderSubjectManagement(container) {
             const nextClasses = classes.map((cls) => ({ ...cls, professorIds: [...selectedIds] }));
             await api.saveClasses(subjectId, nextClasses);
         }
+
+        // Upsert enrollment records for added professors
+        await Promise.all(addedIds.map(async (profId) => {
+            try {
+                await api.createEnrollment(subjectId, profId, 'teacher', 'active');
+            } catch (err) {
+                console.warn(`[SubjectManagement] Error creating enrollment for ${profId}:`, err);
+            }
+        }));
+
+        // Remove enrollment records for removed professors
+        await Promise.all(removedIds.map(async (profId) => {
+            try {
+                await api.deleteEnrollment(subjectId, profId);
+            } catch (err) {
+                console.warn(`[SubjectManagement] Error deleting enrollment for ${profId}:`, err);
+            }
+        }));
+
+        // Clear enrollment cache for affected teachers
+        [...addedIds, ...removedIds].forEach(profId => {
+            enrollmentService.clearCache(profId);
+        });
 
         subjects = subjects.map((item) => (
             item.id === subjectId
