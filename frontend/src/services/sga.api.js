@@ -1,8 +1,6 @@
 import {
-    USE_MOCK, BASE_URL, apiFetch, fetchWithTimeout, delay
+    BASE_URL, apiFetch, fetchWithTimeout, delay
 } from './core.js';
-
-import { getMock } from './mocks/accessor.js';
 
 function normalizeTeacherAlert(item = {}, idx = 0) {
     const type = item.type === 'material_report' ? 'material_report' : 'low_engagement';
@@ -50,12 +48,6 @@ function normalizeEarlyAlert(item = {}) {
 }
 
 export async function getTasks(studentId) {
-    if (USE_MOCK) {
-        await delay(400);
-        const mocks = await getMock('MOCK_TASKS', []);
-        return mocks.map(t => ({ ...t, studentId }));
-    }
-
     try {
         const res = await fetchWithTimeout(`${BASE_URL}/sga/tasks?studentId=${encodeURIComponent(studentId)}`, { timeout: 4000 });
         if (!res.ok) return [];
@@ -73,14 +65,6 @@ export async function getEarlyAlerts(subjectId, options = {}) {
         ? Boolean(subjectId.interventionOnly)
         : Boolean(options.interventionOnly);
 
-    if (USE_MOCK) {
-        await delay(400);
-        const mockAlerts = await getMock('MOCK_EARLY_ALERTS', []);
-        const bySubject = resolvedSubjectId ? mockAlerts.filter(a => a.subjectId === resolvedSubjectId) : mockAlerts;
-        const filtered = interventionOnly ? bySubject.filter((a) => a.interventionFlag === 'at_risk') : bySubject;
-        return filtered.map(normalizeEarlyAlert);
-    }
-
     try {
         const params = new URLSearchParams();
         if (resolvedSubjectId) params.set('subjectId', resolvedSubjectId);
@@ -97,11 +81,6 @@ export async function getEarlyAlerts(subjectId, options = {}) {
 }
 
 export async function getAttendanceStats(subjectId) {
-    if (USE_MOCK) {
-        await delay(400);
-        return { average: 78, critical: 3, trend: 'stable', subjectId, updatedAt: new Date().toISOString() };
-    }
-
     try {
         const res = await fetchWithTimeout(`${BASE_URL}/sga/attendance?subjectId=${encodeURIComponent(subjectId)}`, { timeout: 4000 });
         if (!res.ok) return { average: 0, critical: 0, trend: 'stable', subjectId, updatedAt: new Date().toISOString() };
@@ -113,19 +92,12 @@ export async function getAttendanceStats(subjectId) {
 }
 
 export async function getTeacherAnalytics(subjectId) {
-    if (USE_MOCK) { await delay(400); return await getMock('MOCK_TEACHER_ANALYTICS', {}); }
     const res = await apiFetch(`${BASE_URL}/analytics?subjectId=${subjectId}`);
     return res.json();
 }
 
 export async function getTeacherAlerts(subjectId) {
     if (!subjectId) return [];
-    if (USE_MOCK) {
-        await delay(300);
-        const alerts = await getMock('MOCK_TEACHER_ALERTS', []);
-        return alerts.filter((item) => item.subjectId === subjectId).map(normalizeTeacherAlert);
-    }
-
     try {
         const res = await fetchWithTimeout(`${BASE_URL}/sga/teacher-alerts?subjectId=${encodeURIComponent(subjectId)}`, { timeout: 4000 });
         if (!res.ok) return [];
@@ -138,24 +110,76 @@ export async function getTeacherAlerts(subjectId) {
     }
 }
 
+function sessionMockingEnabled() {
+    try {
+        return sessionStorage.getItem('edu_logged_in') !== 'false'
+            && !!sessionStorage.getItem('edu_role');
+    } catch { return false; }
+}
+
+function loadDynamicEnrollments() {
+    try {
+        const raw = localStorage.getItem('uade.dynamic.enrollments');
+        return raw ? JSON.parse(raw) : {};
+    } catch { return {}; }
+}
+
+function saveDynamicEnrollments(map) {
+    try { localStorage.setItem('uade.dynamic.enrollments', JSON.stringify(map)); } catch {}
+}
+
+function saveDynamicEnrollment(userId, enrollment) {
+    const dynamic = loadDynamicEnrollments();
+    const userEnrollments = dynamic[userId] || [];
+    const exists = userEnrollments.some(e => e.subjectId === enrollment.subjectId && e.role === enrollment.role);
+    if (!exists) {
+        userEnrollments.push(enrollment);
+    }
+    dynamic[userId] = userEnrollments;
+    saveDynamicEnrollments(dynamic);
+}
+
+function removeDynamicEnrollment(userId, subjectId) {
+    const dynamic = loadDynamicEnrollments();
+    const userEnrollments = (dynamic[userId] || []).filter(e => e.subjectId !== subjectId);
+    dynamic[userId] = userEnrollments;
+    saveDynamicEnrollments(dynamic);
+}
+
+function mergeWithDynamicEnrollments(userId, base) {
+    const dynamic = loadDynamicEnrollments();
+    const dyn = dynamic[userId] || [];
+    const combined = [...(base || []), ...dyn];
+    const seen = new Set();
+    return combined.filter(e => {
+        const key = `${e.subjectId}-${e.role}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+}
+
 export async function getEnrollments(userId) {
     if (!userId) return [];
-    if (USE_MOCK) {
-        await delay(200);
-        return [
-            { subjectId: 'arq-soft-2026', role: 'student', status: 'active' },
-            { subjectId: 'ing-datos-2026', role: 'student', status: 'active' },
-        ];
-    }
     try {
         const res = await fetchWithTimeout(`${BASE_URL}/enrollments?userId=${encodeURIComponent(userId)}`, { timeout: 4000 });
-        if (!res.ok) return [];
+        if (!res.ok) {
+            if (sessionMockingEnabled()) {
+                console.warn('[API] getEnrollments failed, using dynamic enrollments.');
+                await delay(200);
+                return mergeWithDynamicEnrollments(userId, []);
+            }
+            return [];
+        }
         const data = await res.json();
-        if (data?.success && Array.isArray(data.data)) return data.data;
-        if (Array.isArray(data)) return data;
-        return [];
+        const apiData = data?.success && Array.isArray(data.data) ? data.data : (Array.isArray(data) ? data : []);
+        return mergeWithDynamicEnrollments(userId, apiData);
     } catch (err) {
         console.error('[API] getEnrollments failed:', err);
+        if (sessionMockingEnabled()) {
+            await delay(200);
+            return mergeWithDynamicEnrollments(userId, []);
+        }
         return [];
     }
 }
@@ -178,13 +202,6 @@ export async function checkEnrollment(userId, subjectId) {
 }
 
 export async function getInterventions({ subjectId, state, risk } = {}) {
-    if (USE_MOCK) {
-        await delay(400);
-        return [
-            { id: 'int-001', subjectId: 'arq-software-2026', studentId: 'alu-012', risk: 'high', score: 8, reason: 'Sin login en 21 días; sin actividad', state: 'assigned', notes: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-            { id: 'int-002', subjectId: 'arq-software-2026', studentId: 'alu-008', risk: 'medium', score: 5, reason: 'Sin login en 14 días; menos de 2 consultas en 7 días', state: 'assigned', notes: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-        ];
-    }
     const params = new URLSearchParams();
     if (subjectId) params.set('subjectId', subjectId);
     if (state) params.set('state', state);
@@ -197,10 +214,6 @@ export async function getInterventions({ subjectId, state, risk } = {}) {
 }
 
 export async function updateIntervention(id, subjectId, state, note = '') {
-    if (USE_MOCK) {
-        await delay(300);
-        return { success: true, data: { id, subjectId, state, updatedAt: new Date().toISOString() } };
-    }
     const res = await apiFetch(`${BASE_URL}/interventions`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -210,20 +223,12 @@ export async function updateIntervention(id, subjectId, state, note = '') {
 }
 
 export async function computeInterventions(subjectId) {
-    if (USE_MOCK) {
-        await delay(800);
-        return { success: true, data: { computed: 2, interventions: [] } };
-    }
     const qs = subjectId ? `?subjectId=${encodeURIComponent(subjectId)}` : '';
     const res = await apiFetch(`${BASE_URL}/interventions/compute${qs}`, { method: 'POST' });
     return res.json();
 }
 
 export async function getRiskThresholds(subjectId) {
-    if (USE_MOCK) {
-        await delay(300);
-        return { success: true, data: { subjectId: subjectId || 'default', thresholds: { attendanceWarning: 70, attendanceCritical: 50, engagementWarning: 60, engagementCritical: 40, gradeWarning: 6, noLoginDaysLow: 7, noLoginDaysMedium: 14, noLoginDaysHigh: 21, minQueriesMedium: 2, minQueriesHigh: 5, queryWindowDays: 7, queryWindowHighDays: 14 }, source: 'default' } };
-    }
     const qs = subjectId ? `?subjectId=${encodeURIComponent(subjectId)}` : '';
     const res = await fetchWithTimeout(`${BASE_URL}/risk-thresholds${qs}`, { timeout: 4000 });
     if (!res.ok) return { success: false, error: 'Error' };
@@ -231,14 +236,56 @@ export async function getRiskThresholds(subjectId) {
 }
 
 export async function updateRiskThresholds(subjectId, thresholds) {
-    if (USE_MOCK) {
-        await delay(300);
-        return { success: true, data: { subjectId, thresholds } };
-    }
     const res = await apiFetch(`${BASE_URL}/risk-thresholds`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subjectId, thresholds }),
     });
     return res.json();
+}
+
+function persistEnrollmentLocally(subjectId, userId, role, status) {
+    saveDynamicEnrollment(userId, { subjectId, userId, role, status, enrolledAt: new Date().toISOString() });
+}
+
+export async function createEnrollment(subjectId, userId, role, status = 'active') {
+    if (!subjectId || !userId || !role) {
+        throw new Error('subjectId, userId, and role are required');
+    }
+    try {
+        const res = await apiFetch(`${BASE_URL}/enrollments`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subjectId, userId, role, status }),
+        });
+        if (!res.ok) {
+            persistEnrollmentLocally(subjectId, userId, role, status);
+            return { success: true, data: { subjectId, userId, role, status }, fallback: true };
+        }
+        return res.json();
+    } catch (err) {
+        console.error('[API] createEnrollment failed, saving locally:', err);
+        persistEnrollmentLocally(subjectId, userId, role, status);
+        return { success: true, data: { subjectId, userId, role, status }, fallback: true };
+    }
+}
+
+export async function deleteEnrollment(subjectId, userId) {
+    if (!subjectId || !userId) {
+        throw new Error('subjectId and userId are required');
+    }
+    try {
+        const res = await apiFetch(`${BASE_URL}/enrollments?userId=${encodeURIComponent(userId)}&subjectId=${encodeURIComponent(subjectId)}`, {
+            method: 'DELETE',
+        });
+        if (!res.ok) {
+            removeDynamicEnrollment(userId, subjectId);
+            return { success: true, data: { deleted: true }, fallback: true };
+        }
+        return res.json();
+    } catch (err) {
+        console.error('[API] deleteEnrollment failed, removing locally:', err);
+        removeDynamicEnrollment(userId, subjectId);
+        return { success: true, data: { deleted: true }, fallback: true };
+    }
 }

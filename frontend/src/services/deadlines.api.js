@@ -1,16 +1,8 @@
 import {
-    USE_MOCK, BASE_URL, apiFetch, fetchWithTimeout, delay
+    BASE_URL, apiFetch, fetchWithTimeout
 } from './core.js';
 
-import { getMock } from './mocks/accessor.js';
-
 export async function getDeadlines(subjectId) {
-    if (USE_MOCK) {
-        await delay(350);
-        const mocks = await getMock('MOCK_DEADLINES', []);
-        return mocks.filter(item => item.subjectId === subjectId);
-    }
-
     try {
         const res = await fetchWithTimeout(`${BASE_URL}/deadlines?subjectId=${subjectId}`, { timeout: 3000 });
         if (!res.ok) return [];
@@ -23,15 +15,6 @@ export async function getDeadlines(subjectId) {
 }
 
 export async function saveDeadline(payload) {
-    if (USE_MOCK) {
-        return {
-            ...payload,
-            id: payload.id || `deadline-${Date.now()}`,
-            createdAt: payload.createdAt || new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-        };
-    }
-
     const res = await apiFetch(`${BASE_URL}/deadlines`, {
         method: payload.id ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -46,11 +29,6 @@ export async function saveDeadline(payload) {
 }
 
 export async function deleteDeadline(subjectId, deadlineId) {
-    if (USE_MOCK) {
-        await delay(300);
-        return { success: true };
-    }
-
     const res = await apiFetch(`${BASE_URL}/deadlines/${deadlineId}?subjectId=${encodeURIComponent(subjectId)}`, {
         method: 'DELETE',
     });
@@ -63,14 +41,6 @@ export async function deleteDeadline(subjectId, deadlineId) {
 }
 
 export async function getDeadlineReminders(subjectId, today) {
-    if (USE_MOCK) {
-        const target = today || new Date().toISOString().slice(0, 10);
-        const dayBefore = target === '2026-04-29';
-        const dayOf = target === '2026-04-30';
-        const mocks = await getMock('MOCK_DEADLINES', []);
-        return mocks.filter(d => d.subjectId === subjectId && ((dayBefore && d.notifyOnDayBefore) || (dayOf && d.notifyOnDayOf)));
-    }
-
     try {
         const params = new URLSearchParams({ subjectId });
         if (today) params.set('today', today);

@@ -1,5 +1,5 @@
 import {
-    USE_MOCK, BASE_URL, apiFetch, fetchWithTimeout, delay, readLocalJson, writeLocalJson,
+    BASE_URL, apiFetch, fetchWithTimeout, delay, readLocalJson, writeLocalJson,
     LOCAL_SUBJECTS_KEY, LOCAL_CLASSES_KEY
 } from './core.js';
 
@@ -50,37 +50,9 @@ function mergeSubjectsWithLocal(defaultSubjects) {
     return Array.from(map.values());
 }
 
-function seedDemoData() {
-    const demoSubjects = [
-        { id: 'arq-soft-2026', name: 'Arquitectura de Software 2026', track: 'Tecnicatura', professors: ['Dr. García'] },
-        { id: 'ing-datos-2026', name: 'Ingeniería de Datos 2026', track: 'Tecnicatura', professors: ['Ing. López'] },
-    ];
-    setLocalSubjects(demoSubjects);
-    const now = new Date();
-    const demoClasses = [
-        { id: 'class-01', title: 'Clase 1 - Introducción', date: new Date(now.getTime() - 7 * 86400000).toISOString().split('T')[0], topics: ['Fundamentos', 'Historia'], materials: [] },
-        { id: 'class-02', title: 'Clase 2 - Patrones de Diseño', date: new Date(now.getTime() - 3 * 86400000).toISOString().split('T')[0], topics: ['Patrones GoF', 'Arquitectura'], materials: [] },
-        { id: 'class-03', title: 'Clase 3 - Hexagonal', date: now.toISOString().split('T')[0], topics: ['Puertos y Adaptadores', 'Dominio'], materials: [] },
-    ];
-    demoSubjects.forEach(s => {
-        const classesBySubject = readLocalJson(LOCAL_CLASSES_KEY, {});
-        const safeMap = classesBySubject && typeof classesBySubject === 'object' ? classesBySubject : {};
-        safeMap[s.id] = demoClasses;
-        writeLocalJson(LOCAL_CLASSES_KEY, safeMap);
-    });
-}
-
 export { mergeSubjectsWithLocal };
 
 export async function getSubjects() {
-    if (USE_MOCK) {
-        await delay(400);
-        const existing = getLocalSubjects();
-        if (existing.length === 0) {
-            seedDemoData();
-        }
-        return mergeSubjectsWithLocal([]);
-    }
     try {
         const res = await apiFetch(`${BASE_URL}/subjects`);
         if (!res.ok) {
@@ -96,17 +68,6 @@ export async function getSubjects() {
 }
 
 export async function saveSubject(subject) {
-    if (USE_MOCK) {
-        await delay(250);
-        const mockSubject = {
-            ...subject,
-            id: subject.id || `subject-${Date.now()}`,
-            name: subject.name || 'Nueva Materia'
-        };
-        upsertLocalSubject(mockSubject);
-        return mockSubject;
-    }
-
     const method = subject?.id ? 'PUT' : 'POST';
     try {
         const res = await apiFetch(`${BASE_URL}/subjects`, {
@@ -120,22 +81,17 @@ export async function saveSubject(subject) {
             try {
                 const err = await res.json();
                 if (err?.error) message = err.error;
-            } catch {
-                // no-op
-            }
+            } catch {}
 
-            if (res.status >= 500 || res.status === 404) {
-                const fallbackSubject = {
-                    id: subject.id || `subject-${Date.now()}`,
-                    name: subject.name,
-                    oneLiner: subject.oneLiner || '',
-                    comment: subject.comment || subject.oneLiner || '',
-                };
-                upsertLocalSubject(fallbackSubject);
-                return fallbackSubject;
-            }
-
-            throw new Error(message);
+            const fallbackSubject = {
+                id: subject.id || `subject-${Date.now()}`,
+                name: subject.name,
+                oneLiner: subject.oneLiner || '',
+                comment: subject.comment || subject.oneLiner || '',
+                professorIds: subject.professorIds || [],
+            };
+            upsertLocalSubject(fallbackSubject);
+            return fallbackSubject;
         }
 
         const data = await res.json();
@@ -148,11 +104,6 @@ export async function saveSubject(subject) {
 }
 
 export async function deleteSubject(subjectId, cascade = false) {
-    if (USE_MOCK) {
-        await delay(250);
-        return { success: true };
-    }
-
     try {
         const url = new URL(`${BASE_URL}/subjects/${encodeURIComponent(subjectId)}`);
         if (cascade) url.searchParams.set('cascade', 'true');
@@ -170,9 +121,7 @@ export async function deleteSubject(subjectId, cascade = false) {
             try {
                 const err = await res.json();
                 if (err?.error) message = err.error;
-            } catch {
-                // no-op
-            }
+            } catch {}
             throw new Error(message);
         }
 

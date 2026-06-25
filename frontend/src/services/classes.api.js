@@ -1,5 +1,5 @@
 import {
-    USE_MOCK, BASE_URL, apiFetch, fetchWithTimeout, delay, readLocalJson, writeLocalJson,
+    BASE_URL, apiFetch, fetchWithTimeout, readLocalJson, writeLocalJson,
     LOCAL_CLASSES_KEY
 } from './core.js';
 
@@ -21,11 +21,6 @@ export async function getClasses(subjectId) {
     const localClassesBySubject = readLocalJson(LOCAL_CLASSES_KEY, {});
     const localClasses = Array.isArray(localClassesBySubject[subjectId]) ? localClassesBySubject[subjectId] : [];
 
-    if (USE_MOCK) {
-        await delay(400);
-        return localClasses;
-    }
-
     try {
         const res = await apiFetch(`${BASE_URL}/classes?subjectId=${subjectId}`);
         if (!res.ok) return localClasses;
@@ -40,7 +35,6 @@ export async function getClasses(subjectId) {
 }
 
 export async function saveClasses(subjectId, classesArray) {
-    if (USE_MOCK) return;
     try {
         const res = await apiFetch(`${BASE_URL}/classes?subjectId=${subjectId}`, {
             method: 'POST',
@@ -48,11 +42,8 @@ export async function saveClasses(subjectId, classesArray) {
             body: JSON.stringify(classesArray)
         });
         if (!res.ok) {
-            if (res.status >= 500 || res.status === 404) {
-                setLocalClasses(subjectId, classesArray);
-                return { success: true, classes: classesArray, fallback: true };
-            }
-            throw new Error(`Error ${res.status}: Falló el guardado en el servidor`);
+            setLocalClasses(subjectId, classesArray);
+            return { success: true, classes: classesArray, fallback: true };
         }
         const data = await res.json();
         setLocalClasses(subjectId, classesArray);
@@ -84,17 +75,12 @@ export async function deleteClass(subjectId, classId) {
 }
 
 export async function getClassSummary(classId) {
-    if (USE_MOCK) {
-        await delay(800);
-        return { classId, summary: "Resumen simulado para la clase " + classId, validated: false };
-    }
     const res = await apiFetch(`${BASE_URL}/class-summary/${classId}`);
     if (!res.ok) return null;
     return res.json();
 }
 
 export async function saveClassSummary(classId, data) {
-    if (USE_MOCK) return;
     const res = await apiFetch(`${BASE_URL}/class-summary/${classId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -111,20 +97,12 @@ export function getClassAudioUrl(classId, subjectId) {
 }
 
 export async function getClassMap(classId) {
-    if (USE_MOCK) {
-        await delay(600);
-        return {
-            classId,
-            mapCode: "graph TD\nA[Arquitectura] --> B[Patrones]\nA --> C[Atributos]\nB --> D[Microservicios]\nB --> E[Monolito]"
-        };
-    }
     const res = await apiFetch(`${BASE_URL}/class-map/${classId}`);
     if (!res.ok) return null;
     return res.json();
 }
 
 export async function saveClassMap(classId, data) {
-    if (USE_MOCK) return;
     const res = await apiFetch(`${BASE_URL}/class-map/${classId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -134,27 +112,12 @@ export async function saveClassMap(classId, data) {
 }
 
 export async function getClassTimeline(classId) {
-    if (USE_MOCK) {
-        await delay(400);
-        return {
-            classId,
-            sections: [
-                { id: 'm-01-sec-001', startSecond: 0, endSecond: 60, timestampLabel: '00:00:00', text: 'Introduccion a arquitectura de software.' },
-                { id: 'm-01-sec-002', startSecond: 60, endSecond: 120, timestampLabel: '00:01:00', text: 'Pregunta sobre atributos de calidad.' },
-            ],
-            markers: [
-                { id: 'm-01-mk-001', sectionId: 'm-01-sec-001', startSecond: 0, endSecond: 60, iconType: 'question', label: 'Introduccion y contexto' },
-                { id: 'm-01-mk-002', sectionId: 'm-01-sec-002', startSecond: 60, endSecond: 120, iconType: 'assignment', label: 'Ejercicio de atributos' },
-            ],
-        };
-    }
     const res = await apiFetch(`${BASE_URL}/class-timeline/${classId}`);
     if (!res.ok) return { classId, sections: [], markers: [] };
     return res.json();
 }
 
 export async function saveClassTimeline(classId, payload) {
-    if (USE_MOCK) return payload;
     const res = await apiFetch(`${BASE_URL}/class-timeline/${classId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -167,10 +130,6 @@ export async function saveClassTimeline(classId, payload) {
 }
 
 export async function generateClassMap(classId, subjectId) {
-    if (USE_MOCK) {
-        await delay(1500);
-        return { classId, mapCode: 'graph TD; A[Concepto] --> B[Sub-concepto];', generatedAt: new Date().toISOString() };
-    }
     const params = subjectId ? `?subjectId=${encodeURIComponent(subjectId)}` : '';
     const res = await apiFetch(`${BASE_URL}/class-map/${classId}/generate${params}`, { method: 'POST' });
     if (!res.ok) {

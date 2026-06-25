@@ -1,8 +1,6 @@
 import {
-    USE_MOCK, BASE_URL, apiFetch, fetchWithTimeout, delay
+    BASE_URL, apiFetch, fetchWithTimeout
 } from './core.js';
-
-import { getMock } from './mocks/accessor.js';
 
 function normalizeNotification(item = {}, idx = 0) {
     const fallbackId = item.id || `notif-${Date.now()}-${idx}`;
@@ -19,24 +17,7 @@ function normalizeNotification(item = {}, idx = 0) {
     };
 }
 
-async function buildFallbackNotifications(subjectId, limit = 10) {
-    const safeLimit = Math.min(Math.max(Number(limit) || 10, 1), 50);
-    const mocks = await getMock('MOCK_NOTIFICATIONS', []);
-    const scoped = mocks
-        .filter((item) => !subjectId || item.subjectId === subjectId)
-        .map((item, idx) => normalizeNotification(item, idx));
-
-    return scoped
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-        .slice(0, safeLimit);
-}
-
 export async function getNotifications({ userId, subjectId, limit = 10, skip = 0, type } = {}) {
-    if (USE_MOCK) {
-        await delay(250);
-        return await buildFallbackNotifications(subjectId, limit);
-    }
-
     try {
         const params = new URLSearchParams();
         if (userId) params.set('userId', userId);
@@ -48,14 +29,10 @@ export async function getNotifications({ userId, subjectId, limit = 10, skip = 0
         const query = params.toString();
         const res = await fetchWithTimeout(`${BASE_URL}/notifications${query ? `?${query}` : ''}`, { timeout: 3500 });
 
-        if (!res.ok) {
-            return await buildFallbackNotifications(subjectId, limit);
-        }
+        if (!res.ok) return [];
 
         const data = await res.json();
-        if (!Array.isArray(data)) {
-            return await buildFallbackNotifications(subjectId, limit);
-        }
+        if (!Array.isArray(data)) return [];
 
         return data
             .map((item, idx) => normalizeNotification(item, idx))
@@ -63,7 +40,7 @@ export async function getNotifications({ userId, subjectId, limit = 10, skip = 0
             .slice(0, Math.min(Math.max(Number(limit) || 10, 1), 50));
     } catch (err) {
         console.error('[API] getNotifications failed:', err);
-        return await buildFallbackNotifications(subjectId, limit);
+        return [];
     }
 }
 
@@ -83,9 +60,7 @@ export async function markNotificationRead({ notificationId, userId, subjectId }
         try {
             const payload = await res.json();
             if (payload?.error) message = payload.error;
-        } catch {
-            // no-op
-        }
+        } catch {}
         throw new Error(message);
     }
 
@@ -112,9 +87,7 @@ export async function markNotificationsRead({ notificationIds = [], userId, subj
         try {
             const payload = await res.json();
             if (payload?.error) message = payload.error;
-        } catch {
-            // no-op
-        }
+        } catch {}
         throw new Error(message);
     }
 
@@ -122,12 +95,6 @@ export async function markNotificationsRead({ notificationIds = [], userId, subj
 }
 
 export async function subscribeNotificationStream({ userId, subjectId, signal } = {}, onEvent) {
-    if (USE_MOCK) {
-        const fallback = await buildFallbackNotifications(subjectId, 10);
-        onEvent('snapshot', { notifications: fallback, userId });
-        return;
-    }
-
     const params = new URLSearchParams();
     if (userId) params.set('userId', userId);
     if (subjectId) params.set('subjectId', subjectId);
@@ -136,8 +103,7 @@ export async function subscribeNotificationStream({ userId, subjectId, signal } 
     const response = await apiFetch(`${BASE_URL}/notifications/stream${query ? `?${query}` : ''}`);
 
     if (!response.ok) {
-        const body = await response.json().catch(() => ({ error: 'Unknown error' }));
-        throw new Error(body.error || `Stream connection failed (${response.status})`);
+        throw new Error(`Stream connection failed (${response.status})`);
     }
 
     const reader = response.body.getReader();
@@ -170,9 +136,7 @@ export async function subscribeNotificationStream({ userId, subjectId, signal } 
                     } else if (line.startsWith('data: ')) {
                         try {
                             data = JSON.parse(line.slice(6));
-                        } catch {
-                            // skip unparseable data
-                        }
+                        } catch {}
                     }
                 }
 

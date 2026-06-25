@@ -1,21 +1,5 @@
 import { safeSetItem } from './local-storage.js';
 
-export const USE_MOCK = (() => {
-    if (typeof window !== 'undefined') {
-        const override = window.localStorage.getItem('uade_use_mock');
-        if (override !== null) return override === 'true';
-    }
-    if (typeof import.meta !== 'undefined' && import.meta.env) {
-        const envFlag = String(import.meta.env.VITE_USE_MOCK || '').trim().toLowerCase();
-        if (envFlag) return envFlag === 'true';
-    }
-    const isDev = typeof import.meta !== 'undefined' && import.meta.env?.DEV;
-    if (!isDev) {
-        console.warn('[MOCK] Mocks disabled in production. Set VITE_USE_MOCK=true or localStorage uade_use_mock=true to enable.');
-    }
-    return isDev;
-})();
-
 export const LOCAL_SUBJECTS_KEY = 'uade.local.subjects';
 export const LOCAL_CLASSES_KEY = 'uade.local.classes-by-subject';
 

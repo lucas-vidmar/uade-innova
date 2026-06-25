@@ -5,7 +5,7 @@
    ============================================================ */
 
 import {
-    USE_MOCK, BASE_URL, apiFetch, fetchWithTimeout, CORRELATION_HEADER,
+    BASE_URL, apiFetch, fetchWithTimeout, CORRELATION_HEADER,
     nextCorrelationId, withCorrelationHeaders, readLocalJson, writeLocalJson
 } from './core.js';
 import {
@@ -39,6 +39,7 @@ import {
     getTasks, getEarlyAlerts, getAttendanceStats,
     getTeacherAnalytics, getTeacherAlerts,
     getEnrollments, checkEnrollment,
+    createEnrollment, deleteEnrollment,
     getInterventions, updateIntervention, computeInterventions,
     getRiskThresholds, updateRiskThresholds
 } from './sga.api.js';
@@ -64,7 +65,7 @@ import {
 } from './corrections.api.js';
 
 export const api = {
-    USE_MOCK, BASE_URL, CORRELATION_HEADER,
+    BASE_URL, CORRELATION_HEADER,
     nextCorrelationId, withCorrelationHeaders,
     apiFetch, fetchWithTimeout,
     readLocalJson, writeLocalJson,
@@ -92,6 +93,7 @@ export const api = {
     getTasks, getEarlyAlerts, getAttendanceStats,
     getTeacherAnalytics, getTeacherAlerts,
     getEnrollments, checkEnrollment,
+    createEnrollment, deleteEnrollment,
     getInterventions, updateIntervention, computeInterventions,
     getRiskThresholds, updateRiskThresholds,
 

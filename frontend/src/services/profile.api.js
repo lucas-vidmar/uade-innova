@@ -1,18 +1,13 @@
 import {
-    USE_MOCK, BASE_URL, apiFetch, fetchWithTimeout, delay
+    BASE_URL, apiFetch, fetchWithTimeout
 } from './core.js';
 
 export async function getProfile() {
-    if (USE_MOCK) {
-        await delay(300);
-        return { theme: 'light', language: 'es', consentAccepted: false };
-    }
     const res = await apiFetch(`${BASE_URL}/get-profile`);
     return res.json();
 }
 
 export async function saveProfile(data) {
-    if (USE_MOCK) return;
     const res = await apiFetch(`${BASE_URL}/save-profile`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -22,10 +17,6 @@ export async function saveProfile(data) {
 }
 
 export async function getTerms() {
-    if (USE_MOCK) {
-        await delay(300);
-        return { content: '# Términos de Uso\n\nTexto de ejemplo para consentimiento.', version: 'v1' };
-    }
     try {
         const res = await apiFetch(`${BASE_URL}/terms`);
         if (!res.ok) return null;
@@ -39,10 +30,6 @@ export async function getTerms() {
 }
 
 export async function getConsent() {
-    if (USE_MOCK) {
-        await delay(200);
-        return { accepted: false, acceptedAt: null, version: null };
-    }
     try {
         const res = await apiFetch(`${BASE_URL}/consent`);
         if (!res.ok) return { accepted: false, acceptedAt: null, version: null };
@@ -56,7 +43,6 @@ export async function getConsent() {
 }
 
 export async function saveConsent(accepted = true) {
-    if (USE_MOCK) return { saved: true, accepted };
     try {
         const res = await apiFetch(`${BASE_URL}/consent`, {
             method: 'POST',
@@ -77,10 +63,6 @@ export async function saveConsent(accepted = true) {
 }
 
 export async function getReminderPreferences() {
-    if (USE_MOCK) {
-        await delay(200);
-        return { enabled: true, cadence: 'both' };
-    }
     try {
         const res = await apiFetch(`${BASE_URL}/reminder-preferences`);
         if (!res.ok) return { enabled: true, cadence: 'both' };
@@ -92,7 +74,6 @@ export async function getReminderPreferences() {
 }
 
 export async function saveReminderPreferences(data) {
-    if (USE_MOCK) return { saved: true };
     try {
         const res = await apiFetch(`${BASE_URL}/reminder-preferences`, {
             method: 'POST',

@@ -1,5 +1,5 @@
 import {
-    USE_MOCK, BASE_URL, apiFetch, fetchWithTimeout, delay
+    BASE_URL, apiFetch, fetchWithTimeout
 } from './core.js';
 
 export async function getMaterialStatusBatch(subjectId, materialIds = []) {
@@ -82,22 +82,10 @@ export async function getMaterialStatus(subjectId, materialId) {
 }
 
 export async function ingestMaterial(formData) {
-    if (USE_MOCK) {
-        await delay(800);
-        return { materialId: `m-${Date.now()}`, status: 'processing' };
-    }
     try {
         const res = await apiFetch(`${BASE_URL}/ingest-material`, { method: 'POST', body: formData });
 
         if (!res.ok) {
-            if (USE_MOCK || (res.status === 404 && window.location.hostname === 'localhost')) {
-                return {
-                    materialId: `m-local-${Date.now()}`,
-                    status: 'processing',
-                    fallback: true,
-                };
-            }
-
             let message = `Error ${res.status}: no se pudo subir el material`;
             let errorCategory = null;
             try {
@@ -110,7 +98,7 @@ export async function ingestMaterial(formData) {
                     const text = await res.text();
                     if (text) message = text;
                 }
-            } catch { /* ignore parse errors */ }
+            } catch {}
 
             const apiError = new Error(message);
             apiError.status = res.status;
@@ -130,13 +118,11 @@ export async function ingestMaterial(formData) {
                 };
             }
         }
-
         throw err;
     }
 }
 
 export async function deleteMaterial(materialId) {
-    if (USE_MOCK) return;
     const res = await apiFetch(`${BASE_URL}/materials/${materialId}`, { method: 'DELETE' });
 
     if (!res.ok) {
@@ -150,9 +136,7 @@ export async function deleteMaterial(materialId) {
                 const text = await res.text();
                 if (text) message = text;
             }
-        } catch {
-            // no-op
-        }
+        } catch {}
         throw new Error(message);
     }
 
@@ -162,10 +146,6 @@ export async function deleteMaterial(materialId) {
 export async function reprocessMaterial(materialId, subjectId) {
     if (!materialId) throw new Error('materialId es requerido');
     if (!subjectId) throw new Error('subjectId es requerido');
-    if (USE_MOCK) {
-        await delay(600);
-        return { success: true };
-    }
     const res = await apiFetch(`${BASE_URL}/materials/${encodeURIComponent(materialId)}/reprocess?subjectId=${encodeURIComponent(subjectId)}`, {
         method: 'POST',
     });
@@ -181,9 +161,7 @@ export async function reprocessMaterial(materialId, subjectId) {
                 const text = await res.text();
                 if (text) message = text;
             }
-        } catch {
-            // no-op
-        }
+        } catch {}
         throw new Error(message);
     }
 
@@ -205,7 +183,7 @@ export async function updateMaterial(subjectId, materialId, updates) {
                 const err = await res.json();
                 if (err?.error) message = err.error;
             }
-        } catch { /* no-op */ }
+        } catch {}
         throw new Error(message);
     }
     return res.json();
@@ -242,7 +220,7 @@ export async function updateMaterialText(subjectId, materialId, text) {
                 const err = await res.json();
                 if (err?.error) message = err.error;
             }
-        } catch { /* no-op */ }
+        } catch {}
         throw new Error(message);
     }
     return res.json();

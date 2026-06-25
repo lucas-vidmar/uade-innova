@@ -1,34 +1,9 @@
 import {
-    USE_MOCK, BASE_URL, apiFetch, fetchWithTimeout, delay,
-    readLocalJson, writeLocalJson
+    BASE_URL, apiFetch, fetchWithTimeout
 } from './core.js';
-
-const MOCK_REPORTS_KEY = 'uade.mock.ai-reports';
-
-function readMockReports(subjectId, studentId) {
-    const reports = readLocalJson(MOCK_REPORTS_KEY, []);
-    return reports.filter((r) => {
-        if (r.subjectId !== subjectId) return false;
-        if (studentId && r.studentId && r.studentId !== studentId) return false;
-        return true;
-    });
-}
 
 export async function getStudentReports(subjectId) {
     if (!subjectId) return [];
-    if (USE_MOCK) {
-        await delay(250);
-        const studentId = sessionStorage.getItem('edu_uid') || 'alu-001';
-        return readMockReports(subjectId, studentId).map((r) => ({
-            correctionId: r.correctionId,
-            question: r.question,
-            issueDetail: r.issueDetail,
-            status: r.status,
-            classId: r.classId,
-            createdAt: r.createdAt,
-            resolvedAt: r.resolvedAt,
-        }));
-    }
     try {
         const params = new URLSearchParams({ subjectId });
         const res = await fetchWithTimeout(`${BASE_URL}/student-reports?${params.toString()}`, { timeout: 4000 });
@@ -43,11 +18,6 @@ export async function getStudentReports(subjectId) {
 
 export async function getTeacherAiFeedbackAlerts(subjectId, limit = 10) {
     if (!subjectId) return [];
-    if (USE_MOCK) {
-        await delay(250);
-        return [];
-    }
-
     try {
         const params = new URLSearchParams({
             subjectId,
@@ -65,26 +35,6 @@ export async function getTeacherAiFeedbackAlerts(subjectId, limit = 10) {
 
 export async function getCorrectionsPending(subjectId, classId, status) {
     if (!subjectId) return [];
-    if (USE_MOCK) {
-        await delay(250);
-        let data = readMockReports(subjectId);
-        if (status && status !== 'all') {
-            data = data.filter((r) => r.status === status);
-        } else if (!status) {
-            data = data.filter((r) => r.status === 'pending');
-        }
-        if (classId) data = data.filter((r) => r.classId === classId);
-        return data.map((r) => ({
-            correctionId: r.correctionId,
-            studentId: r.studentId,
-            question: r.question,
-            originalAnswer: r.originalAnswer,
-            issueDetail: r.issueDetail,
-            classId: r.classId,
-            status: r.status,
-            createdAt: r.createdAt,
-        }));
-    }
     try {
         const params = new URLSearchParams({ subjectId });
         if (classId) params.append('classId', classId);
@@ -102,10 +52,6 @@ export async function getCorrectionsPending(subjectId, classId, status) {
 }
 
 export async function verifyAnswer(payload) {
-    if (USE_MOCK) {
-        await delay(500);
-        return { success: true, data: { correctionId: payload.correctionId, status: 'verified' } };
-    }
     const res = await apiFetch(`${BASE_URL}/corrections-verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -120,10 +66,6 @@ export async function verifyAnswer(payload) {
 }
 
 export async function reviewCorrection(subjectId, correctionId, status, comments) {
-    if (USE_MOCK) {
-        await delay(300);
-        return { success: true, data: { correctionId, status } };
-    }
     const res = await apiFetch(`${BASE_URL}/corrections-status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -138,10 +80,6 @@ export async function reviewCorrection(subjectId, correctionId, status, comments
 }
 
 export async function updateCorrectionStatus(subjectId, correctionId, status) {
-    if (USE_MOCK) {
-        await delay(300);
-        return { success: true, data: { correctionId, status } };
-    }
     const res = await apiFetch(`${BASE_URL}/corrections-status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -156,19 +94,6 @@ export async function updateCorrectionStatus(subjectId, correctionId, status) {
 }
 
 export async function getCorrection(subjectId, correctionId) {
-    if (USE_MOCK) {
-        await delay(300);
-        return {
-            correctionId,
-            studentId: 'J.P.',
-            question: '¿Qué es la arquitectura hexagonal?',
-            originalAnswer: 'La arquitectura hexagonal es un patrón de diseño de software que separa el dominio de la infraestructura...',
-            issueDetail: 'La respuesta no menciona puertos y adaptadores',
-            classId: 'class-03',
-            status: 'pending',
-            createdAt: '2026-05-31T10:00:00Z',
-        };
-    }
     const params = new URLSearchParams({ subjectId });
     if (correctionId) params.append('correctionId', correctionId);
     const res = await fetchWithTimeout(`${BASE_URL}/corrections-pending?${params}`, { timeout: 4000 });
@@ -179,17 +104,6 @@ export async function getCorrection(subjectId, correctionId) {
 }
 
 export async function getCorrectionChatContext(subjectId, correctionId) {
-    if (USE_MOCK) {
-        await delay(300);
-        return {
-            messages: [
-                { role: 'user', content: '¿Qué es la arquitectura hexagonal?' },
-                { role: 'assistant', content: 'La arquitectura hexagonal es un patrón de diseño...' },
-                { role: 'user', content: '¿Y cómo se relaciona con DDD?' },
-                { role: 'assistant', content: 'Se relaciona porque ambos buscan aislar el dominio...' },
-            ],
-        };
-    }
     try {
         const res = await fetchWithTimeout(
             `${BASE_URL}/corrections-chat-context?subjectId=${encodeURIComponent(subjectId)}&correctionId=${encodeURIComponent(correctionId)}`,
@@ -202,6 +116,20 @@ export async function getCorrectionChatContext(subjectId, correctionId) {
         console.error('[API] getCorrectionChatContext failed:', err);
         throw err;
     }
+}
+
+export async function submitGradeDispute({ taskId, reason }) {
+    const res = await apiFetch(`${BASE_URL}/grade-dispute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId, reason: String(reason || '').trim() }),
+    });
+    if (!res.ok) {
+        let message = `Error ${res.status}: no se pudo enviar la disputa`;
+        try { const err = await res.json(); if (err?.error) message = err.error; } catch {}
+        throw new Error(message);
+    }
+    return res.json();
 }
 
 export async function getGlossary(subjectId) {
@@ -273,34 +201,6 @@ export async function rejectTranscriptionSuggestion(suggestionId, subjectId) {
     if (!res.ok) {
         let message = 'Error al rechazar sugerencia';
         try { const err = await res.json(); if (err?.error?.message) message = err.error.message; } catch {}
-        throw new Error(message);
-    }
-    return res.json();
-}
-
-export async function submitGradeDispute({ taskId, reason }) {
-    if (USE_MOCK) {
-        await delay(300);
-        const disputes = readLocalJson('uade.mock.disputes', []);
-        disputes.unshift({
-            id: `dispute-${Date.now()}`,
-            taskId,
-            reason: String(reason || '').trim(),
-            status: 'pending',
-            studentId: sessionStorage.getItem('edu_uid') || 'alu-001',
-            createdAt: new Date().toISOString(),
-        });
-        writeLocalJson('uade.mock.disputes', disputes);
-        return { success: true };
-    }
-    const res = await apiFetch(`${BASE_URL}/grade-dispute`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ taskId, reason: String(reason || '').trim() }),
-    });
-    if (!res.ok) {
-        let message = `Error ${res.status}: no se pudo enviar la disputa`;
-        try { const err = await res.json(); if (err?.error) message = err.error; } catch {}
         throw new Error(message);
     }
     return res.json();
