@@ -45,6 +45,38 @@ const USERS = {
         avatar: 'LV',
         subjects: [],
     },
+    'student-002': {
+        id: 'alu-002',
+        name: 'María González',
+        email: 'mgonzalez@uade.edu.ar',
+        role: 'student',
+        avatar: 'MG',
+        subjects: [],
+    },
+    'student-003': {
+        id: 'alu-003',
+        name: 'Carlos Mendoza',
+        email: 'cmendoza@uade.edu.ar',
+        role: 'student',
+        avatar: 'CM',
+        subjects: [],
+    },
+    'student-004': {
+        id: 'alu-004',
+        name: 'Sofía Ramírez',
+        email: 'sramirez@uade.edu.ar',
+        role: 'student',
+        avatar: 'SR',
+        subjects: [],
+    },
+    'student-005': {
+        id: 'alu-005',
+        name: 'Tomás Herrera',
+        email: 'therrera@uade.edu.ar',
+        role: 'student',
+        avatar: 'TH',
+        subjects: [],
+    },
     teacher: {
         id: 'doc-001',
         name: 'Profesor Xavier',
@@ -64,10 +96,18 @@ const USERS = {
     },
 };
 
+const STUDENT_KEYS = ['student', 'student-002', 'student-003', 'student-004', 'student-005'];
+
 export const auth = {
     getUser() {
         const role = sessionStorage.getItem('edu_role') || 'student';
-        const baseUser = USERS[role] || USERS.student;
+        let baseUser;
+        if (role === 'student') {
+            const studentKey = sessionStorage.getItem('edu_student_key') || 'student';
+            baseUser = USERS[studentKey] || USERS.student;
+        } else {
+            baseUser = USERS[role] || USERS.student;
+        }
         return {
             ...baseUser,
             subjects: mergeSubjectsWithLocal(baseUser.subjects || []),
@@ -76,11 +116,17 @@ export const auth = {
     },
 
     setRole(role) {
-        if (USERS[role]) {
-            sessionStorage.setItem('edu_role', role);
-            sessionStorage.setItem('edu_uid', USERS[role].id);
+        if (USERS[role] || STUDENT_KEYS.includes(role)) {
+            if (STUDENT_KEYS.includes(role)) {
+                sessionStorage.setItem('edu_role', 'student');
+                sessionStorage.setItem('edu_student_key', role);
+            } else {
+                sessionStorage.setItem('edu_role', role);
+                sessionStorage.removeItem('edu_student_key');
+            }
+            const uid = USERS[role]?.id || (STUDENT_KEYS.includes(role) ? USERS[role]?.id : null) || USERS.student.id;
+            sessionStorage.setItem('edu_uid', uid);
 
-            // Default active subject for UI
             const user = this.getUser();
             if (user.subjects && user.subjects.length > 0) {
                 sessionStorage.setItem('edu_active_subject', user.subjects[0].id);
@@ -232,10 +278,22 @@ export const auth = {
         window.dispatchEvent(new CustomEvent('auth:loggedOut'));
     },
 
-    mockLoginAs(role) {
-        if (!USERS[role]) return;
+    mockLoginAs(roleOrKey) {
+        const key = STUDENT_KEYS.includes(roleOrKey) ? roleOrKey : (USERS[roleOrKey] ? roleOrKey : null);
+        if (!key) return;
+        try {
+            localStorage.setItem('uade_use_mock', 'true');
+        } catch {}
         sessionStorage.setItem('edu_logged_in', 'true');
-        this.setRole(role);
+        this.setRole(key);
+    },
+
+    getMockStudents() {
+        return STUDENT_KEYS.map(k => ({ ...USERS[k], _key: k })).filter(Boolean);
+    },
+
+    getCurrentStudentKey() {
+        return sessionStorage.getItem('edu_student_key') || 'student';
     },
 
     getEnrolledSubjects() {
@@ -314,6 +372,12 @@ export const auth = {
             if (!sessionStorage.getItem('edu_logged_in')) {
                 sessionStorage.setItem('edu_logged_in', 'true');
             }
+            // Enable mock mode for the next load when using mock login on production
+            try {
+                if (sessionStorage.getItem('edu_logged_in') !== 'false') {
+                    localStorage.setItem('uade_use_mock', 'true');
+                }
+            } catch {}
         }
 
         const user = this.getUser();

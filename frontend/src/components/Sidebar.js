@@ -172,10 +172,20 @@ export function renderSidebar() {
             <div class="profile-panel-section">
               <div class="profile-label mb-2">Cambiar Rol (Demo)</div>
               <div class="profile-role-switcher" id="profile-role-switcher-nav">
-                <button class="role-btn ${user.role === 'student' ? 'active' : ''}" data-role="student">Lucas Vidmar (Alumno)</button>
-                <button class="role-btn ${user.role === 'teacher' ? 'active' : ''}" data-role="teacher">Profesor Xavier (Docente)</button>
-                <button class="role-btn ${user.role === 'director' ? 'active' : ''}" data-role="director">Joaquín García (Director)</button>
+                <button class="role-btn ${user.role === 'student' ? 'active' : ''}" data-role="student">Alumno</button>
+                <button class="role-btn ${user.role === 'teacher' ? 'active' : ''}" data-role="teacher">Docente</button>
+                <button class="role-btn ${user.role === 'director' ? 'active' : ''}" data-role="director">Director</button>
               </div>
+              ${user.role === 'student' ? `
+                <div class="profile-label mt-2 mb-1" style="font-size:0.75rem;">Seleccionar Alumno</div>
+                <div class="profile-student-picker" id="profile-student-picker-nav">
+                  ${auth.getMockStudents().map(s => `
+                    <button class="role-btn ${s.id === user.id ? 'active' : ''}" data-student-key="${s._key}">
+                      ${s.name}
+                    </button>
+                  `).join('')}
+                </div>
+              ` : ''}
             </div>
 
             <div class="profile-panel-section">
@@ -263,6 +273,15 @@ export function renderSidebar() {
       const role = btn.dataset.role;
       auth.mockLoginAs(role);
       window.location.hash = `#/${role}/dashboard`;
+      window.location.reload();
+    });
+  });
+
+  document.querySelectorAll('#profile-student-picker-nav .role-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const studentKey = btn.dataset.studentKey;
+      auth.mockLoginAs(studentKey);
+      window.location.hash = '#/student/dashboard';
       window.location.reload();
     });
   });

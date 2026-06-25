@@ -1,41 +1,52 @@
 import { api } from './api.js';
 
-const ENROLLMENTS_CACHE_KEY = 'uade.enrollments';
+function cacheKey(userId) {
+  return `uade.enrollments.${userId || 'anonymous'}`;
+}
 const CACHE_TTL_MS = 30 * 60 * 1000;
 
-function getCachedEnrollments() {
+function getCachedEnrollments(userId) {
   try {
-    const raw = sessionStorage.getItem(ENROLLMENTS_CACHE_KEY);
+    const raw = sessionStorage.getItem(cacheKey(userId));
     if (!raw) return null;
     const { data, timestamp } = JSON.parse(raw);
     if (Date.now() - timestamp > CACHE_TTL_MS) {
-      sessionStorage.removeItem(ENROLLMENTS_CACHE_KEY);
+      sessionStorage.removeItem(cacheKey(userId));
       return null;
     }
     return data;
   } catch {
-    sessionStorage.removeItem(ENROLLMENTS_CACHE_KEY);
+    sessionStorage.removeItem(cacheKey(userId));
     return null;
   }
 }
 
-function setCachedEnrollments(enrollments) {
-  sessionStorage.setItem(ENROLLMENTS_CACHE_KEY, JSON.stringify({
+function setCachedEnrollments(userId, enrollments) {
+  sessionStorage.setItem(cacheKey(userId), JSON.stringify({
     data: enrollments,
     timestamp: Date.now(),
   }));
 }
 
+function currentUserId() {
+  try {
+    return sessionStorage.getItem('edu_uid') || 'anonymous';
+  } catch {
+    return 'anonymous';
+  }
+}
+
 export const enrollments = {
   async fetchMyEnrollments(userId) {
-    const cached = getCachedEnrollments();
+    const uid = userId || currentUserId();
+    const cached = getCachedEnrollments(uid);
     if (cached) return cached;
 
     try {
-      const data = await api.getEnrollments(userId);
+      const data = await api.getEnrollments(uid);
       const enrollmentsList = Array.isArray(data) ? data : (data?.data || []);
       if (enrollmentsList.length > 0) {
-        setCachedEnrollments(enrollmentsList);
+        setCachedEnrollments(uid, enrollmentsList);
       }
       return enrollmentsList;
     } catch (err) {
@@ -54,35 +65,40 @@ export const enrollments = {
     }
   },
 
-  getCachedEnrollments() {
-    const cached = getCachedEnrollments();
+  getCachedEnrollments(userId) {
+    const uid = userId || currentUserId();
+    const cached = getCachedEnrollments(uid);
     return cached || [];
   },
 
-  getEnrolledSubjectIds() {
-    const cached = getCachedEnrollments();
+  getEnrolledSubjectIds(userId) {
+    const uid = userId || currentUserId();
+    const cached = getCachedEnrollments(uid);
     if (!cached) return [];
     return cached
       .filter(e => e.status === 'active')
       .map(e => e.subjectId);
   },
 
-  isEnrolled(subjectId) {
-    const cached = getCachedEnrollments();
+  isEnrolled(subjectId, userId) {
+    const uid = userId || currentUserId();
+    const cached = getCachedEnrollments(uid);
     if (!cached) return null;
     const enrollment = cached.find(e => e.subjectId === subjectId);
     if (!enrollment) return false;
     return enrollment.status === 'active';
   },
 
-  getEnrollmentRole(subjectId) {
-    const cached = getCachedEnrollments();
+  getEnrollmentRole(subjectId, userId) {
+    const uid = userId || currentUserId();
+    const cached = getCachedEnrollments(uid);
     if (!cached) return null;
     const enrollment = cached.find(e => e.subjectId === subjectId);
     return enrollment?.role || null;
   },
 
-  clearCache() {
-    sessionStorage.removeItem(ENROLLMENTS_CACHE_KEY);
+  clearCache(userId) {
+    const uid = userId || currentUserId();
+    sessionStorage.removeItem(cacheKey(uid));
   },
 };

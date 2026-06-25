@@ -783,6 +783,13 @@ body.top-nav-mobile-open .top-nav-mobile {
   gap: var(--space-1);
 }
 
+.profile-student-picker {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+}
+
 .role-btn {
   width: 100%;
   text-align: left;
