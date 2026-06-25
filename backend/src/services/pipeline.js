@@ -48,7 +48,7 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
             : 500000;
         const estimatedTokens = _estimateTokenCount(text);
         if (estimatedTokens > maxTokens) {
-            context.log.warn(`[Pipeline] Material rejected: too large`, {
+            context.log(`[WARN][Pipeline] Material rejected: too large`, {
                 materialId,
                 textLength: text.length,
                 tokenEstimate: estimatedTokens,
@@ -68,7 +68,7 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
                 slideTitles = extractPptxSlideTitles(fileBuffer);
                 context.log(`[Pipeline] Títulos extraídos: ${Object.keys(slideTitles || {}).length} diapositivas con título`);
             } catch (titleErr) {
-                context.log.warn(`[Pipeline] No se pudieron extraer títulos (no bloqueante): ${titleErr.message}`);
+                context.log(`[WARN][Pipeline] No se pudieron extraer títulos (no bloqueante): ${titleErr.message}`);
             }
         }
 
@@ -80,7 +80,7 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
                     context.log(`[Pipeline] Glosario: ${suggestions.length} error(es) detectado(s) en transcripción ${materialId}`);
                 }
             } catch (glossaryErr) {
-                context.log.warn(`[Pipeline] Detección de glosario falló (no bloqueante): ${glossaryErr.message}`);
+                context.log(`[WARN][Pipeline] Detección de glosario falló (no bloqueante): ${glossaryErr.message}`);
             }
         }
 
@@ -142,7 +142,7 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
             const stats = await getIndexStats();
             context.log(`[Pinecone Health] Index: ${vectorIndexName || 'n/a'} | totalVectorCount: ${stats.totalVectorCount} | indexFullness: ${(stats.indexFullness * 100).toFixed(2)}%`);
         } catch (statsErr) {
-            context.log.warn(`[Pinecone Health] No se pudo obtener stats del índice: ${statsErr.message}`);
+            context.log(`[WARN][Pinecone Health] No se pudo obtener stats del índice: ${statsErr.message}`);
         }
 
         // 5. Generar resumen y mapa conceptual si es un tipo de material rico en texto
@@ -192,6 +192,7 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
             type: materialType,
             filename: fileName,
             status: 'ready',
+            errorMessage: '',
             blobUrl,
             chunkCount: chunks.length,
             uploadedAt: new Date(startTime).toISOString(),
