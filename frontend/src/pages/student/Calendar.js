@@ -1,6 +1,3 @@
-/* ============================================================
-   Student Calendar — Monthly grid with class detail panel
-   ============================================================ */
 import { api } from '../../services/api.js';
 import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
@@ -27,59 +24,9 @@ export async function renderStudentCalendar(container) {
     deadlineMap[key].push(d);
   });
 
-  let currentDate = new Date(2026, 2, 1); // March 2026
-
-  const render = () => {
-    const year = currentDate.getFullYear();
-    const month = currentDate.getMonth();
-    const firstDay = new Date(year, month, 1).getDay();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-
-    container.innerHTML = `
-      <div class="calendar-wrapper">
-        <div class="calendar-header">
-          <button class="btn btn-ghost btn-sm" id="cal-prev">← Anterior</button>
-          <h2>${MONTHS[month]} ${year}</h2>
-          <div style="display:flex;gap:var(--space-2)">
-            <button class="btn btn-ghost btn-sm" id="cal-export-ics">📅 Exportar</button>
-            <button class="btn btn-ghost btn-sm" id="cal-next">Siguiente →</button>
-          </div>
-        </div>
-
-        <div class="calendar-grid">
-          ${DAYS.map(d => `<div class="cal-day-header">${d}</div>`).join('')}
-          ${Array(firstDay).fill(0).map(() => `<div class="cal-cell cal-empty"></div>`).join('')}
-          ${Array.from({ length: daysInMonth }, (_, i) => {
-      const day = i + 1;
-      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      const cls = classMap[dateStr];
-      const dayDeadlines = deadlineMap[dateStr] || [];
-      const isToday = dateStr === new Date().toISOString().split('T')[0];
-      return `
-              <div class="cal-cell ${cls ? 'has-class' : ''} ${isToday ? 'today' : ''}" data-date="${dateStr}" data-has-class="${!!cls}">
-                <span class="cal-day-num">${day}</span>
-                ${cls ? `<span class="cal-class-dot" title="${cls.title}"></span>` : ''}
-                ${dayDeadlines.length > 0 ? `<span class="cal-deadline-dot" title="${dayDeadlines.map(d => d.title).join(' · ')}"></span>` : ''}
-              </div>
-            `;
-    }).join('')}
-        </div>
-
-        <div class="calendar-legend">
-          <span class="cal-legend-item"><span class="cal-class-dot"></span> Clase programada</span>
-          <span class="cal-legend-item"><span class="cal-deadline-dot"></span> Deadline</span>
-          <span class="cal-legend-item today-legend">Hoy</span>
-        </div>
-      </div>
-    `;
-
-    document.getElementById('cal-prev')?.addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() - 1); render(); });
-    document.getElementById('cal-next')?.addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() + 1); render(); });
-
-    container.querySelectorAll('.cal-cell[data-has-class="true"]').forEach(cell => {
-      cell.addEventListener('click', () => showClassDetail(classMap[cell.dataset.date]));
-    });
-  };
+  const today = new Date();
+  let currentDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  let viewMode = 'month';
 
   const showClassDetail = (cls) => {
     const existingOverlay = document.getElementById('class-detail-overlay');
@@ -145,6 +92,216 @@ export async function renderStudentCalendar(container) {
 
     document.getElementById('close-panel')?.addEventListener('click', () => overlay.remove());
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  };
+
+  const showEmptyDay = (dateStr) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'slide-panel-overlay';
+    overlay.id = 'class-detail-overlay';
+
+    const panel = document.createElement('div');
+    panel.className = 'slide-panel';
+    const d = new Date(dateStr + 'T12:00:00');
+    panel.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:var(--space-6)">
+        <div>
+          <span class="badge badge-primary" style="margin-bottom:var(--space-2)">📅 ${d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
+          <h2 style="font-size:var(--font-size-lg);margin-top:var(--space-2)">Sin clase programada</h2>
+        </div>
+        <button class="btn btn-icon btn-ghost" id="close-panel">✕</button>
+      </div>
+      <p style="color:var(--color-text-muted);font-size:var(--font-size-sm)">No hay actividades registradas para esta fecha.</p>
+    `;
+
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+
+    document.getElementById('close-panel')?.addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  };
+
+  const formatDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const isSameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+  const goToToday = () => {
+    currentDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    render();
+  };
+
+  const renderCellEvents = (dateStr) => {
+    const cls = classMap[dateStr];
+    const dayDeadlines = deadlineMap[dateStr] || [];
+    const hasContent = cls || dayDeadlines.length > 0;
+    return `
+      ${cls ? `<span class="cal-class-dot" title="${cls.title}"></span>` : ''}
+      ${dayDeadlines.length > 0 ? `<span class="cal-deadline-dot" title="${dayDeadlines.map(d => d.title).join(' · ')}"></span>` : ''}
+      ${!hasContent ? `<span class="cal-empty-dot"></span>` : ''}
+    `;
+  };
+
+  const renderMonthView = () => {
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    return `
+      <div class="cal-view-label">${MONTHS[month]} ${year}</div>
+      <div class="calendar-grid">
+        ${DAYS.map(d => `<div class="cal-day-header">${d}</div>`).join('')}
+        ${Array(firstDay).fill(0).map(() => `<div class="cal-cell cal-empty"></div>`).join('')}
+        ${Array.from({ length: daysInMonth }, (_, i) => {
+      const day = i + 1;
+      const d = new Date(year, month, day);
+      const dateStr = formatDateStr(d);
+      const cls = classMap[dateStr];
+      const dayDeadlines = deadlineMap[dateStr] || [];
+      const isTodayDate = isSameDay(d, today);
+      return `
+            <div class="cal-cell ${cls ? 'has-class' : ''} ${isTodayDate ? 'today' : ''} ${dayDeadlines.length > 0 ? 'has-deadline' : ''}" data-date="${dateStr}" data-has-class="${!!cls}">
+              <span class="cal-day-num">${day}</span>
+              <div class="cal-cell-dots">${renderCellEvents(dateStr)}</div>
+            </div>
+          `;
+    }).join('')}
+      </div>
+    `;
+  };
+
+  const renderWeekView = () => {
+    const dayOfWeek = currentDate.getDay();
+    const monday = new Date(currentDate);
+    monday.setDate(monday.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1));
+
+    const weekDays = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      return d;
+    });
+
+    const startLabel = weekDays[0].toLocaleDateString('es-AR', { day: 'numeric', month: 'short' });
+    const endLabel = weekDays[6].toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' });
+
+    return `
+      <div class="cal-view-label">${startLabel} — ${endLabel}</div>
+      <div class="calendar-grid">
+        ${DAYS.map(d => `<div class="cal-day-header">${d}</div>`).join('')}
+        ${weekDays.map(d => {
+      const dateStr = formatDateStr(d);
+      const cls = classMap[dateStr];
+      const dayDeadlines = deadlineMap[dateStr] || [];
+      const isTodayDate = isSameDay(d, today);
+      return `
+            <div class="cal-cell ${cls ? 'has-class' : ''} ${isTodayDate ? 'today' : ''} ${dayDeadlines.length > 0 ? 'has-deadline' : ''}" data-date="${dateStr}" data-has-class="${!!cls}">
+              <span class="cal-day-num">${d.getDate()}</span>
+              <div class="cal-cell-dots">${renderCellEvents(dateStr)}</div>
+            </div>
+          `;
+    }).join('')}
+      </div>
+    `;
+  };
+
+  const renderCuatrimestreView = () => {
+    const year = currentDate.getFullYear();
+    const cuatrimestreMonths = [2, 3, 4, 5]; // March (2) to June (5)
+
+    return `
+      <div class="cal-view-label">Cuatrimestre — Marzo a Junio ${year}</div>
+      <div class="cal-cuatrimestre-grid">
+        ${cuatrimestreMonths.map(m => {
+      const daysInMonth = new Date(year, m + 1, 0).getDate();
+      const firstDay = new Date(year, m, 1).getDay();
+      return `
+            <div class="cal-cuatrimestre-month">
+              <div class="cal-cuatrimestre-month-title">${MONTHS[m]} ${year}</div>
+              <div class="calendar-grid">
+                ${DAYS.map(d => `<div class="cal-day-header">${d[0]}</div>`).join('')}
+                ${Array(firstDay).fill(0).map(() => `<div class="cal-cell cal-empty"></div>`).join('')}
+                ${Array.from({ length: daysInMonth }, (_, i) => {
+          const day = i + 1;
+          const d = new Date(year, m, day);
+          const dateStr = formatDateStr(d);
+          const cls = classMap[dateStr];
+          const dayDeadlines = deadlineMap[dateStr] || [];
+          const isTodayDate = isSameDay(d, today);
+          return `
+                  <div class="cal-cell cal-cuatri-cell ${cls ? 'has-class' : ''} ${isTodayDate ? 'today' : ''} ${dayDeadlines.length > 0 ? 'has-deadline' : ''}" data-date="${dateStr}" data-has-class="${!!cls}">
+                    <span class="cal-day-num">${day}</span>
+                  </div>
+                `;
+        }).join('')}
+              </div>
+            </div>
+          `;
+    }).join('')}
+      </div>
+    `;
+  };
+
+  const render = () => {
+    container.innerHTML = `
+      <div class="calendar-page">
+        <div class="calendar-wrapper">
+          <div class="calendar-header">
+            <div class="cal-header-left">
+              <button class="btn btn-ghost btn-sm" id="cal-prev">←</button>
+              <button class="btn btn-ghost btn-sm" id="cal-today">Hoy</button>
+              <button class="btn btn-ghost btn-sm" id="cal-next">→</button>
+            </div>
+            <div class="cal-view-tabs">
+              <button class="cal-view-tab ${viewMode === 'month' ? 'active' : ''}" data-view="month">Mes</button>
+              <button class="cal-view-tab ${viewMode === 'week' ? 'active' : ''}" data-view="week">Semana</button>
+              <button class="cal-view-tab ${viewMode === 'cuatrimestre' ? 'active' : ''}" data-view="cuatrimestre">Cuatrimestre</button>
+            </div>
+            <div class="cal-header-right">
+              <button class="btn btn-ghost btn-sm" id="cal-export-ics">📅 Exportar</button>
+            </div>
+          </div>
+
+          ${viewMode === 'month' ? renderMonthView() : viewMode === 'week' ? renderWeekView() : renderCuatrimestreView()}
+
+          <div class="calendar-legend">
+            <span class="cal-legend-item"><span class="cal-class-dot"></span> Clase</span>
+            <span class="cal-legend-item"><span class="cal-deadline-dot"></span> Deadline</span>
+            <span class="cal-legend-item today-legend">Hoy</span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('cal-prev')?.addEventListener('click', () => {
+      if (viewMode === 'month') { currentDate.setMonth(currentDate.getMonth() - 1); }
+      else if (viewMode === 'week') { currentDate.setDate(currentDate.getDate() - 7); }
+      else if (viewMode === 'cuatrimestre') { currentDate.setFullYear(currentDate.getFullYear() - 1); }
+      render();
+    });
+    document.getElementById('cal-next')?.addEventListener('click', () => {
+      if (viewMode === 'month') { currentDate.setMonth(currentDate.getMonth() + 1); }
+      else if (viewMode === 'week') { currentDate.setDate(currentDate.getDate() + 7); }
+      else if (viewMode === 'cuatrimestre') { currentDate.setFullYear(currentDate.getFullYear() + 1); }
+      render();
+    });
+    document.getElementById('cal-today')?.addEventListener('click', goToToday);
+
+    container.querySelectorAll('.cal-view-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        viewMode = tab.dataset.view;
+        render();
+      });
+    });
+
+    container.querySelectorAll('.cal-cell[data-date]').forEach(cell => {
+      cell.addEventListener('click', () => {
+        const dateStr = cell.dataset.date;
+        const cls = classMap[dateStr];
+        if (cls) {
+          showClassDetail(cls);
+        } else {
+          showEmptyDay(dateStr);
+        }
+      });
+    });
   };
 
   document.getElementById('cal-export-ics')?.addEventListener('click', () => {

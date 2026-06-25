@@ -16,22 +16,22 @@ export async function renderPrivacyModal(onAccepted) {
     modalOverlay.style.zIndex = '9999';
 
     modalOverlay.innerHTML = `
-        <div class="modal-content animate-in" style="max-width: 640px;">
+        <div class="modal-content animate-in" style="max-width: 720px;">
             <div class="modal-header">
                 <h2 class="h3" style="margin: 0; display: flex; align-items: center; gap: var(--space-2);">
                     Términos de uso
                 </h2>
             </div>
             
-            <div class="modal-body" style="overflow-y: auto; max-height: 50vh;">
-                <div id="terms-content" class="p-4 text-text-secondary text-sm">
+            <div class="modal-body" style="overflow-y: auto; max-height: 60vh;">
+                <div id="terms-content" class="text-text-secondary text-sm leading-relaxed">
                     <div class="animate-pulse">Cargando términos...</div>
                 </div>
                 
-                <div class="mt-4 p-3 bg-surface-2 rounded-xl border border-border">
-                    <label class="flex items-start gap-3 cursor-pointer">
-                        <input type="checkbox" id="consent-checkbox" class="mt-1" style="accent-color: var(--color-accent);">
-                        <span class="text-sm font-medium text-text-primary">
+                <div class="mt-6 p-4 bg-surface-2 rounded-xl border border-border">
+                    <label class="flex items-start gap-3 cursor-pointer select-none">
+                        <input type="checkbox" id="consent-checkbox" style="accent-color: var(--color-accent); flex-shrink: 0; width: 18px; height: 18px; margin-top: 1px;">
+                        <span class="text-sm font-medium text-text-primary leading-relaxed">
                             Acepto que mis consultas sean procesadas por IA y almacenadas para mejorar el servicio
                         </span>
                     </label>
@@ -108,13 +108,13 @@ function renderMarkdown(text) {
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
-        .replace(/^### (.+)$/gm, '<h3 class="h4 mt-3">$1</h3>')
-        .replace(/^## (.+)$/gm, '<h2 class="h3 mt-4">$1</h2>')
-        .replace(/^# (.+)$/gm, '<h2 class="h3 mt-4">$1</h2>')
+        .replace(/^### (.+)$/gm, '<h3 class="h4 mt-4 mb-2">$1</h3>')
+        .replace(/^## (.+)$/gm, '<h2 class="h3 mt-5 mb-2">$1</h2>')
+        .replace(/^# (.+)$/gm, '<h2 class="h3 mt-5 mb-2">$1</h2>')
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.+?)\*/g, '<em>$1</em>')
         .replace(/^- (.+)$/gm, '<li>$1</li>')
-        .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
+        .replace(/(<li>.*<\/li>)/s, '<ul class="mb-3">$1</ul>')
         .replace(/\n\n/g, '</p><p>')
         .replace(/\n/g, '<br>');
     return `<p>${html}</p>`;

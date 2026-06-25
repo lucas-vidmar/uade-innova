@@ -463,17 +463,17 @@ body.top-nav-mobile-open .top-nav-mobile {
   background: var(--color-accent-glow);
 }
 
-/* Sidebar Sections */
+/* Sidebar Sections — Card aesthetic matching chat container */
 .sidebar-section {
-  background: transparent;
-  border: none;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  box-shadow: none;
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
 
 .sidebar-section-header {
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-5);
   border-bottom: 1px solid var(--color-border);
   background: var(--color-bg) !important;
   display: flex;
@@ -621,7 +621,10 @@ body.top-nav-mobile-open .top-nav-mobile {
 .mb-2 { margin-bottom: 8px; }
 .mb-6 { margin-bottom: 24px; }
 .ml-auto { margin-left: auto; }
-
+.flex-1 { flex: 1; }
+.leading-relaxed { line-height: 1.625; }
+.select-none { user-select: none; }
+.gap-3 { gap: 12px; }
 @media (min-width: 768px) {
   .md\:flex { display: flex; }
   .md\:flex-row { flex-direction: row; }
@@ -702,6 +705,9 @@ body.top-nav-mobile-open .top-nav-mobile {
 
 .bg-surface-2 { background-color: var(--color-surface-2); }
 .text-text-secondary { color: var(--color-text-secondary); }
+.text-primary { color: var(--color-primary); }
+.text-error { color: var(--color-error); }
+.text-success { color: var(--color-success); }
 .border-border { border-color: var(--color-border); }
 .focus\:ring-primary:focus { box-shadow: 0 0 0 2px var(--color-accent-glow); }
 .focus\:border-primary:focus { border-color: var(--color-primary); }

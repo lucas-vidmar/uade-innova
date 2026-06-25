@@ -94,7 +94,7 @@ export async function renderStudentDashboard(container) {
         ${renderInactivityBanner()}
 
         <!-- Welcome & Search Section -->
-        <div class="dashboard-layout-grid mb-2 items-center" style="padding-bottom: 0;">
+        <div class="dashboard-layout-grid mb-8 items-center" style="padding-bottom: 0;">
           <div class="search-container w-full" style="max-width: 100%;">
             <div class="search-icon-wrapper">
               <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path></svg>
@@ -214,7 +214,7 @@ export async function renderStudentDashboard(container) {
     const visibleCount = Math.min((historyPage + 1) * HISTORY_PAGE_SIZE, sessionSummariesCache.length);
     const visibleItems = sessionSummariesCache.slice(0, visibleCount);
     if (visibleItems.length === 0) {
-      return '<li class="p-6 flex flex-row items-center justify-center gap-2 text-center text-text-muted bg-surface-2 rounded-xl mt-2 border border-dashed border-border"><span class="opacity-50">' + icon('chat') + '</span><span class="text-xs italic">Sin actividad reciente</span></li>';
+      return '<li class="flex flex-col items-center py-8 px-6 text-center"><div class="w-10 h-10 bg-surface-2 rounded-full flex items-center justify-center mb-3"><span class="opacity-40">' + icon('chat') + '</span></div><p class="text-xs font-medium text-text-primary mb-1">Sin actividad reciente</p><p class="text-[10px] text-text-muted">Tus consultas en el chat aparecerán acá</p></li>';
     }
     return visibleItems.map(c => `
       <li class="sidebar-list-item cursor-pointer hover:bg-surface-2 transition-colors group" data-chat-session-id="${escapeHtml(c.sessionId)}">
@@ -383,7 +383,7 @@ export async function renderStudentDashboard(container) {
                 <span class="font-bold text-error">Próximo</span>
               </div>
             </li>
-          `).join('') : '<li class="p-6 flex flex-row items-center justify-center gap-2 text-center text-text-muted bg-surface-2 rounded-xl mt-2 border border-dashed border-border"><span class="opacity-50">' + icon('tasks') + '</span><span class="text-xs italic">Sin tareas pendientes</span></li>'}
+          `).join('') : '<li class="flex flex-col items-center py-8 px-6 text-center"><div class="w-10 h-10 bg-surface-2 rounded-full flex items-center justify-center mb-3"><span class="opacity-40">' + icon('tasks') + '</span></div><p class="text-xs font-medium text-text-primary mb-1">Todo al día</p><p class="text-[10px] text-text-muted">No tenés tareas pendientes</p></li>'}
         </ul>
       </div>
     `;
@@ -392,17 +392,20 @@ export async function renderStudentDashboard(container) {
     const metricsContainer = document.getElementById('dashboard-metrics-container');
     if (metricsContainer) {
       metricsContainer.innerHTML = `
-        <div class="bg-transparent p-2 flex flex-col items-center justify-center transition-all">
-          <span class="text-3xl font-extrabold text-primary">${avgGrade > 0 ? avgGrade.toFixed(1) : '-'}</span>
-          <span class="text-[10px] uppercase font-bold text-text-muted mt-1 tracking-wider text-center">Promedio</span>
+        <div class="bg-transparent p-2 flex flex-col items-center justify-center transition-all min-w-[100px]">
+          <span class="block text-3xl font-extrabold text-primary">${avgGrade > 0 ? avgGrade.toFixed(1) : '-'}</span>
+          <span class="text-[10px] uppercase font-bold text-text-muted mt-1.5 tracking-widest text-center">Promedio</span>
         </div>
-        <div class="bg-transparent p-2 flex flex-col items-center justify-center transition-all">
-          <span class="text-3xl font-extrabold ${riskValue > 0 ? 'text-error' : 'text-text-muted'}">${riskValue}</span>
-          <span class="text-[10px] uppercase font-bold text-text-muted mt-1 tracking-wider text-center">Riesgo Académico</span>
+        <div class="bg-transparent p-2 flex flex-col items-center justify-center transition-all min-w-[100px]">
+          <div class="flex items-center justify-center gap-1.5 mb-1.5 px-3 py-1 rounded-full" style="background: ${riskValue > 0 ? 'rgba(239,68,68,0.1)' : 'var(--color-surface-2)'}">
+            <span class="w-1.5 h-1.5 rounded-full ${riskValue > 0 ? 'bg-red-500' : 'bg-text-muted'}"></span>
+            <span class="text-xs font-bold ${riskValue > 0 ? 'text-error' : 'text-text-muted'}">${riskValue}</span>
+          </div>
+          <span class="text-[10px] uppercase font-bold text-text-muted tracking-widest text-center">Riesgo Académico</span>
         </div>
-        <div class="bg-transparent p-2 flex flex-col items-center justify-center transition-all">
-          <span class="text-3xl font-extrabold text-success">92%</span>
-          <span class="text-[10px] uppercase font-bold text-text-muted mt-1 tracking-wider text-center">Asistencia</span>
+        <div class="bg-transparent p-2 flex flex-col items-center justify-center transition-all min-w-[100px]">
+          <span class="block text-3xl font-extrabold text-success">92%</span>
+          <span class="text-[10px] uppercase font-bold text-text-muted mt-1.5 tracking-widest text-center">Asistencia</span>
         </div>
       `;
     }
@@ -431,7 +434,7 @@ export async function renderStudentDashboard(container) {
               <p class="text-[10px] text-text-muted mt-1 leading-tight">${c.topics ? c.topics.join(', ') : 'Sin temas'}</p>
             </li>
           `).join('')}
-          ${classes?.length === 0 ? '<li class="p-6 flex flex-row items-center justify-center gap-2 text-center text-text-muted bg-surface-2 rounded-xl mt-2 border border-dashed border-border"><span class="opacity-50">' + icon('calendar') + '</span><span class="text-xs italic">No hay clases programadas</span></li>' : ''}
+          ${classes?.length === 0 ? '<li class="flex flex-col items-center py-8 px-6 text-center"><div class="w-10 h-10 bg-surface-2 rounded-full flex items-center justify-center mb-3"><span class="opacity-40">' + icon('calendar') + '</span></div><p class="text-xs font-medium text-text-primary mb-1">No hay clases programadas</p><p class="text-[10px] text-text-muted">Las clases aparecerán acá cuando el docente las publique</p></li>' : ''}
         </ul>
       </div>
     `;

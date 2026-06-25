@@ -34,15 +34,15 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
   // Consent gate for students: block chat rendering and show modal
   if (auth.getRole() === 'student' && !auth.getAIConsentAccepted()) {
     container.innerHTML = `
-      <div class="flex items-center justify-center h-full p-6">
-        <div class="text-center max-w-md">
-          <div class="mb-4 text-primary">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="mx-auto">
+      <div class="flex-1 flex items-center justify-center px-6">
+        <div class="text-center" style="max-width: 340px;">
+          <div class="mb-5 text-primary">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="mx-auto">
               <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
             </svg>
           </div>
-          <h3 class="text-lg font-bold text-text-primary mb-2">Aceptá los términos para usar el chat</h3>
-          <p class="text-sm text-text-secondary mb-4">Para poder consultar los materiales de clase, necesitás aceptar los términos de uso y consentimiento de IA.</p>
+          <h3 class="text-lg font-bold text-text-primary mb-3">Aceptá los términos para usar el chat</h3>
+          <p class="text-sm text-text-secondary mb-6 leading-relaxed">Para poder consultar los materiales de clase, necesitás aceptar los términos de uso y consentimiento de IA.</p>
           <button id="open-consent-modal-btn" class="btn btn-primary">Aceptar términos</button>
         </div>
       </div>
@@ -207,11 +207,6 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
               </button>
               ` : ''}
               ${msg.missingInfoReported ? '<span class="text-xs text-text-muted" style="margin-top:4px;display:block;">✅ Información faltante reportada</span>' : ''}
-              ${!msg.keywordReported ? `
-              <button class="report-keyword-btn" data-message-id="${msg.id || ''}" title="Reportar concepto faltante">
-                Reportar concepto faltante
-              </button>
-              ` : '<span class="text-xs text-text-muted" style="margin-top:4px;display:block;">✅ Concepto reportado</span>'}
             </div>
           </div>
         </div>
@@ -667,61 +662,6 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
     });
   };
 
-  const showKeywordReportModal = () => {
-    return new Promise((resolve) => {
-      const overlay = document.createElement('div');
-      overlay.className = 'modal-overlay';
-      overlay.innerHTML = `
-        <div class="modal-content" style="max-width:500px;width:92%;">
-          <div class="modal-header"><h3 class="h4" style="margin:0;">Reportar concepto faltante</h3>
-          <button type="button" class="btn btn-ghost btn-sm dialog-close">✕</button></div>
-          <div class="modal-body">
-            <div style="margin-bottom:16px;">
-              <label class="form-label" for="keyword-concept" style="font-weight:600;">¿Qué concepto no encontraste?</label>
-              <textarea id="keyword-concept" class="form-input" style="min-height:80px;resize:vertical;" placeholder="Ej: patrón Observer, inmutabilidad en DDD..."></textarea>
-              <p id="keyword-error" style="display:none;margin-top:6px;color:var(--color-error);font-size:13px;"></p>
-            </div>
-            <div>
-              <label class="form-label" for="keyword-class" style="font-weight:600;">¿En qué clase esperabas encontrarlo? (opcional)</label>
-              <select id="keyword-class" class="form-input" style="min-height:44px;">
-                <option value="">No estoy seguro</option>
-                ${(classes || []).map(c => `<option value="${c.id}">${escapeHtml(c.title || c.id)}</option>`).join('')}
-              </select>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-ghost dialog-cancel">Cancelar</button>
-            <button type="button" class="btn btn-primary" id="keyword-submit-btn" disabled>Enviar reporte</button>
-          </div>
-        </div>`;
-
-      const textarea = overlay.querySelector('#keyword-concept');
-      const errorEl = overlay.querySelector('#keyword-error');
-      const submitBtn = overlay.querySelector('#keyword-submit-btn');
-      const classSelect = overlay.querySelector('#keyword-class');
-      const cleanup = (result) => { overlay.remove(); resolve(result); };
-
-      textarea.addEventListener('input', () => {
-        submitBtn.disabled = (textarea.value || '').trim().length < 3;
-        errorEl.style.display = 'none';
-      });
-      overlay.querySelector('.dialog-close')?.addEventListener('click', () => cleanup(null));
-      overlay.querySelector('.dialog-cancel')?.addEventListener('click', () => cleanup(null));
-      overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(null); });
-      submitBtn.addEventListener('click', () => {
-        const val = (textarea.value || '').trim();
-        if (val.length < 3) {
-          errorEl.textContent = 'Debe tener al menos 3 caracteres.';
-          errorEl.style.display = 'block'; textarea.focus(); return;
-        }
-        cleanup({ concept: val, classId: classSelect.value || '' });
-      });
-      textarea.addEventListener('keydown', (e) => { if (e.key === 'Escape') cleanup(null); });
-      document.body.appendChild(overlay);
-      setTimeout(() => textarea.focus(), 100);
-    });
-  };
-
   const showCitationModal = (source) => {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -810,36 +750,6 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         } catch (err) {
           console.error('Error reporting issue:', err);
           toast('error', 'No se pudo reportar', err?.message || 'Intentá nuevamente en unos segundos.');
-        }
-      });
-    });
-
-    parent.querySelectorAll('.report-keyword-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const messageId = btn.dataset.messageId;
-        if (!messageId || btn.disabled) return;
-
-        const result = await showKeywordReportModal();
-        if (!result) return;
-
-        const msg = messages.find(m => m.id === messageId);
-        try {
-          await api.reportChatIssue({
-            messageId,
-            subjectId,
-            issueDetail: 'Concepto faltante: ' + result.concept + (result.classId ? ' (Clase: ' + result.classId + ')' : ''),
-            question: '',
-            answer: '',
-            type: 'missing-keyword',
-            classId: result.classId,
-          });
-          if (msg) msg.keywordReported = true;
-          btn.disabled = true;
-          btn.textContent = '✅ Reportado';
-          toast('success', 'Reporte enviado', 'El docente recibió una alerta sobre el concepto faltante.');
-        } catch (err) {
-          console.error('Error reporting keyword:', err);
-          toast('error', 'No se pudo reportar', err?.message || 'Intentá nuevamente.');
         }
       });
     });
