@@ -175,10 +175,11 @@ export async function renderMaterialManager(container) {
                                                         <button class="btn btn-icon btn-ghost mat-btn-view-text" data-idx="${i}" title="Ver / editar texto extraído">
                                                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
                                                         </button>
-                                                        <button class="btn btn-sm btn-outline mat-btn-reprocess" data-idx="${i}" title="${mat.status === 'error' ? 'Reintentar procesamiento' : mat.status === 'processing' ? 'Ya está siendo procesado' : 'Solo disponible para materiales con error'}" ${mat.status !== 'error' ? 'disabled' : ''}>
+                                                        ${mat.status === 'error' ? `
+                                                        <button class="btn btn-sm btn-outline mat-btn-reprocess" data-idx="${i}" title="Reintentar procesamiento">
                                                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                                                             Reintentar
-                                                        </button>
+                                                        </button>` : ''}
                                                         <button class="btn btn-icon btn-ghost mat-btn-delete" data-idx="${i}" title="Eliminar material">
                                                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
                                                         </button>
@@ -510,7 +511,7 @@ export async function renderMaterialManager(container) {
                     try {
                         btn.disabled = true;
                         btn.textContent = 'Reintentando...';
-                        await api.reprocessMaterial(mat.materialId || mat.id, mat.subjectId || selectedSubjectId);
+                        await api.reprocessMaterial(mat.materialId || mat.id, mat.subjectId || subjectId);
                         mat.status = 'pending';
                         mat.errorMessage = '';
                         toast('success', 'Reprocesando', 'El material se ha re-encolado. Revisá el estado en unos segundos.');
