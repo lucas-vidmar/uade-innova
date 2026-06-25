@@ -66,3 +66,15 @@ main-chunk.js
 *-snapshot.yml
 **/screenshot*.png*.png
 *.png
+
+# Test artifacts
+*.snap
+*.d.ts
+
+
+# Test snapshots and deploy verification
+deploy-*.md
+
+# Test scripts
+scripts/seed-test-profiles.js
+scripts/test-students-enrollments.csv
