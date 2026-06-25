@@ -3,7 +3,33 @@ import { withCorrelation } from '../middleware/with-correlation.js';
 import { getTableClient } from '../services/storage.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 
-const tableName = "UserProfiles";
+const USER_PROFILES_TABLE = "UserProfiles";
+const ENROLLMENTS_TABLE_NAME = process.env.AZURE_TABLE_ENROLLMENTS || 'Enrollments';
+
+/**
+ * Builds a map of userId → primary role by scanning the Enrollments table.
+ * Teacher role takes precedence over student.
+ */
+async function buildUserRoleMap() {
+    const roleMap = {};
+    try {
+        const enrollmentsClient = getTableClient(ENROLLMENTS_TABLE_NAME);
+        await enrollmentsClient.createTable().catch(() => {});
+        const entities = enrollmentsClient.listEntities();
+        for await (const entity of entities) {
+            const userId = entity.rowKey;
+            const role = entity.role;
+            if (!userId || !role) continue;
+            // Teacher role takes precedence over student
+            if (!roleMap[userId] || role === 'teacher') {
+                roleMap[userId] = role;
+            }
+        }
+    } catch (err) {
+        console.error('[AdminAPI] Error building role map from Enrollments:', err.message);
+    }
+    return roleMap;
+}
 
 /**
  * Endpoint for institutional administrators (Directores) to list all users.
@@ -25,10 +51,14 @@ app.http('manage-get-users', {
                 return { status: 403, body: "Forbidden - Administrator access required" };
             }
 
-            const tableClient = getTableClient(tableName);
-            
-            // Ensure table exists in local dev or if not yet created in cloud
-            await tableClient.createTable().catch(() => {}); 
+            const [roleMap, tableClient] = await Promise.all([
+                buildUserRoleMap(),
+                (async () => {
+                    const client = getTableClient(USER_PROFILES_TABLE);
+                    await client.createTable().catch(() => {});
+                    return client;
+                })(),
+            ]);
 
             const users = [];
             const entities = tableClient.listEntities();
@@ -38,6 +68,7 @@ app.http('manage-get-users', {
                     id: entity.rowKey,
                     name: entity.name || "Usuario Desconocido",
                     email: entity.email || "No disponible",
+                    role: roleMap[entity.rowKey] || null,
                     theme: entity.theme,
                     language: entity.language,
                     consentAccepted: entity.consentAccepted || false,
