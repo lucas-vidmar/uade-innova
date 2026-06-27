@@ -345,15 +345,29 @@ export async function renderStudentDashboard(container) {
   // 2. Start fetches in parallel
   const fetchClassesTask = api.getClasses(activeSubjectId);
   const fetchTasksTask = api.getTasks(user.id);
+  const fetchDeadlinesTask = api.getDeadlines(activeSubjectId);
   const fetchHistoryTask = api.getChatHistory(activeSubjectId);
 
-  // 3. Update Tasks & Metrics (Depends on tasks)
-  fetchTasksTask.then(tasks => {
+  // 3. Update Tasks, Deadlines & Metrics
+  Promise.all([fetchTasksTask, fetchDeadlinesTask]).then(([tasks, deadlines]) => {
     const sectionTasks = document.getElementById('section-tasks');
     if (!sectionTasks) return;
 
     const subjectTasks = (tasks || []).filter(t => t.subjectId === activeSubjectId);
-    const pendingTasks = subjectTasks
+    const pendingDeadlines = (deadlines || [])
+      .filter(d => d.subjectId === activeSubjectId && d.status !== 'completed')
+      .map(d => ({
+        id: d.id,
+        title: d.title,
+        dueDate: d.dueDate,
+        type: 'deadline',
+        weight: d.weight || 0,
+        status: 'pending',
+        classId: d.classId,
+        description: d.description || '',
+      }));
+    const merged = [...subjectTasks, ...pendingDeadlines];
+    const pendingItems = merged
       .filter(t => t.status === 'pending')
       .sort((a, b) => (new Date(a.dueDate) - new Date(b.dueDate)))
       .slice(0, 3);
@@ -375,7 +389,7 @@ export async function renderStudentDashboard(container) {
       </div>
       <div class="p-0">
         <ul class="sidebar-list">
-          ${pendingTasks.length > 0 ? pendingTasks.map(t => `
+          ${pendingItems.length > 0 ? pendingItems.map(t => `
             <li class="sidebar-list-item">
               <p class="sidebar-item-title">${escapeHtml(t.title)}</p>
               <div class="sidebar-item-meta">

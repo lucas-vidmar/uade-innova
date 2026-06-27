@@ -15,9 +15,14 @@ export async function renderStudentTasks(container) {
     container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando tareas...</div>`;
 
     const user = auth.getUser();
-    const tasksData = await api.getTasks(user.id);
+    const activeSubjectId = auth.getActiveSubjectId();
+    const [tasksData, deadlinesData] = await Promise.all([
+      api.getTasks(user.id),
+      api.getDeadlines(activeSubjectId),
+    ]);
     const tasks = Array.isArray(tasksData) ? tasksData : [];
-    const classes = await api.getClasses(auth.getActiveSubjectId()).catch(() => []);
+    const deadlines = Array.isArray(deadlinesData) ? deadlinesData : [];
+    const classes = await api.getClasses(activeSubjectId).catch(() => []);
 
     // Sort logic: Score = (weight / 10) + (10 / (Math.max(1, daysUntil)))
     // Higher score = more prioritized
@@ -28,7 +33,21 @@ export async function renderStudentTasks(container) {
         return proximity + weightFactor;
     };
 
-    const pending = tasks
+    const deadlineItems = (deadlines || [])
+        .filter(d => d.subjectId === activeSubjectId && d.status !== 'completed')
+        .map(d => ({
+            id: d.id,
+            title: d.title,
+            description: d.description || '',
+            subjectId: d.subjectId,
+            type: 'deadline',
+            weight: (d.weight || 0) * 100,
+            dueDate: d.dueDate,
+            status: 'pending',
+            classIds: d.classId ? [d.classId] : [],
+        }));
+    const allItems = [...tasks, ...deadlineItems];
+    const pending = allItems
         .filter(t => t.status === 'pending')
         .sort((a, b) => calculatePriority(b) - calculatePriority(a));
 
