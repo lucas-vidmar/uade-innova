@@ -4029,6 +4029,41 @@
     color: #757575;
 }
 
+.mat-status-badge[data-tip] {
+    position: relative;
+    cursor: help;
+}
+
+.mat-status-badge[data-tip]:hover::after {
+    content: attr(data-tip);
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-top: 6px;
+    padding: 6px 10px;
+    background: #333;
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 500;
+    border-radius: 6px;
+    white-space: nowrap;
+    z-index: 10;
+    pointer-events: none;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+.mat-status-badge[data-tip]:hover::before {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-bottom-color: #333;
+    z-index: 10;
+}
+
 .mat-error-message {
     margin-top: 4px;
     font-size: 0.72rem;
