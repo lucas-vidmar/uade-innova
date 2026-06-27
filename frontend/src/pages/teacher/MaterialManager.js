@@ -162,7 +162,16 @@ export async function renderMaterialManager(container) {
                                                     </div>
                                                 </td>
                                                 <td class="mat-col-status">
-                                                    <span class="mat-status-badge mat-status-${escapeHtml(mat.status || 'pending')}">${escapeHtml(mat.status === 'ready' ? 'Listo' : mat.status === 'processing' ? 'Procesando' : mat.status === 'error' ? 'Error' : 'Pendiente')}</span>
+                                                    ${(() => {
+                                                        const s = mat.status;
+                                                        const err = (mat.errorMessage || '').toLowerCase();
+                                                        if (s === 'ready') return `<span class="mat-status-badge mat-status-ready">Listo</span>`;
+                                                        if (s === 'processing') return `<span class="mat-status-badge mat-status-processing">Procesando</span><div class="mat-error-hint">Procesando en segundo plano...</div>`;
+                                                        if (s === 'error' && err.includes('429')) return `<span class="mat-status-badge mat-status-error">En cola</span><div class="mat-error-hint">Límite de API excedido. Se procesará automáticamente.</div>`;
+                                                        if (s === 'error' && (err.includes('demasiado grande') || err.includes('too large'))) return `<span class="mat-status-badge mat-status-error">Archivo muy grande</span><div class="mat-error-hint">El archivo supera el límite de 500.000 tokens. Dividilo en partes.</div>`;
+                                                        if (s === 'error') return `<span class="mat-status-badge mat-status-error">Error</span>${mat.errorMessage ? `<div class="mat-error-message">${escapeHtml(mat.errorMessage)}</div>` : ''}`;
+                                                        return `<span class="mat-status-badge mat-status-pending">Pendiente</span>`;
+                                                    })()}
                                                 </td>
                                                 <td class="mat-col-reviewed">
                                                     <button class="mat-reviewed-toggle ${mat.reviewed ? 'mat-reviewed-yes' : 'mat-reviewed-no'}" data-idx="${i}" title="${mat.reviewed ? 'Marcado como revisado' : 'Click para marcar como revisado'}">
@@ -174,6 +183,15 @@ export async function renderMaterialManager(container) {
                                                         <button class="btn btn-icon btn-ghost mat-btn-view-text" data-idx="${i}" title="Ver / editar texto extraído">
                                                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
                                                         </button>
+                                                        ${(() => {
+                                                            const err = (mat.errorMessage || '').toLowerCase();
+                                                            const canRetry = mat.status === 'error' && !err.includes('429') && !err.includes('demasiado grande') && !err.includes('too large');
+                                                            return canRetry ? `
+                                                        <button class="btn btn-sm btn-outline mat-btn-reprocess" data-idx="${i}" title="Reintentar procesamiento">
+                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                                                            Reintentar
+                                                        </button>` : '';
+                                                        })()}
                                                         <button class="btn btn-icon btn-ghost mat-btn-delete" data-idx="${i}" title="Eliminar material">
                                                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
                                                         </button>
@@ -489,6 +507,37 @@ export async function renderMaterialManager(container) {
                             saveBtn.textContent = 'Guardar y Re-indexar';
                         }
                     });
+                });
+            });
+
+            // Reprocess material
+            container.querySelectorAll('.mat-btn-reprocess').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const idx = parseInt(btn.dataset.idx);
+                    const mat = materials[idx];
+                    if (!mat) return;
+
+                    const shouldRetry = await showConfirmDialog({
+                        title: 'Reintentar procesamiento',
+                        message: `¿Reintentar procesar "${mat.filename}"? Se eliminarán los vectores previos y se volverá a ejecutar el pipeline.`,
+                        confirmText: 'Reintentar',
+                        cancelText: 'Cancelar',
+                    });
+
+                    if (!shouldRetry) return;
+
+                    try {
+                        btn.disabled = true;
+                        btn.textContent = 'Reintentando...';
+                        await api.reprocessMaterial(mat.materialId || mat.id, subjectId);
+                        mat.status = 'pending';
+                        mat.errorMessage = '';
+                        toast('success', 'Reprocesando', 'El material se ha re-encolado. Revisá el estado en unos segundos.');
+                    } catch (e) {
+                        toast('error', 'Error', e.message || 'No se pudo reprocesar el material.');
+                    } finally {
+                        render();
+                    }
                 });
             });
 

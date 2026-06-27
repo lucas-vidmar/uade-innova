@@ -809,6 +809,7 @@ app.http('get-classes', {
                     reviewed: mat.reviewed === true,
                     chunkCount: mat.chunkCount,
                     priority: mat.priority,
+                    errorMessage: mat.errorMessage,
                 };
 
                 context.log(`[get-classes] Processing material ${matSafe.id} ("${matSafe.filename}") - status: ${matSafe.status}, linked classes: ${targetClasses.join(', ')}`);
