@@ -166,10 +166,10 @@ export async function renderMaterialManager(container) {
                                                         const s = mat.status;
                                                         const err = (mat.errorMessage || '').toLowerCase();
                                                         if (s === 'ready') return `<span class="mat-status-badge mat-status-ready">Listo</span>`;
-                                                        if (s === 'processing') return `<span class="mat-status-badge mat-status-processing">Procesando</span><div class="mat-error-hint">Procesando en segundo plano...</div>`;
-                                                        if (s === 'error' && err.includes('429')) return `<span class="mat-status-badge mat-status-error">En cola</span><div class="mat-error-hint">Límite de API excedido. Se procesará automáticamente.</div>`;
-                                                        if (s === 'error' && (err.includes('demasiado grande') || err.includes('too large'))) return `<span class="mat-status-badge mat-status-error">Archivo muy grande</span><div class="mat-error-hint">El archivo supera el límite de 500.000 tokens. Dividilo en partes.</div>`;
-                                                        if (s === 'error') return `<span class="mat-status-badge mat-status-error">Error</span>${mat.errorMessage ? `<div class="mat-error-message">${escapeHtml(mat.errorMessage)}</div>` : ''}`;
+                                                        if (s === 'processing') return `<span class="mat-status-badge mat-status-processing" title="El archivo se está procesando en segundo plano">Procesando</span>`;
+                                                        if (s === 'error' && err.includes('429')) return `<span class="mat-status-badge mat-status-error" title="El archivo está en cola para procesarse automáticamente">En cola</span>`;
+                                                        if (s === 'error' && (err.includes('demasiado grande') || err.includes('too large'))) return `<span class="mat-status-badge mat-status-error" title="El archivo es demasiado grande. Dividilo en partes más chicas.">Archivo muy grande</span>`;
+                                                        if (s === 'error') return `<span class="mat-status-badge mat-status-error" title="${escapeHtml(mat.errorMessage || 'Error al procesar el archivo')}">Error</span>`;
                                                         return `<span class="mat-status-badge mat-status-pending">Pendiente</span>`;
                                                     })()}
                                                 </td>
