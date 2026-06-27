@@ -174,9 +174,10 @@ export async function renderMaterialManager(container) {
                                                     })()}
                                                 </td>
                                                 <td class="mat-col-reviewed">
+                                                    ${mat.status === 'ready' ? `
                                                     <button class="mat-reviewed-toggle ${mat.reviewed ? 'mat-reviewed-yes' : 'mat-reviewed-no'}" data-idx="${i}" title="${mat.reviewed ? 'Marcado como revisado' : 'Click para marcar como revisado'}">
                                                         ${mat.reviewed ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>` : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>`}
-                                                    </button>
+                                                    </button>` : `<span class="text-text-muted" style="font-size:0.7rem;">—</span>`}
                                                 </td>
                                                 <td class="mat-col-actions" style="text-align:center">
                                                     <div class="mat-actions-row">
