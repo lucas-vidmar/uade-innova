@@ -1546,8 +1546,8 @@ app.http('reprocess-material', {
                 return { status: 404, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Material no encontrado' }) };
             }
 
-            if (material.status !== 'error') {
-                return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Solo se pueden reprocesar materiales con estado "error"' }) };
+            if (material.status !== 'error' && material.status !== 'pending') {
+                return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Solo se pueden reprocesar materiales con estado "error" o "pending"' }) };
             }
 
             // 1. Eliminar vectores existentes en Pinecone
@@ -1565,41 +1565,51 @@ app.http('reprocess-material', {
                 context.error(`[Reprocess] Error eliminando blob procesado para ${materialId}:`, bErr);
             }
 
-            // 3. Re-subir blob para re-triggerear pipeline
+            // 3. Ejecutar pipeline directamente
             const containerName = process.env.AZURE_STORAGE_CONTAINER_MATERIALS || 'class-materials';
             const blobUrlExt = material.blobUrl ? path.extname(new URL(material.blobUrl).pathname) : '';
             const origExt = blobUrlExt || path.extname(material.filename || 'file');
             const origBlobName = `${subjectId}/${materialId}${origExt}`;
 
+            let fileBuffer;
             try {
-                const fileBuffer = await downloadFile(containerName, origBlobName);
-                const extMap = { '.txt': 'text/plain', '.vtt': 'text/vtt', '.pdf': 'application/pdf', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation' };
-                const contentType = extMap[origExt] || 'application/octet-stream';
-                await uploadFile(containerName, origBlobName, fileBuffer, contentType, {
-                    materialId,
-                    subjectId,
-                    materialType: material.type || '',
-                    classIds: JSON.stringify(material.classIds || []),
-                    filename: material.filename || 'file',
-                });
-                context.log(`[Reprocess] Blob re-subido para ${materialId} (${fileBuffer.length} bytes)`);
-            } catch (reUpErr) {
-                context.error(`[Reprocess] Error re-subiendo blob para ${materialId}:`, reUpErr);
-                return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'No se pudo re-subir el archivo al storage.' }) };
+                fileBuffer = await downloadFile(containerName, origBlobName);
+                context.log(`[Reprocess] Blob descargado para ${materialId} (${fileBuffer.length} bytes)`);
+            } catch (dlErr) {
+                context.error(`[Reprocess] Error descargando blob ${origBlobName}:`, dlErr);
+                return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'No se pudo leer el archivo original del storage.' }) };
             }
 
-            // 4. Resetear estado
-            const updated = await upsertMaterialState({
-                ...material,
-                status: 'pending',
-                errorMessage: '',
-            }, 'Merge');
+            const extMap = { '.txt': 'text/plain', '.vtt': 'text/vtt', '.pdf': 'application/pdf', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation' };
+            const fileContentType = extMap[origExt] || 'application/octet-stream';
+            const origName = material.filename || 'file';
+            const reprocessFilename = origName.includes('.') ? origName : origName + origExt;
 
-            return {
-                status: 200,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ success: true, material: updated }),
-            };
+            context.log(`[Reprocess] Ejecutando pipeline para ${materialId}...`);
+            try {
+                await runPipeline({
+                    fileBuffer,
+                    fileContentType,
+                    fileName: reprocessFilename,
+                    classIds: material.classIds,
+                    subjectId,
+                    materialType: material.type,
+                    materialId,
+                    userId: 'reprocess',
+                    blobUrl: material.blobUrl,
+                    correlationId: request.headers.get('x-correlation-id') || context.correlationId,
+                    traceContext: context.traceContext,
+                }, context);
+
+                return {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ success: true, materialId, status: 'processing' }),
+                };
+            } catch (pipelineErr) {
+                context.error(`[Reprocess] Pipeline error para ${materialId}:`, pipelineErr);
+                return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: pipelineErr.message }) };
+            }
         } catch (err) {
             context.error(err);
             return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: `No se pudo reprocesar el material: ${err.message}` }) };

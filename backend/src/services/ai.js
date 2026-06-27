@@ -101,7 +101,7 @@ function getChatClient() {
 export async function generateEmbeddingsBatch(texts, options = {}) {
     const client = getEmbeddingClient();
 
-    const executeWithRetry = async (fn, retries = 5, delay = 5000) => {
+    const executeWithRetry = async (fn, retries = 8, delay = 5000) => {
         try {
             return await fn();
     } catch (err) {
@@ -118,10 +118,10 @@ export async function generateEmbeddingsBatch(texts, options = {}) {
                 const retryAfter = err.headers?.get?.('retry-after-ms') || err.headers?.get?.('Retry-After');
                 const retryDelay = retryAfter ? Math.max(Number(retryAfter), delay) : delay;
                 const jitter = Math.random() * 2000;
-                const waitMs = Math.min(retryDelay + jitter, 30000);
+                const waitMs = Math.min(retryDelay + jitter, 60000);
                 console.warn(`[AI] Rate limit (embeddings). Retrying in ${Math.round(waitMs)}ms... (${retries} retries left)`);
                 await new Promise(resolve => setTimeout(resolve, waitMs));
-                return executeWithRetry(fn, retries - 1, Math.min(delay * 2, 30000));
+                return executeWithRetry(fn, retries - 1, Math.min(delay * 1.5, 60000));
             }
             throw err;
         }

@@ -18,7 +18,7 @@ const CONTAINER_SUMMARIES = 'class-summaries';
 
 // Tests can override this function for deterministic token counting
 export let _estimateTokenCount = (text) => Math.ceil(text.length / 4);
-const BATCH_SIZE = 20;
+const BATCH_SIZE = 100;
 
 /**
  * Ejecuta el pipeline completo de procesamiento de un archivo con telemetría.
@@ -98,7 +98,10 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
         for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
             const currentBatch = chunks.slice(i, i + BATCH_SIZE);
             context.log(`[Pipeline] Vectorizando batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(chunks.length / BATCH_SIZE)} (${currentBatch.length} chunks)...`);
-            
+
+            // Pausa entre batches para evitar rate limiting de Azure OpenAI S0
+            if (i > 0) await new Promise(r => setTimeout(r, 5000));
+
             const { embeddings, usage } = await generateEmbeddingsBatch(currentBatch, { headers: openAiHeaders });
             totalTokens += (usage?.total_tokens || 0);
 
