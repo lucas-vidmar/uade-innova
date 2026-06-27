@@ -97,6 +97,10 @@ export async function renderMaterialManager(container) {
                                     <p class="subject-directory-meta">${materials.length} material(es) cargado(s)</p>
                                 </div>
                                 <div class="subject-directory-tools">
+                                    <button class="btn btn-ghost subject-directory-refresh" id="mat-refresh-btn" title="Actualizar estado">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                                        Refrescar
+                                    </button>
                                     <a href="#/teacher/upload" class="btn btn-primary subject-directory-new">
                                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5-5 5 5"/><path d="M12 5v12"/></svg>
                                         Cargar Más
@@ -528,19 +532,84 @@ export async function renderMaterialManager(container) {
                     if (!shouldRetry) return;
 
                     try {
-                        btn.disabled = true;
-                        btn.textContent = 'Reintentando...';
-                        await api.reprocessMaterial(mat.materialId || mat.id, subjectId);
                         mat.status = 'pending';
                         mat.errorMessage = '';
-                        toast('success', 'Reprocesando', 'El material se ha re-encolado. Revisá el estado en unos segundos.');
+                        render();
+                        toast('info', 'Reprocesando', 'El material se ha encolado para procesar.');
+                        await api.reprocessMaterial(mat.materialId || mat.id, subjectId);
                     } catch (e) {
                         toast('error', 'Error', e.message || 'No se pudo reprocesar el material.');
                     } finally {
+                        classes = await api.getClasses(subjectId);
+                        materials = [];
+                        const materialMap = new Map();
+                        for (const cls of classes) {
+                            if (!Array.isArray(cls.materials)) continue;
+                            for (const matItem of cls.materials) {
+                                const id = matItem.id || matItem.materialId;
+                                if (!id) continue;
+                                if (materialMap.has(id)) {
+                                    const existing = materialMap.get(id);
+                                    const classIds = new Set([...(existing.classIds || []), ...(matItem.classIds || []), cls.id]);
+                                    existing.classIds = [...classIds];
+                                } else {
+                                    materialMap.set(id, {
+                                        ...matItem,
+                                        materialId: id,
+                                        classIds: [...new Set([...(matItem.classIds || []), cls.id])],
+                                        reviewed: matItem.reviewed || false,
+                                    });
+                                }
+                            }
+                        }
+                        materials = [...materialMap.values()];
+                        materials.sort((a, b) => new Date(b.uploadedAt || 0) - new Date(a.uploadedAt || 0));
                         render();
                     }
                 });
             });
+
+            // Refresh button
+            const refreshBtn = container.querySelector('#mat-refresh-btn');
+            if (refreshBtn) {
+                refreshBtn.addEventListener('click', async () => {
+                    refreshBtn.disabled = true;
+                    refreshBtn.textContent = 'Actualizando...';
+                    try {
+                        classes = await api.getClasses(subjectId);
+                        materials = [];
+                        const materialMap = new Map();
+                        for (const cls of classes) {
+                            if (!Array.isArray(cls.materials)) continue;
+                            for (const mat of cls.materials) {
+                                const id = mat.id || mat.materialId;
+                                if (!id) continue;
+                                if (materialMap.has(id)) {
+                                    const existing = materialMap.get(id);
+                                    const classIds = new Set([...(existing.classIds || []), ...(mat.classIds || []), cls.id]);
+                                    existing.classIds = [...classIds];
+                                } else {
+                                    materialMap.set(id, {
+                                        ...mat,
+                                        materialId: id,
+                                        classIds: [...new Set([...(mat.classIds || []), cls.id])],
+                                        reviewed: mat.reviewed || false,
+                                    });
+                                }
+                            }
+                        }
+                        materials = [...materialMap.values()];
+                        materials.sort((a, b) => new Date(b.uploadedAt || 0) - new Date(a.uploadedAt || 0));
+                        render();
+                        toast('success', 'Actualizado', 'Estados actualizados correctamente.');
+                    } catch (e) {
+                        toast('error', 'Error', 'No se pudieron actualizar los estados.');
+                    } finally {
+                        refreshBtn.disabled = false;
+                        refreshBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refrescar';
+                    }
+                });
+            }
 
             // Delete material
             container.querySelectorAll('.mat-btn-delete').forEach(btn => {
