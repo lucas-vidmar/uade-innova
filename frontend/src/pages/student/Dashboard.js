@@ -215,7 +215,7 @@ export async function renderStudentDashboard(container) {
     const visibleCount = Math.min((historyPage + 1) * HISTORY_PAGE_SIZE, sessionSummariesCache.length);
     const visibleItems = sessionSummariesCache.slice(0, visibleCount);
     if (visibleItems.length === 0) {
-      return '<li class="flex flex-col items-center py-8 px-6 text-center"><div class="w-16 h-16 bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('chat', 24) + '</div><p class="text-xs font-medium text-text-primary mb-1">Sin actividad reciente</p><p class="text-[10px] text-text-muted">Tus consultas en el chat aparecerán acá</p></li>';
+      return '<li class="flex flex-col items-center py-8 px-6 text-center"><div class="w-20 h-20 bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('chat', 16) + '</div><p class="text-xs font-medium text-text-primary mb-1">Sin actividad reciente</p><p class="text-[10px] text-text-muted">Tus consultas en el chat aparecerán acá</p></li>';
     }
     return visibleItems.map(c => `
       <li class="sidebar-list-item cursor-pointer hover:bg-surface-2 transition-colors group" data-chat-session-id="${escapeHtml(c.sessionId)}">
@@ -398,7 +398,7 @@ export async function renderStudentDashboard(container) {
                 <span class="font-bold text-error">Próximo</span>
               </div>
             </li>
-          `).join('') : '<li class="flex flex-col items-center py-8 px-6 text-center"><div class="w-16 h-16 bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('tasks', 24) + '</div><p class="text-xs font-medium text-text-primary mb-1">Todo al día</p><p class="text-[10px] text-text-muted">No tenés tareas pendientes</p></li>'}
+          `).join('') : '<li class="flex flex-col items-center py-8 px-6 text-center"><div class="w-20 h-20 bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('tasks', 16) + '</div><p class="text-xs font-medium text-text-primary mb-1">Todo al día</p><p class="text-[10px] text-text-muted">No tenés tareas pendientes</p></li>'}
         </ul>
       </div>
     `;
@@ -449,7 +449,7 @@ export async function renderStudentDashboard(container) {
               <p class="text-[10px] text-text-muted mt-1 leading-tight">${c.topics ? c.topics.join(', ') : 'Sin temas'}</p>
             </li>
           `).join('')}
-          ${classes?.length === 0 ? '<li class="flex flex-col items-center py-8 px-6 text-center"><div class="w-16 h-16 bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('calendar', 24) + '</div><p class="text-xs font-medium text-text-primary mb-1">No hay clases programadas</p><p class="text-[10px] text-text-muted">Las clases aparecerán acá cuando el docente las publique</p></li>' : ''}
+          ${classes?.length === 0 ? '<li class="flex flex-col items-center py-8 px-6 text-center"><div class="w-20 h-20 bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('calendar', 16) + '</div><p class="text-xs font-medium text-text-primary mb-1">No hay clases programadas</p><p class="text-[10px] text-text-muted">Las clases aparecerán acá cuando el docente las publique</p></li>' : ''}
         </ul>
       </div>
     `;
