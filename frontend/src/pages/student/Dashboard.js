@@ -87,6 +87,25 @@ function parseHashQuery() {
   padding: 4px !important;
   margin: 0 0 0 2px !important;
 }
+.title-scroll {
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+  mask-image: linear-gradient(to right, black 150px, transparent 170px);
+  -webkit-mask-image: linear-gradient(to right, black 150px, transparent 170px);
+}
+.title-scroll > span {
+  display: inline-block;
+  white-space: nowrap;
+}
+.sidebar-list-item:hover .title-scroll > span {
+  animation: title-scroll 4s ease-in-out infinite;
+}
+@keyframes title-scroll {
+  0%, 15% { transform: translateX(0); }
+  50%, 65% { transform: translateX(calc(min(0px, 150px - 100%))); }
+  85%, 100% { transform: translateX(0); }
+}
 `;
   document.head.appendChild(s);
 })();
@@ -415,8 +434,10 @@ export async function renderStudentDashboard(container) {
             return `
             <li class="sidebar-list-item">
               <div style="display:flex;align-items:center;gap:4px;width:100%;min-width:0;">
-                <span style="color:var(--color-text-muted);flex-shrink:0;white-space:nowrap;font-size:10px;font-weight:600;">${dateStr}</span>
-                <span class="chat-history-title" style="flex:1;min-width:0;">${escapeHtml(t.title)}</span>
+                <span style="color:var(--color-text-muted);flex-shrink:0;white-space:nowrap;font-size:10px;font-weight:600;margin-right:12px;">${dateStr}</span>
+                <div class="title-scroll">
+                  <span>${escapeHtml(t.title)}</span>
+                </div>
                 <span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 6px;flex-shrink:0;color:#3b82f6;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.25);margin-left:auto;">${pillLabel}</span>
               </div>
             </li>`;
@@ -464,8 +485,10 @@ export async function renderStudentDashboard(container) {
       return `
       <li class="sidebar-list-item cursor-pointer hover:bg-surface-2 transition-colors group" onclick="location.hash='#/student/class/${c.id}'">
         <div style="display:flex;align-items:center;gap:4px;width:100%;min-width:0;">
-          ${dateStr ? `<span style="color:var(--color-text-muted);flex-shrink:0;white-space:nowrap;font-size:10px;font-weight:600;">${dateStr}</span>` : ''}
-          <span class="chat-history-title" style="flex:1;min-width:0;">${escapeHtml(c.title).split('—')[1] || c.title}</span>
+          ${dateStr ? `<span style="color:var(--color-text-muted);flex-shrink:0;white-space:nowrap;font-size:10px;font-weight:600;margin-right:12px;">${dateStr}</span>` : ''}
+          <div class="title-scroll">
+            <span>${escapeHtml(c.title).split('—')[1] || c.title}</span>
+          </div>
           ${c.summaryReady ? '<span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 6px;flex-shrink:0;color:#3b82f6;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.25);margin-left:auto;">Visto</span>' : ''}
         </div>
       </li>`;
