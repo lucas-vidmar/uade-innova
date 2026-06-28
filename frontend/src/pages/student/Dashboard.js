@@ -485,7 +485,7 @@ export async function renderStudentDashboard(container) {
       <li class="sidebar-list-item cursor-pointer hover:bg-surface-2 transition-colors group" onclick="location.hash='#/student/class/${c.id}'">
         <div style="display:flex;align-items:center;gap:4px;width:100%;overflow:hidden;">
           ${dateStr ? `<span style="color:var(--color-text-muted);flex-shrink:0;white-space:nowrap;font-size:10px;font-weight:600;">${dateStr}</span>` : ''}
-          <span class="chat-history-title" style="flex-shrink:1;min-width:0;overflow:hidden;"><span class="title-scroll" style="display:inline-block;white-space:nowrap;">${escapeHtml(c.title).split('—')[1] || c.title}</span></span>
+          <span class="chat-history-title" style="${c.summaryReady ? 'flex-shrink:1' : 'flex:1'};min-width:0;overflow:hidden;"><span class="title-scroll" style="display:inline-block;white-space:nowrap;">${escapeHtml(c.title).split('—')[1] || c.title}</span></span>
           ${c.summaryReady ? '<span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 6px;flex-shrink:0;color:#3b82f6;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.25);margin-left:auto;">Visto</span>' : ''}
         </div>
       </li>`;
