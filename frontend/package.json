@@ -19,6 +19,7 @@
     },
     "dependencies": {
         "katex": "^0.17.0",
-        "marked": "^18.0.5"
+        "marked": "^18.0.5",
+        "turndown": "^7.2.4"
     }
 }

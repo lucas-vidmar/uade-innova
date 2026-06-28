@@ -134,9 +134,11 @@ function buildRelatedClassesHtml(t, classes) {
 
 function buildPendingRow(t, classes) {
   const daysUntil = Math.ceil((new Date(t.dueDate) - new Date()) / 86400000);
-  const urgency = daysUntil <= 3 ? { label: '🔴 Alta', badge: 'badge-error' }
-      : daysUntil <= 7 ? { label: '🟡 Media', badge: 'badge-warning' }
-          : { label: '🔵 Normal', badge: 'badge-info' };
+  const isOverdue = new Date(t.dueDate) < new Date();
+  const urgency = isOverdue ? { label: '🔴 Vencida', badge: 'badge-error' }
+      : daysUntil <= 3 ? { label: '🔴 Alta', badge: 'badge-error' }
+          : daysUntil <= 7 ? { label: '🟡 Media', badge: 'badge-warning' }
+              : { label: '🔵 Normal', badge: 'badge-info' };
   const weightLabel = t.weight >= 20 ? 'badge-primary' : 'badge-neutral';
   const relatedHtml = buildRelatedClassesHtml(t, classes);
   return '<tr><td><span class="badge ' + urgency.badge + '">' + urgency.label + '</span></td><td><strong>' + t.title + '</strong>' + relatedHtml + '</td><td><span class="badge ' + weightLabel + '">' + t.weight + '%</span></td><td>' + new Date(t.dueDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }) + '</td><td><span class="badge badge-warning">⏳ Pendiente</span></td></tr>';

@@ -430,13 +430,14 @@ export async function renderStudentDashboard(container) {
           ${pendingItems.length > 0 ? pendingItems.map(t => {
             const dateStr = new Date(t.dueDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'numeric' });
             const daysUntil = Math.ceil((new Date(t.dueDate) - new Date()) / 86400000);
-            const pillLabel = daysUntil <= 3 ? 'Próximo' : daysUntil <= 7 ? 'Esta semana' : 'Pendiente';
+            const isOverdue = new Date(t.dueDate) < new Date();
+            const pillLabel = isOverdue ? 'Vencido' : daysUntil <= 3 ? 'Próximo' : daysUntil <= 7 ? 'Esta semana' : 'Pendiente';
             return `
             <li class="sidebar-list-item">
               <div style="display:flex;align-items:center;gap:4px;width:100%;overflow:hidden;">
                 <span style="color:var(--color-text-muted);flex-shrink:0;white-space:nowrap;font-size:10px;font-weight:600;">${dateStr}</span>
                 <span class="chat-history-title" style="flex-shrink:1;min-width:0;overflow:hidden;"><span class="title-scroll" style="display:inline-block;white-space:nowrap;">${escapeHtml(t.title)}</span></span>
-                <span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 6px;flex-shrink:0;color:#3b82f6;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.25);margin-left:auto;">${pillLabel}</span>
+                <span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 6px;flex-shrink:0;color:${pillLabel === 'Vencido' ? '#ef4444' : '#3b82f6'};background:${pillLabel === 'Vencido' ? 'rgba(239,68,68,0.1)' : 'rgba(59,130,246,0.1)'};border:1px solid ${pillLabel === 'Vencido' ? 'rgba(239,68,68,0.25)' : 'rgba(59,130,246,0.25)'};margin-left:auto;">${pillLabel}</span>
               </div>
             </li>`;
           }).join('') : '<li class="flex flex-col items-center py-8 px-6 text-center"><div style="width:120px;height:120px;" class="bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('tasks', 20) + '</div><p class="text-xs font-medium text-text-primary mb-1">Todo al día</p><p class="text-[10px] text-text-muted">No tenés tareas pendientes</p></li>'}
