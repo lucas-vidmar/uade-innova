@@ -3,9 +3,9 @@ import { toast } from './Toast.js';
 
 export function createSummaryReviewModal(classId, className, onSaved) {
     const modal = document.createElement('div');
-    modal.className = 'modal-backdrop';
+    modal.className = 'modal-overlay';
     modal.innerHTML = `
-        <div class="modal-card" style="max-width:800px; width:95%; position:relative; margin: 40px auto;">
+        <div class="modal-content" style="max-width:800px; width:95%; position:relative; margin: 40px auto;">
             <div class="modal-header">
                 <h3 class="modal-title">Revisar Resumen IA: ${className}</h3>
                 <button class="btn-close">&times;</button>
