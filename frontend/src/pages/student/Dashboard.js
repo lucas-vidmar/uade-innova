@@ -87,21 +87,12 @@ function parseHashQuery() {
   padding: 4px !important;
   margin: 0 0 0 2px !important;
 }
-.title-scroll {
-  overflow: hidden;
-  flex: 1;
-  min-width: 0;
-}
 .sidebar-list-item:hover .title-scroll {
-  overflow: visible;
+  animation: titleReveal 6s ease-in-out infinite alternate;
 }
-.sidebar-list-item:hover .title-scroll .chat-history-title {
-  position: relative;
-  background: var(--color-surface-1);
-  padding: 0 4px;
-  border-radius: 4px;
-  z-index: 10;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+@keyframes titleReveal {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(calc(-100% + 160px)); }
 }
 `;
   document.head.appendChild(s);
@@ -254,7 +245,7 @@ export async function renderStudentDashboard(container) {
       return `
       <li class="sidebar-list-item cursor-pointer hover:bg-surface-2 transition-colors group" data-chat-session-id="${escapeHtml(c.sessionId)}">
         <div class="chat-history-row">
-          <span class="chat-history-title">${escapeHtml(c.title)}</span>
+          <span class="chat-history-title" style="overflow:hidden;"><span class="title-scroll" style="display:inline-block;white-space:nowrap;">${escapeHtml(c.title)}</span></span>
           <div class="chat-history-actions">
             <span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 6px;flex-shrink:0;transition:margin 0.15s;color:#3b82f6;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.25);">${dateStr}</span>
             <button class="chat-history-delete-btn" style="width:0;overflow:hidden;opacity:0;padding:0;margin:0;border:none;transition:width 0.15s,opacity 0.15s,padding 0.15s,margin 0.15s;" data-delete-session-id="${escapeHtml(c.sessionId)}" title="Eliminar conversación">
@@ -430,12 +421,9 @@ export async function renderStudentDashboard(container) {
             const pillLabel = daysUntil <= 3 ? 'Próximo' : daysUntil <= 7 ? 'Esta semana' : 'Pendiente';
             return `
             <li class="sidebar-list-item">
-              <div style="display:flex;align-items:center;gap:0;width:100%;min-width:0;">
-                <span style="display:inline-block;width:52px;flex-shrink:0;text-align:right;color:var(--color-text-muted);font-size:10px;font-weight:600;">${dateStr}</span>
-                <span style="width:8px;flex-shrink:0;"></span>
-                <div class="title-scroll" style="flex:1;min-width:0;">
-                  <span class="chat-history-title" style="max-width:none;display:inline-block;white-space:nowrap;">${escapeHtml(t.title)}</span>
-                </div>
+              <div style="display:flex;align-items:center;gap:16px;width:100%;overflow:hidden;">
+                <span style="color:var(--color-text-muted);flex-shrink:0;white-space:nowrap;font-size:10px;font-weight:600;">${dateStr}</span>
+                <span class="chat-history-title" style="flex:1;overflow:hidden;"><span class="title-scroll" style="display:inline-block;white-space:nowrap;">${escapeHtml(t.title)}</span></span>
                 <span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 6px;flex-shrink:0;color:#3b82f6;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.25);margin-left:auto;">${pillLabel}</span>
               </div>
             </li>`;
@@ -482,12 +470,9 @@ export async function renderStudentDashboard(container) {
       const dateStr = c.date ? new Date(c.date).toLocaleDateString('es-AR', { day: 'numeric', month: 'numeric' }) : null;
       return `
       <li class="sidebar-list-item cursor-pointer hover:bg-surface-2 transition-colors group" onclick="location.hash='#/student/class/${c.id}'">
-        <div style="display:flex;align-items:center;gap:0;width:100%;min-width:0;">
-          ${dateStr ? `<span style="display:inline-block;width:52px;flex-shrink:0;text-align:right;color:var(--color-text-muted);font-size:10px;font-weight:600;">${dateStr}</span>` : `<span style="display:inline-block;width:52px;flex-shrink:0;"></span>`}
-          <span style="width:8px;flex-shrink:0;"></span>
-          <div class="title-scroll" style="flex:1;min-width:0;">
-            <span class="chat-history-title" style="max-width:none;display:inline-block;white-space:nowrap;">${escapeHtml(c.title).split('—')[1] || c.title}</span>
-          </div>
+        <div style="display:flex;align-items:center;gap:16px;width:100%;overflow:hidden;">
+          ${dateStr ? `<span style="color:var(--color-text-muted);flex-shrink:0;white-space:nowrap;font-size:10px;font-weight:600;">${dateStr}</span>` : ''}
+          <span class="chat-history-title" style="flex:1;overflow:hidden;"><span class="title-scroll" style="display:inline-block;white-space:nowrap;">${escapeHtml(c.title).split('—')[1] || c.title}</span></span>
           ${c.summaryReady ? '<span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 6px;flex-shrink:0;color:#3b82f6;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.25);margin-left:auto;">Visto</span>' : ''}
         </div>
       </li>`;
