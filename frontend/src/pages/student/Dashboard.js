@@ -87,7 +87,7 @@ function parseHashQuery() {
   padding: 4px !important;
   margin: 0 0 0 2px !important;
 }
-.sidebar-list-item:hover .title-scroll {
+.sidebar-list-item:hover .title-scroll-active {
   animation: titleReveal 6s ease-in-out infinite alternate;
 }
 @keyframes titleReveal {
@@ -97,6 +97,15 @@ function parseHashQuery() {
 `;
   document.head.appendChild(s);
 })();
+
+function applyTitleScroll() {
+  document.querySelectorAll('.chat-history-title').forEach(el => {
+    const inner = el.querySelector('.title-scroll');
+    if (inner && inner.scrollWidth > el.clientWidth) {
+      inner.classList.add('title-scroll-active');
+    }
+  });
+}
 
 export async function renderStudentDashboard(container) {
   const user = auth.getUser();
@@ -301,6 +310,7 @@ export async function renderStudentDashboard(container) {
               if (list) {
                 list.innerHTML = renderHistoryList();
                 bindHistoryClicks();
+                requestAnimationFrame(applyTitleScroll);
               }
             }
           } catch (err) {
@@ -321,11 +331,13 @@ export async function renderStudentDashboard(container) {
         if (list) {
           list.innerHTML = renderHistoryList();
           bindHistoryClicks();
+          requestAnimationFrame(applyTitleScroll);
         }
       };
     }
 
     bindHistoryClicks();
+    requestAnimationFrame(applyTitleScroll);
   };
 
   const loadChatSession = async (sessionId) => {
@@ -431,6 +443,7 @@ export async function renderStudentDashboard(container) {
         </ul>
       </div>
     `;
+    requestAnimationFrame(applyTitleScroll);
 
     // Update Metrics
     const metricsContainer = document.getElementById('dashboard-metrics-container');
@@ -511,9 +524,11 @@ export async function renderStudentDashboard(container) {
         const list = classesScroll.querySelector('.sidebar-list');
         if (list) {
           list.innerHTML = renderClassesList();
+          requestAnimationFrame(applyTitleScroll);
         }
       };
     }
+    requestAnimationFrame(applyTitleScroll);
   };
 
   fetchClassesTask.then(updateClassesSidebar);
