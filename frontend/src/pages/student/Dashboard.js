@@ -415,7 +415,7 @@ export async function renderStudentDashboard(container) {
             return `
             <li class="sidebar-list-item">
               <div class="chat-history-row">
-                <span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 6px;flex-shrink:0;color:var(--color-text-muted);background:var(--color-surface-2);border:1px solid var(--color-border);">${dateStr}</span>
+                <span style="color:var(--color-text-muted);flex-shrink:0;white-space:nowrap;font-size:10px;font-weight:600;">${dateStr}</span>
                 <span class="chat-history-title">${escapeHtml(t.title)}</span>
                 <span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 6px;flex-shrink:0;color:#3b82f6;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.25);">${pillLabel}</span>
               </div>
@@ -464,7 +464,7 @@ export async function renderStudentDashboard(container) {
       return `
       <li class="sidebar-list-item cursor-pointer hover:bg-surface-2 transition-colors group" onclick="location.hash='#/student/class/${c.id}'">
         <div class="chat-history-row">
-          ${dateStr ? `<span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 6px;flex-shrink:0;color:var(--color-text-muted);background:var(--color-surface-2);border:1px solid var(--color-border);">${dateStr}</span>` : ''}
+          ${dateStr ? `<span style="color:var(--color-text-muted);flex-shrink:0;white-space:nowrap;font-size:10px;font-weight:600;">${dateStr}</span>` : ''}
           <span class="chat-history-title">${escapeHtml(c.title).split('—')[1] || c.title}</span>
           ${c.summaryReady ? '<span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 6px;flex-shrink:0;color:#3b82f6;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.25);">Visto</span>' : ''}
         </div>
