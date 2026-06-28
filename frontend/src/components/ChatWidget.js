@@ -181,7 +181,6 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
                 ${deduplicateSources(msg.sources).map((s, i) => `
                   <button class="source-circle-item" data-source-index="${i + 1}" title="${s.slideTitle ? `${escapeHtml(s.slideTitle)} (${escapeHtml(s.sourceFilename)})` : escapeHtml(s.sourceFilename)}">
                     <span class="source-circle-num">${i + 1}</span>
-                    ${materialIcon(s.materialType)}
                     <span class="truncate">${escapeHtml(s.slideTitle || s.sourceFilename)}</span>
                     ${s.materialPriority ? `<span class="source-priority source-priority-${escapeHtml(s.materialPriority)}">${s.materialPriority === 'primary' ? 'Primario' : 'Secundario'}</span>` : ''}
                   </button>
@@ -365,7 +364,6 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
                 ${deduplicateSources(assistantMsg.sources).map((s, i) => `
                   <button class="source-circle-item" data-source-index="${i + 1}" title="${s.slideTitle ? `${escapeHtml(s.slideTitle)} (${escapeHtml(s.sourceFilename)})` : escapeHtml(s.sourceFilename)}">
                     <span class="source-circle-num">${i + 1}</span>
-                    ${materialIcon(s.materialType)}
                     <span class="truncate">${escapeHtml(s.slideTitle || s.sourceFilename)}</span>
                     ${s.materialPriority ? `<span class="source-priority source-priority-${escapeHtml(s.materialPriority)}">${s.materialPriority === 'primary' ? 'Primario' : 'Secundario'}</span>` : ''}
                   </button>

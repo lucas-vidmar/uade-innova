@@ -408,15 +408,19 @@ export async function renderStudentDashboard(container) {
       </div>
       <div class="p-0">
         <ul class="sidebar-list">
-          ${pendingItems.length > 0 ? pendingItems.map(t => `
+          ${pendingItems.length > 0 ? pendingItems.map(t => {
+            const dateStr = new Date(t.dueDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'numeric' });
+            const daysUntil = Math.ceil((new Date(t.dueDate) - new Date()) / 86400000);
+            const pillLabel = daysUntil <= 3 ? 'Próximo' : daysUntil <= 7 ? 'Esta semana' : 'Pendiente';
+            return `
             <li class="sidebar-list-item">
-              <p class="sidebar-item-title">${escapeHtml(t.title)}</p>
-              <div class="sidebar-item-meta">
-                 <span>${new Date(t.dueDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}</span>
-                <span class="font-bold text-error">Próximo</span>
+              <div class="chat-history-row">
+                <span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 6px;flex-shrink:0;color:var(--color-text-muted);background:var(--color-surface-2);border:1px solid var(--color-border);">${dateStr}</span>
+                <span class="chat-history-title">${escapeHtml(t.title)}</span>
+                <span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 6px;flex-shrink:0;color:#3b82f6;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.25);">${pillLabel}</span>
               </div>
-            </li>
-          `).join('') : '<li class="flex flex-col items-center py-8 px-6 text-center"><div style="width:120px;height:120px;" class="bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('tasks', 20) + '</div><p class="text-xs font-medium text-text-primary mb-1">Todo al día</p><p class="text-[10px] text-text-muted">No tenés tareas pendientes</p></li>'}
+            </li>`;
+          }).join('') : '<li class="flex flex-col items-center py-8 px-6 text-center"><div style="width:120px;height:120px;" class="bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('tasks', 20) + '</div><p class="text-xs font-medium text-text-primary mb-1">Todo al día</p><p class="text-[10px] text-text-muted">No tenés tareas pendientes</p></li>'}
         </ul>
       </div>
     `;
@@ -455,14 +459,17 @@ export async function renderStudentDashboard(container) {
     if (visibleItems.length === 0) {
       return '<li class="flex flex-col items-center py-8 px-6 text-center"><div style="width:120px;height:120px;" class="bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('calendar', 20) + '</div><p class="text-xs font-medium text-text-primary mb-1">No hay clases programadas</p><p class="text-[10px] text-text-muted">Las clases aparecerán acá cuando el docente las publique</p></li>';
     }
-    return visibleItems.map(c => `
+    return visibleItems.map(c => {
+      const dateStr = c.date ? new Date(c.date).toLocaleDateString('es-AR', { day: 'numeric', month: 'numeric' }) : null;
+      return `
       <li class="sidebar-list-item cursor-pointer hover:bg-surface-2 transition-colors group" onclick="location.hash='#/student/class/${c.id}'">
         <div class="chat-history-row">
+          ${dateStr ? `<span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 6px;flex-shrink:0;color:var(--color-text-muted);background:var(--color-surface-2);border:1px solid var(--color-border);">${dateStr}</span>` : ''}
           <span class="chat-history-title">${escapeHtml(c.title).split('—')[1] || c.title}</span>
           ${c.summaryReady ? '<span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 6px;flex-shrink:0;color:#3b82f6;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.25);">Visto</span>' : ''}
         </div>
-      </li>
-    `).join('');
+      </li>`;
+    }).join('');
   };
 
   const updateClassesSidebar = (classes) => {
