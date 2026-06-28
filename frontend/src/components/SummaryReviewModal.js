@@ -54,13 +54,9 @@ export function createSummaryReviewModal(classId, className, onSaved) {
                     </div>
                 </div>
             </div>
-            <div class="modal-footer row space-between">
-                <button class="btn btn-ghost" id="btn-cancel-summary">Cancelar</button>
-                <div class="row" style="gap:12px">
-                    <button class="btn btn-outline" id="btn-reject-summary" style="color:var(--color-error);border-color:rgba(239,68,68,0.3)">No apto — escribir manualmente</button>
-                    <button class="btn btn-secondary" id="btn-save-draft">Guardar Borrador</button>
-                    <button class="btn btn-primary" id="btn-approve-summary">Aprobar y Publicar</button>
-                </div>
+            <div class="modal-footer" style="justify-content:flex-end">
+                <button class="btn btn-secondary" id="btn-save-draft">Guardar Borrador</button>
+                <button class="btn btn-primary" id="btn-approve-summary">Aprobar y Publicar</button>
             </div>
         </div>
     `;
@@ -197,7 +193,6 @@ export function createSummaryReviewModal(classId, className, onSaved) {
         modal.remove();
     };
     modal.querySelector('.btn-close').onclick = close;
-    modal.querySelector('#btn-cancel-summary').onclick = close;
 
     const save = async (validated) => {
         try {
@@ -219,21 +214,6 @@ export function createSummaryReviewModal(classId, className, onSaved) {
         } finally {
             btnApprove.disabled = false;
             btnSaveDraft.disabled = false;
-        }
-    };
-
-    modal.querySelector('#btn-reject-summary').onclick = async () => {
-        try {
-            await api.saveClassSummary(classId, {
-                summary: getSummaryValue() || '',
-                validated: false,
-                summarySource: 'manual',
-            });
-            toast('success', 'Guardado', 'El resumen se marcó como no apto. Los alumnos verán el contenido manual.');
-            onSaved(false);
-            close();
-        } catch (e) {
-            toast('error', 'Error', 'No se pudo guardar.');
         }
     };
 
