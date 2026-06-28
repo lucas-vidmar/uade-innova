@@ -891,7 +891,25 @@ body.top-nav-mobile-open .top-nav-mobile {
 }
 
 .modal-body {
-  margin-bottom: var(--space-6);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: var(--space-1);
+}
+
+.section-label {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--color-text);
+  letter-spacing: -0.01em;
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--color-primary-soft);
+}
+
+.editor-wrapper {
+  margin-bottom: 24px;
 }
 
 .modal-footer {
@@ -949,12 +967,12 @@ body.top-nav-mobile-open .top-nav-mobile {
 
 .editor-content {
   min-height: 250px;
-  padding: 12px 15px;
+  padding: 14px 16px;
   font-size: 0.875rem;
   line-height: 1.7;
   border: 1px solid var(--color-border);
   border-radius: 0 0 var(--radius-md) var(--radius-md);
-  background: var(--color-surface);
+  background: var(--color-bg);
   color: var(--color-text);
   outline: none;
   overflow-y: auto;
@@ -963,6 +981,15 @@ body.top-nav-mobile-open .top-nav-mobile {
 .editor-content:focus {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 2px var(--color-primary-soft);
+  background: var(--color-surface);
+}
+
+[data-theme="dark"] .editor-content {
+  background: #111318;
+}
+
+[data-theme="dark"] .editor-content:focus {
+  background: var(--color-bg);
 }
 
 .editor-content h2 {

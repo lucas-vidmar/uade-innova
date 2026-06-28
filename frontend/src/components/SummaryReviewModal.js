@@ -18,36 +18,40 @@ export function createSummaryReviewModal(classId, className, onSaved) {
         if (e.target === modal) close();
     });
     modal.innerHTML = `
-        <div class="modal-content" style="max-width:850px; width:95%; max-height:90vh; overflow:hidden;">
+        <div class="modal-content" style="max-width:min(95vw,1400px); width:95%; max-height:90vh; display:flex; flex-direction:column;">
             <div class="modal-header">
                 <h3 class="modal-title">Revisar Resumen IA: ${className}</h3>
                 <button class="btn-close">&times;</button>
             </div>
-            <div class="modal-body" style="max-height: calc(100vh - 200px); overflow-y: auto;">
-                <p style="margin-bottom:1rem; color:var(--color-text-secondary); font-size:0.875rem;">
+            <div class="modal-body">
+                <p style="margin-bottom:1.25rem; color:var(--color-text-secondary); font-size:0.875rem;">
                     Este resumen fue generado automáticamente. Podés editarlo antes de publicarlo para los alumnos.
                 </p>
                 <div class="loading-summary" style="padding:40px; text-align:center;">Cargando activos...</div>
                 <div id="editor-container" style="display:none">
-                    <label style="display:block; margin-bottom:8px; font-weight:600; font-size:0.9rem;">📝 Resumen Detallado</label>
-                    <div class="editor-toolbar">
-                        <button data-cmd="bold" title="Negrita (Ctrl+B)" tabindex="-1"><b>B</b></button>
-                        <button data-cmd="italic" title="Cursiva (Ctrl+I)" tabindex="-1"><i>I</i></button>
-                        <span class="sep"></span>
-                        <button data-cmd="h2" title="Título" tabindex="-1" style="width:auto;padding:0 8px;font-weight:700;font-size:0.9rem">H2</button>
-                        <button data-cmd="h3" title="Subtítulo" tabindex="-1" style="width:auto;padding:0 8px;font-weight:600;font-size:0.85rem">H3</button>
-                        <span class="sep"></span>
-                        <button data-cmd="insertUnorderedList" title="Lista con viñetas" tabindex="-1" style="width:auto;padding:0 8px">&#8226;</button>
-                        <button data-cmd="insertOrderedList" title="Lista numerada" tabindex="-1" style="width:auto;padding:0 8px">1.</button>
-                        <span class="sep"></span>
-                        <button data-cmd="source" title="Ver / editar código fuente" tabindex="-1" style="width:auto;padding:0 8px;font-family:var(--font-mono);font-size:0.8rem">&lt;/&gt;</button>
+                    <div class="editor-wrapper">
+                        <span class="section-label">📝 Resumen Detallado</span>
+                        <div class="editor-toolbar">
+                            <button data-cmd="bold" title="Negrita (Ctrl+B)" tabindex="-1"><b>B</b></button>
+                            <button data-cmd="italic" title="Cursiva (Ctrl+I)" tabindex="-1"><i>I</i></button>
+                            <span class="sep"></span>
+                            <button data-cmd="h2" title="Título" tabindex="-1" style="width:auto;padding:0 8px;font-weight:700;font-size:0.9rem">H2</button>
+                            <button data-cmd="h3" title="Subtítulo" tabindex="-1" style="width:auto;padding:0 8px;font-weight:600;font-size:0.85rem">H3</button>
+                            <span class="sep"></span>
+                            <button data-cmd="insertUnorderedList" title="Lista con viñetas" tabindex="-1" style="width:auto;padding:0 8px">&#8226;</button>
+                            <button data-cmd="insertOrderedList" title="Lista numerada" tabindex="-1" style="width:auto;padding:0 8px">1.</button>
+                            <span class="sep"></span>
+                            <button data-cmd="source" title="Ver / editar código fuente" tabindex="-1" style="width:auto;padding:0 8px;font-family:var(--font-mono);font-size:0.8rem">&lt;/&gt;</button>
+                        </div>
+                        <div id="summary-editor" class="editor-content" contenteditable="true"></div>
+                        <textarea id="summary-source" class="form-input" style="display:none;height:250px;font-family:var(--font-mono);font-size:0.875rem;line-height:1.6;padding:15px;border-radius:0 0 var(--radius-md) var(--radius-md);border-top:none;"></textarea>
                     </div>
-                    <div id="summary-editor" class="editor-content" contenteditable="true"></div>
-                    <textarea id="summary-source" class="form-input" style="display:none;height:250px;font-family:var(--font-mono);font-size:0.875rem;line-height:1.6;padding:15px;border-radius:0 0 var(--radius-md) var(--radius-md);border-top:none;margin-bottom:20px;"></textarea>
 
-                    <label style="display:block; margin-bottom:8px; font-weight:600; font-size:0.9rem;">🗺️ Mapa Conceptual</label>
-                    <textarea id="map-editor" class="form-input" style="height:130px;font-family:var(--font-mono);font-size:0.875rem;line-height:1.6;padding:12px 15px;border-radius:var(--radius-md);margin-bottom:6px;" placeholder="graph TD..."></textarea>
-                    <div class="map-preview" id="map-preview"><span class="preview-placeholder">Vista previa del diagrama</span></div>
+                    <div class="editor-wrapper">
+                        <span class="section-label">🗺️ Mapa Conceptual</span>
+                        <textarea id="map-editor" class="form-input" style="height:130px;font-family:var(--font-mono);font-size:0.875rem;line-height:1.6;padding:12px 15px;border-radius:var(--radius-md);margin-bottom:6px;" placeholder="graph TD..."></textarea>
+                        <div class="map-preview" id="map-preview"><span class="preview-placeholder">Vista previa del diagrama</span></div>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer row space-between">
@@ -148,10 +152,12 @@ export function createSummaryReviewModal(classId, className, onSaved) {
         mapPreview.appendChild(pre);
         try {
             if (typeof mermaid !== 'undefined') {
-                mermaid.run({ nodes: [pre] });
+                mermaid.run({ nodes: [pre] }).catch((e) => {
+                    mapPreview.innerHTML = `<span class="preview-error">No se pudo generar la vista previa del diagrama.</span>`;
+                });
             }
         } catch (e) {
-            mapPreview.innerHTML = `<span class="preview-error">Error al renderizar: ${e.message}</span>`;
+            mapPreview.innerHTML = `<span class="preview-error">No se pudo generar la vista previa del diagrama.</span>`;
         }
     }
 
