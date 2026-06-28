@@ -75,6 +75,22 @@ function parseHashQuery() {
   return new URLSearchParams(query);
 }
 
+(function injectChatStyles() {
+  if (document.getElementById('chat-hover-style')) return;
+  const s = document.createElement('style');
+  s.id = 'chat-hover-style';
+  s.textContent = `
+.sidebar-list-item:hover .chat-history-delete-btn {
+  width: auto !important;
+  overflow: visible !important;
+  opacity: 1 !important;
+  padding: 4px !important;
+  margin: 0 0 0 2px !important;
+}
+`;
+  document.head.appendChild(s);
+})();
+
 export async function renderStudentDashboard(container) {
   const user = auth.getUser();
   const activeSubjectId = auth.getActiveSubjectId();
@@ -217,21 +233,23 @@ export async function renderStudentDashboard(container) {
     if (visibleItems.length === 0) {
       return '<li class="flex flex-col items-center py-8 px-6 text-center"><div style="width:120px;height:120px;" class="bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('chat', 20) + '</div><p class="text-xs font-medium text-text-primary mb-1">Sin actividad reciente</p><p class="text-[10px] text-text-muted">Tus consultas en el chat aparecerán acá</p></li>';
     }
-    return visibleItems.map(c => `
+    return visibleItems.map(c => {
+      const dateStr = new Date(c.lastAt || Date.now()).toLocaleDateString('es-AR', { day: 'numeric', month: 'numeric' });
+      return `
       <li class="sidebar-list-item cursor-pointer hover:bg-surface-2 transition-colors group" data-chat-session-id="${escapeHtml(c.sessionId)}">
         <div class="chat-history-row">
           <span class="chat-history-title">${escapeHtml(c.title)}</span>
           <div class="chat-history-actions">
-            <span class="chat-history-date">${new Date(c.lastAt || Date.now()).toLocaleDateString()}</span>
-            <button class="chat-history-delete-btn" data-delete-session-id="${escapeHtml(c.sessionId)}" title="Eliminar conversación">
+            <span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 6px;flex-shrink:0;transition:margin 0.15s;color:#3b82f6;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.25);">${dateStr}</span>
+            <button class="chat-history-delete-btn" style="width:0;overflow:hidden;opacity:0;padding:0;margin:0;border:none;transition:width 0.15s,opacity 0.15s,padding 0.15s,margin 0.15s;" data-delete-session-id="${escapeHtml(c.sessionId)}" title="Eliminar conversación">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                 <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
               </svg>
             </button>
           </div>
         </div>
-      </li>
-    `).join('');
+      </li>`;
+    }).join('');
   };
 
   const updateHistorySidebar = (history) => {
