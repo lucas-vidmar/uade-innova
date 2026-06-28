@@ -6,6 +6,8 @@ import { auth } from '../services/auth.js';
 import { showPromptDialog } from './Dialog.js';
 import { toast } from './Toast.js';
 import { renderPrivacyModal } from './PrivacyModal.js';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
 
 const FOLLOW_UP_HISTORY_WINDOW_SIZE = 4;
 const CLASS_SELECTION_WARN_THRESHOLD = 5;
@@ -841,7 +843,42 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
   };
 
   const renderMarkdown = (text) => {
-    return text
+    if (!text) return '';
+
+    // Protect code blocks from LaTeX and markdown processing
+    const codeBlocks = [];
+    let processed = text
+      .replace(/```([\s\S]*?)```/g, (m) => {
+        codeBlocks.push(m);
+        return `\x00CODEB${codeBlocks.length - 1}\x00`;
+      })
+      .replace(/`([^`]+)`/g, (m) => {
+        codeBlocks.push(m);
+        return `\x00CODEB${codeBlocks.length - 1}\x00`;
+      });
+
+    // Render display math \[ ... \]
+    processed = processed.replace(/\\\[([\s\S]*?)\\\]/g, (_, tex) => {
+      try {
+        return katex.renderToString(tex, { displayMode: true, throwOnError: false });
+      } catch (_e) {
+        return `<span class="latex-raw">[${tex}]</span>`;
+      }
+    });
+
+    // Render inline math \( ... \)
+    processed = processed.replace(/\\\(([\s\S]*?)\\\)/g, (_, tex) => {
+      try {
+        return katex.renderToString(tex, { displayMode: false, throwOnError: false });
+      } catch (_e) {
+        return `<span class="latex-raw">(${tex})</span>`;
+      }
+    });
+
+    // Restore code blocks
+    processed = processed.replace(/\x00CODEB(\d+)\x00/g, (_, i) => codeBlocks[parseInt(i)]);
+
+    return processed
       .replace(/\[(\d+)\]/g, '<sup class="citation-ref" data-source-index="$1" style="color:var(--color-primary,#0066cc);cursor:pointer;font-weight:700;">[$1]</sup>')
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.+?)\*/g, '<em>$1</em>')

@@ -3106,6 +3106,25 @@
     color: var(--color-text-primary);
 }
 
+/* KaTeX display math */
+.chat-bubble-assistant .katex-display {
+    margin: 0.75em 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.25em 0;
+}
+.chat-bubble-assistant .katex-display > .katex {
+    font-size: 1.15em;
+}
+.chat-bubble-assistant .katex {
+    font-size: 1.05em;
+    line-height: 1.4;
+}
+.latex-raw {
+    color: var(--color-error, #dc2626);
+    font-style: italic;
+}
+
 .chat-avatar-bot {
     color: var(--color-primary-light);
     flex-shrink: 0;
