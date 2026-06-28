@@ -1,11 +1,19 @@
 import { api } from '../services/api.js';
 import { toast } from './Toast.js';
 
+let activeModal = null;
+
 export function createSummaryReviewModal(classId, className, onSaved) {
+    if (activeModal) return;
+
     const modal = document.createElement('div');
+    activeModal = modal;
     modal.className = 'modal-overlay';
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) close();
+    });
     modal.innerHTML = `
-        <div class="modal-content" style="max-width:800px; width:95%; position:relative; margin: 40px auto;">
+        <div class="modal-content" style="max-width:800px; width:95%; max-height:90vh; overflow:hidden;">
             <div class="modal-header">
                 <h3 class="modal-title">Revisar Resumen IA: ${className}</h3>
                 <button class="btn-close">&times;</button>
@@ -70,7 +78,10 @@ export function createSummaryReviewModal(classId, className, onSaved) {
         modal.remove();
     });
 
-    const close = () => modal.remove();
+    const close = () => {
+        modal.remove();
+        activeModal = null;
+    };
     modal.querySelector('.btn-close').onclick = close;
     modal.querySelector('#btn-cancel-summary').onclick = close;
 
