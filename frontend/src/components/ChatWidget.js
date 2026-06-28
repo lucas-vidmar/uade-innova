@@ -842,10 +842,48 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
     return `<span class="ui-icon" aria-hidden="true">${icons[name] || icons.document}</span>`;
   };
 
+  const katexRender = (tex, displayMode) => {
+    try {
+      return katex.renderToString(tex, { displayMode, throwOnError: false });
+    } catch (_e) {
+      return `<span class="latex-raw">${tex}</span>`;
+    }
+  };
+
+  const KNOWN_LATEX_INLINE = [
+    'alpha', 'beta', 'gamma', 'delta', 'epsilon', 'varepsilon', 'zeta', 'eta',
+    'theta', 'vartheta', 'iota', 'kappa', 'lambda', 'mu', 'nu', 'xi',
+    'pi', 'varpi', 'rho', 'varrho', 'sigma', 'varsigma', 'tau', 'upsilon',
+    'phi', 'varphi', 'chi', 'psi', 'omega',
+    'Gamma', 'Delta', 'Theta', 'Lambda', 'Xi', 'Pi', 'Sigma', 'Phi', 'Psi', 'Omega',
+    'partial', 'infty', 'nabla', 'hbar', 'hslash', 'ell', 'imath', 'jmath',
+    'rightarrow', 'leftarrow', 'Rightarrow', 'Leftarrow',
+    'leftrightarrow', 'Leftrightarrow', 'uparrow', 'downarrow',
+    'approx', 'neq', 'ne', 'geq', 'leq', 'gg', 'll', 'equiv', 'sim', 'simeq', 'cong',
+    'times', 'cdot', 'cdots', 'dots', 'ldots', 'forall', 'exists',
+    'emptyset', 'varnothing', 'subset', 'supset', 'subseteq', 'supseteq',
+    'in', 'notin', 'cup', 'cap', 'setminus', 'oplus', 'otimes', 'odot',
+    'sqrt', 'lim', 'log', 'ln', 'sin', 'cos', 'tan', 'cot', 'sec', 'csc',
+    'to', 'mapsto', 'circ', 'bullet', 'neg', 'lnot', 'land', 'lor',
+    'angle', 'triangle', 'aleph', 'Re', 'Im', 'wp',
+    'colon', 'mod', 'pmod', 'bmod',
+  ];
+  const LATEX_INLINE_RE = new RegExp('\\\\(' + KNOWN_LATEX_INLINE.join('|') + ')(?![a-zA-Z])', 'g');
+
+  // Detect if a line is predominantly math (strong LaTeX commands, minimal prose)
+  const isDisplayMathLine = (line) => {
+    const strongLatex = /\\frac\s*\{/.test(line)
+      || /\\[intsumprodlimoiintiiintoint]\s*(?:_\^)?\{/.test(line)
+      || /\\(?:displaystyle|dfrac|tfrac|binom|cfrac|overbrace|underbrace|coprod|bigsqcup)/.test(line);
+    if (!strongLatex) return false;
+    const hasProse = /\b(?:el|la|los|las|un|una|que|es|en|por|para|con|del|como|más|pero|the|and|for|with|from|this|that|are|was|were|been|have|has|had)\b/i.test(line);
+    return !hasProse;
+  };
+
   const renderMarkdown = (text) => {
     if (!text) return '';
 
-    // Protect code blocks from LaTeX and markdown processing
+    // 1. Protect code blocks
     const codeBlocks = [];
     let processed = text
       .replace(/```([\s\S]*?)```/g, (m) => {
@@ -857,27 +895,39 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         return `\x00CODEB${codeBlocks.length - 1}\x00`;
       });
 
-    // Render display math \[ ... \]
-    processed = processed.replace(/\\\[([\s\S]*?)\\\]/g, (_, tex) => {
-      try {
-        return katex.renderToString(tex, { displayMode: true, throwOnError: false });
-      } catch (_e) {
-        return `<span class="latex-raw">[${tex}]</span>`;
+    // 2. $$...$$ display math (common LLM output)
+    processed = processed.replace(/\$\$([\s\S]*?)\$\$/g, (_, tex) => katexRender(tex, true));
+
+    // 3. \[...\] display math
+    processed = processed.replace(/\\\[([\s\S]*?)\\\]/g, (_, tex) => katexRender(tex, true));
+
+    // 4. $...$ inline math — only if content looks like LaTeX
+    processed = processed.replace(/\$(.+?)\$/g, (match, tex) => {
+      if (/\\[a-zA-Z@]+/.test(tex) || /[{}^_]/.test(tex)) {
+        return katexRender(tex, false);
       }
+      return match;
     });
 
-    // Render inline math \( ... \)
-    processed = processed.replace(/\\\(([\s\S]*?)\\\)/g, (_, tex) => {
-      try {
-        return katex.renderToString(tex, { displayMode: false, throwOnError: false });
-      } catch (_e) {
-        return `<span class="latex-raw">(${tex})</span>`;
-      }
-    });
+    // 5. \(...\) inline math
+    processed = processed.replace(/\\\(([\s\S]*?)\\\)/g, (_, tex) => katexRender(tex, false));
 
-    // Restore code blocks
+    // 6. Heuristic: undelimited display math (standalone equation lines)
+    processed = processed.split('\n').map(line => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('<') || trimmed.startsWith('\x00CODEB')) return line;
+      if (isDisplayMathLine(trimmed)) return katexRender(trimmed, true);
+      return line;
+    }).join('\n');
+
+    // 7. Heuristic: undelimited inline math (known LaTeX commands in prose)
+    processed = processed.replace(LATEX_INLINE_RE, '\\\($1\\\)');
+    processed = processed.replace(/\\\(([\s\S]*?)\\\)/g, (_, tex) => katexRender(tex, false));
+
+    // 8. Restore code blocks
     processed = processed.replace(/\x00CODEB(\d+)\x00/g, (_, i) => codeBlocks[parseInt(i)]);
 
+    // 9. Markdown processing
     return processed
       .replace(/\[(\d+)\]/g, '<sup class="citation-ref" data-source-index="$1" style="color:var(--color-primary,#0066cc);cursor:pointer;font-weight:700;">[$1]</sup>')
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
