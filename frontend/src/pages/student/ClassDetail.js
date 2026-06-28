@@ -2,6 +2,7 @@ import { api } from '../../services/api.js';
 import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
 import { marked } from 'marked';
+import { extractMermaidCode } from '@shared/extract-mermaid.js';
 
 function escapeHtml(value = '') {
     return String(value)
@@ -86,6 +87,8 @@ export async function renderClassDetail(container) {
         const rawSummary = summaryData?.summary?.content || summaryData?.summary || '';
         const hasValidSummary = rawSummary && !isPlaceholderSummary(rawSummary);
 
+        const mapCode = extractMermaidCode(mapData?.mapCode);
+
         const sections = cleanSections(timelineData?.sections);
         const markers = cleanMarkers(timelineData?.markers);
         const showAllSections = sections.length <= MAX_VISIBLE_SECTIONS;
@@ -129,11 +132,11 @@ export async function renderClassDetail(container) {
                         <span class="card-title">🗺️ Mapa Conceptual</span>
                     </div>
                     <div class="map-container" id="mermaid-container" style="padding:var(--space-6);overflow:hidden;background:var(--color-bg-alt);border-radius:var(--radius-lg)">
-                        ${mapData?.mapCode ? 
-                            `<pre class="mermaid" style="background:transparent;border:none;padding:0;text-align:center;margin:0">${escapeHtml(mapData.mapCode)}</pre>` : 
+                        ${mapCode ? 
+                            `<pre class="mermaid" style="background:transparent;border:none;padding:0;text-align:center;margin:0">${escapeHtml(mapCode)}</pre>` : 
                             '<div class="empty-state" style="padding:20px;text-align:center"><p>El mapa conceptual se está generando o no hay suficiente contenido aún.</p></div>'}
                     </div>
-                    ${mapData?.mapCode ? `
+                    ${mapCode ? `
                         <div class="card-footer" style="padding:10px;text-align:center;border-top:1px solid var(--color-border)">
                             <button class="btn btn-ghost btn-sm" id="btn-fullscreen-map">Ver código Mermaid</button>
                         </div>
@@ -260,7 +263,7 @@ export async function renderClassDetail(container) {
             </div>
         `;
 
-        if (mapData?.mapCode && typeof mermaid !== 'undefined') {
+        if (mapCode && typeof mermaid !== 'undefined') {
             try {
                 const mermaidEl = container.querySelector('#mermaid-container .mermaid');
                 if (mermaidEl) {

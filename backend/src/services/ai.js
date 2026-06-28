@@ -5,6 +5,7 @@
 import { AzureOpenAI, OpenAI } from 'openai';
 import { DefaultAzureCredential, getBearerTokenProvider } from '@azure/identity';
 import { CategorizedError, ErrorCategory } from './error-categories.js';
+import { extractMermaidCode } from '../../../shared/extract-mermaid.js';
 
 const AOAI_TOKEN_SCOPE = 'https://cognitiveservices.azure.com/.default';
 
@@ -241,7 +242,7 @@ export async function generateClassMap(text, options = {}) {
     ], false, { temperature: 0.4, max_tokens: 1500, headers: options.headers });
 
     return {
-        code: response.content.replace(/```mermaid\n?|```/g, '').trim(),
+        code: extractMermaidCode(response.content),
         usage: response.usage,
         generatedAt: new Date().toISOString(),
     };

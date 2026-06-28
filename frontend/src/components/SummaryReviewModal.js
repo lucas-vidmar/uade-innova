@@ -2,6 +2,7 @@ import { api } from '../services/api.js';
 import { toast } from './Toast.js';
 import { marked } from 'marked';
 import TurndownService from 'turndown';
+import { extractMermaidCode } from '@shared/extract-mermaid.js';
 
 const turndown = new TurndownService({
     headingStyle: 'atx',
@@ -136,7 +137,7 @@ export function createSummaryReviewModal(classId, className, onSaved) {
     }
 
     function renderMap() {
-        const code = mapEditor.value.trim();
+        const code = extractMermaidCode(mapEditor.value);
         mapPreview.innerHTML = '';
         if (!code) {
             mapPreview.innerHTML = '<span class="preview-placeholder">Vista previa del diagrama</span>';

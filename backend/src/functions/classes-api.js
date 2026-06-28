@@ -8,6 +8,7 @@ import { listClassesBySubject, listMaterialsBySubject, replaceClassesForSubject,
 import * as vectorStore from '../services/vector-store.js';
 import { trackPollingEvent } from '../services/telemetry.js';
 import { chatCompletion } from '../services/ai.js';
+import { extractMermaidCode } from '../../../shared/extract-mermaid.js';
 
 function getMonthlyBudget() {
     const rawBudget = process.env.DIRECTOR_BUDGET_MONTHLY_USD;
@@ -1264,7 +1265,7 @@ app.http('generate-class-map', {
                 { role: 'system', content: 'Generas diagramas Mermaid.js precisos.' },
                 { role: 'user', content: prompt }
             ], false, { temperature: 0.4, max_tokens: 1500 });
-            const mapCode = response.content.replace(/```mermaid\n?|```/g, '').trim();
+            const mapCode = extractMermaidCode(response.content);
             const mapData = {
                 classId, generatedAt: new Date().toISOString(), mapCode,
                 generatedBy: userId, subjectId: request.query.get('subjectId') || '',
