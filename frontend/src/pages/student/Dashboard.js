@@ -215,7 +215,7 @@ export async function renderStudentDashboard(container) {
     const visibleCount = Math.min((historyPage + 1) * HISTORY_PAGE_SIZE, sessionSummariesCache.length);
     const visibleItems = sessionSummariesCache.slice(0, visibleCount);
     if (visibleItems.length === 0) {
-      return '<li class="flex flex-col items-center py-8 px-6 text-center"><div class="w-28 h-28 bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('chat', 16) + '</div><p class="text-xs font-medium text-text-primary mb-1">Sin actividad reciente</p><p class="text-[10px] text-text-muted">Tus consultas en el chat aparecerán acá</p></li>';
+      return '<li class="flex flex-col items-center py-8 px-6 text-center"><div style="width:120px;height:120px;" class="bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('chat', 20) + '</div><p class="text-xs font-medium text-text-primary mb-1">Sin actividad reciente</p><p class="text-[10px] text-text-muted">Tus consultas en el chat aparecerán acá</p></li>';
     }
     return visibleItems.map(c => `
       <li class="sidebar-list-item cursor-pointer hover:bg-surface-2 transition-colors group" data-chat-session-id="${escapeHtml(c.sessionId)}">
@@ -398,7 +398,7 @@ export async function renderStudentDashboard(container) {
                 <span class="font-bold text-error">Próximo</span>
               </div>
             </li>
-          `).join('') : '<li class="flex flex-col items-center py-8 px-6 text-center"><div class="w-28 h-28 bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('tasks', 16) + '</div><p class="text-xs font-medium text-text-primary mb-1">Todo al día</p><p class="text-[10px] text-text-muted">No tenés tareas pendientes</p></li>'}
+          `).join('') : '<li class="flex flex-col items-center py-8 px-6 text-center"><div style="width:120px;height:120px;" class="bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('tasks', 20) + '</div><p class="text-xs font-medium text-text-primary mb-1">Todo al día</p><p class="text-[10px] text-text-muted">No tenés tareas pendientes</p></li>'}
         </ul>
       </div>
     `;
@@ -426,10 +426,34 @@ export async function renderStudentDashboard(container) {
     }
   });
 
-  // 4. Update Classes
-  fetchClassesTask.then(classes => {
+  // 4. Lazy-loaded scrollable Classes
+  const CLASSES_PAGE_SIZE = 8;
+  let classesPage = 0;
+  let classesCache = [];
+
+  const renderClassesList = () => {
+    const visibleCount = Math.min((classesPage + 1) * CLASSES_PAGE_SIZE, classesCache.length);
+    const visibleItems = classesCache.slice(0, visibleCount);
+    if (visibleItems.length === 0) {
+      return '<li class="flex flex-col items-center py-8 px-6 text-center"><div style="width:120px;height:120px;" class="bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('calendar', 20) + '</div><p class="text-xs font-medium text-text-primary mb-1">No hay clases programadas</p><p class="text-[10px] text-text-muted">Las clases aparecerán acá cuando el docente las publique</p></li>';
+    }
+    return visibleItems.map(c => `
+      <li class="sidebar-list-item cursor-pointer hover:bg-surface-2 transition-colors group" onclick="location.hash='#/student/class/${c.id}'">
+        <div class="chat-history-row">
+          <span class="chat-history-title">${escapeHtml(c.title).split('—')[1] || c.title}</span>
+          ${c.summaryReady ? '<span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 6px;flex-shrink:0;color:#3b82f6;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.25);">Visto</span>' : ''}
+        </div>
+      </li>
+    `).join('');
+  };
+
+  const updateClassesSidebar = (classes) => {
     const sectionClasses = document.getElementById('section-classes');
     if (!sectionClasses) return;
+    classesCache = (classes || [])
+      .filter(c => c.date || c.title)
+      .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+    classesPage = 0;
 
     sectionClasses.innerHTML = `
       <div class="sidebar-section-header">
@@ -438,22 +462,29 @@ export async function renderStudentDashboard(container) {
           <span>Clases de la materia</span>
         </div>
       </div>
-      <div class="p-0">
+      <div class="chat-history-scroll" id="classes-scroll">
         <ul class="sidebar-list">
-          ${(classes || []).slice(0, 3).map(c => `
-            <li class="sidebar-list-item cursor-pointer hover:bg-surface-2 transition-colors" onclick="location.hash='#/student/class/${c.id}'">
-              <div class="flex justify-between items-start">
-                <p class="sidebar-item-title">${escapeHtml(c.title).split('—')[1] || c.title}</p>
-                ${c.summaryReady ? '<span class="status-badge success">Visto</span>' : ''}
-              </div>
-              <p class="text-[10px] text-text-muted mt-1 leading-tight">${c.topics ? c.topics.join(', ') : 'Sin temas'}</p>
-            </li>
-          `).join('')}
-          ${classes?.length === 0 ? '<li class="flex flex-col items-center py-8 px-6 text-center"><div class="w-28 h-28 bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('calendar', 16) + '</div><p class="text-xs font-medium text-text-primary mb-1">No hay clases programadas</p><p class="text-[10px] text-text-muted">Las clases aparecerán acá cuando el docente las publique</p></li>' : ''}
+          ${renderClassesList()}
         </ul>
       </div>
     `;
-  });
+
+    const classesScroll = document.getElementById('classes-scroll');
+    if (classesScroll) {
+      classesScroll.onscroll = () => {
+        const nearBottom = classesScroll.scrollTop + classesScroll.clientHeight >= classesScroll.scrollHeight - 20;
+        if (!nearBottom) return;
+        if ((classesPage + 1) * CLASSES_PAGE_SIZE >= classesCache.length) return;
+        classesPage += 1;
+        const list = classesScroll.querySelector('.sidebar-list');
+        if (list) {
+          list.innerHTML = renderClassesList();
+        }
+      };
+    }
+  };
+
+  fetchClassesTask.then(updateClassesSidebar);
 
   // 5. Update Chat Widget
   Promise.all([fetchClassesTask, fetchHistoryTask]).then(([classes, history]) => {
