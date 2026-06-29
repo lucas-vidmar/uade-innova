@@ -308,7 +308,7 @@ export async function renderClassManager(container) {
             container.querySelectorAll('.btn-review-summary').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     const idx = parseInt(e.currentTarget.getAttribute('data-idx'));
-                    createSummaryReviewModal(classes[idx].id, classes[idx].title, async (isValidated) => {
+                    createSummaryReviewModal(classes[idx].id, classes[idx].title, subjectId, async (isValidated) => {
                         // Si se valida, actualizamos el state local y el backend
                         if (isValidated) {
                             classes[idx].summaryReady = true;

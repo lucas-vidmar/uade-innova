@@ -139,3 +139,17 @@ export async function generateClassMap(classId, subjectId) {
     }
     return res.json();
 }
+
+export async function generateClassAssets(classId, subjectId) {
+    const res = await apiFetch(`${BASE_URL}/class-summary/${classId}/regenerate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subjectId }),
+    });
+    if (!res.ok) {
+        let message = `Error ${res.status}: No se pudieron regenerar los activos`;
+        try { const err = await res.json(); if (err?.error) message = err.error; } catch {}
+        throw new Error(message);
+    }
+    return res.json();
+}

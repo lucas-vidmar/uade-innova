@@ -10,7 +10,7 @@ const turndown = new TurndownService({
     codeBlockStyle: 'fenced',
 });
 
-export function createSummaryReviewModal(classId, className, onSaved) {
+export function createSummaryReviewModal(classId, className, subjectId, onSaved) {
     if (document.querySelector('.modal-overlay')) return;
 
     const modal = document.createElement('div');
@@ -55,9 +55,12 @@ export function createSummaryReviewModal(classId, className, onSaved) {
                     </div>
                 </div>
             </div>
-            <div class="modal-footer" style="justify-content:flex-end">
-                <button class="btn btn-secondary" id="btn-save-draft">Guardar Borrador</button>
-                <button class="btn btn-primary" id="btn-approve-summary">Aprobar y Publicar</button>
+            <div class="modal-footer" style="justify-content:space-between">
+                <button class="btn btn-ghost" id="btn-regenerate" style="color:var(--color-primary)">🔄 Regenerar con IA</button>
+                <div class="row" style="gap:12px">
+                    <button class="btn btn-secondary" id="btn-save-draft">Guardar Borrador</button>
+                    <button class="btn btn-primary" id="btn-approve-summary">Aprobar y Publicar</button>
+                </div>
             </div>
         </div>
     `;
@@ -137,10 +140,12 @@ export function createSummaryReviewModal(classId, className, onSaved) {
     }
 
     let mapZoom = 1;
+    let mapControls = null;
 
     function renderMap() {
         const code = extractMermaidCode(mapEditor.value);
         mapPreview.innerHTML = '';
+        if (mapControls) { mapControls.remove(); mapControls = null; }
         if (!code) {
             mapPreview.innerHTML = '<span class="preview-placeholder">Vista previa del diagrama</span>';
             return;
@@ -154,39 +159,41 @@ export function createSummaryReviewModal(classId, className, onSaved) {
         zoomContainer.appendChild(pre);
         mapPreview.appendChild(zoomContainer);
 
-        const controls = document.createElement('div');
-        controls.className = 'map-controls';
-        controls.innerHTML = `
-            <button id="map-zoom-out" title="Alejar">−</button>
-            <button id="map-zoom-in" title="Acercar">+</button>
-            <button id="map-zoom-reset" title="Restablecer">⟲</button>
-            <span class="map-zoom-label" id="map-zoom-label">100%</span>
+        mapControls = document.createElement('div');
+        mapControls.className = 'map-controls';
+        mapControls.innerHTML = `
+            <button data-zoom="out" title="Alejar">−</button>
+            <button data-zoom="in" title="Acercar">+</button>
+            <button data-zoom="reset" title="Restablecer">⟲</button>
+            <span class="map-zoom-label">100%</span>
         `;
-        mapPreview.after(controls);
+        mapPreview.after(mapControls);
 
-        controls.querySelector('#map-zoom-in').onclick = () => setZoom(mapZoom + 0.25);
-        controls.querySelector('#map-zoom-out').onclick = () => setZoom(Math.max(0.25, mapZoom - 0.25));
-        controls.querySelector('#map-zoom-reset').onclick = () => setZoom(1);
+        mapControls.querySelector('[data-zoom="in"]').onclick = () => setZoom(mapZoom + 0.25);
+        mapControls.querySelector('[data-zoom="out"]').onclick = () => setZoom(Math.max(0.25, mapZoom - 0.25));
+        mapControls.querySelector('[data-zoom="reset"]').onclick = () => setZoom(1);
 
         try {
             if (typeof mermaid !== 'undefined') {
                 mermaid.run({ nodes: [pre] }).catch(() => {
-                    mapPreview.innerHTML = '<span class="preview-error">No se pudo generar la vista previa del diagrama.</span>';
-                    controls.remove();
+                    mapPreview.innerHTML = '<span class="preview-placeholder">Error al renderizar el diagrama</span>';
+                    if (mapControls) { mapControls.remove(); mapControls = null; }
                 });
             }
         } catch (e) {
-            mapPreview.innerHTML = '<span class="preview-error">No se pudo generar la vista previa del diagrama.</span>';
-            controls.remove();
+            mapPreview.innerHTML = '<span class="preview-placeholder">Error al renderizar el diagrama</span>';
+            if (mapControls) { mapControls.remove(); mapControls = null; }
         }
     }
 
     function setZoom(level) {
-        mapZoom = Math.max(0.25, Math.min(4, level));
+        mapZoom = Math.max(0.25, Math.min(10, level));
         const zc = document.getElementById('map-zoom-container');
         if (zc) zc.style.transform = `scale(${mapZoom})`;
-        const label = document.getElementById('map-zoom-label');
-        if (label) label.textContent = Math.round(mapZoom * 100) + '%';
+        if (mapControls) {
+            const label = mapControls.querySelector('.map-zoom-label');
+            if (label) label.textContent = Math.round(mapZoom * 100) + '%';
+        }
     }
 
     let renderTimer;
@@ -251,4 +258,27 @@ export function createSummaryReviewModal(classId, className, onSaved) {
 
     btnApprove.onclick = () => save(true);
     btnSaveDraft.onclick = () => save(false);
+
+    const btnRegenerate = modal.querySelector('#btn-regenerate');
+    btnRegenerate.onclick = async () => {
+        btnRegenerate.disabled = true;
+        btnRegenerate.textContent = '🔄 Regenerando...';
+        try {
+            const result = await api.generateClassAssets(classId, subjectId);
+            if (result.summary?.summary) {
+                const md = typeof result.summary.summary === 'object' ? result.summary.summary.content : result.summary.summary;
+                setSummaryValue(md);
+            }
+            if (result.map?.mapCode) {
+                mapEditor.value = result.map.mapCode;
+                renderMap();
+            }
+            toast('success', 'Regenerado', 'Resumen y mapa conceptual regenerados con IA.');
+        } catch (e) {
+            toast('error', 'Error', e.message || 'No se pudieron regenerar los activos.');
+        } finally {
+            btnRegenerate.disabled = false;
+            btnRegenerate.textContent = '🔄 Regenerar con IA';
+        }
+    };
 }

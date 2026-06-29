@@ -4,10 +4,10 @@ import { createStructuredLogger } from '../services/structured-logger.js';
 import { loadJson, saveJson, listBlobs, deleteBlob, uploadFile, downloadFile, getTableClient } from '../services/storage.js';
 import { v4 as uuidv4 } from 'uuid';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
-import { listClassesBySubject, listMaterialsBySubject, replaceClassesForSubject, deleteMaterialStateById, getMaterialState, upsertMaterialState, deleteClassesBySubject, deleteMaterialsBySubject, getEnrollmentsByUser, getEnrollment } from '../services/state-store.js';
+import { listClassesBySubject, listMaterialsBySubject, listMaterialsByClass, replaceClassesForSubject, deleteMaterialStateById, getMaterialState, upsertMaterialState, deleteClassesBySubject, deleteMaterialsBySubject, getEnrollmentsByUser, getEnrollment } from '../services/state-store.js';
 import * as vectorStore from '../services/vector-store.js';
 import { trackPollingEvent } from '../services/telemetry.js';
-import { chatCompletion } from '../services/ai.js';
+import { chatCompletion, generateClassSummary, generateClassMap } from '../services/ai.js';
 import { extractMermaidCode } from '../../../shared/extract-mermaid.js';
 
 function getMonthlyBudget() {
@@ -1274,6 +1274,77 @@ app.http('generate-class-map', {
             return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mapData) };
         } catch (err) {
             return { status: 500, body: JSON.stringify({ error: `Error generando mapa: ${err.message}` }) };
+        }
+    })
+});
+
+// ── POST /api/class-summary/{classId}/generate ─────────────────────
+// Regenera resumen y mapa conceptual desde los materiales de la clase
+app.http('generate-class-assets', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'class-summary/{classId}/regenerate',
+    handler: withCorrelation(async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+        const classId = request.params.classId;
+        const body = await request.json().catch(() => ({}));
+        const subjectId = body.subjectId || request.query.get('subjectId') || '';
+        if (!subjectId) {
+            return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'subjectId es requerido' }) };
+        }
+
+        try {
+            const materials = await listMaterialsByClass(subjectId, classId);
+            const textMaterials = materials.filter(m => m.type === 'transcript' || m.type === 'notes');
+            if (textMaterials.length === 0) {
+                return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'No hay materiales (transcripciones o apuntes) para regenerar los activos.' }) };
+            }
+
+            const texts = [];
+            for (const mat of textMaterials) {
+                const processed = await loadJson('processed', `${mat.materialId}.json`).catch(() => null);
+                if (processed) {
+                    const t = processed.extractedText || processed.text || '';
+                    if (t) texts.push(t);
+                }
+            }
+            if (texts.length === 0) {
+                return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'No se pudo extraer texto de los materiales.' }) };
+            }
+
+            const combinedText = texts.join('\n\n').substring(0, 50000);
+
+            const [summaryResult, mapResult] = await Promise.all([
+                generateClassSummary(combinedText, ''),
+                generateClassMap(combinedText)
+            ]);
+
+            const summaryData = {
+                classId, subjectId,
+                summary: summaryResult.content,
+                generatedAt: summaryResult.generatedAt,
+                generatedFrom: 'regenerate',
+                lastModifiedAt: new Date().toISOString(),
+                lastModifiedBy: 'AI',
+                validated: false,
+            };
+            await saveJson('class-summaries', `${classId}.json`, summaryData);
+
+            const mapData = {
+                classId, subjectId,
+                mapCode: mapResult.code,
+                generatedAt: mapResult.generatedAt,
+                generatedFrom: 'regenerate',
+            };
+            await saveJson('class-maps', `${classId}.json`, mapData);
+
+            return {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ summary: summaryData, map: mapData })
+            };
+        } catch (err) {
+            return { status: 500, body: JSON.stringify({ error: `Error regenerando activos: ${err.message}` }) };
         }
     })
 });

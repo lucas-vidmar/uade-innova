@@ -14,7 +14,8 @@ import {
 import {
     getClasses, saveClasses, saveClass, deleteClass,
     getClassSummary, saveClassSummary, getClassAudioUrl,
-    getClassMap, saveClassMap, getClassTimeline, saveClassTimeline
+    getClassMap, saveClassMap, getClassTimeline, saveClassTimeline,
+    generateClassAssets
 } from './classes.api.js';
 import {
     ragQuery, ragQueryStream, globalSearch,
@@ -75,6 +76,7 @@ export const api = {
     getClasses, saveClasses, saveClass, deleteClass,
     getClassSummary, saveClassSummary, getClassAudioUrl,
     getClassMap, saveClassMap, getClassTimeline, saveClassTimeline,
+    generateClassAssets,
 
     ragQuery, ragQueryStream, globalSearch,
     getChatHistory, clearChatHistory, sendChatFeedback,
