@@ -2,6 +2,7 @@ import { app } from '@azure/functions';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
 import { trackNotificationInteraction } from '../services/telemetry.js';
+import { getTableClient } from '../services/storage.js';
 
 const DIRECTOR_ROLES = ['Director'];
 
@@ -58,6 +59,7 @@ function buildCsv(data) {
   });
 
   lines.push('');
+  lines.push(`cost_source,${data.costSource || 'token-based-fallback'}`);
   lines.push(`generado_en,${new Date().toISOString()}`);
   return lines.join('\n');
 }
@@ -160,34 +162,57 @@ app.http('get-director-kpi-export', {
         return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: "Unsupported format. Use 'csv' or 'pdf'" }) };
       }
 
-      const { computeDirectorMetrics, computeBudgetProjection, computeCostSpikeAlert, POWERBI_DEFAULT_DAYS } = await import('./classes-api.js');
+      const { computeDirectorMetrics, computeBudgetProjection, computeCostSpikeAlert, loadEarlyAlertSummary, POWERBI_DEFAULT_DAYS } = await import('./classes-api.js');
+      const { getAzureCostForBudget, computeBudgetProjection: computeBudgetProjectionV2 } = await import('../services/azure-cost.js');
 
       const metrics = await computeDirectorMetrics(context, POWERBI_DEFAULT_DAYS);
-      const budget = computeBudgetProjection(metrics.daily);
+      const azureCost = await getAzureCostForBudget(context);
+      const useAzureCost = azureCost?.success;
+      const budget = useAzureCost
+          ? computeBudgetProjectionV2(azureCost.daily, {
+              currentMonthSpend: azureCost.currentMonthSpend,
+              costSource: 'azure-cost-api',
+          })
+          : computeBudgetProjection(metrics.daily);
       const uniqueActiveUsers = metrics.totals.uniqueActiveUsers;
-      const currentPeriodCost = metrics.totals.totalCost;
-      const costPerActiveStudent = uniqueActiveUsers > 0 ? Number((currentPeriodCost / uniqueActiveUsers).toFixed(6)) : 0;
+      const effectiveTotalCost = useAzureCost ? azureCost.currentMonthSpend : metrics.totals.totalCost;
+      const costPerActiveStudent = uniqueActiveUsers > 0 ? Number((effectiveTotalCost / uniqueActiveUsers).toFixed(6)) : 0;
+
+      let classesCount = 0;
+      try {
+        const classesClient = getTableClient(process.env.AZURE_TABLE_CLASSES || 'classes');
+        for await (const _ of classesClient.listEntities()) {
+          classesCount++;
+        }
+      } catch (err) {
+        context.log.warn(`[KpiExport] Could not count classes: ${err.message}`);
+      }
+
+      let totalEnrolled = 0;
+      try {
+        const { loadSubjects } = await import('./classes-api.js');
+        const allSubjects = await loadSubjects();
+        totalEnrolled = allSubjects.reduce((sum, s) => sum + (s.enrolledCount || 60), 60);
+      } catch (err) {
+        context.log.warn(`[KpiExport] Could not load subjects: ${err.message}`);
+        totalEnrolled = 60;
+      }
+      const adoptionRate = uniqueActiveUsers > 0 ? Math.min(100, Math.round(uniqueActiveUsers / totalEnrolled * 100)) : 0;
+
+      const earlyAlertSummary = await loadEarlyAlertSummary(context);
 
       const data = {
         dau: metrics.latest.dau,
-        classesProcessed: 14,
+        classesProcessed: classesCount,
         ragInteractions: metrics.latest.ragInteractions,
-        adoptionRate: 68,
+        adoptionRate,
         costPerActiveStudent,
-        earlyAlertSummary: {
-          totalStudentsAtRisk: 3,
-          highRiskCount: 1,
-          mediumRiskCount: 2,
-          lowAttendanceCount: 2,
-          lowGradeCount: 2,
-          attendanceBelow60Count: 1,
-          attendance60To75Count: 2,
-          attendanceAbove75Count: 0,
-        },
+        earlyAlertSummary,
         budget,
         costBySubject: metrics.costBySubject,
         wausBySubject: metrics.wausBySubject,
         materialUploads: metrics.materialUploads,
+        costSource: useAzureCost ? 'azure-cost-api' : 'token-based-fallback',
       };
 
       const userId = parseClientPrincipal(request)?.userId || 'anonymous';

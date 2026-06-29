@@ -9,18 +9,7 @@ import * as vectorStore from '../services/vector-store.js';
 import { trackPollingEvent } from '../services/telemetry.js';
 import { chatCompletion, generateClassSummary, generateClassMap } from '../services/ai.js';
 import { extractMermaidCode } from '../../shared/extract-mermaid.js';
-
-function getMonthlyBudget() {
-    const rawBudget = process.env.DIRECTOR_BUDGET_MONTHLY_USD;
-    if (!rawBudget) {
-        return 10000;
-    }
-    const parsedBudget = Number(rawBudget);
-    if (!Number.isFinite(parsedBudget) || parsedBudget <= 0) {
-        return 10000;
-    }
-    return parsedBudget;
-}
+import { computeBudgetProjection as computeBudgetProjectionV2, getAzureCostForBudget } from '../services/azure-cost.js';
 
 const CONTAINER_CLASSES = process.env.AZURE_STORAGE_CONTAINER_CLASSES || 'classes-config';
 const CONTAINER_PROCESSED = 'processed';
@@ -34,6 +23,7 @@ const DEFAULT_SUBJECTS = [
 import path from 'path';
 
 const SESSION_METRICS_TABLE = 'SessionMetrics';
+const INTERVENTIONS_TABLE = process.env.AZURE_TABLE_INTERVENTIONS || 'Interventions';
 export const POWERBI_DEFAULT_DAYS = 14;
 
 function toIsoDate(value) {
@@ -58,19 +48,51 @@ function createDailyBucket(date) {
     };
 }
 
+function getInputCostPerToken() {
+    const raw = process.env.AI_INPUT_COST_PER_MILLION_TOKENS;
+    const val = raw ? Number(raw) : 0.15;
+    return Number.isFinite(val) && val > 0 ? val / 1000000 : 0.00000015;
+}
+
+function getOutputCostPerToken() {
+    const raw = process.env.AI_OUTPUT_COST_PER_MILLION_TOKENS;
+    const val = raw ? Number(raw) : 0.60;
+    return Number.isFinite(val) && val > 0 ? val / 1000000 : 0.0000006;
+}
+
 function computeInputCost(promptTokens = 0) {
-    return Number(promptTokens || 0) * 0.00000015;
+    return Number(promptTokens || 0) * getInputCostPerToken();
 }
 
 function computeOutputCost(completionTokens = 0) {
-    return Number(completionTokens || 0) * 0.0000006;
+    return Number(completionTokens || 0) * getOutputCostPerToken();
 }
 
-async function loadSessionMetricsRows(context) {
+export function getPricingPerMillion() {
+    return {
+        inputPerMillionTokensUsd: getInputCostPerToken() * 1000000,
+        outputPerMillionTokensUsd: getOutputCostPerToken() * 1000000,
+        inputPerTokenUsd: getInputCostPerToken(),
+        outputPerTokenUsd: getOutputCostPerToken(),
+    };
+}
+
+async function loadSessionMetricsRows(context, windowDays) {
     try {
         const tableClient = getTableClient(SESSION_METRICS_TABLE);
         const rows = [];
-        for await (const entity of tableClient.listEntities()) {
+        const filterParts = [];
+        if (windowDays && Number.isFinite(windowDays) && windowDays > 0) {
+            const startDate = new Date();
+            startDate.setUTCHours(0, 0, 0, 0);
+            startDate.setUTCDate(startDate.getUTCDate() - windowDays + 1);
+            const startIso = startDate.toISOString().slice(0, 10);
+            filterParts.push(`timestamp ge datetime'${startIso}T00:00:00Z'`);
+        }
+        const iter = tableClient.listEntities({
+            queryOptions: filterParts.length ? { filter: filterParts.join(' and ') } : undefined,
+        });
+        for await (const entity of iter) {
             rows.push(entity);
         }
         return rows;
@@ -120,9 +142,39 @@ function createSubjectDailyBucket(date, subjectId) {
     };
 }
 
+export async function loadEarlyAlertSummary(context) {
+    try {
+        const tableClient = getTableClient(INTERVENTIONS_TABLE);
+        await tableClient.createTable();
+        const summary = {
+            totalStudentsAtRisk: 0, highRiskCount: 0, mediumRiskCount: 0,
+            lowAttendanceCount: 0, lowGradeCount: 0,
+            attendanceBelow60Count: 0, attendance60To75Count: 0, attendanceAbove75Count: 0,
+        };
+        for await (const entity of tableClient.listEntities()) {
+            if (entity.state === 'resolved') continue;
+            if (entity.risk === 'high') {
+                summary.totalStudentsAtRisk++;
+                summary.highRiskCount++;
+            } else if (entity.risk === 'medium') {
+                summary.totalStudentsAtRisk++;
+                summary.mediumRiskCount++;
+            }
+        }
+        return summary;
+    } catch (err) {
+        context.log.warn(`[director/stats] Could not load interventions summary: ${err.message}`);
+        return {
+            totalStudentsAtRisk: 0, highRiskCount: 0, mediumRiskCount: 0,
+            lowAttendanceCount: 0, lowGradeCount: 0,
+            attendanceBelow60Count: 0, attendance60To75Count: 0, attendanceAbove75Count: 0,
+        };
+    }
+}
+
 export async function computeDirectorMetrics(context, requestedDays = POWERBI_DEFAULT_DAYS) {
     const days = Math.min(Math.max(Number(requestedDays) || POWERBI_DEFAULT_DAYS, 1), 90);
-    const rows = await loadSessionMetricsRows(context);
+    const rows = await loadSessionMetricsRows(context, days);
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
 
@@ -300,54 +352,7 @@ export async function computeDirectorMetrics(context, requestedDays = POWERBI_DE
 }
 
 export function computeBudgetProjection(daily) {
-    const now = new Date();
-    const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-    const year = todayUtc.getUTCFullYear();
-    const month = todayUtc.getUTCMonth();
-    const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-    const daysElapsed = todayUtc.getUTCDate();
-    const daysRemaining = daysInMonth - daysElapsed;
-
-    let currentMonthSpend = 0;
-    const monthStartIso = `${String(year).padStart(4, '0')}-${String(month + 1).padStart(2, '0')}`;
-    for (const d of daily) {
-        if (d.date.startsWith(monthStartIso)) {
-            currentMonthSpend += d.totalCost;
-        }
-    }
-
-    const avgDailyCost = currentMonthSpend > 0 ? currentMonthSpend / Math.max(daysElapsed, 1) : 0;
-
-    // Weekend-aware projection: count weekdays and weekends separately
-    let weekdayRemaining = 0;
-    let weekendRemaining = 0;
-    for (let i = 1; i <= daysRemaining; i++) {
-        const checkDate = new Date(Date.UTC(year, month, daysElapsed + i));
-        const dayOfWeek = checkDate.getUTCDay();
-        if (dayOfWeek === 0 || dayOfWeek === 6) {
-            weekendRemaining++;
-        } else {
-            weekdayRemaining++;
-        }
-    }
-
-    // Weekend activity is ~60% of weekday (0.6 factor)
-    const WEEKEND_ACTIVITY_FACTOR = 0.6;
-    const projectedRemaining = (weekdayRemaining * avgDailyCost) + (weekendRemaining * avgDailyCost * WEEKEND_ACTIVITY_FACTOR);
-    const projectedEndOfMonth = currentMonthSpend + projectedRemaining;
-
-    const monthlyBudget = getMonthlyBudget();
-    const percentUsed = monthlyBudget > 0 ? (projectedEndOfMonth / monthlyBudget) * 100 : 0;
-    const remainingBudget = Math.max(0, monthlyBudget - currentMonthSpend);
-
-    return {
-        monthlyLimit: monthlyBudget,
-        currentSpend: Number(currentMonthSpend.toFixed(6)),
-        projectedEndOfMonth: Number(projectedEndOfMonth.toFixed(6)),
-        remainingBudget: Number(remainingBudget.toFixed(6)),
-        percentUsed: Number(percentUsed.toFixed(1)),
-        warningLevel: percentUsed >= 95 ? 'critical' : percentUsed >= 80 ? 'warning' : 'none',
-    };
+    return computeBudgetProjectionV2(daily, {});
 }
 
 export function computeCostSpikeAlert(daily) {
@@ -1403,11 +1408,24 @@ app.http('get-director-stats', {
 
         context.log('get-director-stats triggered');
         const metrics = await computeDirectorMetrics(context, POWERBI_DEFAULT_DAYS);
-        const budget = computeBudgetProjection(metrics.daily);
         const spikeAlert = computeCostSpikeAlert(metrics.daily);
+        const earlyAlertSummary = await loadEarlyAlertSummary(context);
         const uniqueActiveUsers = metrics.totals.uniqueActiveUsers;
-        const currentPeriodCost = metrics.totals.totalCost;
-        const costPerActiveStudent = uniqueActiveUsers > 0 ? Number((currentPeriodCost / uniqueActiveUsers).toFixed(6)) : 0;
+
+        // Try Azure Cost Management API first, fall back to token-based calculation
+        const azureCost = await getAzureCostForBudget(context);
+        const useAzureCost = azureCost?.success;
+        const budget = useAzureCost
+            ? computeBudgetProjectionV2(azureCost.daily, {
+                currentMonthSpend: azureCost.currentMonthSpend,
+                costSource: 'azure-cost-api',
+            })
+            : computeBudgetProjectionV2(metrics.daily, {
+                costSource: 'token-based',
+            });
+
+        const effectiveTotalCost = useAzureCost ? azureCost.currentMonthSpend : metrics.totals.totalCost;
+        const costPerActiveStudent = uniqueActiveUsers > 0 ? Number((effectiveTotalCost / uniqueActiveUsers).toFixed(6)) : 0;
 
         const allSubjects = await loadSubjects();
         const subjectAdoption = allSubjects.map(s => ({
@@ -1432,21 +1450,13 @@ app.http('get-director-stats', {
             body: JSON.stringify({
                 dau: metrics.latest.dau,
                 dauDelta: metrics.deltas.dau,
-                classesProcessed,
+                totalClasses: classesProcessed,
                 ragInteractions: metrics.latest.ragInteractions,
                 ragDelta: metrics.deltas.ragInteractions,
                 adoptionRate,
                 subjectAdoption,
-                earlyAlertSummary: {
-                    totalStudentsAtRisk: 0,
-                    highRiskCount: 0,
-                    mediumRiskCount: 0,
-                    lowAttendanceCount: 0,
-                    lowGradeCount: 0,
-                    attendanceBelow60Count: 0,
-                    attendance60To75Count: 0,
-                    attendanceAbove75Count: 0,
-                },
+                earlyAlertSummary,
+                _earlyAlertSource: 'Interventions table (login/engagement risk) — attendance/grade fields require SGA integration',
                 powerBiSource: {
                     mode: 'continuous-export-db',
                     storage: 'Azure Table Storage',
@@ -1460,6 +1470,14 @@ app.http('get-director-stats', {
                 budget,
                 spikeAlert,
                 costPerActiveStudent,
+                costSource: useAzureCost ? {
+                    method: 'azure-cost-api',
+                    services: azureCost.byService,
+                    note: 'Azure Cost Management API — incluye todos los servicios del RG',
+                } : {
+                    method: 'token-based',
+                    note: 'Calculado desde SessionMetrics (solo tokens AI). Para activar costos reales: crear SP con "az ad sp create-for-rbac --name sp-cost-mgmt-dashboard --role \"Cost Management Reader\" --scope /subscriptions/e581a4ea-1c70-477b-9258-98a51fac57cf" y setear AZURE_CLIENT_ID/SECRET/TENANT_ID en App Settings.',
+                },
             }),
         };
     })
@@ -1483,7 +1501,17 @@ app.http('get-director-powerbi-metrics', {
         const days = request.query.get('days') || POWERBI_DEFAULT_DAYS;
         const subjectId = request.query.get('subjectId') || '';
         const metrics = await computeDirectorMetrics(context, days);
-        const budget = computeBudgetProjection(metrics.daily);
+
+        const azureCost = await getAzureCostForBudget(context);
+        const useAzureCost = azureCost?.success;
+        const budget = useAzureCost
+            ? computeBudgetProjectionV2(azureCost.daily, {
+                currentMonthSpend: azureCost.currentMonthSpend,
+                costSource: 'azure-cost-api',
+            })
+            : computeBudgetProjectionV2(metrics.daily, {
+                costSource: 'token-based',
+            });
 
         let costByClass = [];
         if (subjectId) {
@@ -1518,12 +1546,7 @@ app.http('get-director-powerbi-metrics', {
                     table: SESSION_METRICS_TABLE,
                     integrationHint: 'Power BI can connect directly to exported DB metrics via this endpoint or Azure Table connector.',
                 },
-                pricing: {
-                    inputPerMillionTokensUsd: 0.15,
-                    outputPerMillionTokensUsd: 0.60,
-                    inputPerTokenUsd: 0.00000015,
-                    outputPerTokenUsd: 0.0000006,
-                },
+                pricing: getPricingPerMillion(),
                 summary: {
                     totalPromptTokens: metrics.totals.promptTokens,
                     totalCompletionTokens: metrics.totals.completionTokens,

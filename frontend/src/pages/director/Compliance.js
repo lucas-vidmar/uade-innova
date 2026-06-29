@@ -18,6 +18,8 @@ export async function renderDirectorCompliance(container) {
 
   const policy = await api.getRetentionPolicy();
 
+  const isConfigured = policy?.configured !== false;
+
   container.innerHTML = `
     <div style="padding:var(--space-6);max-width:1400px;margin:0 auto">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-6)">
@@ -25,6 +27,7 @@ export async function renderDirectorCompliance(container) {
           <h2 style="margin:0;color:var(--color-text-primary);font-size:1.5rem">Evidencia de Cumplimiento Normativo</h2>
           <p style="margin:var(--space-1) 0 0;color:var(--color-text-secondary);font-size:0.875rem">
             Pol&iacute;ticas de retenci&oacute;n y disposici&oacute;n de datos — &uacute;ltima evaluaci&oacute;n: ${policy?.evaluatedAt ? new Date(policy.evaluatedAt).toLocaleString() : 'N/A'}
+            ${!isConfigured ? '<span class="badge badge-warning" style="margin-left:var(--space-2)">No configurado</span>' : ''}
           </p>
         </div>
         <div style="display:flex;gap:var(--space-3)">
@@ -36,6 +39,12 @@ export async function renderDirectorCompliance(container) {
           </button>
         </div>
       </div>
+
+      ${!isConfigured ? `
+      <div style="margin-bottom:var(--space-4);padding:var(--space-4);background:var(--color-warning-bg, #fffbeb);border-radius:var(--radius-md);border:1px solid var(--color-warning, #d97706);color:var(--color-warning, #d97706)">
+        <strong>Pol&iacute;tica no configurada.</strong> ${policy?.note || 'Aplican valores por defecto de Azure Storage.'}
+      </div>
+      ` : ''}
 
       <div style="background:var(--color-surface-1);border-radius:var(--radius-md);border:1px solid var(--color-border);overflow:hidden">
         <table style="width:100%;border-collapse:collapse">

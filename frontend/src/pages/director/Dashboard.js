@@ -28,7 +28,13 @@ export async function renderDirectorDashboard(container) {
     };
     const earlyAlertSummary = { ...defaultEarlyAlertSummary, ...(data.earlyAlertSummary || {}) };
     const subjectAdoption = data.subjectAdoption || [];
-    const powerBiPricing = powerBiMetrics?.pricing || { inputPerMillionTokensUsd: 0.15, outputPerMillionTokensUsd: 0.60, inputPerTokenUsd: 0.00000015, outputPerTokenUsd: 0.0000006 };
+    const rawPricing = powerBiMetrics?.pricing;
+    const powerBiPricing = {
+        inputPerMillionTokensUsd: Number(rawPricing?.inputPerMillionTokensUsd) || 0.15,
+        outputPerMillionTokensUsd: Number(rawPricing?.outputPerMillionTokensUsd) || 0.60,
+        inputPerTokenUsd: Number(rawPricing?.inputPerTokenUsd) || 0.00000015,
+        outputPerTokenUsd: Number(rawPricing?.outputPerTokenUsd) || 0.0000006,
+    };
     const powerBiSummary = powerBiMetrics?.summary || { totalPromptTokens: 0, totalCompletionTokens: 0, totalTokens: 0, totalInteractions: 0, totalCostUsd: 0, avgCostPerInteractionUsd: 0 };
 
     const safePercentUsed = Number.isFinite(budget.percentUsed) ? budget.percentUsed : 0;
@@ -71,8 +77,8 @@ export async function renderDirectorDashboard(container) {
         <span class="kpi-delta positive">${data.dauDelta || '0%'}</span>
       </div>
       <div class="kpi-card">
-        <div class="kpi-label">Clases procesadas</div>
-        <div class="kpi-value">${data.classesProcessed || 0}</div>
+        <div class="kpi-label">Total clases</div>
+        <div class="kpi-value">${data.totalClasses || 0}</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Interacciones RAG</div>
@@ -128,7 +134,12 @@ export async function renderDirectorDashboard(container) {
           </label>
         `).join('')}
       </div>
-      <small style="display:block;margin-top:var(--space-3);color:var(--color-text-secondary)">Fuente: SessionMetrics · Última actualización: ${powerBiMetrics?.updatedAt || 'n/a'}</small>
+      <small style="display:block;margin-top:var(--space-3);color:var(--color-text-secondary)">
+        Fuente: ${data.costSource?.method === 'azure-cost-api' ? 'Azure Cost Management API' : 'SessionMetrics (token-based)'}
+        · ${data.costSource?.method === 'azure-cost-api' ? `Incluye ${(data.costSource?.services || []).length} servicios` : 'Solo cubre costos de tokens AI'}
+        · Última actualización: ${powerBiMetrics?.updatedAt || 'n/a'}
+      </small>
+      ${data.costSource?.note ? `<small style="display:block;margin-top:var(--space-1);color:var(--color-text-muted);font-size:0.7rem">${data.costSource.note}</small>` : ''}
     </div>
 
     <!-- Material upload frequency by teacher -->
@@ -194,6 +205,7 @@ export async function renderDirectorDashboard(container) {
           </table>
         </div>
         <small style="display:block;margin-top:var(--space-3);color:var(--color-text-secondary)">Snapshot: ${vectorHealth.timestamp || 'n/a'}</small>
+        <small style="display:block;margin-top:var(--space-1);color:var(--color-text-muted);font-size:0.7rem">Nota: métricas de latencia y errores son de esta sesión — se reinician en cada cold start de la Function App</small>
       ` : `
         <div class="empty-state" style="padding:20px">No se pudo obtener el estado del índice vectorial.</div>
       `}
@@ -347,6 +359,8 @@ function buildKpiCsv(data) {
     push('Carga de materiales', t.teacherId, `${t.transcripts||0},${t.presentations||0},${t.notes||0},${t.bibliography||0},${t.total||0}`);
   });
   lines.push('');
+  lines.push(`cost_source,${data.costSource?.method || 'token-based'}`);
+  lines.push(`cost_source_note,${(data.costSource?.note || '').replace(/,/g, ';')}`);
   lines.push(`generado_en,${new Date().toISOString()}`);
   return lines.join('\n');
 }

@@ -242,16 +242,19 @@ export async function renderSubjectManagement(container) {
             const getValue = (subject, key) => {
                 if (key === 'id') return String(subject.id || '').toLowerCase();
                 if (key === 'name') return String(subject.name || '').toLowerCase();
-                if (key === 'professor') {
-                    const ids = getSubjectProfessorIds(subject);
-                    if (ids.length === 0) return '';
-                    const names = ids
-                        .map((id) => teacherUsers.find((teacher) => teacher.id === id)?.name || id)
-                        .join(' ')
-                        .toLowerCase();
-                    return names;
-                }
-                return '';
+                    if (key === 'professor') {
+                        const ids = getSubjectProfessorIds(subject);
+                        if (ids.length === 0) return '';
+                        const names = ids
+                            .map((id) => teacherUsers.find((teacher) => teacher.id === id)?.name || id)
+                            .join(' ')
+                            .toLowerCase();
+                        return names;
+                    }
+                    if (key === 'enrolledCount') {
+                        return String(subject.enrolledCount || 0).padStart(10, '0');
+                    }
+                    return '';
             };
 
             const av = getValue(a, sortConfig.key);
@@ -338,10 +341,13 @@ export async function renderSubjectManagement(container) {
                                         <th>
                                             <button class="subject-sort-btn" data-sort-key="name">Nombre ${sortConfig.key === 'name' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</button>
                                         </th>
-                                        <th style="width:260px;">
+                                        <th style="width:200px;">
                                             <button class="subject-sort-btn" data-sort-key="professor">Profesores ${sortConfig.key === 'professor' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</button>
                                         </th>
-                                        <th style="width:120px;">Acciones</th>
+                                        <th style="width:90px;">
+                                            <button class="subject-sort-btn" data-sort-key="enrolledCount">Alumnos ${sortConfig.key === 'enrolledCount' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</button>
+                                        </th>
+                                        <th style="width:100px;">Acciones</th>
                                     </tr>
                                     <tr class="subject-filter-row">
                                         <th>
@@ -360,6 +366,7 @@ export async function renderSubjectManagement(container) {
                                                 `).join('')}
                                             </select>
                                         </th>
+                                        <th></th>
                                         <th></th>
                                     </tr>
                                 </thead>
@@ -428,6 +435,15 @@ export async function renderSubjectManagement(container) {
                                                     </div>
                                                 </td>
                                                 <td style="text-align:center;">
+                                                    <span
+                                                        class="inline-cell inline-edit-subject subject-directory-enrolled"
+                                                        data-subject-id="${escapeHtml(subject.id)}"
+                                                        data-field="enrolledCount"
+                                                        data-current-value="${subject.enrolledCount || ''}"
+                                                        title="Click para editar cantidad de alumnos"
+                                                    >${subject.enrolledCount || '-'}</span>
+                                                </td>
+                                                <td style="text-align:center;">
                                                     <div class="subject-directory-actions">
                                                         <button class="btn btn-icon btn-ghost btn-delete-subject" data-subject-id="${escapeHtml(subject.id)}" data-subject-name="${escapeHtml(subject.name || subject.id)}" title="Eliminar Materia">
                                                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
@@ -440,7 +456,7 @@ export async function renderSubjectManagement(container) {
 
                                     ${filteredSubjects.length === 0 ? `
                                         <tr>
-                                            <td colspan="4" class="subject-table-empty">No se encontraron materias para esa busqueda.</td>
+                                            <td colspan="5" class="subject-table-empty">No se encontraron materias para esa busqueda.</td>
                                         </tr>
                                     ` : ''}
                                 </tbody>
@@ -655,6 +671,8 @@ export async function renderSubjectManagement(container) {
                             payload.oneLiner = nextValue;
                             payload.comment = nextValue;
                             payload.description = nextValue;
+                        } else if (field === 'enrolledCount') {
+                            payload.enrolledCount = nextValue ? Number(nextValue) : 0;
                         } else {
                             payload[field] = nextValue;
                         }

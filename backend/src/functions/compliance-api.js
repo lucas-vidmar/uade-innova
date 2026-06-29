@@ -36,20 +36,30 @@ async function handleGetPolicy(request, context) {
     return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Director, Admin, or Security role required' }) };
   }
 
-  try {
-    const policy = await getPolicy();
-    if (!policy) {
-      return { status: 503, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Retention policy configuration not found' }) };
+    try {
+        const policy = await getPolicy();
+        if (!policy) {
+            return {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    configured: false,
+                    rules: [],
+                    softDeleteDays: 7,
+                    evaluatedAt: new Date().toISOString(),
+                    note: 'Política de retención no configurada — aplican valores por defecto de Azure Storage.',
+                }),
+            };
+        }
+        return {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ configured: true, rules: policy.rules, softDeleteDays: policy.softDeleteDays, evaluatedAt: new Date().toISOString() }),
+        };
+    } catch (err) {
+        context.log('[Compliance] Error reading policy:', err.message);
+        return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Error al leer política de retención' }) };
     }
-    return {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rules: policy.rules, softDeleteDays: policy.softDeleteDays, evaluatedAt: new Date().toISOString() }),
-    };
-  } catch (err) {
-    context.log('[Compliance] Error reading policy:', err.message);
-    return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Error al leer política de retención' }) };
-  }
 }
 
 async function handleExport(request, context) {
@@ -65,7 +75,13 @@ async function handleExport(request, context) {
 
     const policy = await getPolicy();
     if (!policy) {
-      return { status: 503, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Retention policy configuration not found' }) };
+      return {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          export: { rules: [], softDeletePolicy: { enabled: true, days: 7 }, note: 'Política de retención no configurada.', generatedAt: new Date().toISOString() },
+        }),
+      };
     }
 
     const generatedAt = new Date().toISOString();

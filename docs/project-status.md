@@ -1,5 +1,27 @@
 # Estado del Proyecto - UADE Innova Dashboard Educativo
 
+## 29 de Junio, 2026
+
+* **Feature/Story Name**: Revisión y mejora de métricas del Dashboard Directivo
+* **Status**: Completed
+* **Business Impact**: El dashboard del director ahora muestra métricas reales en lugar de datos hardcodeados. Las alertas tempranas consultan la tabla de intervenciones, la exportación de KPIs usa valores reales, y los costos muestran su fuente de datos con claridad.
+* **Key Milestones**:
+  - Alertas tempranas integradas con interventions-api.js (ya no devuelven ceros hardcodeados)
+  - Exportación de KPIs con valores reales (eliminados hardcodeos de classesProcessed=14 y adoptionRate=68)
+  - Renombrado "Clases procesadas" → "Total clases" para reflejar la métrica real
+  - EnrolledCount configurable desde Gestión de Materias (adoption rate ahora usa el número real de alumnos)
+  - SessionMetrics optimizado con filtro server-side por fecha
+  - Pricing extraído a variables de entorno
+  - Notas aclaratorias sobre fuente de datos en costos y Vector Health
+
+* **Deferred Work / Blockers**:
+  - **Azure Cost Management API**: No se pudo crear el Service Principal ni asignar el rol "Cost Management Reader" por falta de permisos RBAC en la suscripción. El código (`backend/src/services/azure-cost.js`) está listo y hace fallback automático al cálculo token-based. Para activar costos reales, alguien con permisos de Owner debe ejecutar:
+    ```bash
+    az ad sp create-for-rbac --name sp-cost-mgmt-dashboard --role "Cost Management Reader" --scope /subscriptions/e581a4ea-1c70-477b-9258-98a51fac57cf
+    az functionapp config appsettings set --name func-dashboard-ingest-q47bia47kk3na --resource-group RG_UADE_INNOVA_DEV --settings AZURE_CLIENT_ID="<id>" AZURE_CLIENT_SECRET="<secret>" AZURE_TENANT_ID="<tenant>"
+    ```
+    Documentación completa en `AGENTS.md` sección 18.
+
 ## 03 de Mayo, 2026
 
 * **Feature/Story Name**: Arreglo de visibilidad de materiales y pipeline de RAG
