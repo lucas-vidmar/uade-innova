@@ -440,7 +440,7 @@ export async function renderStudentDashboard(container) {
                 <span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 6px;flex-shrink:0;color:${pillLabel === 'Vencido' ? '#ef4444' : '#3b82f6'};background:${pillLabel === 'Vencido' ? 'rgba(239,68,68,0.1)' : 'rgba(59,130,246,0.1)'};border:1px solid ${pillLabel === 'Vencido' ? 'rgba(239,68,68,0.25)' : 'rgba(59,130,246,0.25)'};margin-left:auto;">${pillLabel}</span>
               </div>
             </li>`;
-          }).join('') : '<li class="flex flex-col items-center py-8 px-6 text-center"><div style="width:120px;height:120px;" class="bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('tasks', 20) + '</div><p class="text-xs font-medium text-text-primary mb-1">Todo al día</p><p class="text-[10px] text-text-muted">No tenés tareas pendientes</p></li>'}
+          }).join('') : '<li class="flex flex-col items-center py-8 px-6 text-center"><div style="width:60px;height:60px;" class="bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('tasks', 16) + '</div><p class="text-xs font-medium text-text-primary mb-1">Todo al día</p><p class="text-[10px] text-text-muted">No tenés tareas pendientes</p></li>'}
         </ul>
       </div>
     `;
@@ -478,7 +478,7 @@ export async function renderStudentDashboard(container) {
     const visibleCount = Math.min((classesPage + 1) * CLASSES_PAGE_SIZE, classesCache.length);
     const visibleItems = classesCache.slice(0, visibleCount);
     if (visibleItems.length === 0) {
-      return '<li class="flex flex-col items-center py-8 px-6 text-center"><div style="width:120px;height:120px;" class="bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('calendar', 20) + '</div><p class="text-xs font-medium text-text-primary mb-1">No hay clases programadas</p><p class="text-[10px] text-text-muted">Las clases aparecerán acá cuando el docente las publique</p></li>';
+      return '<li class="flex flex-col items-center py-8 px-6 text-center"><div style="width:60px;height:60px;" class="bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('calendar', 16) + '</div><p class="text-xs font-medium text-text-primary mb-1">No hay clases programadas</p><p class="text-[10px] text-text-muted">Las clases aparecerán acá cuando el docente las publique</p></li>';
     }
     return visibleItems.map(c => {
       const dateStr = c.date ? new Date(c.date).toLocaleDateString('es-AR', { day: 'numeric', month: 'numeric' }) : null;
@@ -486,8 +486,8 @@ export async function renderStudentDashboard(container) {
       <li class="sidebar-list-item cursor-pointer hover:bg-surface-2 transition-colors group" onclick="location.hash='#/student/class/${c.id}'">
         <div style="display:flex;align-items:center;gap:4px;width:100%;overflow:hidden;">
           ${dateStr ? `<span style="color:var(--color-text-muted);flex-shrink:0;white-space:nowrap;font-size:10px;font-weight:600;">${dateStr}</span>` : ''}
-          <span class="chat-history-title" style="${c.summaryReady ? 'flex-shrink:1' : 'flex:1'};min-width:0;overflow:hidden;"><span class="title-scroll" style="display:inline-block;white-space:nowrap;">${escapeHtml(c.title).split('—')[1] || c.title}</span></span>
-          ${c.summaryReady ? '<span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 6px;flex-shrink:0;color:#3b82f6;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.25);margin-left:auto;">Visto</span>' : ''}
+          <span class="chat-history-title" style="flex:1;min-width:0;overflow:hidden;"><span class="title-scroll" style="display:inline-block;white-space:nowrap;">${escapeHtml(c.title).split('—')[1] || c.title}</span></span>
+          ${c.summaryReady ? '<span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 6px;flex-shrink:0;color:#3b82f6;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.25);">Visto</span>' : ''}
         </div>
       </li>`;
     }).join('');

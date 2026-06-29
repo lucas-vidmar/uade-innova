@@ -8,7 +8,7 @@ import { listClassesBySubject, listMaterialsBySubject, listMaterialsByClass, rep
 import * as vectorStore from '../services/vector-store.js';
 import { trackPollingEvent } from '../services/telemetry.js';
 import { chatCompletion, generateClassSummary, generateClassMap } from '../services/ai.js';
-import { extractMermaidCode } from '../../../shared/extract-mermaid.js';
+import { extractMermaidCode } from '../../shared/extract-mermaid.js';
 
 function getMonthlyBudget() {
     const rawBudget = process.env.DIRECTOR_BUDGET_MONTHLY_USD;
