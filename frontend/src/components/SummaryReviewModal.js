@@ -136,6 +136,8 @@ export function createSummaryReviewModal(classId, className, onSaved) {
         }
     }
 
+    let mapZoom = 1;
+
     function renderMap() {
         const code = extractMermaidCode(mapEditor.value);
         mapPreview.innerHTML = '';
@@ -143,19 +145,48 @@ export function createSummaryReviewModal(classId, className, onSaved) {
             mapPreview.innerHTML = '<span class="preview-placeholder">Vista previa del diagrama</span>';
             return;
         }
+        const zoomContainer = document.createElement('div');
+        zoomContainer.className = 'map-zoom-container';
+        zoomContainer.id = 'map-zoom-container';
         const pre = document.createElement('pre');
         pre.className = 'mermaid';
         pre.textContent = code;
-        mapPreview.appendChild(pre);
+        zoomContainer.appendChild(pre);
+        mapPreview.appendChild(zoomContainer);
+
+        const controls = document.createElement('div');
+        controls.className = 'map-controls';
+        controls.innerHTML = `
+            <button id="map-zoom-out" title="Alejar">−</button>
+            <button id="map-zoom-in" title="Acercar">+</button>
+            <button id="map-zoom-reset" title="Restablecer">⟲</button>
+            <span class="map-zoom-label" id="map-zoom-label">100%</span>
+        `;
+        mapPreview.after(controls);
+
+        controls.querySelector('#map-zoom-in').onclick = () => setZoom(mapZoom + 0.25);
+        controls.querySelector('#map-zoom-out').onclick = () => setZoom(Math.max(0.25, mapZoom - 0.25));
+        controls.querySelector('#map-zoom-reset').onclick = () => setZoom(1);
+
         try {
             if (typeof mermaid !== 'undefined') {
-                mermaid.run({ nodes: [pre] }).catch((e) => {
-                    mapPreview.innerHTML = `<span class="preview-error">No se pudo generar la vista previa del diagrama.</span>`;
+                mermaid.run({ nodes: [pre] }).catch(() => {
+                    mapPreview.innerHTML = '<span class="preview-error">No se pudo generar la vista previa del diagrama.</span>';
+                    controls.remove();
                 });
             }
         } catch (e) {
-            mapPreview.innerHTML = `<span class="preview-error">No se pudo generar la vista previa del diagrama.</span>`;
+            mapPreview.innerHTML = '<span class="preview-error">No se pudo generar la vista previa del diagrama.</span>';
+            controls.remove();
         }
+    }
+
+    function setZoom(level) {
+        mapZoom = Math.max(0.25, Math.min(4, level));
+        const zc = document.getElementById('map-zoom-container');
+        if (zc) zc.style.transform = `scale(${mapZoom})`;
+        const label = document.getElementById('map-zoom-label');
+        if (label) label.textContent = Math.round(mapZoom * 100) + '%';
     }
 
     let renderTimer;
