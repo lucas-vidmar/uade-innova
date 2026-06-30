@@ -103,8 +103,12 @@ test('get-notifications should exclude targeted notifications for other users', 
 });
 
 test('get-notifications should clamp invalid limit values', async () => {
+    notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => ([
+        { id: 'n1', type: 'material', createdAt: '2026-06-19T12:00:00Z', subjectId: 'arq-software-2026', recipientUserIds: [] },
+    ]));
+
     const response = await handlers['get-notifications'](
-        { query: new URLSearchParams({ limit: '0' }) },
+        { query: new URLSearchParams({ subjectId: 'arq-software-2026', limit: '0' }) },
         { log: () => {} }
     );
 
@@ -112,6 +116,8 @@ test('get-notifications should clamp invalid limit values', async () => {
     const body = JSON.parse(response.body);
     assert.ok(Array.isArray(body));
     assert.strictEqual(body.length, 1);
+
+    notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => ([]));
 });
 
 test('mark-notification-read should persist read state and emit telemetry', async () => {
@@ -241,7 +247,7 @@ test('stream-notifications sends notification event for new items', async () => 
     notificationStoreMocks.listNotificationsSince.mock.mockImplementation(async () => ([]));
 });
 
-test('get-notifications should deduplicate persisted notifications over MOCK_NOTIFICATIONS with same ID', async () => {
+test('get-notifications should return persisted notification with correct read state', async () => {
     notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => ([
         {
             id: 'notif-grade-001',
@@ -266,11 +272,11 @@ test('get-notifications should deduplicate persisted notifications over MOCK_NOT
     assert.strictEqual(response.status, 200);
     const body = JSON.parse(response.body);
     const gradeNotifs = body.filter((item) => item.id === 'notif-grade-001');
-    assert.strictEqual(gradeNotifs.length, 1, 'should only return one copy of the deduplicated notification');
+    assert.strictEqual(gradeNotifs.length, 1, 'should return the persisted notification once');
     assert.strictEqual(gradeNotifs[0].unread, false, 'persisted copy with readByUserIds should be authoritative');
 });
 
-test('get-notifications should return only MOCK_NOTIFICATIONS when no persisted data exists', async () => {
+test('get-notifications should return empty array when no persisted data exists', async () => {
     notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => ([]));
 
     const response = await handlers['get-notifications'](
@@ -280,11 +286,10 @@ test('get-notifications should return only MOCK_NOTIFICATIONS when no persisted 
 
     assert.strictEqual(response.status, 200);
     const body = JSON.parse(response.body);
-    assert.ok(body.length > 0, 'should return mock notifications when no persisted data exists');
-    assert.ok(body.some((item) => item.id === 'notif-grade-001'), 'should include mock notification grade-001');
+    assert.strictEqual(body.length, 0, 'should return empty array when no notifications exist');
 });
 
-test('get-notifications should handle partial overlap correctly', async () => {
+test('get-notifications should return all persisted notifications', async () => {
     notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => ([
         {
             id: 'notif-grade-001',
@@ -298,6 +303,18 @@ test('get-notifications should handle partial overlap correctly', async () => {
             readByUserIds: ['alu-001'],
             recipientUserIds: [],
             origin: 'manual',
+        },
+        {
+            id: 'notif-summary-001',
+            type: 'summary',
+            title: 'Resumen validado',
+            message: 'Clase 2 lista.',
+            createdAt: '2026-03-18T09:00:00Z',
+            unread: true,
+            targetHash: '#/student/dashboard',
+            subjectId: 'arq-software-2026',
+            recipientUserIds: [],
+            origin: 'post-class-summary-timer',
         },
     ]));
 
@@ -309,11 +326,11 @@ test('get-notifications should handle partial overlap correctly', async () => {
     assert.strictEqual(response.status, 200);
     const body = JSON.parse(response.body);
     const gradeNotifs = body.filter((item) => item.id === 'notif-grade-001');
-    assert.strictEqual(gradeNotifs.length, 1, 'deduped entry');
-    assert.ok(body.some((item) => item.id === 'notif-summary-001'), 'non-overlapping mock should still appear');
+    assert.strictEqual(gradeNotifs.length, 1, 'notification appears once');
+    assert.ok(body.some((item) => item.id === 'notif-summary-001'), 'all persisted notifications should appear');
 });
 
-test('get-notifications after seed-and-mark-read should return deduped notification with correct unread state', async () => {
+test('get-notifications should return unread state correctly and strip readByUserIds from public response', async () => {
     notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => ([
         {
             id: 'notif-grade-001',
@@ -328,6 +345,18 @@ test('get-notifications after seed-and-mark-read should return deduped notificat
             recipientUserIds: [],
             origin: 'manual',
         },
+        {
+            id: 'notif-material-001',
+            type: 'material',
+            title: 'Nuevo material disponible',
+            message: 'Nuevo archivo cargado',
+            createdAt: '2026-03-17T18:45:00Z',
+            unread: false,
+            targetHash: '#/student/class/class-02',
+            subjectId: 'arq-software-2026',
+            recipientUserIds: [],
+            origin: 'test',
+        },
     ]));
 
     const response = await handlers['get-notifications'](
@@ -338,10 +367,9 @@ test('get-notifications after seed-and-mark-read should return deduped notificat
     assert.strictEqual(response.status, 200);
     const body = JSON.parse(response.body);
     const gradeNotifs = body.filter((item) => item.id === 'notif-grade-001');
-    assert.strictEqual(gradeNotifs.length, 1, 'deduped — mock copy suppressed');
-    assert.strictEqual(gradeNotifs[0].unread, false, 'readByUserIds from persisted copy is authoritative');
+    assert.strictEqual(gradeNotifs.length, 1);
+    assert.strictEqual(gradeNotifs[0].unread, false, 'readByUserIds should mark as read');
     assert.strictEqual(gradeNotifs[0].readByUserIds, undefined, 'readByUserIds stripped from public response');
-    assert.ok(body.some((item) => item.id === 'notif-summary-001'), 'non-overlapping mock items still appear');
-    const mockMaterial = body.find((item) => item.id === 'notif-material-001');
-    assert.strictEqual(mockMaterial.unread, false, 'mock notification with unread:false preserves its read state');
+    const materialNotif = body.find((item) => item.id === 'notif-material-001');
+    assert.strictEqual(materialNotif.unread, false, 'notification with unread:false preserves its read state');
 });

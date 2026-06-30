@@ -5,13 +5,6 @@ import { getEnrollment } from '../services/state-store.js';
 import * as notificationStore from '../services/notification-store.js';
 import { trackNotificationInteraction } from '../services/telemetry.js';
 
-const MOCK_NOTIFICATIONS = [
-  { id: 'notif-grade-001', type: 'grade', title: 'Nueva nota publicada', message: 'Quiz Online — Estilos Arquitectónicos: 8.5', createdAt: '2026-03-20T11:10:00Z', unread: true, targetHash: '#/student/tasks', subjectId: 'arq-software-2026' },
-  { id: 'notif-summary-001', type: 'summary', title: 'Resumen validado por docente', message: 'Clase 2 — Estilos Arquitectónicos ya tiene resumen validado.', createdAt: '2026-03-18T09:00:00Z', unread: true, targetHash: '#/student/dashboard', subjectId: 'arq-software-2026' },
-  { id: 'notif-material-001', type: 'material', title: 'Nuevo material disponible', message: 'Se cargó clase2_estilos.pptx en Clase 2.', createdAt: '2026-03-17T18:45:00Z', unread: false, targetHash: '#/student/class/class-02', subjectId: 'arq-software-2026' },
-  { id: 'notif-summary-002', type: 'summary', title: 'Resumen validado por docente', message: 'Clase 1 — Introducción ya tiene resumen validado.', createdAt: '2026-03-16T15:20:00Z', unread: false, targetHash: '#/student/dashboard', subjectId: 'diseno-sistemas-2026' },
-];
-
 function normalizeLimit(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return 10;
@@ -31,7 +24,7 @@ function normalizeNotification(item = {}, idx = 0) {
     type,
     title: String(item.title || 'Nueva notificación'),
     message: String(item.message || 'Tienes una actualización académica.'),
-    createdAt: item.createdAt || new Date().toISOString(),
+    createdAt: item.createdAt ?? new Date().toISOString(),
     unread: item.unread !== false,
     targetHash: item.targetHash || '#/student/dashboard',
     subjectId: item.subjectId || null,
@@ -81,13 +74,6 @@ function resolveEffectiveUserId(request, principal, body = null) {
   }
 
   return { userId: null, forbidden: false };
-}
-
-async function ensureSeedNotificationPersisted(subjectId, notificationId) {
-  const seed = MOCK_NOTIFICATIONS.find((item) => item.id === notificationId && item.subjectId === subjectId);
-  if (!seed || typeof notificationStore.upsertNotificationForSubject !== 'function') return false;
-  await notificationStore.upsertNotificationForSubject(subjectId, seed);
-  return true;
 }
 
 function isReadForUser(item, userId) {
@@ -153,9 +139,7 @@ app.http('get-notifications', {
       try { persisted = await notificationStore.listNotificationsBySubject(subjectId); } catch (err) { context.error(`[notifications] error loading persisted notifications for ${subjectId}: ${err.message}`); }
     }
 
-    const persistedIds = new Set(persisted.map((n) => n.id));
-    const mockOnly = MOCK_NOTIFICATIONS.filter((n) => !persistedIds.has(n.id));
-    let data = [...persisted, ...mockOnly]
+    let data = persisted
       .filter((item) => !subjectId || item.subjectId === subjectId)
       .filter((item) => canReceiveNotification(item, userId))
       .map((item, idx) => asPublicNotification(item, idx, userId))
@@ -198,14 +182,8 @@ app.http('mark-notification-read', {
     if (!canMarkNotifications(principal, userId)) return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Student access required for own notifications' }) };
 
     try {
-      let notifications = await notificationStore.listNotificationsBySubject(subjectId);
-      let target = notifications.find((item) => item.id === notificationId);
-      if (!target) {
-        const seeded = await ensureSeedNotificationPersisted(subjectId, notificationId);
-        if (!seeded) return { status: 404, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Notification not found for subject' }) };
-        notifications = await notificationStore.listNotificationsBySubject(subjectId);
-        target = notifications.find((item) => item.id === notificationId);
-      }
+      const notifications = await notificationStore.listNotificationsBySubject(subjectId);
+      const target = notifications.find((item) => item.id === notificationId);
       if (!target) return { status: 404, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Notification not found for subject' }) };
       if (!canReceiveNotification(target, userId)) return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Notification does not belong to user' }) };
 
@@ -275,15 +253,14 @@ app.http('stream-notifications', {
       async start(controller) {
         let snapshot;
         if (subjectId) {
-          const persisted = await notificationStore.listNotificationsBySubject(subjectId).catch(() => []);
-          const persistedIdsForStream = new Set(persisted.map((n) => n.id));
-          const mockOnlyForStream = MOCK_NOTIFICATIONS.filter((n) => !persistedIdsForStream.has(n.id));
-          const allItems = [...persisted, ...mockOnlyForStream]
+          const allItems = await notificationStore.listNotificationsBySubject(subjectId).catch(() => []);
+          const nonNull = Array.isArray(allItems) ? allItems : [];
+          const snapshotItems = nonNull
             .filter((item) => item.subjectId === subjectId)
             .filter((item) => canReceiveNotification(item, userId))
             .map((item, idx) => asPublicNotification(item, idx, userId))
             .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-          snapshot = allItems;
+          snapshot = snapshotItems;
         } else {
           snapshot = [];
         }
@@ -379,13 +356,8 @@ app.http('mark-notifications-read', {
     try {
       let updated = 0;
       for (const notificationId of notificationIds) {
-        let notifications = await notificationStore.listNotificationsBySubject(subjectId);
-        let target = notifications.find((item) => item.id === notificationId);
-        if (!target) {
-          await ensureSeedNotificationPersisted(subjectId, notificationId);
-          notifications = await notificationStore.listNotificationsBySubject(subjectId);
-          target = notifications.find((item) => item.id === notificationId);
-        }
+        const notifications = await notificationStore.listNotificationsBySubject(subjectId);
+        const target = notifications.find((item) => item.id === notificationId);
         if (!target || !canReceiveNotification(target, userId)) continue;
         const { success: marked } = await notificationStore.markNotificationReadForUser(subjectId, notificationId, userId);
         if (marked) updated += 1;

@@ -599,6 +599,7 @@ function formatNotificationDate(value) {
   if (diffMin < 60) return `hace ${diffMin} min`;
   const diffHours = Math.round(diffMin / 60);
   if (diffHours < 24) return `hace ${diffHours} h`;
+  if (diffHours < 48) return 'ayer';
   return date.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' });
 }
 

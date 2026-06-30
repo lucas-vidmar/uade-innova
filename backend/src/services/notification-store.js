@@ -62,7 +62,7 @@ function normalizeNotification(item = {}, idx = 0) {
     type,
     title: String(item.title || 'Nueva notificación'),
     message: String(item.message || 'Tienes una actualización académica.'),
-    createdAt: item.createdAt || new Date().toISOString(),
+    createdAt: item.createdAt ?? new Date().toISOString(),
     unread: item.unread !== false,
     targetHash: item.targetHash || '#/student/dashboard',
     subjectId: item.subjectId || null,
