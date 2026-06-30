@@ -542,6 +542,7 @@ export async function renderStudentDashboard(container) {
     chatMount.innerHTML = ''; // Clear placeholder
     const hashQuery = parseHashQuery();
     const selectedSessionId = hashQuery.get('sessionId');
+    const selectedClassId = hashQuery.get('classId');
 
     const sessionSummaries = buildSessionSummaries(history || []);
     const latestSessionId = sessionSummaries[0]?.sessionId || null;
@@ -559,6 +560,7 @@ export async function renderStudentDashboard(container) {
         { role: 'user', content: c.question },
         { role: 'assistant', content: c.answer || '', sources: c.sources || [], id: c.id }
       ])).flat(),
+      initialClassIds: selectedClassId ? [selectedClassId] : [],
       onNewChat: handleNewChat,
       onMessageSent: handleMessageSent,
     });

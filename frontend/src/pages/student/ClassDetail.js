@@ -271,7 +271,7 @@ export async function renderClassDetail(container) {
             </div>
 
             <div class="fab-container" style="position:fixed;bottom:32px;right:32px;z-index:var(--z-fab)">
-                <a id="class-chat-fab" href="#/student/chat?classId=${classId}" class="btn btn-primary btn-lg fab" style="box-shadow:var(--shadow-lg);padding:16px 24px;border-radius:var(--radius-full);text-decoration:none;font-weight:bold;display:flex;align-items:center;gap:12px">
+                <a id="class-chat-fab" href="#/student/dashboard?classId=${classId}" class="btn btn-primary btn-lg fab" style="box-shadow:var(--shadow-lg);padding:16px 24px;border-radius:var(--radius-full);text-decoration:none;font-weight:bold;display:flex;align-items:center;gap:12px">
                     <span>💬</span> Consultar esta clase
                 </a>
             </div>

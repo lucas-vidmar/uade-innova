@@ -20,10 +20,10 @@ const ERROR_MESSAGES = {
   UNKNOWN: 'Ocurrió un error inesperado. Por favor, intentá nuevamente.',
 };
 
-export function createChatWidget({ classes = [], subjectId = '', sessionId = null, initialMessages = [], highlightMessageId = null, transcriptFocus: initialTranscriptFocus = null, onNewChat, onMessageSent }) {
+export function createChatWidget({ classes = [], subjectId = '', sessionId = null, initialMessages = [], highlightMessageId = null, transcriptFocus: initialTranscriptFocus = null, initialClassIds = [], onNewChat, onMessageSent }) {
   const user = auth.getUser();
   const hasEnrollment = auth.isEnrolled(subjectId) !== false;
-  let selectedClassIds = [];
+  let selectedClassIds = [...initialClassIds];
   let messages = [...initialMessages];
   let currentSessionId = sessionId || crypto.randomUUID();
   let isLoading = false;
