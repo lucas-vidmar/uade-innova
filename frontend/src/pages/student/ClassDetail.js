@@ -36,7 +36,6 @@ function isPlaceholderSummary(text) {
         'proporciona el texto',
         'deseas el resumen',
         'proporcione el texto',
-        'resumen estructurado',
     ];
     const lower = text.toLowerCase();
     return placeholders.some(p => lower.includes(p));
