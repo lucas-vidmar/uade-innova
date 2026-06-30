@@ -544,13 +544,10 @@ export async function renderStudentDashboard(container) {
     const selectedSessionId = hashQuery.get('sessionId');
     const selectedClassId = hashQuery.get('classId');
 
-    const sessionSummaries = buildSessionSummaries(history || []);
-    const latestSessionId = sessionSummaries[0]?.sessionId || null;
-
-    const seedSessionId = selectedSessionId || latestSessionId;
+    const seedSessionId = selectedSessionId || null;
     const seedMessages = seedSessionId
       ? (history || []).filter(item => (item.sessionId || item.id) === seedSessionId)
-      : (history || []).slice(-5);
+      : [];
 
     const chatWidget = createChatWidget({
       classes: classes || [],
