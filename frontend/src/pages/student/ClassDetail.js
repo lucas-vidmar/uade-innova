@@ -53,6 +53,13 @@ function cleanMarkers(markers) {
     });
 }
 
+const MATERIAL_ICONS = {
+    transcript: '🎙️',
+    presentation: '📊',
+    notes: '📝',
+    bibliography: '📚',
+};
+
 const MAX_VISIBLE_SECTIONS = 50;
 
 export async function renderClassDetail(container) {
@@ -115,86 +122,80 @@ export async function renderClassDetail(container) {
                 </div>
             </div>
 
-            <div class="dashboard-grid">
-                <div class="card">
-                    <div class="card-header">
-                        <span class="card-title">📝 Resumen IA</span>
-                        ${summaryData?.validated ? '<span class="badge badge-success">✓ Validado por Docente</span>' : '<span class="badge badge-warning">En revisión</span>'}
-                    </div>
-                    <div class="summary-content markdown-body" style="padding:var(--space-6)">
-                        ${hasValidSummary ? marked.parse(rawSummary, { breaks: true }) : '<p class="empty-text">El resumen todavía no está disponible para esta clase.</p>'}
-                    </div>
+            <div class="card" style="margin-bottom:var(--space-6)">
+                <div class="card-header">
+                    <span class="card-title">📝 Resumen IA</span>
+                    ${summaryData?.validated ? '<span class="badge badge-success">✓ Validado por Docente</span>' : '<span class="badge badge-warning">En revisión</span>'}
                 </div>
-
-                <div class="card">
-                    <div class="card-header">
-                        <span class="card-title">🗺️ Mapa Conceptual</span>
+                ${hasValidSummary ? `
+                    <div class="summary-collapse-wrapper" id="summary-wrapper">
+                        <div class="summary-content markdown-body summary-collapsed" id="summary-content">
+                            ${marked.parse(rawSummary, { breaks: true })}
+                        </div>
+                        <button class="btn btn-ghost btn-sm summary-toggle-btn" id="summary-toggle-btn">
+                            <span id="summary-toggle-text">Mostrar más</span>
+                            <svg id="summary-toggle-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transition:transform 0.2s"><path d="m6 9 6 6 6-6"/></svg>
+                        </button>
                     </div>
-                    <div class="map-container" id="mermaid-container" style="padding:var(--space-6);overflow:hidden;background:var(--color-bg-alt);border-radius:var(--radius-lg)">
-                        ${mapCode ? 
-                            `<pre class="mermaid" style="background:transparent;border:none;padding:0;text-align:center;margin:0">${escapeHtml(mapCode)}</pre>` : 
-                            '<div class="empty-state" style="padding:20px;text-align:center"><p>El mapa conceptual se está generando o no hay suficiente contenido aún.</p></div>'}
-                    </div>
-                    ${mapCode ? `
-                        <div class="card-footer" style="padding:10px;text-align:center;border-top:1px solid var(--color-border)">
-                            <button class="btn btn-ghost btn-sm" id="btn-fullscreen-map">Ver código Mermaid</button>
-                        </div>
-                    ` : (summaryData?.summaryReady || hasValidSummary) ? `
-                        <div class="card-footer" style="padding:10px;text-align:center;border-top:1px solid var(--color-border)">
-                            <button class="btn btn-primary btn-sm" id="btn-generate-map">Generar mapa conceptual</button>
-                        </div>
-                    ` : ''}
-                </div>
-
-                ${audioAvailable ? `
-                <div class="card premium-vibe podcast-card" id="podcast-card" style="background: linear-gradient(135deg, var(--color-surface) 0%, var(--color-bg-alt) 100%);">
-                    <div class="card-header">
-                        <span class="card-title">🎧 Podcast de Estudio (IA)</span>
-                        <span class="badge badge-info">Beta</span>
-                    </div>
-                    <div class="podcast-container" style="padding:var(--space-8); display:flex; flex-direction:column; align-items:center; gap:var(--space-6);">
-                        <div class="podcast-visual" style="width:64px; height:64px; border-radius:50%; background:var(--color-primary); display:flex; align-items:center; justify-content:center; box-shadow:0 0 20px var(--color-primary-alpha);">
-                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-                        </div>
-                        <div style="text-align:center">
-                            <h4 style="margin:0; font-size:var(--text-lg); font-weight:700;">Resumen Audio-Guía</h4>
-                            <p style="margin:var(--space-1) 0 0 0; font-size:var(--text-xs); color:var(--color-text-secondary);">Generado automáticamente con voz Nova</p>
-                        </div>
-                        <audio controls style="width:100%; height:40px; border-radius:var(--radius-full);">
-                            <source src="${audioUrl}" type="audio/mpeg">
-                            Tu navegador no soporta el elemento de audio.
-                        </audio>
-                        <div style="font-size:var(--text-xs); color:var(--color-text-secondary); font-style:italic;">
-                            Escucha los conceptos clave mientras te trasladas.
-                        </div>
-                    </div>
-                </div>
-                ` : (summaryData?.summaryReady || hasValidSummary) ? `
-                <div class="card premium-vibe" id="podcast-card-generate" style="background: linear-gradient(135deg, var(--color-surface) 0%, var(--color-bg-alt) 100%);">
-                    <div class="card-header">
-                        <span class="card-title">🎧 Podcast de Estudio (IA)</span>
-                        <span class="badge badge-info">Beta</span>
-                    </div>
-                    <div class="podcast-container" style="padding:var(--space-8); display:flex; flex-direction:column; align-items:center; gap:var(--space-6);">
-                        <div class="podcast-visual" style="width:64px; height:64px; border-radius:50%; background:var(--color-surface-2); display:flex; align-items:center; justify-content:center;">
-                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-                        </div>
-                        <div style="text-align:center">
-                            <h4 style="margin:0; font-size:var(--text-lg); font-weight:700;">Resumen Audio-Guía</h4>
-                            <p style="margin:var(--space-1) 0 0 0; font-size:var(--text-xs); color:var(--color-text-secondary);">Generado automáticamente con voz Nova</p>
-                        </div>
-                        <button class="btn btn-primary" id="btn-generate-audio">Generar audio</button>
-                        <div id="audio-generation-progress" style="display:none;font-size:var(--text-xs);color:var(--color-text-secondary);">Generando audio... esto puede tomar unos segundos.</div>
-                    </div>
-                </div>
-                ` : ''}
+                ` : '<div class="summary-content markdown-body" style="padding:var(--space-6)"><p class="empty-text">El resumen todavía no está disponible para esta clase.</p></div>'}
             </div>
 
-            <div class="card" style="margin-top:var(--space-6)">
+            <div class="card" style="margin-bottom:var(--space-6)">
+                <div class="card-header">
+                    <span class="card-title">🗺️ Mapa Conceptual</span>
+                </div>
+                ${mapCode ? `
+                    <div class="map-container" id="mermaid-container" style="padding:var(--space-6);overflow:hidden;background:var(--color-bg-alt);border-radius:var(--radius-lg);position:relative">
+                        <div class="map-zoom-container" id="map-zoom-container">
+                            <pre class="mermaid" style="background:transparent;border:none;padding:0;text-align:center;margin:0">${escapeHtml(mapCode)}</pre>
+                        </div>
+                    </div>
+                    <div class="card-footer map-controls" id="map-controls" style="justify-content:center;flex-wrap:wrap;gap:6px">
+                        <button class="btn btn-ghost btn-sm" data-zoom="out" title="Alejar" style="font-size:18px;line-height:1;padding:4px 10px;">−</button>
+                        <button class="btn btn-ghost btn-sm" data-zoom="in" title="Acercar" style="font-size:18px;line-height:1;padding:4px 10px;">+</button>
+                        <button class="btn btn-ghost btn-sm" data-zoom="reset" title="Restablecer" style="font-size:16px;line-height:1;padding:4px 10px;">⟲</button>
+                        <span class="map-zoom-label" id="map-zoom-label" style="font-size:13px;font-weight:600;color:var(--color-text-secondary);min-width:48px;text-align:center">100%</span>
+                        <span style="color:var(--color-text-muted);font-size:12px;margin-left:8px;">(scroll horizontal disponible)</span>
+                    </div>
+                ` : hasValidSummary ? `
+                    <div style="padding:var(--space-6);text-align:center">
+                        <p style="color:var(--color-text-secondary);margin-bottom:var(--space-4)">El mapa conceptual se puede generar cuando haya contenido disponible.</p>
+                        <button class="btn btn-primary btn-sm" id="btn-generate-map">Generar mapa conceptual</button>
+                    </div>
+                ` : '<div style="padding:var(--space-6);text-align:center;color:var(--color-text-secondary)">El mapa conceptual se está generando o no hay suficiente contenido aún.</div>'}
+            </div>
+
+            ${audioAvailable ? `
+            <div class="card premium-vibe" style="margin-bottom:var(--space-6);background: linear-gradient(135deg, var(--color-surface) 0%, var(--color-bg-alt) 100%);">
+                <div class="card-header">
+                    <span class="card-title">🎧 Podcast de Estudio (IA)</span>
+                    <span class="badge badge-info">Beta</span>
+                </div>
+                <div style="padding:var(--space-6);display:flex;flex-direction:column;align-items:center;gap:var(--space-4);">
+                    <div style="width:56px;height:56px;border-radius:50%;background:var(--color-primary);display:flex;align-items:center;justify-content:center;box-shadow:0 0 16px var(--color-primary-alpha);">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                    </div>
+                    <div style="text-align:center">
+                        <h4 style="margin:0;font-size:var(--text-lg);font-weight:700;">Resumen Audio-Guía</h4>
+                        <p style="margin:var(--space-1) 0 0 0;font-size:var(--text-xs);color:var(--color-text-secondary);">Generado automáticamente con voz Nova</p>
+                    </div>
+                    <audio controls style="width:100%;max-width:480px;height:40px;border-radius:var(--radius-full);">
+                        <source src="${audioUrl}" type="audio/mpeg">
+                        Tu navegador no soporta el elemento de audio.
+                    </audio>
+                    <div style="font-size:var(--text-xs);color:var(--color-text-secondary);font-style:italic;">
+                        Escuchá los conceptos clave mientras te trasladás.
+                    </div>
+                </div>
+            </div>
+            ` : ''}
+
+            ${markers.length > 0 ? `
+            <div class="card" style="margin-bottom:var(--space-6)">
                 <div class="card-header">
                     <span class="card-title">⏱️ Timeline de Transcripción</span>
                 </div>
-                ${markers.length > 0 ? `
+                <div style="padding:var(--space-6)">
                     <div class="timeline-track" id="transcript-timeline-markers">
                         ${markers.map(marker => `
                             <button class="timeline-hit" data-section-id="${marker.sectionId}" data-focus-label="${escapeHtml(marker.label || '')}" title="${escapeHtml(marker.label || '')}">
@@ -206,15 +207,17 @@ export async function renderClassDetail(container) {
                     <div style="margin-top:var(--space-4)">
                         <a id="timeline-open-chat" class="btn btn-primary btn-sm" href="#/student/chat?classId=${classId}" aria-disabled="true">Consultar este hit-point en el chat</a>
                     </div>
-                ` : '<div style="color:var(--color-text-secondary)">Todavía no hay hit-points generados para la transcripción.</div>'}
+                </div>
             </div>
+            ` : ''}
 
-            <div class="card" style="margin-top:var(--space-6)">
+            ${visibleSections.length > 0 ? `
+            <div class="card" style="margin-bottom:var(--space-6)">
                 <div class="card-header">
                     <span class="card-title">📜 Transcripción Navegable</span>
                 </div>
-                <div class="transcript-sections" id="transcript-sections-list">
-                    ${visibleSections.length > 0 ? visibleSections.map(section => `
+                <div class="transcript-sections" id="transcript-sections-list" style="padding:var(--space-2)">
+                    ${visibleSections.map(section => `
                         <article class="transcript-section" id="transcript-section-${section.id}" data-section-id="${section.id}">
                             <div class="transcript-section-head">
                                 <span class="badge badge-neutral">${escapeHtml(section.timestampLabel || 'Bloque')}</span>
@@ -227,7 +230,7 @@ export async function renderClassDetail(container) {
                             </div>
                             <p class="transcript-section-text">${escapeHtml(section.text || '')}</p>
                         </article>
-                    `).join('') : '<div style="color:var(--color-text-secondary)">No hay secciones de transcripción disponibles.</div>'}
+                    `).join('')}
                     ${!showAllSections && sections.length > MAX_VISIBLE_SECTIONS ? `
                         <div style="text-align:center;padding:var(--space-4);color:var(--color-text-secondary);font-size:var(--text-sm)">
                             Mostrando ${MAX_VISIBLE_SECTIONS} de ${sections.length} secciones.
@@ -236,6 +239,7 @@ export async function renderClassDetail(container) {
                     ` : ''}
                 </div>
             </div>
+            ` : ''}
 
             <div class="section-title" style="margin-top:var(--space-10);display:flex;align-items:center;gap:var(--space-4);margin-bottom:var(--space-6)">
                 <h2 class="h3">📚 Materiales de Referencia</h2>
@@ -244,17 +248,15 @@ export async function renderClassDetail(container) {
             <div class="card" style="margin-bottom:40px">
                 <div class="materials-list" style="padding:var(--space-2)">
                     ${classInfo.materials?.length > 0 ? classInfo.materials.map(m => `
-                        <div class="material-row" style="display:flex;justify-content:between;align-items:center;padding:var(--space-4);border-bottom:1px solid var(--color-border);last-child:border-bottom:none">
-                            <div class="material-info" style="display:flex;align-items:center;gap:var(--space-3)">
-                                <span class="material-icon" style="font-size:1.2rem">${m.type === 'transcript' ? '📄' : m.type === 'presentation' ? '📊' : '📖'}</span>
-                                <span class="material-name" style="font-weight:500">${m.filename}</span>
-                            </div>
-                            <a href="${m.blobUrl || '#'}" target="_blank" class="btn btn-secondary btn-sm">Ver original</a>
+                        <div class="material-row" style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-4);border-bottom:1px solid var(--color-border);:last-child:border-bottom:none">
+                            <span style="font-size:1.2rem;flex-shrink:0">${MATERIAL_ICONS[m.type] || '📄'}</span>
+                            <span style="font-weight:500;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.filename}</span>
+                            <span style="font-size:12px;color:var(--color-text-muted);flex-shrink:0;text-transform:capitalize">${m.type}</span>
                         </div>
                     `).join('') : '<div style="padding:32px;text-align:center;color:var(--color-text-secondary)">No hay archivos adjuntos para esta clase.</div>'}
                 </div>
             </div>
-            
+
             <div class="fab-container" style="position:fixed;bottom:32px;right:32px;z-index:var(--z-fab)">
                 <a id="class-chat-fab" href="#/student/chat?classId=${classId}" class="btn btn-primary btn-lg fab" style="box-shadow:var(--shadow-lg);padding:16px 24px;border-radius:var(--radius-full);text-decoration:none;font-weight:bold;display:flex;align-items:center;gap:12px">
                     <span>💬</span> Consultar esta clase
@@ -273,33 +275,49 @@ export async function renderClassDetail(container) {
             }
         }
 
-        container.querySelector('#btn-generate-audio')?.addEventListener('click', async () => {
-          const progress = container.querySelector('#audio-generation-progress');
-          const btn = container.querySelector('#btn-generate-audio');
-          if (btn) btn.style.display = 'none';
-          if (progress) progress.style.display = 'block';
-          try {
-            const resp = await fetch(audioUrl);
-            if (resp.ok) {
-              renderClassDetail(container);
+        const summaryWrapper = container.querySelector('#summary-wrapper');
+        const summaryContent = container.querySelector('#summary-content');
+        const summaryToggle = container.querySelector('#summary-toggle-btn');
+        const summaryToggleText = container.querySelector('#summary-toggle-text');
+        const summaryToggleIcon = container.querySelector('#summary-toggle-icon');
+
+        if (summaryWrapper && summaryContent && summaryToggle) {
+            const collapsed = summaryContent.classList.contains('summary-collapsed');
+            if (collapsed) {
+                summaryToggle.addEventListener('click', () => {
+                    const isCollapsed = summaryContent.classList.toggle('summary-collapsed');
+                    summaryToggleText.textContent = isCollapsed ? 'Mostrar más' : 'Mostrar menos';
+                    summaryToggleIcon.style.transform = isCollapsed ? 'rotate(0deg)' : 'rotate(180deg)';
+                });
             } else {
-              if (progress) progress.textContent = 'Error al generar el audio. Reintentá más tarde.';
+                summaryToggle.style.display = 'none';
             }
-          } catch {
-            if (progress) progress.textContent = 'Error de conexión. Reintentá más tarde.';
-          }
-        });
+        }
+
+        let mapZoom = 1;
+        const zoomContainer = container.querySelector('#map-zoom-container');
+        const zoomLabel = container.querySelector('#map-zoom-label');
+
+        const setZoom = (level) => {
+            mapZoom = Math.max(0.25, Math.min(10, level));
+            if (zoomContainer) zoomContainer.style.transform = `scale(${mapZoom})`;
+            if (zoomLabel) zoomLabel.textContent = Math.round(mapZoom * 100) + '%';
+        };
+
+        container.querySelector('[data-zoom="in"]')?.addEventListener('click', () => setZoom(mapZoom + 0.25));
+        container.querySelector('[data-zoom="out"]')?.addEventListener('click', () => setZoom(Math.max(0.25, mapZoom - 0.25)));
+        container.querySelector('[data-zoom="reset"]')?.addEventListener('click', () => setZoom(1));
 
         container.querySelector('#btn-generate-map')?.addEventListener('click', async () => {
-          const btn = container.querySelector('#btn-generate-map');
-          if (btn) { btn.disabled = true; btn.textContent = 'Generando...'; }
-          try {
-            const { generateClassMap } = await import('../../services/classes.api.js');
-            await generateClassMap(classId, activeSubjectId);
-            renderClassDetail(container);
-          } catch {
-            if (btn) { btn.disabled = false; btn.textContent = 'Generar mapa conceptual'; }
-          }
+            const btn = container.querySelector('#btn-generate-map');
+            if (btn) { btn.disabled = true; btn.textContent = 'Generando...'; }
+            try {
+                const { generateClassMap } = await import('../../services/classes.api.js');
+                await generateClassMap(classId, activeSubjectId);
+                renderClassDetail(container);
+            } catch {
+                if (btn) { btn.disabled = false; btn.textContent = 'Generar mapa conceptual'; }
+            }
         });
 
         initTranscriptionReport(container, classId, activeSubjectId);

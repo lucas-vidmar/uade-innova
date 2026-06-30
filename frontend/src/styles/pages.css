@@ -1593,6 +1593,28 @@
     max-width: 100%;
 }
 
+.summary-collapse-wrapper {
+    position: relative;
+    padding: var(--space-6);
+}
+
+.summary-content.summary-collapsed {
+    max-height: 280px;
+    overflow: hidden;
+    mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
+}
+
+.summary-toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: var(--space-2) auto 0;
+    font-size: var(--text-sm);
+    color: var(--color-primary);
+    cursor: pointer;
+}
+
 .material-row {
     overflow-wrap: break-word;
     word-break: break-word;
