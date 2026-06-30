@@ -39,6 +39,13 @@ export const PROMPT_TYPES = {
     hasUserPrompt: true,
     variables: ['glossaryTerms', 'transcriptText'],
   },
+  'class-podcast': {
+    label: 'Podcast de clase',
+    description: 'Genera el guión del podcast/audio-guía a partir del resumen de la clase',
+    hasSystemPrompt: true,
+    hasUserPrompt: true,
+    variables: ['subjectName', 'className', 'summaryText'],
+  },
 };
 
 const VALID_TYPES = new Set(Object.keys(PROMPT_TYPES));

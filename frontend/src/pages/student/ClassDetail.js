@@ -84,11 +84,12 @@ export async function renderClassDetail(container) {
 
     try {
         const activeSubjectId = auth.getActiveSubjectId();
-        const [classes, summaryData, mapData, timelineData] = await Promise.all([
+        const [classes, summaryData, mapData, timelineData, audioScriptData] = await Promise.all([
             api.getClasses(activeSubjectId),
             api.getClassSummary(classId),
             api.getClassMap(classId),
             api.getClassTimeline(classId),
+            api.getClassAudioScript(classId),
         ]);
 
         const classInfo = classes.find(c => c.id === classId);
@@ -111,10 +112,12 @@ export async function renderClassDetail(container) {
             return;
         }
 
-        const rawSummary = summaryData?.summary?.content || summaryData?.summary || '';
-        const hasValidSummary = rawSummary && !isPlaceholderSummary(rawSummary);
+        const sec = classInfo.sectionsEnabled || { summary: true, map: true, podcast: true };
 
-        const mapCode = extractMermaidCode(mapData?.mapCode);
+        const rawSummary = summaryData?.summary?.content || summaryData?.summary || '';
+        const hasValidSummary = rawSummary && !isPlaceholderSummary(rawSummary) && sec.summary !== false;
+
+        const mapCode = sec.map !== false ? extractMermaidCode(mapData?.mapCode) : null;
 
         const sections = cleanSections(timelineData?.sections);
         const markers = cleanMarkers(timelineData?.markers);
@@ -122,13 +125,7 @@ export async function renderClassDetail(container) {
         const visibleSections = showAllSections ? sections : sections.slice(0, MAX_VISIBLE_SECTIONS);
 
         const audioUrl = api.getClassAudioUrl(classId, activeSubjectId);
-        let audioAvailable = false;
-        try {
-            const headResp = await fetch(audioUrl, { method: 'HEAD' });
-            audioAvailable = headResp.ok;
-        } catch (e) {
-            audioAvailable = false;
-        }
+        const audioAvailable = sec.podcast !== false && audioScriptData?.validated && !!audioScriptData?.ttsGeneratedAt;
 
         let html = `
             <div class="breadcrumb" style="margin-bottom:var(--space-4);font-size:var(--text-sm);color:var(--color-text-secondary)">

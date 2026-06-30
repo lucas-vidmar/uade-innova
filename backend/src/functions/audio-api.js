@@ -61,45 +61,35 @@ app.http('get-class-audio', {
 
         context.log(`[Trace] Correlation-ID: ${correlationId}`);
 
+        const CONTAINER_SCRIPTS = 'class-audio-scripts';
+        const blobName = `${classId}.mp3`;
+
         try {
-            const blobName = `${classId}.mp3`;
-            
-            // 1. Intentar descargar del storage si ya existe
-            try {
-                const audioBuffer = await downloadFile(CONTAINER_AUDIO, blobName);
+            // 1. Intentar descargar del storage si ya existe (caché)
+            const cachedAudio = await downloadFile(CONTAINER_AUDIO, blobName).catch(() => null);
+            if (cachedAudio) {
                 return {
                     status: 200,
                     headers: { 'Content-Type': 'audio/mpeg' },
-                    body: audioBuffer
+                    body: cachedAudio
                 };
-            } catch (err) {
-                // Si no existe, procedemos a generar
-                context.log(`Audio no encontrado para ${classId}, generando...`);
             }
 
-            // 2. Obtener el resumen de la clase para convertirlo a audio
-            const summaryData = await loadJson(CONTAINER_SUMMARIES, `${classId}.json`);
-            if (!summaryData) {
+            // 2. Buscar guión de podcast validado
+            const scriptData = await loadJson(CONTAINER_SCRIPTS, `${classId}.json`);
+            if (!scriptData || !scriptData.script || !scriptData.validated) {
                 return {
                     status: 404,
                     headers: {},
-                    body: 'Resumen no encontrado para esta clase. Genera el resumen primero.'
+                    body: 'No hay guión de podcast validado para esta clase. El docente debe aprobarlo primero.'
                 };
             }
 
-            const textToSpeak = typeof summaryData === 'string' ? summaryData : (summaryData.summary?.content || summaryData.summary || '');
-            if (!textToSpeak) {
-                return {
-                    status: 404,
-                    headers: {},
-                    body: 'Contenido del resumen vacío.'
-                };
-            }
+            // 3. Generar audio con OpenAI TTS a partir del guión validado
+            context.log(`Audio no encontrado en caché para ${classId}, generando desde guión validado...`);
+            const audioBuffer = await generateClassAudio(scriptData.script, 'nova', { headers: dependencyHeaders });
 
-            // 3. Generar audio con OpenAI TTS
-            const audioBuffer = await generateClassAudio(textToSpeak, 'nova', { headers: dependencyHeaders });
-
-            // 4. Guardar en Blob Storage para futuras consultas (cache)
+            // 4. Guardar en Blob Storage para futuras consultas (caché)
             await uploadFile(CONTAINER_AUDIO, blobName, audioBuffer, 'audio/mpeg');
 
             return {

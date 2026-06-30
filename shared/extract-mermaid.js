@@ -8,7 +8,22 @@ const MERMAID_MARKERS = [
 ];
 
 function sanitizeMermaidCode(code) {
-    return code.replace(/\[([^\[\]]*\([^\[\]]*\)[^\[\]]*)\]/g, '["$1"]');
+    return code.replace(/\[([^\[\]]*?)\]/g, (match, content) => {
+        let c = content.trim();
+        const leadingCnt = (c.match(/^"+/) || [''])[0].length;
+        const trailingCnt = (c.match(/"+$/) || [''])[0].length;
+        if (leadingCnt > 0 && trailingCnt > 0) {
+            c = c.slice(leadingCnt);
+            if (c.endsWith('"'.repeat(trailingCnt))) {
+                c = c.slice(0, -trailingCnt);
+            }
+            c = `"${c}"`;
+        }
+        if (c.includes('(') && !(c.startsWith('"') && c.endsWith('"'))) {
+            c = `"${c}"`;
+        }
+        return `[${c}]`;
+    });
 }
 
 export function extractMermaidCode(text) {

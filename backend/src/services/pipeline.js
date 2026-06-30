@@ -3,7 +3,7 @@
  * Procesa un material (buffer + metadata) y lo indexa en Pinecone.
  */
 import { parseFile, chunkText, cleanText, extractTranscriptTimeline, extractPptxSlideTitles } from './parser.js';
-import { generateEmbeddingsBatch, generateClassSummary, generateClassMap } from './ai.js';
+import { generateEmbeddingsBatch, generateClassSummary, generateClassMap, generatePodcastScript } from './ai.js';
 import { upsertChunks, getIndexStats } from './vector-store.js';
 import { saveJson, loadJson } from './storage.js';
 import { upsertMaterialState } from './state-store.js';
@@ -180,6 +180,22 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
                         mapCode: mapResult.code,
                         generatedAt: mapResult.generatedAt
                     });
+
+                    // Guardar Guión de Podcast (Story 2.xxx)
+                    try {
+                        const podcastResult = await generatePodcastScript(summaryResult.content, '', classId, { headers: openAiHeaders });
+                        totalTokens += (podcastResult.usage?.total_tokens || 0);
+                        await saveJson('class-audio-scripts', `${classId}.json`, {
+                            classId,
+                            subjectId,
+                            script: podcastResult.content,
+                            generatedAt: podcastResult.generatedAt,
+                            validated: false,
+                        });
+                        context.log(`[Pipeline] Guión de podcast guardado para clase ${classId}`);
+                    } catch (podcastErr) {
+                        context.error(`[Pipeline] Error generando guión de podcast (no bloqueante):`, podcastErr);
+                    }
                 }
                 context.log(`[Pipeline] Activos IA guardados con éxito para clases: ${classIds.join(', ')}`);
             } catch (sumErr) {

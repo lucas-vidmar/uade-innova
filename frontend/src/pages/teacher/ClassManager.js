@@ -2,7 +2,6 @@ import { renderHeader } from '../../components/Header.js';
 import { api } from '../../services/api.js';
 import { auth } from '../../services/auth.js';
 import { toast } from '../../components/Toast.js';
-import { createSummaryReviewModal } from '../../components/SummaryReviewModal.js';
 import { showConfirmDialog } from '../../components/Dialog.js';
 
 export async function renderClassManager(container) {
@@ -95,6 +94,7 @@ export async function renderClassManager(container) {
                                             <th class="class-col-materials">Materiales</th>
                                             <th class="class-col-topics">Tags</th>
                                             <th class="class-col-summary">Resumen IA</th>
+                                            <th class="class-col-podcast">Podcast</th>
                                             <th class="class-col-timeline">Timeline</th>
                                             <th class="class-col-actions" style="text-align:center">Acciones</th>
                                         </tr>
@@ -137,6 +137,13 @@ export async function renderClassManager(container) {
                                                     ${c.materials.some(m => m.type === 'transcript' || m.type === 'notes') ? `
                                                         <button class="btn btn-sm ${c.summaryReady ? 'btn-ghost' : 'btn-secondary'} btn-review-summary" data-idx="${i}">
                                                             ${c.summaryReady ? '✅ Ver Resumen' : '✍️ Revisar'}
+                                                        </button>
+                                                    ` : '<span style="color:var(--color-text-muted); font-size:0.8rem">Sin material</span>'}
+                                                </td>
+                                                <td class="class-col-podcast">
+                                                    ${c.materials.some(m => m.type === 'transcript' || m.type === 'notes') ? `
+                                                        <button class="btn btn-sm ${c.audioScriptReady ? 'btn-ghost' : 'btn-secondary'} btn-review-podcast" data-idx="${i}">
+                                                            ${c.audioScriptReady ? '✅ Audio listo' : '🎧 Revisar'}
                                                         </button>
                                                     ` : '<span style="color:var(--color-text-muted); font-size:0.8rem">Sin material</span>'}
                                                 </td>
@@ -305,18 +312,10 @@ export async function renderClassManager(container) {
                     }
                 });
             });
-            container.querySelectorAll('.btn-review-summary').forEach(btn => {
+            container.querySelectorAll('.btn-review-summary, .btn-review-podcast').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     const idx = parseInt(e.currentTarget.getAttribute('data-idx'));
-                    createSummaryReviewModal(classes[idx].id, classes[idx].title, subjectId, async (isValidated) => {
-                        // Si se valida, actualizamos el state local y el backend
-                        if (isValidated) {
-                            classes[idx].summaryReady = true;
-                            // Update total config
-                            await api.saveClasses(subjectId, classes);
-                            render();
-                        }
-                    });
+                    window.location.hash = `#/teacher/class/${classes[idx].id}`;
                 });
             });
 

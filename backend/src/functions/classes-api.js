@@ -7,7 +7,7 @@ import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-util
 import { listClassesBySubject, listMaterialsBySubject, listMaterialsByClass, replaceClassesForSubject, deleteMaterialStateById, getMaterialState, upsertMaterialState, deleteClassesBySubject, deleteMaterialsBySubject, getEnrollmentsByUser, getEnrollment } from '../services/state-store.js';
 import * as vectorStore from '../services/vector-store.js';
 import { trackPollingEvent } from '../services/telemetry.js';
-import { chatCompletion, generateClassSummary, generateClassMap } from '../services/ai.js';
+import { chatCompletion, generateClassSummary, generateClassMap, generateClassAudio, generatePodcastScript } from '../services/ai.js';
 import { extractMermaidCode } from '../../shared/extract-mermaid.js';
 import { computeBudgetProjection as computeBudgetProjectionV2, getAzureCostForBudget } from '../services/azure-cost.js';
 
@@ -685,6 +685,8 @@ app.http('delete-subject', {
                     try {
                         await deleteBlob('class-summaries', `${cls.id}.json`).catch(() => {});
                         await deleteBlob('class-maps', `${cls.id}.json`).catch(() => {});
+                        await deleteBlob('class-audio-scripts', `${cls.id}.json`).catch(() => {});
+                        await deleteBlob('class-audio', `${cls.id}.mp3`).catch(() => {});
                     } catch (cErr) {
                         context.error(`[CascadeDelete] Error borrando recursos de clase ${cls.id}:`, cErr);
                     }
@@ -1243,6 +1245,155 @@ app.http('save-class-map', {
             return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updatedData) };
         } catch (err) {
             return { status: 500, body: JSON.stringify({ error: `Error guardando mapa: ${err.message}` }) };
+        }
+    })
+});
+
+// ── GET /api/class-audio-script/{classId} ──────────────────────────
+// Devuelve el guión de podcast generado por IA para una clase
+app.http('get-class-audio-script', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'class-audio-script/{classId}',
+    handler: withCorrelation(async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+        const classId = request.params.classId;
+        try {
+            const scriptData = await loadJson('class-audio-scripts', `${classId}.json`);
+            if (!scriptData) return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, script: null }) };
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(scriptData) };
+        } catch (err) {
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, script: null, error: err.message }) };
+        }
+    })
+});
+
+// ── POST /api/class-audio-script/{classId} ─────────────────────────
+// Guarda o valida un guión de podcast y dispara TTS si validated=true
+app.http('save-class-audio-script', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'class-audio-script/{classId}',
+    handler: withCorrelation(async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+        const classId = request.params.classId;
+        const principal = parseClientPrincipal(request);
+
+        const isAuthorized = principal?.userRoles?.some(role => ['Docente', 'Director'].includes(role)) || process.env.AZURE_FUNCTIONS_ENVIRONMENT === "Development";
+        if (!isAuthorized) {
+            return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: "Forbidden - Teacher access required" }) };
+        }
+
+        try {
+            const body = await request.json();
+            const existingData = await loadJson('class-audio-scripts', `${classId}.json`) || { classId };
+
+            const updatedData = {
+                ...existingData,
+                script: body.script,
+                lastModifiedAt: new Date().toISOString(),
+                lastModifiedBy: principal?.userDetails || 'docente',
+                validated: body.validated || false,
+            };
+
+            await saveJson('class-audio-scripts', `${classId}.json`, updatedData);
+
+            // Si se validó, disparar TTS
+            if (body.validated && body.script) {
+                context.log(`[AudioScript] Validado para ${classId}, generando TTS...`);
+                try {
+                    const audioBuffer = await generateClassAudio(body.script, 'nova');
+                    await uploadFile('class-audio', `${classId}.mp3`, audioBuffer, 'audio/mpeg');
+                    updatedData.ttsGeneratedAt = new Date().toISOString();
+                    await saveJson('class-audio-scripts', `${classId}.json`, updatedData);
+                    context.log(`[AudioScript] TTS generado para ${classId}`);
+                } catch (ttsErr) {
+                    context.error(`[AudioScript] Error generando TTS para ${classId}:`, ttsErr);
+                    return {
+                        status: 200,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ...updatedData, ttsError: ttsErr.message })
+                    };
+                }
+            }
+
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updatedData) };
+        } catch (err) {
+            return { status: 500, body: JSON.stringify({ error: `Error guardando guión de podcast: ${err.message}` }) };
+        }
+    })
+});
+
+// ── POST /api/class-audio-script/{classId}/regenerate ──────────────
+// Regenera el guión de podcast desde el resumen actual
+app.http('generate-class-audio-script', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'class-audio-script/{classId}/regenerate',
+    handler: withCorrelation(async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+        const classId = request.params.classId;
+        const body = await request.json().catch(() => ({}));
+        const subjectId = body.subjectId || request.query.get('subjectId') || '';
+        if (!subjectId) {
+            return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'subjectId es requerido' }) };
+        }
+
+        try {
+            const summaryData = await loadJson('class-summaries', `${classId}.json`);
+            const rawSummary = summaryData?.summary?.content || summaryData?.summary || '';
+            if (!rawSummary) {
+                return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'No hay resumen disponible para regenerar el guión de podcast.' }) };
+            }
+
+            const result = await generatePodcastScript(rawSummary, '', classId);
+
+            const scriptData = {
+                classId, subjectId,
+                script: result.content,
+                generatedAt: result.generatedAt,
+                generatedFrom: 'regenerate',
+                lastModifiedAt: new Date().toISOString(),
+                lastModifiedBy: 'AI',
+                validated: false,
+            };
+            await saveJson('class-audio-scripts', `${classId}.json`, scriptData);
+
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(scriptData) };
+        } catch (err) {
+            return { status: 500, body: JSON.stringify({ error: `Error regenerando guión de podcast: ${err.message}` }) };
+        }
+    })
+});
+
+// ── POST /api/class-audio/{classId}/generate ───────────────────────
+// Dispara la generación TTS del guión de podcast validado manualmente
+app.http('generate-class-audio-tts', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'class-audio/{classId}/generate',
+    handler: withCorrelation(async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+        const classId = request.params.classId;
+
+        try {
+            const scriptData = await loadJson('class-audio-scripts', `${classId}.json`);
+            if (!scriptData || !scriptData.script) {
+                return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'No hay guión de podcast disponible.' }) };
+            }
+            if (!scriptData.validated) {
+                return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'El guión debe estar validado antes de generar el audio.' }) };
+            }
+
+            const audioBuffer = await generateClassAudio(scriptData.script, 'nova');
+            await uploadFile('class-audio', `${classId}.mp3`, audioBuffer, 'audio/mpeg');
+
+            scriptData.ttsGeneratedAt = new Date().toISOString();
+            await saveJson('class-audio-scripts', `${classId}.json`, scriptData);
+
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: true, ttsGeneratedAt: scriptData.ttsGeneratedAt }) };
+        } catch (err) {
+            return { status: 500, body: JSON.stringify({ error: `Error generando audio: ${err.message}` }) };
         }
     })
 });

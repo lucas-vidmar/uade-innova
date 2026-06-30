@@ -258,6 +258,31 @@ export async function generateClassMap(text, options = {}) {
 }
 
 /**
+ * Guión de podcast a partir del resumen de clase
+ */
+export async function generatePodcastScript(summaryText, subjectName = '', className = '', options = {}) {
+    const promptConfig = await getActivePrompt('class-podcast').catch(() => null);
+    const systemContent = promptConfig?.systemPrompt || 'Sos un asistente experto en comunicación educativa. Generás guiones de audio claros, profesionales y en español argentino neutro.';
+    const userTemplate = promptConfig?.userPromptTemplate || 'Generá un guión de audio (podcast educativo) en español argentino profesional a partir del siguiente resumen de clase.\n\nMateria: ${subjectName}\nClase: ${className}\n\nResumen:\n${summaryText}\n\nEl guión debe ser fluido, explicativo, pensado para ser escuchado. Usá un tono profesional pero accesible, como un docente explicando los conceptos clave en voz alta. Incluí una breve introducción y un cierre.';
+    const userContent = userTemplate
+        .replace('${subjectName}', subjectName)
+        .replace('${className}', className)
+        .replace('${summaryText}', summaryText.substring(0, 12000));
+
+    const response = await chatCompletion([
+        { role: "system", content: systemContent },
+        { role: "user", content: userContent }
+    ], false, { temperature: 0.5, max_tokens: 2000, headers: options.headers });
+
+    return {
+        content: response.content,
+        usage: response.usage,
+        generatedAt: new Date().toISOString(),
+        model: process.env.AI_FOUNDRY_DEEPSEEK_MODEL || 'deepseek-v4-flash'
+    };
+}
+
+/**
  * Genera audio (TTS)
  * DeepSeek no suele tener TTS, mantenemos Azure OpenAI.
  */

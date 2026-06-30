@@ -140,6 +140,45 @@ export async function generateClassMap(classId, subjectId) {
     return res.json();
 }
 
+export async function getClassAudioScript(classId) {
+    const res = await apiFetch(`${BASE_URL}/class-audio-script/${classId}`);
+    if (!res.ok) return null;
+    return res.json();
+}
+
+export async function saveClassAudioScript(classId, data) {
+    const res = await apiFetch(`${BASE_URL}/class-audio-script/${classId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    });
+    return res.json();
+}
+
+export async function generateClassAudioScript(classId, subjectId) {
+    const res = await apiFetch(`${BASE_URL}/class-audio-script/${classId}/regenerate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subjectId }),
+    });
+    if (!res.ok) {
+        let message = `Error ${res.status}: No se pudo regenerar el guión de podcast`;
+        try { const err = await res.json(); if (err?.error) message = err.error; } catch {}
+        throw new Error(message);
+    }
+    return res.json();
+}
+
+export async function generateClassAudio(classId) {
+    const res = await apiFetch(`${BASE_URL}/class-audio/${classId}/generate`, { method: 'POST' });
+    if (!res.ok) {
+        let message = `Error ${res.status}: No se pudo generar el audio`;
+        try { const err = await res.json(); if (err?.error) message = err.error; } catch {}
+        throw new Error(message);
+    }
+    return res.json();
+}
+
 export async function generateClassAssets(classId, subjectId) {
     const res = await apiFetch(`${BASE_URL}/class-summary/${classId}/regenerate`, {
         method: 'POST',

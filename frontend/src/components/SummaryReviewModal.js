@@ -13,6 +13,8 @@ const turndown = new TurndownService({
 export function createSummaryReviewModal(classId, className, subjectId, onSaved) {
     if (document.querySelector('.modal-overlay')) return;
 
+    let activeTab = 'summary';
+
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
     modal.addEventListener('click', (e) => {
@@ -20,16 +22,19 @@ export function createSummaryReviewModal(classId, className, subjectId, onSaved)
     });
     modal.innerHTML = `
         <div class="modal-content" style="max-width:min(95vw,1400px); width:95%; max-height:90vh; display:flex; flex-direction:column;">
-            <div class="modal-header">
-                <h3 class="modal-title">Revisar Resumen IA: ${className}</h3>
-                <button class="btn-close">&times;</button>
+            <div class="modal-header" style="flex-wrap:wrap; gap:8px;">
+                <h3 class="modal-title" style="flex:1 1 100%; margin-bottom:4px;">Revisar Contenido IA: ${className}</h3>
+                <div class="tab-bar" style="display:flex; gap:2px; width:100%;">
+                    <button class="tab-btn tab-btn-summary active" data-tab="summary" style="flex:1; padding:8px 12px; border:none; background:var(--color-bg-alt); border-radius:var(--radius-md) var(--radius-md) 0 0; cursor:pointer; font-weight:600; font-size:0.85rem; color:var(--color-text-secondary); transition:all 0.15s;">📝 Resumen</button>
+                    <button class="tab-btn tab-btn-map" data-tab="map" style="flex:1; padding:8px 12px; border:none; background:transparent; border-radius:var(--radius-md) var(--radius-md) 0 0; cursor:pointer; font-weight:500; font-size:0.85rem; color:var(--color-text-muted); transition:all 0.15s;">🗺️ Mapa Conceptual</button>
+                    <button class="tab-btn tab-btn-podcast" data-tab="podcast" style="flex:1; padding:8px 12px; border:none; background:transparent; border-radius:var(--radius-md) var(--radius-md) 0 0; cursor:pointer; font-weight:500; font-size:0.85rem; color:var(--color-text-muted); transition:all 0.15s;">🎧 Podcast</button>
+                    <button class="btn-close" style="align-self:flex-start; margin-top:4px;">&times;</button>
+                </div>
             </div>
             <div class="modal-body">
-                <p style="margin-bottom:1.25rem; color:var(--color-text-secondary); font-size:0.875rem;">
-                    Este resumen fue generado automáticamente. Podés editarlo antes de publicarlo para los alumnos.
-                </p>
                 <div class="loading-summary" style="padding:40px; text-align:center;">Cargando activos...</div>
-                <div id="editor-container" style="display:none">
+
+                <div id="tab-summary" style="display:none">
                     <div class="editor-wrapper">
                         <span class="section-label">📝 Resumen Detallado</span>
                         <div class="editor-toolbar">
@@ -47,17 +52,30 @@ export function createSummaryReviewModal(classId, className, subjectId, onSaved)
                         <div id="summary-editor" class="editor-content" contenteditable="true"></div>
                         <textarea id="summary-source" class="form-input" style="display:none;height:250px;font-family:var(--font-mono);font-size:0.875rem;line-height:1.6;padding:15px;border-radius:0 0 var(--radius-md) var(--radius-md);border-top:none;"></textarea>
                     </div>
+                </div>
 
+                <div id="tab-map" style="display:none">
                     <div class="editor-wrapper">
                         <span class="section-label">🗺️ Mapa Conceptual</span>
                         <textarea id="map-editor" class="form-input" style="height:130px;font-family:var(--font-mono);font-size:0.875rem;line-height:1.6;padding:12px 15px;border-radius:var(--radius-md);margin-bottom:6px;" placeholder="graph TD..."></textarea>
                         <div class="map-preview" id="map-preview"><span class="preview-placeholder">Vista previa del diagrama</span></div>
                     </div>
                 </div>
+
+                <div id="tab-podcast" style="display:none">
+                    <div class="editor-wrapper">
+                        <span class="section-label">🎧 Guión de Podcast</span>
+                        <p style="margin:0 0 8px; color:var(--color-text-secondary); font-size:0.8rem;">
+                            Este guión se genera automáticamente desde el resumen. Revisalo, editálo y aprobalo para generar el audio con TTS.
+                        </p>
+                        <textarea id="podcast-editor" class="form-input" style="height:280px;font-family:var(--font-mono);font-size:0.875rem;line-height:1.6;padding:12px 15px;border-radius:var(--radius-md);resize:vertical;" placeholder="Guión de podcast..."></textarea>
+                        <div id="podcast-status" style="margin-top:8px; font-size:0.8rem; color:var(--color-text-muted);"></div>
+                    </div>
+                </div>
             </div>
-            <div class="modal-footer" style="justify-content:space-between">
+            <div class="modal-footer" style="justify-content:space-between; flex-wrap:wrap; gap:8px;">
                 <button class="btn btn-ghost" id="btn-regenerate" style="color:var(--color-primary)">🔄 Regenerar con IA</button>
-                <div class="row" style="gap:12px">
+                <div class="row" style="gap:8px; flex-wrap:wrap;">
                     <button class="btn btn-secondary" id="btn-save-draft">Guardar Borrador</button>
                     <button class="btn btn-primary" id="btn-approve-summary">Aprobar y Publicar</button>
                 </div>
@@ -67,16 +85,40 @@ export function createSummaryReviewModal(classId, className, subjectId, onSaved)
 
     document.body.appendChild(modal);
 
+    const loading = modal.querySelector('.loading-summary');
+    const tabSummary = modal.querySelector('#tab-summary');
+    const tabMap = modal.querySelector('#tab-map');
+    const tabPodcast = modal.querySelector('#tab-podcast');
+
     const summaryEditor = modal.querySelector('#summary-editor');
     const summarySource = modal.querySelector('#summary-source');
     const mapEditor = modal.querySelector('#map-editor');
     const mapPreview = modal.querySelector('#map-preview');
-    const editorContainer = modal.querySelector('#editor-container');
-    const loading = modal.querySelector('.loading-summary');
+    const podcastEditor = modal.querySelector('#podcast-editor');
+    const podcastStatus = modal.querySelector('#podcast-status');
+
     const btnApprove = modal.querySelector('#btn-approve-summary');
     const btnSaveDraft = modal.querySelector('#btn-save-draft');
+    const btnRegenerate = modal.querySelector('#btn-regenerate');
 
     let showSource = false;
+
+    function switchTab(tab) {
+        activeTab = tab;
+        modal.querySelectorAll('.tab-btn').forEach(btn => {
+            const isActive = btn.dataset.tab === tab;
+            btn.style.background = isActive ? 'var(--color-bg-alt)' : 'transparent';
+            btn.style.fontWeight = isActive ? '600' : '500';
+            btn.style.color = isActive ? 'var(--color-text-primary)' : 'var(--color-text-muted)';
+        });
+        tabSummary.style.display = tab === 'summary' ? 'block' : 'none';
+        tabMap.style.display = tab === 'map' ? 'block' : 'none';
+        tabPodcast.style.display = tab === 'podcast' ? 'block' : 'none';
+    }
+
+    modal.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+    });
 
     const toolbarBtns = modal.querySelectorAll('.editor-toolbar button[data-cmd]');
     toolbarBtns.forEach(btn => {
@@ -204,10 +246,11 @@ export function createSummaryReviewModal(classId, className, subjectId, onSaved)
 
     Promise.all([
         api.getClassSummary(classId),
-        api.getClassMap(classId)
-    ]).then(([summaryData, mapData]) => {
+        api.getClassMap(classId),
+        api.getClassAudioScript(classId),
+    ]).then(([summaryData, mapData, audioScriptData]) => {
         loading.style.display = 'none';
-        editorContainer.style.display = 'block';
+        switchTab('summary');
 
         if (summaryData && summaryData.summary) {
             const md = typeof summaryData.summary === 'object' ? summaryData.summary.content : summaryData.summary;
@@ -221,6 +264,17 @@ export function createSummaryReviewModal(classId, className, subjectId, onSaved)
             renderMap();
         } else {
             mapEditor.value = '';
+        }
+
+        if (audioScriptData && audioScriptData.script) {
+            podcastEditor.value = audioScriptData.script;
+            const stat = audioScriptData.validated
+                ? (audioScriptData.ttsGeneratedAt ? '✅ Audio generado' : '✅ Guión validado — audio pendiente')
+                : '📝 Borrador — revisar antes de aprobar';
+            podcastStatus.textContent = `Estado: ${stat}`;
+        } else {
+            podcastEditor.value = '';
+            podcastStatus.textContent = 'Estado: Sin guión generado';
         }
     }).catch(err => {
         console.error('Error loading class assets:', err);
@@ -237,43 +291,69 @@ export function createSummaryReviewModal(classId, className, subjectId, onSaved)
         try {
             btnApprove.disabled = true;
             btnSaveDraft.disabled = true;
+            btnRegenerate.disabled = true;
 
-            await Promise.all([
-                api.saveClassSummary(classId, { 
-                    summary: getSummaryValue(), 
-                    validated 
+            const promises = [
+                api.saveClassSummary(classId, {
+                    summary: getSummaryValue(),
+                    validated
                 }),
                 api.saveClassMap ? api.saveClassMap(classId, { mapCode: mapEditor.value }) : Promise.resolve()
-            ]);
-            toast('success', validated ? 'Publicado' : 'Guardado', validated ? 'El resumen ya es visible para los alumnos.' : 'Cambios guardados como borrador.');
+            ];
+
+            const podcastScript = podcastEditor.value.trim();
+            if (podcastScript) {
+                promises.push(api.saveClassAudioScript(classId, {
+                    script: podcastScript,
+                    validated
+                }));
+            }
+
+            await Promise.all(promises);
+            toast('success', validated ? 'Publicado' : 'Guardado', validated ? 'El contenido ya es visible para los alumnos.' : 'Cambios guardados como borrador.');
             onSaved(validated);
             close();
         } catch (e) {
-            toast('error', 'Error', 'No se pudo guardar el resumen.');
+            toast('error', 'Error', 'No se pudo guardar el contenido.');
         } finally {
             btnApprove.disabled = false;
             btnSaveDraft.disabled = false;
+            btnRegenerate.disabled = false;
         }
     };
 
     btnApprove.onclick = () => save(true);
     btnSaveDraft.onclick = () => save(false);
 
-    const btnRegenerate = modal.querySelector('#btn-regenerate');
     btnRegenerate.onclick = async () => {
         btnRegenerate.disabled = true;
         btnRegenerate.textContent = '🔄 Regenerando...';
         try {
-            const result = await api.generateClassAssets(classId, subjectId);
-            if (result.summary?.summary) {
-                const md = typeof result.summary.summary === 'object' ? result.summary.summary.content : result.summary.summary;
-                setSummaryValue(md);
+            if (activeTab === 'podcast') {
+                const result = await api.generateClassAudioScript(classId, subjectId);
+                if (result.script) {
+                    podcastEditor.value = result.script;
+                    podcastStatus.textContent = 'Estado: 📝 Regenerado — revisar antes de aprobar';
+                }
+                toast('success', 'Regenerado', 'Guión de podcast regenerado con IA.');
+            } else {
+                const result = await api.generateClassAssets(classId, subjectId);
+                if (result.summary?.summary) {
+                    const md = typeof result.summary.summary === 'object' ? result.summary.summary.content : result.summary.summary;
+                    setSummaryValue(md);
+                }
+                if (result.map?.mapCode) {
+                    mapEditor.value = result.map.mapCode;
+                    renderMap();
+                }
+                toast('success', 'Regenerado', 'Resumen y mapa conceptual regenerados con IA.');
+
+                const scriptData = await api.getClassAudioScript(classId);
+                if (scriptData && scriptData.script) {
+                    podcastEditor.value = scriptData.script;
+                    podcastStatus.textContent = 'Estado: 📝 Regenerado — revisar antes de aprobar';
+                }
             }
-            if (result.map?.mapCode) {
-                mapEditor.value = result.map.mapCode;
-                renderMap();
-            }
-            toast('success', 'Regenerado', 'Resumen y mapa conceptual regenerados con IA.');
         } catch (e) {
             toast('error', 'Error', e.message || 'No se pudieron regenerar los activos.');
         } finally {

@@ -32,6 +32,7 @@ const ROUTES = {
     '/teacher/glossary': () => import('./pages/teacher/GlossaryManager.js').then(m => m.renderGlossaryManager),
     '/teacher/transcription-corrections': () => import('./pages/teacher/TranscriptionCorrections.js').then(m => m.renderTranscriptionCorrections),
     '/teacher/transcription-correction': () => import('./pages/teacher/TranscriptionCorrectionDetail.js').then(m => m.renderTranscriptionCorrectionDetail),
+    '/teacher/class': () => import('./pages/teacher/ClassEditor.js').then(m => m.renderClassEditor),
     '/director/dashboard': () => import('./pages/director/Dashboard.js').then(m => m.renderDirectorDashboard),
     '/director/sat-analytics': () => import('./pages/director/SatAnalytics.js').then(m => m.renderDirectorSatAnalytics),
     '/director/prompts': () => import('./pages/director/PromptManager.js').then(m => m.renderDirectorPromptManager),
@@ -76,6 +77,9 @@ async function handleRoute() {
     }
     if (fullPath.startsWith('/teacher/transcription-correction/')) {
         matchedPath = '/teacher/transcription-correction';
+    }
+    if (fullPath.startsWith('/teacher/class/')) {
+        matchedPath = '/teacher/class';
     }
 
     buildShell();
