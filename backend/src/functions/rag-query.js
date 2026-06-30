@@ -597,7 +597,7 @@ ${contextText}
                             completionTokens: finalUsage?.completion_tokens || 0,
                             totalTokens: totalInteractionTokens,
                             promptVersion: promptId,
-                            timestamp: new Date().toISOString()
+                            timestamp: new Date()
                         }).catch(e => context.error('Error guardando Table Metrics (stream):', e));
 
                         // Enviar evento de finalización
@@ -746,7 +746,7 @@ ${contextText}
                 completionTokens: chatUsage?.completion_tokens || 0,
                 totalTokens: totalInteractionTokens,
                 promptVersion: promptId,
-                timestamp: new Date().toISOString()
+                timestamp: new Date()
             }).catch(e => context.error('Error insertando Table Metrics de sesión silenciosa:', e));
         } catch (logErr) {
             context.error('Error guardando log de chat:', logErr);

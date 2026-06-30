@@ -120,7 +120,7 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
               ${isLoading ? '<span class="spinner"></span>' : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" stroke-linecap="round" stroke-linejoin="round"/></svg>`}
             </button>
           </div>
-          ${!hasEnrollment ? '<p class="chat-footer-hint text-error">No estás matriculado en esta materia. Contactá a administración.</p>' : '<p class="chat-footer-hint">La IA puede cometer errores. Verificá la información importante.</p>'}
+          ${!hasEnrollment ? '<p class="chat-footer-hint text-error">No estás matriculado en esta materia. Contactá a administración.</p>' : '<p class="chat-footer-hint">La IA puede cometer errores, recordá que serás evaluado de acuerdo a la bibliografía que figura en el programa analítico.</p>'}
         </div>
       `;
     bindChatEvents();

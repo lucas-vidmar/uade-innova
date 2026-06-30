@@ -25,6 +25,9 @@ export async function renderDirectorInterventions(container) {
           <button class="btn btn-secondary" id="btn-refresh-interventions" style="display:inline-flex;align-items:center;gap:var(--space-2)">
             <span>&#x21bb;</span> Recalcular
           </button>
+          <button class="btn btn-secondary" id="btn-risk-breakdown" style="display:inline-flex;align-items:center;gap:var(--space-2)">
+            <span>&#x2139;</span> ¿Cómo se calcula?
+          </button>
           <button class="btn btn-secondary" id="btn-thresholds-config" style="display:inline-flex;align-items:center;gap:var(--space-2)">
             <span>&#x2699;</span> Umbrales
           </button>
@@ -104,6 +107,93 @@ export async function renderDirectorInterventions(container) {
           <div class="modal-footer">
             <button class="btn btn-secondary" id="thresholds-cancel">Cancelar</button>
             <button class="btn btn-primary" id="thresholds-save">Guardar Cambios</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="risk-breakdown-modal" class="modal-overlay" style="display:none">
+        <div class="modal-content" style="max-width:640px">
+          <div class="modal-header">
+            <h3 style="margin:0">¿C&oacute;mo se calcula el Riesgo Acad&eacute;mico?</h3>
+            <button class="modal-close" id="risk-breakdown-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p style="color:var(--color-text-secondary);margin-bottom:var(--space-4);font-size:0.875rem">
+              El puntaje de riesgo se calcula combinando cuatro factores ponderados. Cada factor se normaliza de 0 a 100 y se multiplica por su peso.
+            </p>
+
+            <div class="card" style="padding:var(--space-4);margin-bottom:var(--space-4)">
+              <h4 style="margin:0 0 var(--space-2);font-size:0.95rem;display:flex;align-items:center;gap:var(--space-2)">
+                <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--color-primary);color:#fff;font-size:0.8rem;font-weight:700">1</span>
+                Promedio de notas
+                <span class="badge badge-info" style="margin-left:auto">Peso: 40%</span>
+              </h4>
+              <p style="margin:0;font-size:0.85rem;color:var(--color-text-secondary)">
+                Si el promedio de notas del alumno es menor al umbral configurado (default: 4), se considera riesgo alto en este factor.
+                <br><strong>F&oacute;rmula:</strong> <code>promedio &lt; umbral_nota ? 100 : 0</code>
+              </p>
+            </div>
+
+            <div class="card" style="padding:var(--space-4);margin-bottom:var(--space-4)">
+              <h4 style="margin:0 0 var(--space-2);font-size:0.95rem;display:flex;align-items:center;gap:var(--space-2)">
+                <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--color-primary);color:#fff;font-size:0.8rem;font-weight:700">2</span>
+                Asistencia
+                <span class="badge badge-info" style="margin-left:auto">Peso: 30%</span>
+              </h4>
+              <p style="margin:0;font-size:0.85rem;color:var(--color-text-secondary)">
+                Si la asistencia del alumno es menor al 60%, se considera riesgo en este factor.
+                <br><strong>F&oacute;rmula:</strong> <code>asistencia &lt; 60% ? 100 : 0</code>
+              </p>
+            </div>
+
+            <div class="card" style="padding:var(--space-4);margin-bottom:var(--space-4)">
+              <h4 style="margin:0 0 var(--space-2);font-size:0.95rem;display:flex;align-items:center;gap:var(--space-2)">
+                <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--color-primary);color:#fff;font-size:0.8rem;font-weight:700">3</span>
+                Inactividad en plataforma
+                <span class="badge badge-info" style="margin-left:auto">Peso: 20%</span>
+              </h4>
+              <p style="margin:0;font-size:0.85rem;color:var(--color-text-secondary)">
+                Se mide la cantidad de d&iacute;as desde el &uacute;ltimo login. Los umbrales (bajo/medio/alto) se configuran en "Umbrales".
+                <br><strong>F&oacute;rmula:</strong> <code>d&iacute;as_sin_login / umbral_alto * 100</code>
+              </p>
+            </div>
+
+            <div class="card" style="padding:var(--space-4);margin-bottom:var(--space-4)">
+              <h4 style="margin:0 0 var(--space-2);font-size:0.95rem;display:flex;align-items:center;gap:var(--space-2)">
+                <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--color-primary);color:#fff;font-size:0.8rem;font-weight:700">4</span>
+                Tareas vencidas
+                <span class="badge badge-info" style="margin-left:auto">Peso: 10%</span>
+              </h4>
+              <p style="margin:0;font-size:0.85rem;color:var(--color-text-secondary)">
+                Cantidad de tareas vencidas sin entregar. A m&aacute;s tareas vencidas, mayor riesgo.
+                <br><strong>F&oacute;rmula:</strong> <code>min(tareas_vencidas / 5, 1) * 100</code>
+              </p>
+            </div>
+
+            <div style="background:var(--color-surface-2);border-radius:var(--radius-md);padding:var(--space-4);margin-bottom:var(--space-3)">
+              <h4 style="margin:0 0 var(--space-2);font-size:0.95rem">Puntaje final</h4>
+              <p style="margin:0;font-size:0.85rem;color:var(--color-text-secondary);font-family:monospace">
+                score = (nota &times; 0.40) + (asistencia &times; 0.30) + (inactividad &times; 0.20) + (tareas &times; 0.10)
+              </p>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--space-3)">
+              <div class="card" style="padding:var(--space-3);text-align:center;border-left:4px solid var(--color-error)">
+                <p style="margin:0;font-weight:700;color:var(--color-error)">Alto</p>
+                <p style="margin:var(--space-1) 0 0;font-size:0.8rem;color:var(--color-text-muted)">score &ge; 70</p>
+              </div>
+              <div class="card" style="padding:var(--space-3);text-align:center;border-left:4px solid var(--color-warning)">
+                <p style="margin:0;font-weight:700;color:var(--color-warning)">Medio</p>
+                <p style="margin:var(--space-1) 0 0;font-size:0.8rem;color:var(--color-text-muted)">score 40 - 69</p>
+              </div>
+              <div class="card" style="padding:var(--space-3);text-align:center;border-left:4px solid var(--color-success)">
+                <p style="margin:0;font-weight:700;color:var(--color-success)">Bajo</p>
+                <p style="margin:var(--space-1) 0 0;font-size:0.8rem;color:var(--color-text-muted)">score &lt; 40</p>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" id="risk-breakdown-cancel">Cerrar</button>
           </div>
         </div>
       </div>
@@ -244,6 +334,22 @@ export async function renderDirectorInterventions(container) {
   };
 
   document.getElementById('btn-thresholds-config').onclick = () => renderThresholdsModal(thresholds);
+
+  document.getElementById('btn-risk-breakdown').onclick = () => {
+    const modal = document.getElementById('risk-breakdown-modal');
+    modal.style.display = 'flex';
+  };
+  document.getElementById('risk-breakdown-close').onclick = () => {
+    document.getElementById('risk-breakdown-modal').style.display = 'none';
+  };
+  document.getElementById('risk-breakdown-cancel').onclick = () => {
+    document.getElementById('risk-breakdown-modal').style.display = 'none';
+  };
+  document.getElementById('risk-breakdown-modal').onclick = (e) => {
+    if (e.target === document.getElementById('risk-breakdown-modal')) {
+      document.getElementById('risk-breakdown-modal').style.display = 'none';
+    }
+  };
 
   function renderThresholdsModal(data) {
     const modal = document.getElementById('thresholds-modal');

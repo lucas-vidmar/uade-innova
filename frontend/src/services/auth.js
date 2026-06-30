@@ -94,6 +94,14 @@ const USERS = {
         department: 'Ingeniería en Informática',
         subjects: [],
     },
+    admin: {
+        id: 'adm-001',
+        name: 'Admin Técnico',
+        email: 'admin@uade.edu.ar',
+        role: 'admin',
+        avatar: 'AT',
+        subjects: [],
+    },
 };
 
 const STUDENT_KEYS = ['student', 'student-002', 'student-003', 'student-004', 'student-005'];

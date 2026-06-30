@@ -30,9 +30,10 @@ export function parseClientPrincipal(request) {
         }
     }
 
-    // 2. Fallback to mock role header for demo/mock mode
-    const mockRole = request.headers.get('x-mock-role');
-    const eduUid = request.headers.get('x-edu-uid');
+    // 2. Fallback to mock role (header or query param) for demo/mock mode
+    // Query params avoid CORS preflight in browser
+    const mockRole = request.headers.get('x-mock-role') || request.query.get('_mock_role');
+    const eduUid = request.headers.get('x-edu-uid') || request.query.get('_mock_uid');
     if (mockRole) {
         const roleMapping = {
             'director': 'Director',

@@ -42,10 +42,6 @@ export function renderHeader(containerOrTitle, titleOrStats = 'Dashboard', showM
           <span class="text-[10px] uppercase font-bold text-text-muted">Promedio</span>
         </div>
         <div class="metric-card bg-surface border border-border p-3 rounded-md flex flex-col items-center min-w-[100px]">
-          <span class="text-lg font-bold text-error">2</span>
-          <span class="text-[10px] uppercase font-bold text-text-muted">Riesgo</span>
-        </div>
-        <div class="metric-card bg-surface border border-border p-3 rounded-md flex flex-col items-center min-w-[100px]">
           <span class="text-lg font-bold text-success">92%</span>
           <span class="text-[10px] uppercase font-bold text-text-muted">Asistencia</span>
         </div>

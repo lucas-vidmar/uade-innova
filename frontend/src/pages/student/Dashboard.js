@@ -140,11 +140,7 @@ export async function renderStudentDashboard(container) {
             />
           </div>
 
-          <div class="metrics-container grid grid-cols-3 gap-2 w-full" id="dashboard-metrics-container">
-            <div class="bg-transparent p-2 flex flex-col items-center justify-center animate-pulse">
-              <span class="h-8 w-8 bg-surface-2 rounded mb-2"></span>
-              <span class="h-3 w-16 bg-surface-2 rounded"></span>
-            </div>
+          <div class="metrics-container flex w-full" style="justify-content:flex-end;gap:16px;margin-top:16px" id="dashboard-metrics-container">
             <div class="bg-transparent p-2 flex flex-col items-center justify-center animate-pulse">
               <span class="h-8 w-8 bg-surface-2 rounded mb-2"></span>
               <span class="h-3 w-16 bg-surface-2 rounded"></span>
@@ -414,7 +410,6 @@ export async function renderStudentDashboard(container) {
     const avgGrade = completedTasks.length > 0 
       ? completedTasks.reduce((a, t) => a + (Number(t.grade) || 0), 0) / completedTasks.length
       : 0;
-    const riskValue = avgGrade < 4 && completedTasks.length > 0 ? 1 : 0;
 
     // Update Tasks List
     sectionTasks.innerHTML = `
@@ -451,18 +446,11 @@ export async function renderStudentDashboard(container) {
     const metricsContainer = document.getElementById('dashboard-metrics-container');
     if (metricsContainer) {
       metricsContainer.innerHTML = `
-        <div class="bg-transparent p-2 flex flex-col items-center justify-center transition-all min-w-[100px]">
+        <div class="bg-transparent p-2 flex flex-col items-center transition-all min-w-[100px]">
           <span class="block text-3xl font-extrabold text-primary">${avgGrade > 0 ? avgGrade.toFixed(1) : '-'}</span>
           <span class="text-[10px] uppercase font-bold text-text-muted mt-1.5 tracking-widest text-center">Promedio</span>
         </div>
-        <div class="bg-transparent p-2 flex flex-col items-center justify-center transition-all min-w-[100px]">
-          <div class="flex items-center justify-center gap-1.5 mb-1.5 px-3 py-1 rounded-full" style="background: ${riskValue > 0 ? 'rgba(239,68,68,0.1)' : 'var(--color-surface-2)'}">
-            <span class="w-1.5 h-1.5 rounded-full ${riskValue > 0 ? 'bg-red-500' : 'bg-text-muted'}"></span>
-            <span class="text-xs font-bold ${riskValue > 0 ? 'text-error' : 'text-text-muted'}">${riskValue}</span>
-          </div>
-          <span class="text-[10px] uppercase font-bold text-text-muted tracking-widest text-center">Riesgo Académico</span>
-        </div>
-        <div class="bg-transparent p-2 flex flex-col items-center justify-center transition-all min-w-[100px]">
+        <div class="bg-transparent p-2 flex flex-col items-center transition-all min-w-[100px]">
           <span class="block text-3xl font-extrabold text-success">92%</span>
           <span class="text-[10px] uppercase font-bold text-text-muted mt-1.5 tracking-widest text-center">Asistencia</span>
         </div>

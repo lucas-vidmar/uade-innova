@@ -229,7 +229,7 @@ export async function saveMetricsToTable(tableName, entity) {
     try {
         const tableClient = getTableClient(tableName);
         await tableClient.createTable(); // Si ya existe, no hace nada peligroso 
-        await tableClient.createEntity(entity);
+        await tableClient.upsertEntity(entity, 'Replace');
     } catch (err) {
         console.error(`[Storage] Error persistiendo métricas a tabla ${tableName}:`, err.message);
     }

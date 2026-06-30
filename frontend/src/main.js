@@ -35,13 +35,17 @@ const ROUTES = {
     '/teacher/class': () => import('./pages/teacher/ClassEditor.js').then(m => m.renderClassEditor),
     '/director/dashboard': () => import('./pages/director/Dashboard.js').then(m => m.renderDirectorDashboard),
     '/director/sat-analytics': () => import('./pages/director/SatAnalytics.js').then(m => m.renderDirectorSatAnalytics),
-    '/director/prompts': () => import('./pages/director/PromptManager.js').then(m => m.renderDirectorPromptManager),
     '/director/classes': () => import('./pages/director/ClassManagement.js').then(m => m.renderClassManagement),
     '/director/subjects': () => import('./pages/director/SubjectManagement.js').then(m => m.renderSubjectManagement),
     '/director/interventions': () => import('./pages/director/Interventions.js').then(m => m.renderDirectorInterventions),
-    '/director/compliance': () => import('./pages/director/Compliance.js').then(m => m.renderDirectorCompliance),
-    '/director/archive-usage': () => import('./pages/director/ArchiveUsage.js').then(m => m.renderDirectorArchiveUsage),
+    '/admin/dashboard': () => import('./pages/admin/Dashboard.js').then(m => m.renderAdminDashboard),
     '/admin/users': () => import('./pages/admin/UserManagement.js').then(m => m.renderUserManagement),
+    '/admin/settings': () => import('./pages/admin/Settings.js').then(m => m.renderAdminSettings),
+    '/admin/model-config': () => import('./pages/admin/ModelConfig.js').then(m => m.renderAdminModelConfig),
+    '/admin/retention': () => import('./pages/admin/Retention.js').then(m => m.renderAdminRetention),
+    '/admin/prompts': () => import('./pages/director/PromptManager.js').then(m => m.renderDirectorPromptManager),
+    '/admin/compliance': () => import('./pages/director/Compliance.js').then(m => m.renderDirectorCompliance),
+    '/admin/archive-usage': () => import('./pages/director/ArchiveUsage.js').then(m => m.renderDirectorArchiveUsage),
 };
 
 /* ── App shell ───────────────────────────────────────────── */
@@ -92,7 +96,8 @@ async function handleRoute() {
     const rolePrefixMap = {
         student: ['student'],
         teacher: ['teacher'],
-        director: ['director', 'admin'],
+        director: ['director'],
+        admin: ['admin'],
     };
 
     const allowedPrefixes = rolePrefixMap[actualRole] || ['student'];
@@ -155,7 +160,8 @@ async function bootstrap() {
         const rolePrefixMap = {
             student: ['student'],
             teacher: ['teacher'],
-            director: ['director', 'admin'],
+            director: ['director'],
+            admin: ['admin'],
         };
         const allowedPrefixes = rolePrefixMap[actualRole] || ['student'];
 

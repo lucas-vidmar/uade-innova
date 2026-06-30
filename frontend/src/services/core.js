@@ -66,20 +66,25 @@ export function withCorrelationHeaders(headers = {}) {
         normalized.set(TRACEPARENT_HEADER, stored || generateTraceParent());
     }
 
-    const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    const isPreviewEnv = window.location.hostname.includes('.azurestaticapps.net');
-    if (isLocalDev || isPreviewEnv) {
-        const mockRole = sessionStorage.getItem('edu_role') || 'student';
-        normalized.set('x-mock-role', mockRole);
-        const eduUid = sessionStorage.getItem('edu_uid');
-        if (eduUid) normalized.set('x-edu-uid', eduUid);
-    }
-
     return normalized;
 }
 
 export async function apiFetch(resource, options = {}) {
-    return fetch(resource, {
+    let url = resource;
+
+    // Pass mock auth as query params (not headers) to avoid CORS preflight
+    const isPreviewEnv = window.location.hostname.includes('.azurestaticapps.net');
+    if (isPreviewEnv) {
+        const params = new URLSearchParams();
+        const mockRole = sessionStorage.getItem('edu_role');
+        if (mockRole) params.set('_mock_role', mockRole);
+        const eduUid = sessionStorage.getItem('edu_uid');
+        if (eduUid) params.set('_mock_uid', eduUid);
+        const qs = params.toString();
+        if (qs) url = resource + (resource.includes('?') ? '&' : '?') + qs;
+    }
+
+    return fetch(url, {
         ...options,
         headers: withCorrelationHeaders(options.headers),
     });

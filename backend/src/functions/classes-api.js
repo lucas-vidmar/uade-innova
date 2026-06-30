@@ -80,19 +80,22 @@ async function loadSessionMetricsRows(context, windowDays) {
     try {
         const tableClient = getTableClient(SESSION_METRICS_TABLE);
         const rows = [];
-        const filterParts = [];
-        if (windowDays && Number.isFinite(windowDays) && windowDays > 0) {
-            const startDate = new Date();
-            startDate.setUTCHours(0, 0, 0, 0);
-            startDate.setUTCDate(startDate.getUTCDate() - windowDays + 1);
-            const startIso = startDate.toISOString().slice(0, 10);
-            filterParts.push(`timestamp ge datetime'${startIso}T00:00:00Z'`);
-        }
-        const iter = tableClient.listEntities({
-            queryOptions: filterParts.length ? { filter: filterParts.join(' and ') } : undefined,
-        });
+        const iter = tableClient.listEntities();
         for await (const entity of iter) {
             rows.push(entity);
+        }
+        // Filter by date in JavaScript to avoid OData serialization issues
+        if (windowDays && Number.isFinite(windowDays) && windowDays > 0) {
+            const cutoff = new Date();
+            cutoff.setUTCHours(0, 0, 0, 0);
+            cutoff.setUTCDate(cutoff.getUTCDate() - windowDays + 1);
+            const cutoffTs = cutoff.getTime();
+            return rows.filter(r => {
+                const val = r.timestamp || r.Timestamp;
+                if (!val) return false;
+                const ts = typeof val === 'string' ? new Date(val).getTime() : new Date(val).getTime();
+                return !isNaN(ts) && ts >= cutoffTs;
+            });
         }
         return rows;
     } catch (err) {

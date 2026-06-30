@@ -1,25 +1,30 @@
 /* ============================================================
-   Director Dashboard — Adoption metrics, cost analytics & early alerts
+   Director Dashboard — Academic metrics, adoption & early alerts
    ============================================================ */
 import { api } from '../../services/api.js';
 import { renderHeader } from '../../components/Header.js';
+
+let _ragChartWindow = 30;
 
 export async function renderDirectorDashboard(container) {
     renderHeader('Panel Directivo');
     container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando datos directivos...</div>`;
     let _kpiData = null;
 
-    const [data = {}, powerBiMetrics = null, vectorHealth = null] = await Promise.all([
-        api.getDirectorStats(),
-        api.getDirectorPowerBiMetrics(30),
-        api.getVectorHealth(),
+    const [rawData, rawMetrics] = await Promise.all([
+        api.getDirectorStats().catch(() => null),
+        api.getDirectorPowerBiMetrics(60).catch(() => null),
     ]);
+    const data = rawData || {};
+    const powerBiMetrics = rawMetrics;
 
-    const budget = data.budget || {};
-    const spikeAlert = data.spikeAlert;
-    const costBySubject = data.costBySubject || [];
     const wausBySubject = data.wausBySubject || [];
     const materialUploads = data.materialUploads || { byTeacher: [] };
+    const totalInteractions = data.ragInteractions || 0;
+    const ragDailyData = (powerBiMetrics?.daily || []).map(d => ({
+        date: d.date,
+        count: d.ragInteractions || 0,
+    })).sort((a, b) => a.date.localeCompare(b.date));
 
     const defaultEarlyAlertSummary = {
         totalStudentsAtRisk: 0, highRiskCount: 0, mediumRiskCount: 0,
@@ -27,38 +32,9 @@ export async function renderDirectorDashboard(container) {
         attendanceBelow60Count: 0, attendance60To75Count: 0, attendanceAbove75Count: 0,
     };
     const earlyAlertSummary = { ...defaultEarlyAlertSummary, ...(data.earlyAlertSummary || {}) };
-    const subjectAdoption = data.subjectAdoption || [];
-    const rawPricing = powerBiMetrics?.pricing;
-    const powerBiPricing = {
-        inputPerMillionTokensUsd: Number(rawPricing?.inputPerMillionTokensUsd) || 0.15,
-        outputPerMillionTokensUsd: Number(rawPricing?.outputPerMillionTokensUsd) || 0.60,
-        inputPerTokenUsd: Number(rawPricing?.inputPerTokenUsd) || 0.00000015,
-        outputPerTokenUsd: Number(rawPricing?.outputPerTokenUsd) || 0.0000006,
-    };
-    const powerBiSummary = powerBiMetrics?.summary || { totalPromptTokens: 0, totalCompletionTokens: 0, totalTokens: 0, totalInteractions: 0, totalCostUsd: 0, avgCostPerInteractionUsd: 0 };
-
-    const safePercentUsed = Number.isFinite(budget.percentUsed) ? budget.percentUsed : 0;
-    const safeMonthlyLimit = Number.isFinite(budget.monthlyLimit) ? budget.monthlyLimit : 0;
-    const safeProjected = Number.isFinite(budget.projectedEndOfMonth) ? budget.projectedEndOfMonth : 0;
-    const budgetBannerClass = budget.warningLevel === 'critical' ? 'budget-banner-critical' : 'budget-banner-warning';
-    const budgetIcon = budget.warningLevel === 'critical' ? '🚨' : '⚠️';
-    const budgetText = budget.warningLevel === 'critical'
-        ? `ALERTA: Se proyecta superar el presupuesto mensual ($${safeProjected.toFixed(2)} de $${safeMonthlyLimit.toFixed(2)})`
-        : budget.warningLevel === 'warning'
-            ? `Proyectado: ${safePercentUsed.toFixed(1)}% del presupuesto mensual`
-            : '';
-
-    const costPerActiveStudent = data.costPerActiveStudent || 0;
     _kpiData = data;
 
     container.innerHTML = `
-    ${budget.warningLevel && budget.warningLevel !== 'none' ? `
-      <div class="${budgetBannerClass}" style="padding:var(--space-4);margin-bottom:var(--space-6);border-radius:var(--radius-md);font-weight:600;display:flex;align-items:center;gap:var(--space-3);background:${budget.warningLevel === 'critical' ? 'var(--color-error-bg, #fef2f2)' : 'var(--color-warning-bg, #fffbeb)'};color:${budget.warningLevel === 'critical' ? 'var(--color-error, #dc2626)' : 'var(--color-warning, #d97706)'};border:1px solid ${budget.warningLevel === 'critical' ? 'var(--color-error, #dc2626)' : 'var(--color-warning, #d97706)'}">
-        <span>${budgetIcon}</span>
-        <span>${budgetText}</span>
-      </div>
-    ` : ''}
-
     <!-- Export controls -->
     <div style="display:flex;justify-content:flex-end;gap:var(--space-3);margin-bottom:var(--space-4)" id="kpi-export-bar">
       <button class="btn btn-secondary btn-sm" id="btn-export-csv" style="display:inline-flex;align-items:center;gap:var(--space-2)">
@@ -69,21 +45,20 @@ export async function renderDirectorDashboard(container) {
       </button>
     </div>
 
-    <!-- KPIs -->
-    <div class="grid-4" style="margin-bottom:var(--space-8)">
+    <!-- KPIs row -->
+    <div class="grid-4" style="margin-bottom:var(--space-4)">
       <div class="kpi-card">
         <div class="kpi-label">Usuarios activos (hoy)</div>
         <div class="kpi-value">${data.dau || 0}</div>
         <span class="kpi-delta positive">${data.dauDelta || '0%'}</span>
       </div>
       <div class="kpi-card">
-        <div class="kpi-label">Total clases</div>
+        <div class="kpi-label">Clases cargadas</div>
         <div class="kpi-value">${data.totalClasses || 0}</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-label">Interacciones RAG</div>
-        <div class="kpi-value">${data.ragInteractions || 0}</div>
-        <span class="kpi-delta positive">${data.ragDelta || '0%'}</span>
+        <div class="kpi-label">Clases procesadas</div>
+        <div class="kpi-value">${data.totalClasses || 0}</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Adopción global</div>
@@ -94,52 +69,49 @@ export async function renderDirectorDashboard(container) {
       </div>
     </div>
 
-    <!-- Cost per subject line chart → replaces static Power BI table -->
-    <div class="card" id="cost-per-subject-card" style="margin-bottom:var(--space-8)">
-      <div class="card-header">
-        <span class="card-title">${icon('chart')} Costo por Materia (30 días) ${spikeAlert ? `<span class="badge badge-error" style="margin-left:var(--space-3)">Pico de costo detectado: +${spikeAlert.delta}%</span>` : ''}</span>
-        <span class="badge badge-info">USD</span>
-      </div>
-      <p style="margin:0 0 var(--space-4);color:var(--color-text-secondary);font-size:var(--font-size-sm)">
-        Fórmulas: Input <strong>$${Number(powerBiPricing.inputPerMillionTokensUsd).toFixed(2)}/1M</strong> · Output <strong>$${Number(powerBiPricing.outputPerMillionTokensUsd).toFixed(2)}/1M</strong>
-      </p>
-      <div class="grid-4" style="margin-bottom:var(--space-4)">
-        <div class="kpi-card">
-          <div class="kpi-label">Costo total (USD)</div>
-          <div class="kpi-value">$${Number(powerBiSummary.totalCostUsd || 0).toFixed(4)}</div>
+    <!-- Class views summary row -->
+    <div class="grid-2" style="margin-bottom:var(--space-8)">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">${icon('book')} Visualización de Clases</span>
+          <span class="badge badge-info">Resumen</span>
         </div>
-        <div class="kpi-card">
-          <div class="kpi-label">Costo por interacción</div>
-          <div class="kpi-value">$${Number(powerBiSummary.avgCostPerInteractionUsd || 0).toFixed(6)}</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-label">Costo promedio por alumno activo</div>
-          <div class="kpi-value">$${costPerActiveStudent.toFixed(4)}</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-label">Proyectado fin de mes</div>
-          <div class="kpi-value" style="color:${budget.warningLevel === 'critical' ? 'var(--color-error)' : budget.warningLevel === 'warning' ? 'var(--color-warning)' : 'var(--color-text-primary)'}">$${Number(budget.projectedEndOfMonth || 0).toFixed(2)}</div>
+        <div style="padding:var(--space-4)">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4)">
+            <div class="kpi-card" style="margin:0">
+              <div class="kpi-label">Clases vistas</div>
+              <div class="kpi-value" id="kpi-classes-viewed">-</div>
+            </div>
+            <div class="kpi-card" style="margin:0">
+              <div class="kpi-label">Alumnos que vieron</div>
+              <div class="kpi-value" id="kpi-students-viewed">-</div>
+            </div>
+            <div class="kpi-card" style="margin:0;grid-column:1/-1">
+              <div class="kpi-label">Clases por alumno (promedio)</div>
+              <div class="kpi-value" id="kpi-avg-per-student">-</div>
+            </div>
+          </div>
         </div>
       </div>
-      <div style="position:relative">
-        <canvas id="cost-line-chart" style="width:100%;height:300px;display:block"></canvas>
-        ${costBySubject.length === 0 ? '<div class="empty-state" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">Sin datos de costo por materia.</div>' : ''}
+
+      <!-- RAG interactions temporal chart -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">${icon('chart')} Interacciones RAG</span>
+          <span class="badge badge-info">${totalInteractions} totales</span>
+        </div>
+        <div style="padding:var(--space-3)">
+          <div style="display:flex;gap:var(--space-2);margin-bottom:var(--space-3)" id="rag-chart-filters">
+            <button class="btn btn-sm ${_ragChartWindow === 7 ? 'btn-primary' : 'btn-secondary'}" data-rag-window="7">7 d&iacute;as</button>
+            <button class="btn btn-sm ${_ragChartWindow === 15 ? 'btn-primary' : 'btn-secondary'}" data-rag-window="15">15 d&iacute;as</button>
+            <button class="btn btn-sm ${_ragChartWindow === 30 ? 'btn-primary' : 'btn-secondary'}" data-rag-window="30">30 d&iacute;as</button>
+            <button class="btn btn-sm ${_ragChartWindow === 60 ? 'btn-primary' : 'btn-secondary'}" data-rag-window="60">60 d&iacute;as</button>
+          </div>
+          <div style="position:relative">
+            <canvas id="rag-interactions-chart" style="width:100%;height:200px;display:block"></canvas>
+          </div>
+        </div>
       </div>
-      <div style="display:flex;flex-wrap:wrap;gap:var(--space-3);margin-top:var(--space-3)">
-        ${costBySubject.map((s, i) => `
-          <label style="display:inline-flex;align-items:center;gap:var(--space-1);cursor:pointer;font-size:var(--font-size-sm)">
-            <input type="checkbox" class="subject-chart-toggle" data-id="${s.subjectId}" checked>
-            <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${CHART_COLORS[i % CHART_COLORS.length]}"></span>
-            ${s.subjectName}
-          </label>
-        `).join('')}
-      </div>
-      <small style="display:block;margin-top:var(--space-3);color:var(--color-text-secondary)">
-        Fuente: ${data.costSource?.method === 'azure-cost-api' ? 'Azure Cost Management API' : 'SessionMetrics (token-based)'}
-        · ${data.costSource?.method === 'azure-cost-api' ? `Incluye ${(data.costSource?.services || []).length} servicios` : 'Solo cubre costos de tokens AI'}
-        · Última actualización: ${powerBiMetrics?.updatedAt || 'n/a'}
-      </small>
-      ${data.costSource?.note ? `<small style="display:block;margin-top:var(--space-1);color:var(--color-text-muted);font-size:0.7rem">${data.costSource.note}</small>` : ''}
     </div>
 
     <!-- Material upload frequency by teacher -->
@@ -177,49 +149,6 @@ export async function renderDirectorDashboard(container) {
       </div>
     </div>
     ` : ''}
-
-    <div class="card" id="vector-health-card" style="margin-bottom:var(--space-8)">
-      <div class="card-header">
-        <span class="card-title">${icon('database')} Vector Index Health</span>
-        <span class="badge ${vectorHealth ? 'badge-info' : 'badge-warning'}">${vectorHealth ? 'Disponible' : 'Sin datos'}</span>
-      </div>
-      ${vectorHealth ? `
-        <div class="table-wrap">
-          <table class="data-table" id="vector-health-table">
-            <tbody>
-              <tr><td><strong>Provider</strong></td><td>${vectorHealth.provider || 'n/a'}</td></tr>
-              <tr><td><strong>Index</strong></td><td>${vectorHealth.indexName || 'n/a'}</td></tr>
-              <tr><td><strong>Total Documents</strong></td><td>${Number(vectorHealth?.stats?.totalVectorCount || 0).toLocaleString('es-AR')}</td></tr>
-              <tr><td><strong>Index Fullness</strong></td><td>${Math.round(Number(vectorHealth?.stats?.indexFullness || 0) * 10000) / 100}%</td></tr>
-              ${vectorHealth.latencyMs ? `
-              <tr><td><strong>Latency p50</strong></td><td>${vectorHealth.latencyMs.p50 != null ? vectorHealth.latencyMs.p50 + ' ms' : 'n/a'}</td></tr>
-              <tr><td><strong>Latency p95</strong></td><td>${vectorHealth.latencyMs.p95 != null ? vectorHealth.latencyMs.p95 + ' ms' : 'n/a'}</td></tr>
-              ` : ''}
-              ${vectorHealth.failureRatio != null ? `
-              <tr><td><strong>Failure Ratio</strong></td><td>${(vectorHealth.failureRatio * 100).toFixed(1)}%</td></tr>
-              ` : ''}
-              ${vectorHealth.metricsSampleCount != null ? `
-              <tr><td><strong>Metrics Sample</strong></td><td>${vectorHealth.metricsSampleCount} ops (${vectorHealth.metricsWindow || 5} min)</td></tr>
-              ` : ''}
-            </tbody>
-          </table>
-        </div>
-        <small style="display:block;margin-top:var(--space-3);color:var(--color-text-secondary)">Snapshot: ${vectorHealth.timestamp || 'n/a'}</small>
-        <small style="display:block;margin-top:var(--space-1);color:var(--color-text-muted);font-size:0.7rem">Nota: métricas de latencia y errores son de esta sesión — se reinician en cada cold start de la Function App</small>
-      ` : `
-        <div class="empty-state" style="padding:20px">No se pudo obtener el estado del índice vectorial.</div>
-      `}
-    </div>
-
-    <!-- Student Class View Progress (per-subject aggregation) -->
-    <div class="card" id="class-views-card" style="margin-bottom:var(--space-8)">
-      <div class="card-header">
-        <span class="card-title">${icon('book')} Visualización de Clases por Materia</span>
-        <span class="badge badge-info">Vistas de alumnos</span>
-      </div>
-      <div style="padding:var(--space-4);text-align:center;color:var(--color-text-secondary);font-size:var(--text-sm)" class="animate-pulse" id="class-views-loading">Cargando visualizaciones...</div>
-      <div id="class-views-content" style="display:none"></div>
-    </div>
 
     <div class="grid-2">
       <!-- Weekly active users by subject (bar chart) -->
@@ -260,28 +189,28 @@ export async function renderDirectorDashboard(container) {
         <small style="display:block;margin-top:var(--space-3);color:var(--color-text-secondary)">
           Vista anonimizada: no se muestran datos personales de estudiantes.
         </small>
-        <div style="margin-top:var(--space-3);text-align:right;display:flex;justify-content:flex-end;gap:var(--space-3)">
-          <a href="#/director/interventions" style="color:var(--color-accent);text-decoration:none;font-size:0.875rem">
-            Ver detalle de intervenciones &rarr;
-          </a>
-          <a href="#/director/compliance" style="color:var(--color-accent);text-decoration:none;font-size:0.875rem">
-            Cumplimiento &rarr;
-          </a>
+        <div style="margin-top:var(--space-2);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:var(--space-2)">
+          <button class="btn btn-ghost btn-sm" id="btn-risk-breakdown-dashboard" style="font-size:0.8rem;color:var(--color-text-secondary);text-decoration:underline;cursor:pointer;border:none;background:none;padding:0;">
+            &#x2139; ¿C&oacute;mo se calcula el riesgo?
+          </button>
+          <div style="display:flex;gap:var(--space-3)">
+            <a href="#/director/interventions" style="color:var(--color-accent);text-decoration:none;font-size:0.875rem">
+              Ver detalle de intervenciones &rarr;
+            </a>
+            <a href="#/director/compliance" style="color:var(--color-accent);text-decoration:none;font-size:0.875rem">
+              Cumplimiento &rarr;
+            </a>
+          </div>
         </div>
       </div>
     </div>
   `;
 
-    // Render student class views per subject
-    renderClassViewsBySubject(costBySubject, container);
+    // Load class views and render
+    loadAndRenderClassViews(data, container);
 
-    // Render cost line chart
-    if (costBySubject.length > 0) {
-        renderCostLineChart(costBySubject);
-        document.querySelectorAll('.subject-chart-toggle').forEach(cb => {
-            cb.addEventListener('change', () => renderCostLineChart(costBySubject));
-        });
-    }
+    // Render RAG interactions chart
+    renderRagInteractionChart(ragDailyData, totalInteractions);
 
     // Render WAUS bar chart
     if (wausBySubject.length > 0) {
@@ -309,23 +238,185 @@ export async function renderDirectorDashboard(container) {
         });
     }
 
-    // Window resize handler for charts
-    if (window._dashboardResizeHandler) {
-        window.removeEventListener('resize', window._dashboardResizeHandler);
-    }
-    let resizeTimer;
-    window._dashboardResizeHandler = () => {
-        clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(() => {
-            if (costBySubject.length > 0) renderCostLineChart(costBySubject);
-            if (wausBySubject.length > 0) renderWausBarChart(wausBySubject);
-        }, 200);
-    };
-    window.addEventListener('resize', window._dashboardResizeHandler);
+    // Risk breakdown modal
+    const riskModal = document.createElement('div');
+    riskModal.className = 'modal-overlay';
+    riskModal.id = 'risk-breakdown-dashboard-modal';
+    riskModal.style.display = 'none';
+    riskModal.innerHTML = `
+      <div class="modal-content" style="max-width:640px">
+        <div class="modal-header">
+          <h3 style="margin:0">¿C&oacute;mo se calcula el Riesgo Acad&eacute;mico?</h3>
+          <button type="button" class="btn btn-ghost btn-sm risk-breakdown-dashboard-close" aria-label="Cerrar">&times;</button>
+        </div>
+        <div class="modal-body">...</div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary risk-breakdown-dashboard-close">Cerrar</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(riskModal);
+
+    document.getElementById('btn-risk-breakdown-dashboard')?.addEventListener('click', () => {
+      document.getElementById('risk-breakdown-dashboard-modal').style.display = 'flex';
+    });
+
+    // RAG chart filter buttons
+    document.querySelectorAll('[data-rag-window]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        _ragChartWindow = parseInt(btn.dataset.ragWindow, 10);
+        document.querySelectorAll('[data-rag-window]').forEach(b => b.className = `btn btn-sm btn-secondary`);
+        btn.className = `btn btn-sm btn-primary`;
+        renderRagInteractionChart(ragDailyData, totalInteractions);
+      });
+    });
 
     // Export button handlers
     document.getElementById('btn-export-csv')?.addEventListener('click', () => handleExportCsv(_kpiData));
     document.getElementById('btn-export-pdf')?.addEventListener('click', () => handleExportPdf(_kpiData));
+}
+
+// ── Load class view data and update KPIs ─────────────────────
+async function loadAndRenderClassViews(data, container) {
+  const subjects = (data.costBySubject || []).filter(s => s.subjectId);
+  if (subjects.length === 0) return;
+
+  try {
+    const results = await Promise.allSettled(
+      subjects.map(s => api.getClassViews(s.subjectId).catch(() => []))
+    );
+
+    let totalViewedClasses = 0;
+    const allStudents = new Set();
+    const allClassIds = new Set();
+
+    results.forEach((result) => {
+      const views = result.status === 'fulfilled' ? result.value : [];
+      views.forEach(v => {
+        if (v.studentId) allStudents.add(v.studentId);
+        if (v.classId) allClassIds.add(v.classId);
+      });
+    });
+    totalViewedClasses = allClassIds.size;
+
+    document.getElementById('kpi-classes-viewed').textContent = totalViewedClasses;
+    document.getElementById('kpi-students-viewed').textContent = allStudents.size;
+    const avg = allStudents.size > 0 ? (totalViewedClasses / allStudents.size).toFixed(1) : '-';
+    document.getElementById('kpi-avg-per-student').textContent = avg;
+  } catch (err) {
+    console.error('[Director Dashboard] Error loading class views:', err);
+  }
+}
+
+// ── Render RAG Interaction temporal chart (Canvas) ──────────
+function renderRagInteractionChart(ragDailyData, totalInteractions) {
+  const canvas = document.getElementById('rag-interactions-chart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.parentElement?.getBoundingClientRect();
+  const width = rect?.width || 400;
+  if (width <= 0) return;
+  canvas.width = width * dpr;
+  canvas.height = 220 * dpr;
+  canvas.style.width = width + 'px';
+  canvas.style.height = '220px';
+  ctx.scale(dpr, dpr);
+  const W = width;
+  const H = 220;
+
+  const days = _ragChartWindow;
+  const padL = 48, padR = 12, padT = 24, padB = 30;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+
+  // Build daily values from real data within the window
+  const now = new Date();
+  const cutoff = new Date(now);
+  cutoff.setDate(cutoff.getDate() - days + 1);
+  cutoff.setHours(0, 0, 0, 0);
+
+  const points = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(cutoff);
+    d.setDate(d.getDate() + i);
+    const dateStr = d.toISOString().slice(0, 10);
+    const match = ragDailyData.find(r => r.date === dateStr);
+    points.push(match ? match.count : 0);
+  }
+
+  const maxVal = Math.max(...points, 1);
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Grid lines (horizontal, 4 lines)
+  ctx.strokeStyle = 'rgba(128,128,128,0.12)';
+  ctx.lineWidth = 1;
+  ctx.font = '9px monospace';
+  ctx.textAlign = 'right';
+  for (let i = 0; i <= 3; i++) {
+    const y = padT + (chartH / 3) * i;
+    const val = Math.round(maxVal - (maxVal / 3) * i);
+    ctx.beginPath();
+    ctx.moveTo(padL, y);
+    ctx.lineTo(W - padR, y);
+    ctx.stroke();
+    // Y-axis label
+    ctx.fillStyle = 'rgba(128,128,128,0.5)';
+    ctx.fillText(String(val), padL - 4, y + 3);
+  }
+
+  // Y-axis title
+  ctx.save();
+  ctx.translate(8, padT + chartH / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillStyle = 'rgba(128,128,128,0.45)';
+  ctx.font = '9px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('Cantidad de consultas', 0, 0);
+  ctx.restore();
+
+  // Line chart
+  ctx.strokeStyle = '#0077AB';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  points.forEach((val, i) => {
+    const x = padL + (i / Math.max(days - 1, 1)) * chartW;
+    const y = padT + chartH - (val / maxVal) * chartH;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // Fill area under the line
+  const lastIdx = points.length - 1;
+  ctx.lineTo(padL + (lastIdx / Math.max(days - 1, 1)) * chartW, padT + chartH);
+  ctx.lineTo(padL, padT + chartH);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(0,119,171,0.08)';
+  ctx.fill();
+
+  // Dots + x-axis date labels
+  const labelStep = Math.max(1, Math.floor(days / 6));
+  points.forEach((val, i) => {
+    const x = padL + (i / Math.max(days - 1, 1)) * chartW;
+    const y = padT + chartH - (val / maxVal) * chartH;
+    ctx.fillStyle = '#0077AB';
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.fill();
+    if (i % labelStep === 0) {
+      const d = new Date(cutoff);
+      d.setDate(d.getDate() + i);
+      const label = d.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' });
+      ctx.fillStyle = 'rgba(128,128,128,0.6)';
+      ctx.font = '9px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(label, x, H - padB + 14);
+    }
+  });
+
 }
 
 // ── KPI Export handlers ─────────────────────────────────────
@@ -343,26 +434,15 @@ function buildKpiCsv(data) {
   const push = (s, m, v) => lines.push(`${s},${m},${v}`);
   lines.push('seccion,metrica,valor');
   push('General','Usuarios activos (hoy)', data.dau || 0);
-  push('General','Clases procesadas', data.classesProcessed || 0);
+  push('General','Clases cargadas', data.totalClasses || 0);
+  push('General','Clases procesadas', data.totalClasses || 0);
   push('General','Interacciones RAG', data.ragInteractions || 0);
   push('General','Adopcion global', (data.adoptionRate || 0) + '%');
-  push('General','Costo por alumno activo', '$' + Number(data.costPerActiveStudent || 0).toFixed(4));
-  lines.push('');
-  push('Presupuesto','Presupuesto mensual', '$' + Number(data.budget?.monthlyLimit || 0).toFixed(2));
-  push('Presupuesto','Gasto actual', '$' + Number(data.budget?.currentSpend || 0).toFixed(2));
-  push('Presupuesto','Proyectado fin de mes', '$' + Number(data.budget?.projectedEndOfMonth || 0).toFixed(2));
-  push('Presupuesto','Porcentaje usado', Number(data.budget?.percentUsed || 0).toFixed(1) + '%');
   lines.push('');
   const ea = data.earlyAlertSummary || {};
   push('Alertas','Total en riesgo', ea.totalStudentsAtRisk || 0);
   push('Alertas','Riesgo alto', ea.highRiskCount || 0);
   push('Alertas','Riesgo medio', ea.mediumRiskCount || 0);
-  lines.push('');
-  lines.push('seccion,materia,costo_usd');
-  (data.costBySubject || []).forEach(s => {
-    const total = (s.dailyCost || []).reduce((sum, d) => sum + (d.cost || 0), 0);
-    push('Costo por materia', s.subjectName || s.subjectId, total.toFixed(6));
-  });
   lines.push('');
   lines.push('seccion,materia,semana_actual');
   (data.wausBySubject || []).forEach(s => push('WAUS', s.subjectName || s.subjectId, s.currentWeek || 0));
@@ -372,8 +452,6 @@ function buildKpiCsv(data) {
     push('Carga de materiales', t.teacherId, `${t.transcripts||0},${t.presentations||0},${t.notes||0},${t.bibliography||0},${t.total||0}`);
   });
   lines.push('');
-  lines.push(`cost_source,${data.costSource?.method || 'token-based'}`);
-  lines.push(`cost_source_note,${(data.costSource?.note || '').replace(/,/g, ';')}`);
   lines.push(`generado_en,${new Date().toISOString()}`);
   return lines.join('\n');
 }
@@ -427,12 +505,7 @@ async function handleExportPdf(data) {
 
 function openPrintView(data) {
   const t = (v) => String(v ?? '');
-  const budget = data.budget || {};
   const ea = data.earlyAlertSummary || {};
-  const costRows = (data.costBySubject || []).map(s => {
-    const total = (s.dailyCost || []).reduce((sum, d) => sum + (d.cost || 0), 0);
-    return `<tr><td>${t(s.subjectName || s.subjectId)}</td><td>$${total.toFixed(6)}</td></tr>`;
-  }).join('');
   const wausRows = (data.wausBySubject || []).map(s =>
     `<tr><td>${t(s.subjectName || s.subjectId)}</td><td>${s.currentWeek || 0}</td></tr>`
   ).join('');
@@ -462,23 +535,15 @@ function openPrintView(data) {
 </style></head>
 <body>
   <h1>Dashboard Directivo — KPIs</h1>
-  <p>Generado: ${new Date().toISOString().slice(0, 16).replace('T', ' ')} &mdash; Datos anonimizados, sin PII</p>
+  <p>Generado: ${new Date().toISOString().slice(0, 16).replace('T', ' ')}</p>
   <h2>M&eacute;tricas Generales</h2>
   <div class="kpi-grid">
     <div class="kpi-item"><div class="kpi-value">${t(data.dau)}</div><div class="kpi-label">Usuarios activos (hoy)</div></div>
-    <div class="kpi-item"><div class="kpi-value">${t(data.classesProcessed)}</div><div class="kpi-label">Clases procesadas</div></div>
+    <div class="kpi-item"><div class="kpi-value">${t(data.totalClasses)}</div><div class="kpi-label">Clases cargadas</div></div>
+    <div class="kpi-item"><div class="kpi-value">${t(data.totalClasses)}</div><div class="kpi-label">Clases procesadas</div></div>
     <div class="kpi-item"><div class="kpi-value">${t(data.ragInteractions)}</div><div class="kpi-label">Interacciones RAG</div></div>
     <div class="kpi-item"><div class="kpi-value">${t(data.adoptionRate)}%</div><div class="kpi-label">Adopci&oacute;n global</div></div>
-    <div class="kpi-item"><div class="kpi-value">$${Number(data.costPerActiveStudent || 0).toFixed(4)}</div><div class="kpi-label">Costo por alumno activo</div></div>
   </div>
-  <h2>Presupuesto</h2>
-  <table><thead><tr><th>M&eacute;trica</th><th>Valor</th></tr></thead>
-  <tbody>
-    <tr><td>Presupuesto mensual</td><td>$${Number(budget.monthlyLimit || 0).toFixed(2)}</td></tr>
-    <tr><td>Gasto actual</td><td>$${Number(budget.currentSpend || 0).toFixed(2)}</td></tr>
-    <tr><td>Proyectado fin de mes</td><td>$${Number(budget.projectedEndOfMonth || 0).toFixed(2)}</td></tr>
-    <tr><td>Porcentaje usado</td><td>${Number(budget.percentUsed || 0).toFixed(1)}%</td></tr>
-  </tbody></table>
   <h2>Alertas Tempranas</h2>
   <table><thead><tr><th>M&eacute;trica</th><th>Valor</th></tr></thead>
   <tbody>
@@ -488,154 +553,10 @@ function openPrintView(data) {
     <tr><td>Asistencia &lt; 60%</td><td>${t(ea.attendanceBelow60Count)}</td></tr>
     <tr><td>Asistencia 60-75%</td><td>${t(ea.attendance60To75Count)}</td></tr>
   </tbody></table>
-  <h2>Costo por Materia (30 d&iacute;as)</h2>
-  <table><thead><tr><th>Materia</th><th>Costo (USD)</th></tr></thead>
-  <tbody>${costRows || '<tr><td colspan="2">Sin datos</td></tr>'}</tbody></table>
-  <h2>Usuarios Activos Semanales</h2>
-  <table><thead><tr><th>Materia</th><th>Semana actual</th></tr></thead>
-  <tbody>${wausRows || '<tr><td colspan="2">Sin datos</td></tr>'}</tbody></table>
-  <h2>Carga de Materiales por Docente</h2>
-  <table><thead><tr><th>Docente</th><th>Transcripciones</th><th>Presentaciones</th><th>Apuntes</th><th>Bibliograf&iacute;a</th><th>Total</th></tr></thead>
-  <tbody>${materialRows || '<tr><td colspan="6">Sin datos</td></tr>'}</tbody></table>
-  <div class="footer">Este informe contiene datos agregados y anonimizados. No incluye informaci&oacute;n personal identificable (PII).</div>
+  <div class="footer">Datos anonimizados, sin PII.</div>
 </body></html>`);
   printWin.document.close();
   setTimeout(() => { printWin.focus(); printWin.print(); }, 500);
-}
-
-const CHART_COLORS = ['#0077AB', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#38bdf8', '#ec4899'];
-
-function renderCostLineChart(costBySubject) {
-    const canvas = document.getElementById('cost-line-chart');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.parentElement?.getBoundingClientRect();
-    const width = rect?.width || 600;
-    if (width <= 0) return;
-    canvas.width = width * dpr;
-    canvas.height = 300 * dpr;
-    canvas.style.width = width + 'px';
-    canvas.style.height = '300px';
-    ctx.scale(dpr, dpr);
-    const W = canvas.width / dpr;
-    const H = canvas.height / dpr;
-
-    const toggles = document.querySelectorAll('.subject-chart-toggle');
-    const visible = costBySubject.filter((_, i) => toggles[i]?.checked !== false);
-
-    // Clear canvas
-    ctx.clearRect(0, 0, W, H);
-
-    if (visible.length === 0) {
-        ctx.fillStyle = 'rgba(255,255,255,0.4)';
-        ctx.font = '14px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText('Selecciona al menos una materia para ver el gráfico', W / 2, H / 2);
-        return;
-    }
-
-    const allPoints = visible.flatMap(s => s.dailyCost?.map(d => d.cost) || []);
-    if (allPoints.length === 0) return;
-    const maxCost = Math.max(...allPoints, 0.001);
-    const dates = [...new Set(visible.flatMap(s => s.dailyCost?.map(d => d.date) || []))].sort();
-    if (dates.length === 0) return;
-
-    const padL = 50, padR = 20, padT = 20, padB = 30;
-    const chartW = W - padL - padR;
-    const chartH = H - padT - padB;
-    const xStep = chartW / Math.max(dates.length - 1, 1);
-
-    // Tooltip state
-    let tooltip = canvas.parentElement.querySelector('.chart-tooltip');
-    if (!tooltip) {
-        tooltip = document.createElement('div');
-        tooltip.className = 'chart-tooltip';
-        tooltip.style.cssText = 'position:absolute;background:rgba(0,0,0,0.85);color:#fff;padding:6px 10px;border-radius:4px;font-size:12px;pointer-events:none;opacity:0;transition:opacity 0.15s;z-index:10;white-space:nowrap;';
-        canvas.parentElement.style.position = 'relative';
-        canvas.parentElement.appendChild(tooltip);
-    }
-
-    // Grid lines
-    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-    ctx.lineWidth = 1;
-    for (let i = 0; i <= 4; i++) {
-        const y = padT + (chartH / 4) * i;
-        ctx.beginPath();
-        ctx.moveTo(padL, y);
-        ctx.lineTo(W - padR, y);
-        ctx.stroke();
-    }
-
-    const allDrawnPoints = [];
-
-    visible.forEach((subject, si) => {
-        const color = CHART_COLORS[costBySubject.indexOf(subject) % CHART_COLORS.length];
-        const points = dates.map(date => {
-            const p = (subject.dailyCost || []).find(d => d.date === date);
-            return { date, cost: p ? p.cost : 0, subjectName: subject.subjectName };
-        });
-
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        points.forEach((p, i) => {
-            const x = padL + i * xStep;
-            const y = padT + chartH - (p.cost / maxCost) * chartH;
-            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-            allDrawnPoints.push({ x, y, date: p.date, cost: p.cost, color, subjectName: p.subjectName });
-        });
-        ctx.stroke();
-
-        // Dots
-        points.forEach((p, i) => {
-            const x = padL + i * xStep;
-            const y = padT + chartH - (p.cost / maxCost) * chartH;
-            ctx.fillStyle = color;
-            ctx.beginPath();
-            ctx.arc(x, y, 3, 0, Math.PI * 2);
-            ctx.fill();
-        });
-    });
-
-    // X labels (show 5 evenly spaced)
-    ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    ctx.font = '10px monospace';
-    ctx.textAlign = 'center';
-    const labelStep = Math.max(1, Math.floor(dates.length / 5));
-    dates.forEach((d, i) => {
-        if (i % labelStep !== 0) return;
-        const x = padL + i * xStep;
-        ctx.fillText(d.slice(5), x, H - padB + 18);
-    });
-
-    // Hover tooltip
-    canvas.onmousemove = (e) => {
-        const rect = canvas.getBoundingClientRect();
-        const mx = e.clientX - rect.left;
-        const my = e.clientY - rect.top;
-        let nearest = null;
-        let minDist = Infinity;
-        for (const p of allDrawnPoints) {
-            const dx = mx - p.x;
-            const dy = my - p.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < 12 && dist < minDist) {
-                minDist = dist;
-                nearest = p;
-            }
-        }
-        if (nearest) {
-            tooltip.innerHTML = `<strong>${nearest.subjectName}</strong><br>${nearest.date}: $${nearest.cost.toFixed(4)}`;
-            tooltip.style.left = `${Math.min(mx + 12, rect.width - 140)}px`;
-            tooltip.style.top = `${Math.max(my - 40, 0)}px`;
-            tooltip.style.opacity = '1';
-        } else {
-            tooltip.style.opacity = '0';
-        }
-    };
-    canvas.onmouseleave = () => { tooltip.style.opacity = '0'; };
 }
 
 function renderWausBarChart(wausBySubject) {
@@ -690,97 +611,6 @@ function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = String(str || '');
   return div.innerHTML;
-}
-
-async function renderClassViewsBySubject(costBySubject, container) {
-  const loadingEl = container.querySelector('#class-views-loading');
-  const contentEl = container.querySelector('#class-views-content');
-  if (!loadingEl || !contentEl) return;
-
-  const subjects = (costBySubject || []).filter(s => s.subjectId);
-  if (subjects.length === 0) {
-    loadingEl.textContent = 'No hay materias disponibles.';
-    return;
-  }
-
-  try {
-    const subjectViewsMap = new Map();
-
-    const results = await Promise.allSettled(
-      subjects.map(s =>
-        api.getClassViews(s.subjectId).catch(() => [])
-      )
-    );
-
-    results.forEach((result, i) => {
-      const subject = subjects[i];
-      const views = result.status === 'fulfilled' ? result.value : [];
-      
-      const totalViews = views.length;
-      const uniqueStudents = new Set(views.map(v => v.studentId)).size;
-      const uniqueClasses = new Set(views.map(v => v.classId)).size;
-
-      subjectViewsMap.set(subject.subjectId, {
-        subjectName: subject.subjectName || subject.subjectId,
-        totalViews,
-        uniqueStudents,
-        uniqueClasses,
-        views,
-      });
-    });
-
-    const sortedSubjects = Array.from(subjectViewsMap.values())
-      .sort((a, b) => b.totalViews - a.totalViews);
-
-    const totalAllViews = sortedSubjects.reduce((s, x) => s + x.totalViews, 0);
-    const totalAllStudents = sortedSubjects.reduce((s, x) => s + x.uniqueStudents, 0);
-
-    loadingEl.style.display = 'none';
-    contentEl.style.display = 'block';
-
-    if (sortedSubjects.length === 0) {
-      contentEl.innerHTML = '<div style="padding:var(--space-4);text-align:center;color:var(--color-text-muted);font-size:var(--text-sm)">Sin datos de visualización.</div>';
-      return;
-    }
-
-    contentEl.innerHTML = `
-      <div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-6);flex-wrap:wrap;border-bottom:1px solid var(--color-border)">
-        <div><strong>${totalAllViews}</strong><span style="color:var(--color-text-muted);margin-left:4px">vistas totales</span></div>
-        <div><strong>${totalAllStudents}</strong><span style="color:var(--color-text-muted);margin-left:4px">alumnos únicos</span></div>
-        <div><strong>${sortedSubjects.length}</strong><span style="color:var(--color-text-muted);margin-left:4px">materias</span></div>
-      </div>
-      <div style="overflow-x:auto;padding:var(--space-2)">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th style="text-align:left;padding:var(--space-2) var(--space-3);font-weight:600;">Materia</th>
-              <th style="text-align:center;padding:var(--space-2) var(--space-3);font-weight:600;">Vistas totales</th>
-              <th style="text-align:center;padding:var(--space-2) var(--space-3);font-weight:600;">Alumnos únicos</th>
-              <th style="text-align:center;padding:var(--space-2) var(--space-3);font-weight:600;">Clases vistas</th>
-              <th style="text-align:center;padding:var(--space-2) var(--space-3);font-weight:600;">Prom. vistas/alumno</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${sortedSubjects.map(s => {
-              const avgPerStudent = s.uniqueStudents > 0 ? (s.totalViews / s.uniqueStudents).toFixed(1) : '—';
-              return `
-                <tr>
-                  <td style="padding:var(--space-2) var(--space-3);font-weight:500;">${escapeHtml(s.subjectName)}</td>
-                  <td style="text-align:center;padding:var(--space-2) var(--space-3);">${s.totalViews}</td>
-                  <td style="text-align:center;padding:var(--space-2) var(--space-3);">${s.uniqueStudents}</td>
-                  <td style="text-align:center;padding:var(--space-2) var(--space-3);">${s.uniqueClasses}</td>
-                  <td style="text-align:center;padding:var(--space-2) var(--space-3);font-weight:600;">${avgPerStudent}</td>
-                </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>
-    `;
-  } catch (err) {
-    console.error('[Director Dashboard] Error loading class views:', err);
-    loadingEl.textContent = 'Error al cargar visualizaciones.';
-  }
 }
 
 function icon(name) {

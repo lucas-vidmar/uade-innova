@@ -123,7 +123,7 @@ app.http('ingest-material', {
                         classId: classIds[0] || '',
                         materialType,
                         filename: fileName,
-                        timestamp: new Date().toISOString()
+                        timestamp: new Date()
                     });
                 } catch (metricsErr) {
                     log.warn('Non-fatal metrics write error', { error: metricsErr.message });
