@@ -2,6 +2,7 @@
    Director Dashboard — Academic metrics, adoption & early alerts
    ============================================================ */
 import { api } from '../../services/api.js';
+import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
 
 let _ragChartWindow = 30;
@@ -278,12 +279,20 @@ export async function renderDirectorDashboard(container) {
 
 // ── Load class view data and update KPIs ─────────────────────
 async function loadAndRenderClassViews(data, container) {
-  const subjects = (data.costBySubject || []).filter(s => s.subjectId);
-  if (subjects.length === 0) return;
+  let subjects = (auth.getUser().subjects || []).filter(s => s.id);
+  if (subjects.length === 0) {
+    try { subjects = (await api.getSubjects()) || []; } catch (e) { /* ignore */ }
+  }
+  if (subjects.length === 0) {
+    // Fallback: known subject IDs from the platform
+    subjects = [
+      { id: 'arq-software-2026' }, { id: 'diseno-sistemas-2026' }, { id: 'eco-internacional-2026' },
+    ];
+  }
 
   try {
     const results = await Promise.allSettled(
-      subjects.map(s => api.getClassViews(s.subjectId).catch(() => []))
+      subjects.map(s => api.getClassViews(s.id || s.subjectId).catch(() => []))
     );
 
     let totalViewedClasses = 0;
