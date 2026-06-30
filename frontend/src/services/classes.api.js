@@ -192,3 +192,51 @@ export async function generateClassAssets(classId, subjectId) {
     }
     return res.json();
 }
+
+// ─── Class View Tracking (localStorage + API) ─────────────────
+
+const CLASS_VIEWS_KEY = 'edu_class_views';
+
+export function getLocalClassViews() {
+    return readLocalJson(CLASS_VIEWS_KEY, {});
+}
+
+export function setLocalClassView(classId) {
+    const views = getLocalClassViews();
+    const now = new Date().toISOString();
+    if (views[classId]) {
+        views[classId].viewCount++;
+        views[classId].lastViewedAt = now;
+    } else {
+        views[classId] = { viewedAt: now, viewCount: 1, lastViewedAt: now };
+    }
+    writeLocalJson(CLASS_VIEWS_KEY, views);
+    return views[classId];
+}
+
+export async function trackClassView(classId, subjectId) {
+    // Fire-and-forget: update local state immediately, then sync to server
+    setLocalClassView(classId);
+    try {
+        await apiFetch(`${BASE_URL}/class-views`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ classId, subjectId }),
+        });
+    } catch (err) {
+        console.warn('[API] trackClassView failed (non-critical):', err);
+    }
+}
+
+export async function getClassViews(subjectId, userId) {
+    const params = new URLSearchParams({ subjectId });
+    if (userId) params.set('userId', userId);
+    try {
+        const res = await apiFetch(`${BASE_URL}/class-views?${params}`);
+        if (!res.ok) return [];
+        return res.json();
+    } catch (err) {
+        console.warn('[API] getClassViews failed:', err);
+        return [];
+    }
+}

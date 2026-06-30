@@ -211,6 +211,16 @@ export async function renderDirectorDashboard(container) {
       `}
     </div>
 
+    <!-- Student Class View Progress (per-subject aggregation) -->
+    <div class="card" id="class-views-card" style="margin-bottom:var(--space-8)">
+      <div class="card-header">
+        <span class="card-title">${icon('book')} Visualización de Clases por Materia</span>
+        <span class="badge badge-info">Vistas de alumnos</span>
+      </div>
+      <div style="padding:var(--space-4);text-align:center;color:var(--color-text-secondary);font-size:var(--text-sm)" class="animate-pulse" id="class-views-loading">Cargando visualizaciones...</div>
+      <div id="class-views-content" style="display:none"></div>
+    </div>
+
     <div class="grid-2">
       <!-- Weekly active users by subject (bar chart) -->
       <div class="card">
@@ -261,6 +271,9 @@ export async function renderDirectorDashboard(container) {
       </div>
     </div>
   `;
+
+    // Render student class views per subject
+    renderClassViewsBySubject(costBySubject, container);
 
     // Render cost line chart
     if (costBySubject.length > 0) {
@@ -490,12 +503,6 @@ function openPrintView(data) {
   setTimeout(() => { printWin.focus(); printWin.print(); }, 500);
 }
 
-function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = String(str || '');
-    return div.innerHTML;
-}
-
 const CHART_COLORS = ['#0077AB', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#38bdf8', '#ec4899'];
 
 function renderCostLineChart(costBySubject) {
@@ -677,6 +684,103 @@ function renderWausBarChart(wausBySubject) {
         const name = d.subjectName?.length > 14 ? d.subjectName?.slice(0, 12) + '...' : d.subjectName || d.subjectId;
         ctx.fillText(name, groupX + barW / 2, H - 4);
     });
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = String(str || '');
+  return div.innerHTML;
+}
+
+async function renderClassViewsBySubject(costBySubject, container) {
+  const loadingEl = container.querySelector('#class-views-loading');
+  const contentEl = container.querySelector('#class-views-content');
+  if (!loadingEl || !contentEl) return;
+
+  const subjects = (costBySubject || []).filter(s => s.subjectId);
+  if (subjects.length === 0) {
+    loadingEl.textContent = 'No hay materias disponibles.';
+    return;
+  }
+
+  try {
+    const subjectViewsMap = new Map();
+
+    const results = await Promise.allSettled(
+      subjects.map(s =>
+        api.getClassViews(s.subjectId).catch(() => [])
+      )
+    );
+
+    results.forEach((result, i) => {
+      const subject = subjects[i];
+      const views = result.status === 'fulfilled' ? result.value : [];
+      
+      const totalViews = views.length;
+      const uniqueStudents = new Set(views.map(v => v.studentId)).size;
+      const uniqueClasses = new Set(views.map(v => v.classId)).size;
+
+      subjectViewsMap.set(subject.subjectId, {
+        subjectName: subject.subjectName || subject.subjectId,
+        totalViews,
+        uniqueStudents,
+        uniqueClasses,
+        views,
+      });
+    });
+
+    const sortedSubjects = Array.from(subjectViewsMap.values())
+      .sort((a, b) => b.totalViews - a.totalViews);
+
+    const totalAllViews = sortedSubjects.reduce((s, x) => s + x.totalViews, 0);
+    const totalAllStudents = sortedSubjects.reduce((s, x) => s + x.uniqueStudents, 0);
+
+    loadingEl.style.display = 'none';
+    contentEl.style.display = 'block';
+
+    if (sortedSubjects.length === 0) {
+      contentEl.innerHTML = '<div style="padding:var(--space-4);text-align:center;color:var(--color-text-muted);font-size:var(--text-sm)">Sin datos de visualización.</div>';
+      return;
+    }
+
+    contentEl.innerHTML = `
+      <div style="padding:var(--space-3) var(--space-4);display:flex;gap:var(--space-6);flex-wrap:wrap;border-bottom:1px solid var(--color-border)">
+        <div><strong>${totalAllViews}</strong><span style="color:var(--color-text-muted);margin-left:4px">vistas totales</span></div>
+        <div><strong>${totalAllStudents}</strong><span style="color:var(--color-text-muted);margin-left:4px">alumnos únicos</span></div>
+        <div><strong>${sortedSubjects.length}</strong><span style="color:var(--color-text-muted);margin-left:4px">materias</span></div>
+      </div>
+      <div style="overflow-x:auto;padding:var(--space-2)">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:var(--space-2) var(--space-3);font-weight:600;">Materia</th>
+              <th style="text-align:center;padding:var(--space-2) var(--space-3);font-weight:600;">Vistas totales</th>
+              <th style="text-align:center;padding:var(--space-2) var(--space-3);font-weight:600;">Alumnos únicos</th>
+              <th style="text-align:center;padding:var(--space-2) var(--space-3);font-weight:600;">Clases vistas</th>
+              <th style="text-align:center;padding:var(--space-2) var(--space-3);font-weight:600;">Prom. vistas/alumno</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${sortedSubjects.map(s => {
+              const avgPerStudent = s.uniqueStudents > 0 ? (s.totalViews / s.uniqueStudents).toFixed(1) : '—';
+              return `
+                <tr>
+                  <td style="padding:var(--space-2) var(--space-3);font-weight:500;">${escapeHtml(s.subjectName)}</td>
+                  <td style="text-align:center;padding:var(--space-2) var(--space-3);">${s.totalViews}</td>
+                  <td style="text-align:center;padding:var(--space-2) var(--space-3);">${s.uniqueStudents}</td>
+                  <td style="text-align:center;padding:var(--space-2) var(--space-3);">${s.uniqueClasses}</td>
+                  <td style="text-align:center;padding:var(--space-2) var(--space-3);font-weight:600;">${avgPerStudent}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (err) {
+    console.error('[Director Dashboard] Error loading class views:', err);
+    loadingEl.textContent = 'Error al cargar visualizaciones.';
+  }
 }
 
 function icon(name) {

@@ -98,6 +98,9 @@ export async function renderClassDetail(container) {
             return;
         }
 
+        // Track class view (fire-and-forget)
+        api.trackClassView(classId, activeSubjectId);
+
         if (!classInfo.summaryReady) {
             container.innerHTML = `
                 <div class="empty-state" style="padding:60px 40px;text-align:center">

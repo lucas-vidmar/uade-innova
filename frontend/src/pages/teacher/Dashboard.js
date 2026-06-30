@@ -195,11 +195,98 @@ export async function renderTeacherDashboard(container) {
       ` : ''}
     </div>
 
+    <div class="section-title" style="margin-top:var(--space-10)"><h2>${icon('activity')} Progreso de Alumnos</h2><div class="line"></div></div>
+    <div class="card" id="student-progress-section">
+      <div style="padding:var(--space-4);text-align:center;color:var(--color-text-secondary);font-size:var(--text-sm)" class="animate-pulse">Cargando progreso de alumnos...</div>
+    </div>
+
     <div id="weights-section"></div>
   `;
 
   const weightsSection = container.querySelector('#weights-section');
   renderSubjectWeights(weightsSection, activeSubjectId, activeSubjectName);
+
+  // ─── Student Progress Section ──────────────────────────────
+  (async () => {
+    const progressSection = container.querySelector('#student-progress-section');
+    if (!progressSection) return;
+    try {
+      const [classViews, enrollments] = await Promise.all([
+        api.getClassViews(activeSubjectId),
+        api.getEnrollments(activeSubjectId).catch(() => []),
+      ]);
+
+      const studentEnrollments = (enrollments || []).filter(e => e.role === 'student' && e.status === 'active');
+      const studentIds = [...new Set([...studentEnrollments.map(e => e.userId), ...classViews.map(v => v.studentId)])];
+
+      if (studentIds.length === 0 || classes.length === 0) {
+        progressSection.innerHTML = '<div style="padding:var(--space-4);text-align:center;color:var(--color-text-muted);font-size:var(--text-sm)">No hay alumnos inscriptos o clases para mostrar progreso.</div>';
+        return;
+      }
+
+      const studentNames = {};
+      for (const e of studentEnrollments) {
+        studentNames[e.userId] = e.userId;
+      }
+
+      const viewsByStudent = {};
+      for (const v of classViews) {
+        if (!viewsByStudent[v.studentId]) viewsByStudent[v.studentId] = new Set();
+        viewsByStudent[v.studentId].add(v.classId);
+      }
+
+      const sortedClasses = [...classes].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+
+      progressSection.innerHTML = `
+        <div style="overflow-x:auto;padding:var(--space-2)">
+          <table style="width:100%;border-collapse:collapse;font-size:var(--text-sm)">
+            <thead>
+              <tr>
+                <th style="text-align:left;padding:var(--space-2) var(--space-3);border-bottom:2px solid var(--color-border);white-space:nowrap;font-weight:600;position:sticky;left:0;background:var(--color-surface);">Alumno</th>
+                ${sortedClasses.map(c => `
+                  <th style="text-align:center;padding:var(--space-2) var(--space-1);border-bottom:2px solid var(--color-border);white-space:nowrap;font-size:10px;max-width:80px;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(c.title)}">${escapeHtml(c.title).split('—')[1]?.trim() || escapeHtml(c.title).slice(0, 20)}</th>
+                `).join('')}
+                <th style="text-align:center;padding:var(--space-2) var(--space-3);border-bottom:2px solid var(--color-border);white-space:nowrap;font-weight:600;">% Visto</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${studentIds.map(sid => {
+                const viewed = viewsByStudent[sid] || new Set();
+                const viewedCount = sortedClasses.filter(c => c.summaryReady && viewed.has(c.id)).length;
+                const availableCount = sortedClasses.filter(c => c.summaryReady).length;
+                const pct = availableCount > 0 ? Math.round((viewedCount / availableCount) * 100) : 0;
+                return `
+                  <tr>
+                    <td style="padding:var(--space-2) var(--space-3);border-bottom:1px solid var(--color-border);font-weight:500;white-space:nowrap;position:sticky;left:0;background:var(--color-surface);">${escapeHtml(studentNames[sid] || sid)}</td>
+                    ${sortedClasses.map(c => {
+                      if (!c.summaryReady) return '<td style="text-align:center;padding:var(--space-2);border-bottom:1px solid var(--color-border);color:var(--color-text-muted)">—</td>';
+                      const seen = viewed.has(c.id);
+                      return `
+                        <td style="text-align:center;padding:var(--space-2);border-bottom:1px solid var(--color-border);">
+                          <span style="display:inline-block;width:18px;height:18px;border-radius:50%;background:${seen ? 'var(--color-success)' : 'var(--color-surface-2)'};color:${seen ? 'white' : 'var(--color-text-muted)'};font-size:11px;line-height:18px;font-weight:700;">${seen ? '✓' : '·'}</span>
+                        </td>
+                      `;
+                    }).join('')}
+                    <td style="text-align:center;padding:var(--space-2) var(--space-3);border-bottom:1px solid var(--color-border);font-weight:600;">${pct}%</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div style="padding:var(--space-2) var(--space-3);font-size:10px;color:var(--color-text-muted);border-top:1px solid var(--color-border);display:flex;gap:var(--space-4);align-items:center;">
+          <span>👤 ${studentIds.length} alumnos</span>
+          <span>📚 ${sortedClasses.length} clases</span>
+          <span style="display:flex;align-items:center;gap:4px;"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:var(--color-success);"></span> Visto</span>
+          <span style="display:flex;align-items:center;gap:4px;"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:var(--color-surface-2);"></span> No visto</span>
+          <span style="display:flex;align-items:center;gap:4px;color:var(--color-text-muted);">— No disponible</span>
+        </div>
+      `;
+    } catch (err) {
+      console.error('[Teacher Dashboard] Error loading student progress:', err);
+      progressSection.innerHTML = '<div style="padding:var(--space-4);text-align:center;color:var(--color-text-muted);font-size:var(--text-sm)">Error al cargar progreso de alumnos.</div>';
+    }
+  })();
 
   container.querySelector('#create-task-btn')?.addEventListener('click', () => {
     showCreateTaskModal(activeSubjectId, classes, container);
@@ -557,6 +644,7 @@ function icon(name) {
     clock: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v6l4 2"/></svg>',
     book: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>',
     alert: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.86 1.82 18a2 2 0 0 0 1.72 3h16.92a2 2 0 0 0 1.72-3L13.7 3.86a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
+    activity: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg>',
   };
 
   return `<span class="ui-icon" aria-hidden="true">${icons[name] || icons.clock}</span>`;

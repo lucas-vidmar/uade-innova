@@ -4,7 +4,7 @@ import { createStructuredLogger } from '../services/structured-logger.js';
 import { loadJson, saveJson, listBlobs, deleteBlob, uploadFile, downloadFile, getTableClient } from '../services/storage.js';
 import { v4 as uuidv4 } from 'uuid';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
-import { listClassesBySubject, listMaterialsBySubject, listMaterialsByClass, replaceClassesForSubject, deleteMaterialStateById, getMaterialState, upsertMaterialState, deleteClassesBySubject, deleteMaterialsBySubject, getEnrollmentsByUser, getEnrollment } from '../services/state-store.js';
+import { listClassesBySubject, listMaterialsBySubject, listMaterialsByClass, replaceClassesForSubject, deleteMaterialStateById, getMaterialState, upsertMaterialState, deleteClassesBySubject, deleteMaterialsBySubject, getEnrollmentsByUser, getEnrollment, listClassViewsByStudent, deleteClassViewsBySubject } from '../services/state-store.js';
 import * as vectorStore from '../services/vector-store.js';
 import { trackPollingEvent } from '../services/telemetry.js';
 import { chatCompletion, generateClassSummary, generateClassMap, generateClassAudio, generatePodcastScript } from '../services/ai.js';
@@ -693,6 +693,14 @@ app.http('delete-subject', {
                 }
                 await deleteClassesBySubject(subjectId);
 
+                // 4. Limpiar ClassViews
+                try {
+                    await deleteClassViewsBySubject(subjectId);
+                    context.log(`[CascadeDelete] ClassViews de ${subjectId} eliminados.`);
+                } catch (cvErr) {
+                    context.error(`[CascadeDelete] Error eliminando ClassViews:`, cvErr);
+                }
+
                 context.log(`[CascadeDelete] Limpieza de ${subjectId} completada.`);
             }
 
@@ -743,10 +751,23 @@ app.http('get-classes', {
             }
         }
 
+        let studentViewsMap = new Map();
+        const isStudent = !isDirector && !principal?.userRoles?.includes('Docente');
+
         try {
             let classesConfig = [];
             let materials = [];
             let tableSuccess = false;
+
+            // Load student's class views if they are a student
+            if (isStudent) {
+                try {
+                    const studentViews = await listClassViewsByStudent(subjectId, userId);
+                    studentViewsMap = new Map(studentViews.map(v => [v.classId, v]));
+                } catch (viewErr) {
+                    context.log.warn(`[get-classes] Could not load class views for ${userId}: ${viewErr.message}`);
+                }
+            }
 
             try {
                 classesConfig = await listClassesBySubject(subjectId);
@@ -793,12 +814,16 @@ app.http('get-classes', {
 
             const resultClasses = classesConfig.map(c => {
                 if (!c.date) context.log.warn(`[get-classes] Class ${c.id} ("${c.title}") is missing the date field.`);
+                const view = studentViewsMap.get(c.id);
                 return { 
                     ...c, 
                     materials: [], 
                     summaryReady: c.summaryReady || false,
                     professorIds: c.professorIds || [],
-                    studentIds: c.studentIds || []
+                    studentIds: c.studentIds || [],
+                    studentViewedAt: view?.viewedAt || null,
+                    studentViewCount: view?.viewCount || 0,
+                    studentLastViewedAt: view?.lastViewedAt || null,
                 };
             });
 

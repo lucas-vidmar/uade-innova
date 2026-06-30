@@ -10,6 +10,7 @@ const CORRECTIONS_PENDING_TABLE = process.env.AZURE_TABLE_CORRECTIONS_PENDING ||
 const TRANSCRIPTION_CORRECTIONS_TABLE = process.env.AZURE_TABLE_TRANSCRIPTION_CORRECTIONS || 'TranscriptionCorrections';
 export const RATINGS_TABLE = process.env.AZURE_TABLE_CONVERSATION_RATINGS || 'ConversationRatings';
 export const CONVERSATIONS_TABLE = process.env.AZURE_TABLE_CONVERSATIONS || 'Conversations';
+const CLASS_VIEWS_TABLE = process.env.AZURE_TABLE_CLASS_VIEWS || 'ClassViews';
 
 const ensuredTables = new Set();
 
@@ -691,5 +692,74 @@ export async function deleteConversation(userId, conversationId) {
     return false;
   } catch {
     return false;
+  }
+}
+
+// ─── Class Views Operations ───────────────────────────────────
+
+function toClassViewEntity(subjectId, studentId, classId, existing) {
+  return compactObject({
+    partitionKey: subjectId,
+    rowKey: `${studentId}__${classId}`,
+    studentId,
+    classId,
+    viewedAt: existing?.viewedAt || new Date().toISOString(),
+    lastViewedAt: new Date().toISOString(),
+    viewCount: existing ? (existing.viewCount || 0) + 1 : 1,
+  });
+}
+
+function fromClassViewEntity(entity) {
+  return {
+    subjectId: entity.partitionKey,
+    studentId: entity.studentId,
+    classId: entity.classId,
+    viewedAt: entity.viewedAt,
+    lastViewedAt: entity.lastViewedAt,
+    viewCount: Number(entity.viewCount || 1),
+  };
+}
+
+export async function upsertClassView(subjectId, studentId, classId) {
+  if (!subjectId || !studentId || !classId) {
+    throw new Error('upsertClassView requires subjectId, studentId, and classId');
+  }
+
+  await ensureTable(CLASS_VIEWS_TABLE);
+  const client = getTableClient(CLASS_VIEWS_TABLE);
+
+  let existing = null;
+  try {
+    const entity = await client.getEntity(subjectId, `${studentId}__${classId}`);
+    existing = fromClassViewEntity(entity);
+  } catch {
+    // First view
+  }
+
+  const entity = toClassViewEntity(subjectId, studentId, classId, existing);
+  await client.upsertEntity(entity, 'Replace');
+  return fromClassViewEntity(entity);
+}
+
+export async function listClassViewsBySubject(subjectId) {
+  if (!subjectId) return [];
+  const entities = await queryByPartition(CLASS_VIEWS_TABLE, subjectId);
+  return entities.map(fromClassViewEntity);
+}
+
+export async function listClassViewsByStudent(subjectId, studentId) {
+  if (!subjectId || !studentId) return [];
+  const all = await listClassViewsBySubject(subjectId);
+  return all.filter((v) => v.studentId === studentId);
+}
+
+export async function deleteClassViewsBySubject(subjectId) {
+  if (!subjectId) return;
+  const entities = await queryByPartition(CLASS_VIEWS_TABLE, subjectId);
+  if (entities.length === 0) return;
+  await ensureTable(CLASS_VIEWS_TABLE);
+  const client = getTableClient(CLASS_VIEWS_TABLE);
+  for (const entity of entities) {
+    await client.deleteEntity(entity.partitionKey, entity.rowKey);
   }
 }

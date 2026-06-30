@@ -432,13 +432,14 @@ export async function renderStudentDashboard(container) {
             const daysUntil = Math.ceil((new Date(t.dueDate) - new Date()) / 86400000);
             const isOverdue = new Date(t.dueDate) < new Date();
             const pillLabel = isOverdue ? 'Vencido' : daysUntil <= 3 ? 'Próximo' : daysUntil <= 7 ? 'Esta semana' : 'Pendiente';
+            const pillColor = isOverdue ? '#ef4444' : '#3b82f6';
+            const pillBg = isOverdue ? 'rgba(239,68,68,0.1)' : 'rgba(59,130,246,0.1)';
+            const pillBorder = isOverdue ? 'rgba(239,68,68,0.25)' : 'rgba(59,130,246,0.25)';
             return `
-            <li class="sidebar-list-item">
-              <div style="display:flex;align-items:center;gap:4px;width:100%;overflow:hidden;">
-                <span style="color:var(--color-text-muted);flex-shrink:0;white-space:nowrap;font-size:10px;font-weight:600;">${dateStr}</span>
-                <span class="chat-history-title" style="flex-shrink:1;min-width:0;overflow:hidden;"><span class="title-scroll" style="display:inline-block;white-space:nowrap;">${escapeHtml(t.title)}</span></span>
-                <span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 6px;flex-shrink:0;color:${pillLabel === 'Vencido' ? '#ef4444' : '#3b82f6'};background:${pillLabel === 'Vencido' ? 'rgba(239,68,68,0.1)' : 'rgba(59,130,246,0.1)'};border:1px solid ${pillLabel === 'Vencido' ? 'rgba(239,68,68,0.25)' : 'rgba(59,130,246,0.25)'};margin-left:auto;">${pillLabel}</span>
-              </div>
+            <li class="sidebar-list-item" style="display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;padding:10px 12px;">
+              <span style="color:var(--color-text-muted);white-space:nowrap;font-size:11px;font-weight:500;min-width:48px;">${dateStr}</span>
+              <span class="chat-history-title" style="overflow:hidden;font-size:13px;font-weight:500;color:var(--color-text-primary);"><span class="title-scroll" style="display:inline-block;white-space:nowrap;">${escapeHtml(t.title)}</span></span>
+              <span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 8px;flex-shrink:0;color:${pillColor};background:${pillBg};border:1px solid ${pillBorder};">${pillLabel}</span>
             </li>`;
           }).join('') : '<li class="flex flex-col items-center py-8 px-6 text-center"><div style="width:60px;height:60px;" class="bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('tasks', 16) + '</div><p class="text-xs font-medium text-text-primary mb-1">Todo al día</p><p class="text-[10px] text-text-muted">No tenés tareas pendientes</p></li>'}
         </ul>
@@ -480,15 +481,24 @@ export async function renderStudentDashboard(container) {
     if (visibleItems.length === 0) {
       return '<li class="flex flex-col items-center py-8 px-6 text-center"><div style="width:60px;height:60px;" class="bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('calendar', 16) + '</div><p class="text-xs font-medium text-text-primary mb-1">No hay clases programadas</p><p class="text-[10px] text-text-muted">Las clases aparecerán acá cuando el docente las publique</p></li>';
     }
+    const localViews = api.getLocalClassViews();
     return visibleItems.map(c => {
       const dateStr = c.date ? new Date(c.date).toLocaleDateString('es-AR', { day: 'numeric', month: 'numeric' }) : null;
+      const hasViewed = localViews[c.id] || c.studentViewedAt;
+      let badgeHtml = '';
+      if (!c.summaryReady) {
+        badgeHtml = '<span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 8px;flex-shrink:0;color:#6b7280;background:rgba(107,114,128,0.1);border:1px solid rgba(107,114,128,0.25);">Bloqueado</span>';
+      } else if (hasViewed) {
+        badgeHtml = '<span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 8px;flex-shrink:0;color:#10b981;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.25);">Visto</span>';
+      } else {
+        badgeHtml = '<span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 8px;flex-shrink:0;color:#3b82f6;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.25);">Nuevo</span>';
+      }
+      const title = escapeHtml(c.title).split('—')[1]?.trim() || escapeHtml(c.title);
       return `
-      <li class="sidebar-list-item cursor-pointer hover:bg-surface-2 transition-colors group" onclick="location.hash='#/student/class/${c.id}'">
-        <div style="display:flex;align-items:center;gap:4px;width:100%;overflow:hidden;">
-          ${dateStr ? `<span style="color:var(--color-text-muted);flex-shrink:0;white-space:nowrap;font-size:10px;font-weight:600;">${dateStr}</span>` : ''}
-          <span class="chat-history-title" style="flex:1;min-width:0;overflow:hidden;"><span class="title-scroll" style="display:inline-block;white-space:nowrap;">${escapeHtml(c.title).split('—')[1] || c.title}</span></span>
-          ${c.summaryReady ? '<span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 6px;flex-shrink:0;color:#3b82f6;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.25);">Visto</span>' : ''}
-        </div>
+      <li class="sidebar-list-item cursor-pointer hover:bg-surface-2 transition-colors group" onclick="location.hash='#/student/class/${c.id}'" style="display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;padding:10px 12px;">
+        ${dateStr ? `<span style="color:var(--color-text-muted);white-space:nowrap;font-size:11px;font-weight:500;min-width:48px;">${dateStr}</span>` : '<span style="min-width:48px"></span>'}
+        <span class="chat-history-title" style="overflow:hidden;font-size:13px;font-weight:500;color:var(--color-text-primary);"><span class="title-scroll" style="display:inline-block;white-space:nowrap;">${title}</span></span>
+        ${badgeHtml}
       </li>`;
     }).join('');
   };
