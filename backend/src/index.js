@@ -51,3 +51,4 @@ import './functions/grade-dispute.js';
 import './functions/reminder-preferences.js';
 import './functions/audio-api.js';
 import './functions/material-download.js';
+import './functions/prompts-api.js';

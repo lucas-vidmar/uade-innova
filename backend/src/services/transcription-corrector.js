@@ -1,23 +1,9 @@
-import { readFile } from 'fs/promises';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
 import { chatCompletion } from './ai.js';
 import { getGlossary } from './glossary-store.js';
 import { getTableClient } from './storage.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+import { getActivePrompt } from './prompts.js';
 
 const CORRECTIONS_TABLE = process.env.AZURE_TABLE_TRANSCRIPTION_CORRECTIONS || 'TranscriptionCorrections';
-
-let _promptTemplate = null;
-
-async function loadPromptTemplate() {
-  if (_promptTemplate) return _promptTemplate;
-  const filePath = join(__dirname, '..', 'prompts', 'grade-transcription-prompt.txt');
-  _promptTemplate = await readFile(filePath, 'utf-8');
-  return _promptTemplate;
-}
 
 async function ensureCorrectionsTable() {
   const client = getTableClient(CORRECTIONS_TABLE);
@@ -44,15 +30,17 @@ export async function detectGlossaryErrors(subjectId, transcriptText, materialId
     })
     .join('\n');
 
-  const template = await loadPromptTemplate();
-  const prompt = template
+  const promptConfig = await getActivePrompt('transcription-correction').catch(() => null);
+  const systemContent = promptConfig?.systemPrompt || 'Eres un revisor de transcripciones académicas. Respondes SOLO con JSON válido.';
+  const userTemplate = promptConfig?.userPromptTemplate || '';
+  const prompt = userTemplate
     .replace('{glossaryTerms}', termsList)
     .replace('{transcriptText}', transcriptText.substring(0, 15000));
 
   let response;
   try {
     response = await chatCompletion([
-      { role: 'system', content: 'Eres un revisor de transcripciones académicas. Respondes SOLO con JSON válido.' },
+      { role: 'system', content: systemContent },
       { role: 'user', content: prompt },
     ], false, { temperature: 0.1, max_tokens: 3000 });
   } catch (err) {

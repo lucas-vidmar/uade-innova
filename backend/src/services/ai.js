@@ -6,6 +6,7 @@ import { AzureOpenAI, OpenAI } from 'openai';
 import { DefaultAzureCredential, getBearerTokenProvider } from '@azure/identity';
 import { CategorizedError, ErrorCategory } from './error-categories.js';
 import { extractMermaidCode } from '../../shared/extract-mermaid.js';
+import { getActivePrompt } from './prompts.js';
 
 const AOAI_TOKEN_SCOPE = 'https://cognitiveservices.azure.com/.default';
 
@@ -215,11 +216,16 @@ export async function chatCompletion(messages, stream = false, overrides = {}) {
  * Resumen de clase estructurado.
  */
 export async function generateClassSummary(text, subjectName = "", options = {}) {
-    const prompt = `Eres un asistente academico experto en la UADE. Genera un resumen estructurado... [Materia: ${subjectName}]\n\nTEXTO:\n${text.substring(0, 15000)}`;
+    const promptConfig = await getActivePrompt('class-summary').catch(() => null);
+    const systemContent = promptConfig?.systemPrompt || "Generas resumenes academicos profesionales.";
+    const userTemplate = promptConfig?.userPromptTemplate || 'Eres un asistente academico experto en la UADE. Genera un resumen estructurado... [Materia: ${subjectName}]\n\nTEXTO:\n${text}';
+    const userContent = userTemplate
+        .replace('${subjectName}', subjectName)
+        .replace('${text}', text.substring(0, 15000));
 
     const response = await chatCompletion([
-        { role: "system", content: "Generas resumenes academicos profesionales." },
-        { role: "user", content: prompt }
+        { role: "system", content: systemContent },
+        { role: "user", content: userContent }
     ], false, { temperature: 0.5, max_tokens: 2000, headers: options.headers });
 
     return {
@@ -234,11 +240,14 @@ export async function generateClassSummary(text, subjectName = "", options = {})
  * Mapa conceptual Mermaid.
  */
 export async function generateClassMap(text, options = {}) {
-    const prompt = `Genera un mapa conceptual Mermaid.js (graph TD) para:\n${text.substring(0, 10000)}. IMPORTANTE: Usa comillas dobles en los labels que contengan paréntesis, ej: A["texto (año)"] en lugar de A[texto (año)].`;
+    const promptConfig = await getActivePrompt('mermaid').catch(() => null);
+    const systemContent = promptConfig?.systemPrompt || "Generas diagramas Mermaid.js precisos. Siempre usa comillas dobles en labels con paréntesis.";
+    const userTemplate = promptConfig?.userPromptTemplate || 'Genera un mapa conceptual Mermaid.js (graph TD) para:\n${text}. IMPORTANTE: Usa comillas dobles en los labels que contengan paréntesis, ej: A["texto (año)"] en lugar de A[texto (año)].';
+    const userContent = userTemplate.replace('${text}', text.substring(0, 10000));
 
     const response = await chatCompletion([
-        { role: "system", content: "Generas diagramas Mermaid.js precisos. Siempre usa comillas dobles en labels con paréntesis." },
-        { role: "user", content: prompt }
+        { role: "system", content: systemContent },
+        { role: "user", content: userContent }
     ], false, { temperature: 0.4, max_tokens: 1500, headers: options.headers });
 
     return {

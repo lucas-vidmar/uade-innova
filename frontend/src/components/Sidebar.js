@@ -31,6 +31,7 @@ const NAV = {
   director: [
     { id: 'director-dashboard', icon: 'chart', label: 'Panel Directivo', path: '#/director/dashboard' },
     { id: 'director-sat-analytics', icon: 'chart', label: 'SAT por Prompt', path: '#/director/sat-analytics' },
+    { id: 'director-prompts', icon: 'edit', label: 'Gestión de Prompts', path: '#/director/prompts' },
     { id: 'director-interventions', icon: 'alert', label: 'Intervenciones', path: '#/director/interventions' },
     { id: 'director-compliance', icon: 'shield', label: 'Cumplimiento', path: '#/director/compliance' },
     { id: 'director-archive-usage', icon: 'database', label: 'Archivo en Frío', path: '#/director/archive-usage' },

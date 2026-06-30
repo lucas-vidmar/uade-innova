@@ -64,6 +64,11 @@ import {
     getStudentReports,
     submitGradeDispute
 } from './corrections.api.js';
+import {
+    getPromptTypes, getPromptVersions, getActivePrompt,
+    createPromptVersion, updatePromptVersion,
+    activatePromptVersion, deletePromptVersion
+} from './prompts.api.js';
 
 export const api = {
     BASE_URL, CORRELATION_HEADER,
@@ -114,4 +119,8 @@ export const api = {
     getTranscriptionSuggestions, applyTranscriptionCorrection,
     rejectTranscriptionSuggestion,
     getStudentReports, submitGradeDispute,
+
+    getPromptTypes, getPromptVersions, getActivePrompt,
+    createPromptVersion, updatePromptVersion,
+    activatePromptVersion, deletePromptVersion,
 };

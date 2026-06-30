@@ -1,37 +1,44 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { getActive, listVersions, PROMPT_TYPES } from './prompt-store.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const PROMPTS_DIR = path.join(__dirname, '../prompts');
-
-let SYSTEM_PROMPTS = {};
-
-try {
-    const files = fs.readdirSync(PROMPTS_DIR);
-    for (const file of files) {
-        if (file.endsWith('.md')) {
-            const version = file.replace('.md', '');
-            SYSTEM_PROMPTS[version] = fs.readFileSync(path.join(PROMPTS_DIR, file), 'utf-8');
-        }
+/**
+ * Obtiene la versión activa de un tipo de prompt directamente desde Table Storage.
+ * Sin cache — cada llamada lee el estado actual para que los cambios del panel
+ * de gestión se reflejen instantáneamente.
+ */
+export async function getActivePrompt(type) {
+  try {
+    const active = await getActive(type);
+    if (!active) {
+      console.warn(`[Prompts] No hay versión activa para tipo "${type}"`);
+      return null;
     }
-} catch (error) {
-    console.error('Error loading prompts from markdown files:', error);
+    return active;
+  } catch (err) {
+    console.error(`[Prompts] Error obteniendo prompt activo para "${type}":`, err.message);
+    return null;
+  }
 }
 
 /**
- * Executes a deterministic or pseudo-random selection to pull the currently
- * active system prompt variation for A/B (Shadow) testing.
+ * Shadow testing: obtiene una versión aleatoria entre todas las disponibles de rag-master.
+ * Sin cache — refleja cambios en tiempo real.
  */
-export function getShadowPrompt() {
-    const keys = Object.keys(SYSTEM_PROMPTS);
-    if (keys.length === 0) {
-        return { id: 'fallback', content: 'Eres un asistente académico.' };
-    }
-    const selectedVersion = keys[Math.floor(Math.random() * keys.length)];
+export async function getShadowPrompt() {
+  const allVersions = await listVersions('rag-master').catch(() => []);
+  if (allVersions.length === 0) {
+    return { id: 'fallback', content: 'Eres un asistente académico.' };
+  }
+
+  if (allVersions.length === 1) {
     return {
-        id: selectedVersion,
-        content: SYSTEM_PROMPTS[selectedVersion]
+      id: allVersions[0].versionId,
+      content: allVersions[0].content,
     };
+  }
+
+  const selectedVersion = allVersions[Math.floor(Math.random() * allVersions.length)];
+  return {
+    id: selectedVersion.versionId,
+    content: selectedVersion.content || '',
+  };
 }

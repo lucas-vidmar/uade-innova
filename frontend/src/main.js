@@ -34,6 +34,7 @@ const ROUTES = {
     '/teacher/transcription-correction': () => import('./pages/teacher/TranscriptionCorrectionDetail.js').then(m => m.renderTranscriptionCorrectionDetail),
     '/director/dashboard': () => import('./pages/director/Dashboard.js').then(m => m.renderDirectorDashboard),
     '/director/sat-analytics': () => import('./pages/director/SatAnalytics.js').then(m => m.renderDirectorSatAnalytics),
+    '/director/prompts': () => import('./pages/director/PromptManager.js').then(m => m.renderDirectorPromptManager),
     '/director/classes': () => import('./pages/director/ClassManagement.js').then(m => m.renderClassManagement),
     '/director/subjects': () => import('./pages/director/SubjectManagement.js').then(m => m.renderSubjectManagement),
     '/director/interventions': () => import('./pages/director/Interventions.js').then(m => m.renderDirectorInterventions),

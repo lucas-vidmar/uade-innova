@@ -6,7 +6,7 @@ import { app } from '@azure/functions';
 import { generateEmbedding, chatCompletion, getChatModelName } from '../services/ai.js';
 import { querySimilar } from '../services/vector-store.js';
 import { saveJson, loadJson, saveMetricsToTable } from '../services/storage.js';
-import { getShadowPrompt } from '../services/prompts.js';
+import { getShadowPrompt, getActivePrompt } from '../services/prompts.js';
 import { trackRAGInteraction, trackRAGError } from '../services/telemetry.js';
 import { parseClientPrincipal, validateFrontDoorId, getAuthenticatedUser } from '../services/auth-utils.js';
 import { normalizeCategorizedError, ErrorCategory } from '../services/error-categories.js';
@@ -47,7 +47,8 @@ function normalizeConversationHistory(rawHistory, requestedWindowSize) {
 async function rewriteQuestionWithHistory(question, conversationHistory, context) {
     if (!conversationHistory.length) return question;
 
-    const rewriteSystemPrompt = `Reescribe la ultima pregunta del estudiante para que sea autonoma y clara.
+    const rewritePrompt = await getActivePrompt('rewrite').catch(() => null);
+    const rewriteSystemPrompt = rewritePrompt?.content || `Reescribe la ultima pregunta del estudiante para que sea autonoma y clara.
 Debes conservar fielmente el significado original sin agregar informacion nueva.
 Devuelve unicamente la pregunta reescrita en espanol, sin comillas ni explicaciones.`;
 

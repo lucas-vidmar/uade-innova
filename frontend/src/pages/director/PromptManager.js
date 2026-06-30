@@ -1,0 +1,374 @@
+import { api } from '../../services/api.js';
+import { auth } from '../../services/auth.js';
+import { renderHeader } from '../../components/Header.js';
+import { toast } from '../../components/Toast.js';
+
+function esc(str) {
+  return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+let state = {
+  types: [],
+  selectedType: null,
+  versions: [],
+  editingVersion: null,
+  editingField: null,
+};
+
+export async function renderDirectorPromptManager(container) {
+  renderHeader('Gestión de Prompts');
+  container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando prompts...</div>`;
+
+  const activeSubjectId = auth.getActiveSubjectId();
+  if (!activeSubjectId) {
+    container.innerHTML = `<div class="empty-state">No hay materias vinculadas a tu cuenta.</div>`;
+    return;
+  }
+
+  try {
+    state.types = await api.getPromptTypes();
+    renderList(container);
+  } catch (err) {
+    console.error('[PromptManager] Error loading:', err);
+    container.innerHTML = `
+      <div class="card" style="max-width:480px;margin:var(--space-10) auto;text-align:center">
+        <div class="empty-state-icon" aria-hidden="true">⚙️</div>
+        <h2 class="h3">Gestión de Prompts no disponible</h2>
+        <p style="color:var(--color-text-secondary)">No se pudieron cargar los tipos de prompt. Verificá que el endpoint del backend esté activo.</p>
+        <button class="btn btn-secondary" onclick="window.location.reload()" aria-label="Reintentar">Reintentar</button>
+      </div>
+    `;
+  }
+}
+
+function renderList(container) {
+  container.innerHTML = `
+    <div style="margin-bottom:var(--space-6)">
+      <p style="color:var(--color-text-secondary);margin-bottom:var(--space-4)">
+        Gestioná todas las versiones de prompts del sistema. Cada tipo de prompt tiene su propia lista de versiones.
+        Las versiones activas son las que usa el sistema en tiempo real.
+      </p>
+    </div>
+
+    <div class="card" style="margin-bottom:var(--space-6)">
+      <div class="card-header">
+        <span class="card-title">Tipos de Prompt</span>
+        <span class="badge badge-info">${state.types.length} tipos</span>
+      </div>
+
+      ${state.types.length === 0 ? `
+        <div class="empty-state" style="padding:20px">No hay tipos de prompt registrados.</div>
+      ` : `
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Tipo</th>
+              <th>Descripción</th>
+              <th>Versión Activa</th>
+              <th>Versiones</th>
+              <th>Estructura</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${state.types.map(t => `
+              <tr>
+                <td><code style="font-weight:600">${esc(t.id)}</code></td>
+                <td style="max-width:250px;white-space:normal">${esc(t.description)}</td>
+                <td>
+                  ${t.activeVersion
+                    ? `<span class="badge badge-success">${esc(t.activeVersion)}</span>`
+                    : `<span class="badge badge-secondary">Sin activa</span>`
+                  }
+                </td>
+                <td><span class="badge badge-info">${t.versionCount}</span></td>
+                <td style="font-size:0.8rem">
+                  ${t.hasSystemPrompt ? '<span class="badge badge-primary">system</span> ' : ''}
+                  ${t.hasUserPrompt ? '<span class="badge badge-secondary">user</span>' : ''}
+                  ${t.variables.length > 0 ? esc(' {' + t.variables.join(', ') + '}') : ''}
+                </td>
+                <td>
+                  <button class="btn btn-secondary btn-sm" data-action="manage" data-type="${esc(t.id)}" style="white-space:nowrap">
+                    Gestionar
+                  </button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+      `}
+    </div>
+  `;
+
+  container.querySelectorAll('[data-action="manage"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const type = btn.dataset.type;
+      state.selectedType = type;
+      showTypeDetail(container, type);
+    });
+  });
+}
+
+async function showTypeDetail(container, type) {
+  const typeMeta = state.types.find(t => t.id === type);
+  container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando versiones de ${type}...</div>`;
+
+  try {
+    state.versions = await api.getPromptVersions(type);
+    state.selectedType = type;
+    renderTypeDetail(container);
+  } catch (err) {
+    container.innerHTML = `
+      <div class="card" style="max-width:480px;margin:var(--space-10) auto;text-align:center">
+        <div class="empty-state-icon" aria-hidden="true">⚙️</div>
+        <h2 class="h3">Error al cargar versiones</h2>
+        <p style="color:var(--color-text-secondary)">${esc(err.message)}</p>
+        <button class="btn btn-secondary" onclick="renderDirectorPromptManager(container)">Volver</button>
+      </div>
+    `;
+  }
+}
+
+function renderTypeDetail(container) {
+  const typeMeta = state.types.find(t => t.id === state.selectedType);
+
+  container.innerHTML = `
+    <div style="margin-bottom:var(--space-4)">
+      <button class="btn btn-ghost" id="back-to-list" style="margin-bottom:var(--space-2)">
+        ← Volver a tipos
+      </button>
+      <div style="display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap">
+        <h2 style="margin:0">${esc(typeMeta?.label || state.selectedType)}</h2>
+        <code style="font-size:0.85rem;color:var(--color-text-muted)">${esc(state.selectedType)}</code>
+        <span class="badge badge-info">${state.versions.length} versiones</span>
+      </div>
+      <p style="color:var(--color-text-secondary);margin-top:var(--space-2)">${esc(typeMeta?.description || '')}</p>
+    </div>
+
+    <div style="display:flex;gap:var(--space-3);margin-bottom:var(--space-4);flex-wrap:wrap">
+      <button class="btn btn-primary" id="create-new-version">
+        + Nueva versión
+      </button>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Versiones</span>
+      </div>
+      ${state.versions.length === 0 ? `
+        <div class="empty-state" style="padding:20px">No hay versiones para este tipo de prompt. Creá una nueva.</div>
+      ` : `
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Versión</th>
+              <th>Descripción</th>
+              <th>Estado</th>
+              <th>Creado</th>
+              <th>Actualizado</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${state.versions.map(v => `
+              <tr>
+                <td><code style="font-weight:600">${esc(v.versionId)}</code></td>
+                <td style="max-width:200px;white-space:normal">${esc(v.description || '-')}</td>
+                <td>
+                  ${v.isActive
+                    ? '<span class="badge badge-success">Activa</span>'
+                    : '<span class="badge badge-secondary">Inactiva</span>'
+                  }
+                </td>
+                <td style="font-size:0.85rem">${formatDate(v.createdAt)}</td>
+                <td style="font-size:0.85rem">${formatDate(v.updatedAt)}</td>
+                <td>
+                  <div style="display:flex;gap:var(--space-2)">
+                    <button class="btn btn-secondary btn-sm" data-action="edit" data-type="${esc(state.selectedType)}" data-version-id="${esc(v.versionId)}">Editar</button>
+                    ${!v.isActive ? `
+                      <button class="btn btn-primary btn-sm" data-action="activate" data-type="${esc(state.selectedType)}" data-version-id="${esc(v.versionId)}">Activar</button>
+                      <button class="btn btn-danger btn-sm" data-action="delete" data-type="${esc(state.selectedType)}" data-version-id="${esc(v.versionId)}">Eliminar</button>
+                    ` : ''}
+                  </div>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+      `}
+    </div>
+  `;
+
+  document.getElementById('back-to-list').addEventListener('click', () => renderList(container));
+  document.getElementById('create-new-version').addEventListener('click', () => showEditor(container, null));
+
+  container.querySelectorAll('[data-action="edit"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const version = state.versions.find(v => v.versionId === btn.dataset.versionId);
+      showEditor(container, version);
+    });
+  });
+
+  container.querySelectorAll('[data-action="activate"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const type = btn.dataset.type;
+      const versionId = btn.dataset.versionId;
+      try {
+        await api.activatePromptVersion(type, versionId);
+        toast('success', 'Versión activada', `La versión ${versionId} ahora es la activa.`);
+        await showTypeDetail(container, type);
+      } catch (err) {
+        toast('error', 'Error al activar', err.message);
+      }
+    });
+  });
+
+  container.querySelectorAll('[data-action="delete"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const type = btn.dataset.type;
+      const versionId = btn.dataset.versionId;
+      if (!confirm(`¿Eliminar la versión "${versionId}" de "${type}"? No se puede deshacer.`)) return;
+
+      try {
+        await api.deletePromptVersion(type, versionId);
+        toast('success', 'Versión eliminada', `La versión ${versionId} fue eliminada.`);
+        await showTypeDetail(container, type);
+      } catch (err) {
+        toast('error', 'Error al eliminar', err.message);
+      }
+    });
+  });
+}
+
+function showEditor(container, version) {
+  const typeMeta = state.types.find(t => t.id === state.selectedType);
+  const isNew = !version;
+  const v = version || { versionId: '', content: '', systemPrompt: '', userPromptTemplate: '', variables: [], description: '' };
+
+  const hasTwoParts = typeMeta?.hasSystemPrompt && typeMeta?.hasUserPrompt;
+
+  container.innerHTML = `
+    <div style="margin-bottom:var(--space-4)">
+      <button class="btn btn-ghost" id="back-to-versions" style="margin-bottom:var(--space-2)">
+        ← Volver a versiones
+      </button>
+      <h2 style="margin:0">${isNew ? 'Nueva versión' : `Editar: ${esc(v.versionId)}`}</h2>
+      <p style="color:var(--color-text-secondary)">${esc(typeMeta?.label || state.selectedType)}</p>
+    </div>
+
+    <div class="card" style="max-width:900px">
+      <form id="prompt-editor-form" style="display:flex;flex-direction:column;gap:var(--space-4)">
+        <div>
+          <label class="form-label" for="pe-description">Descripción</label>
+          <input type="text" id="pe-description" class="form-input" value="${esc(v.description)}" placeholder="Ej: Prompt mejorado con tono más empático" style="width:100%">
+        </div>
+
+        ${hasTwoParts ? `
+          <div>
+            <label class="form-label" for="pe-system-prompt">System Prompt</label>
+            <textarea id="pe-system-prompt" class="form-input" rows="6" style="width:100%;font-family:monospace;font-size:0.85rem;resize:vertical;white-space:pre-wrap">${esc(v.systemPrompt)}</textarea>
+          </div>
+          <div>
+            <label class="form-label" for="pe-user-template">User Prompt Template</label>
+            <div style="font-size:0.75rem;color:var(--color-text-muted);margin-bottom:var(--space-1)">
+              Variables disponibles: ${typeMeta?.variables?.map(vr => `<code>$\{${vr}}</code>`).join(', ') || 'ninguna'}
+            </div>
+            <textarea id="pe-user-template" class="form-input" rows="10" style="width:100%;font-family:monospace;font-size:0.85rem;resize:vertical;white-space:pre-wrap">${esc(v.userPromptTemplate)}</textarea>
+          </div>
+        ` : `
+          <div>
+            <label class="form-label" for="pe-content">Contenido del Prompt</label>
+            <textarea id="pe-content" class="form-input" rows="12" style="width:100%;font-family:monospace;font-size:0.85rem;resize:vertical;white-space:pre-wrap">${esc(v.content)}</textarea>
+          </div>
+        `}
+
+        <div style="display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap">
+          ${isNew ? `
+            <button type="submit" class="btn btn-primary">Crear nueva versión</button>
+          ` : `
+            <button type="submit" class="btn btn-primary">Guardar cambios</button>
+            ${!v.isActive ? `
+              <button type="button" class="btn btn-primary-outline" id="save-and-activate">Guardar y activar</button>
+            ` : ''}
+          `}
+          <button type="button" class="btn btn-ghost" id="cancel-edit">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  `;
+
+  const form = document.getElementById('prompt-editor-form');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const description = document.getElementById('pe-description').value.trim();
+    const content = document.getElementById('pe-content')?.value || '';
+    const systemPrompt = document.getElementById('pe-system-prompt')?.value || '';
+    const userPromptTemplate = document.getElementById('pe-user-template')?.value || '';
+
+    try {
+      if (isNew) {
+        await api.createPromptVersion({
+          type: state.selectedType,
+          content,
+          systemPrompt,
+          userPromptTemplate,
+          variables: typeMeta?.variables || [],
+          description: description || 'Nueva versión',
+        });
+        toast('success', 'Versión creada', 'La nueva versión se creó correctamente.');
+      } else {
+        await api.updatePromptVersion(state.selectedType, v.versionId, {
+          content,
+          systemPrompt,
+          userPromptTemplate,
+          variables: typeMeta?.variables || [],
+          description: description || v.description,
+        });
+        toast('success', 'Versión actualizada', 'Los cambios se guardaron correctamente.');
+      }
+      await showTypeDetail(container, state.selectedType);
+    } catch (err) {
+      toast('error', 'Error', err.message);
+    }
+  });
+
+  document.getElementById('cancel-edit').addEventListener('click', () => {
+    showTypeDetail(container, state.selectedType);
+  });
+
+  const saveActivateBtn = document.getElementById('save-and-activate');
+  if (saveActivateBtn) {
+    saveActivateBtn.addEventListener('click', async () => {
+      const description = document.getElementById('pe-description').value.trim();
+      const content = document.getElementById('pe-content')?.value || '';
+      const systemPrompt = document.getElementById('pe-system-prompt')?.value || '';
+      const userPromptTemplate = document.getElementById('pe-user-template')?.value || '';
+
+      try {
+        await api.updatePromptVersion(state.selectedType, v.versionId, {
+          content,
+          systemPrompt,
+          userPromptTemplate,
+          variables: typeMeta?.variables || [],
+          description: description || v.description,
+        });
+        await api.activatePromptVersion(state.selectedType, v.versionId);
+        toast('success', 'Guardado y activado', `La versión ${v.versionId} se actualizó y activó.`);
+        await showTypeDetail(container, state.selectedType);
+      } catch (err) {
+        toast('error', 'Error', err.message);
+      }
+    });
+  }
+}
+
+function formatDate(value) {
+  if (!value) return '-';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '-';
+  return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
