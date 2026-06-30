@@ -217,8 +217,8 @@ export async function chatCompletion(messages, stream = false, overrides = {}) {
  */
 export async function generateClassSummary(text, subjectName = "", options = {}) {
     const promptConfig = await getActivePrompt('class-summary').catch(() => null);
-    const systemContent = promptConfig?.systemPrompt || "Generas resumenes academicos profesionales.";
-    const userTemplate = promptConfig?.userPromptTemplate || 'Eres un asistente academico experto en la UADE. Genera un resumen estructurado... [Materia: ${subjectName}]\n\nTEXTO:\n${text}';
+    const systemContent = promptConfig?.systemPrompt || 'Generas resúmenes académicos profesionales. Tu respuesta debe contener únicamente el texto del resumen, sin frases introductorias ("Claro, aquí tienes...", "Te presento...", etc.), sin despedidas, ni ningún otro texto adicional.';
+    const userTemplate = promptConfig?.userPromptTemplate || 'Resumí el siguiente texto de clase de forma estructurada y profesional. Devolvé únicamente el contenido del resumen, sin introducciones, saludos, comentarios ni cierres.\n\nMateria: ${subjectName}\n\nTEXTO:\n${text}';
     const userContent = userTemplate
         .replace('${subjectName}', subjectName)
         .replace('${text}', text.substring(0, 15000));
@@ -241,8 +241,8 @@ export async function generateClassSummary(text, subjectName = "", options = {})
  */
 export async function generateClassMap(text, options = {}) {
     const promptConfig = await getActivePrompt('mermaid').catch(() => null);
-    const systemContent = promptConfig?.systemPrompt || "Generas diagramas Mermaid.js precisos. Siempre usa comillas dobles en labels con paréntesis.";
-    const userTemplate = promptConfig?.userPromptTemplate || 'Genera un mapa conceptual Mermaid.js (graph TD) para:\n${text}. IMPORTANTE: Usa comillas dobles en los labels que contengan paréntesis, ej: A["texto (año)"] en lugar de A[texto (año)].';
+    const systemContent = promptConfig?.systemPrompt || 'Generas diagramas Mermaid.js precisos. Usá comillas dobles en labels con paréntesis. Tu respuesta debe contener únicamente el código Mermaid.js puro, sin etiquetas de código (```mermaid), sin explicaciones previas ni comentarios posteriores.';
+    const userTemplate = promptConfig?.userPromptTemplate || 'Generá un mapa conceptual Mermaid.js (graph TD) para el siguiente texto.\n\n${text}\n\nIMPORTANTE: Usá comillas dobles en los labels que contengan paréntesis, ej: A["texto (año)"] en lugar de A[texto (año)]. Devolvé únicamente el código Mermaid.js, sin ninguna explicación adicional.';
     const userContent = userTemplate.replace('${text}', text.substring(0, 10000));
 
     const response = await chatCompletion([
@@ -262,8 +262,8 @@ export async function generateClassMap(text, options = {}) {
  */
 export async function generatePodcastScript(summaryText, subjectName = '', className = '', options = {}) {
     const promptConfig = await getActivePrompt('class-podcast').catch(() => null);
-    const systemContent = promptConfig?.systemPrompt || 'Sos un asistente experto en comunicación educativa. Generás guiones de audio claros, profesionales y en español argentino neutro.';
-    const userTemplate = promptConfig?.userPromptTemplate || 'Generá un guión de audio (podcast educativo) en español argentino profesional a partir del siguiente resumen de clase.\n\nMateria: ${subjectName}\nClase: ${className}\n\nResumen:\n${summaryText}\n\nEl guión debe ser fluido, explicativo, pensado para ser escuchado. Usá un tono profesional pero accesible, como un docente explicando los conceptos clave en voz alta. Incluí una breve introducción y un cierre.';
+    const systemContent = promptConfig?.systemPrompt || 'Sos un asistente experto en comunicación educativa. Generás guiones de audio listos para síntesis de voz (TTS). El guión debe ser texto plano narrativo continuo, sin metadatos, sin etiquetas de locutor, sin indicaciones de sonido ni música, sin títulos, sin duración estimada, y sin marcas de inicio o fin. Solo la voz del narrador en español argentino neutro.';
+    const userTemplate = promptConfig?.userPromptTemplate || 'Generá un guión de audio narrativo en español argentino neutro a partir del siguiente resumen de clase. El guión será convertido a voz mediante TTS, por lo que debe cumplir estas reglas:\n\n1. Texto plano continuo — NO uses "Locutor:", "Narrador:" ni ningún prefijo de personaje\n2. NO incluyas indicaciones de música, efectos de sonido ni pausas (nada de "[Música]", "[pausa]", etc.)\n3. Sin título, sin duración estimada, sin metadatos\n4. Sin frases de apertura ("Aquí tienes el guión") ni cierre ("Fin del guión")\n5. Debe sonar natural al ser leído en voz alta, como un docente explicando conceptos\n6. Incluí introducción y cierre como parte del mismo texto narrativo fluido\n\nMateria: ${subjectName}\nClase: ${className}\n\nResumen:\n${summaryText}';
     const userContent = userTemplate
         .replace('${subjectName}', subjectName)
         .replace('${className}', className)

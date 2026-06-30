@@ -8,7 +8,6 @@ import { listClassesBySubject, listMaterialsBySubject, listMaterialsByClass, rep
 import * as vectorStore from '../services/vector-store.js';
 import { trackPollingEvent } from '../services/telemetry.js';
 import { chatCompletion, generateClassSummary, generateClassMap, generateClassAudio, generatePodcastScript } from '../services/ai.js';
-import { extractMermaidCode } from '../../shared/extract-mermaid.js';
 import { computeBudgetProjection as computeBudgetProjectionV2, getAzureCostForBudget } from '../services/azure-cost.js';
 
 const CONTAINER_CLASSES = process.env.AZURE_STORAGE_CONTAINER_CLASSES || 'classes-config';
@@ -1441,14 +1440,9 @@ app.http('generate-class-map', {
             if (!textToMap) {
                 return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'No hay resumen disponible para generar el mapa conceptual.' }) };
             }
-            const prompt = `Genera un mapa conceptual Mermaid.js (graph TD) para:\n${textToMap.substring(0, 10000)}. IMPORTANTE: Usa comillas dobles en los labels que contengan paréntesis, ej: A["texto (año)"] en lugar de A[texto (año)].`;
-            const response = await chatCompletion([
-                { role: 'system', content: 'Generas diagramas Mermaid.js precisos. Siempre usa comillas dobles en labels con paréntesis.' },
-                { role: 'user', content: prompt }
-            ], false, { temperature: 0.4, max_tokens: 1500 });
-            const mapCode = extractMermaidCode(response.content);
+            const result = await generateClassMap(textToMap);
             const mapData = {
-                classId, generatedAt: new Date().toISOString(), mapCode,
+                classId, generatedAt: result.generatedAt, mapCode: result.code,
                 generatedBy: userId, subjectId: request.query.get('subjectId') || '',
             };
             await saveJson(CONTAINER_MAPS, `${classId}.json`, mapData);
