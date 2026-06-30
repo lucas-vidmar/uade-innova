@@ -1036,8 +1036,7 @@ body.top-nav-mobile-open .top-nav-mobile {
   display: inline-block;
   padding: 24px;
   min-width: 100%;
-  transform-origin: top left;
-  transition: transform 0.15s ease;
+  transform-origin: 0 0;
 }
 
 .map-zoom-container .mermaid svg {
