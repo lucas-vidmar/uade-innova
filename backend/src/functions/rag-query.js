@@ -592,6 +592,7 @@ ${contextText}
                         saveMetricsToTable('SessionMetrics', {
                             partitionKey: subjectId,
                             rowKey: interactionId,
+                            subjectId,
                             userId,
                             promptTokens: finalUsage?.prompt_tokens || 0,
                             completionTokens: finalUsage?.completion_tokens || 0,
@@ -741,6 +742,7 @@ ${contextText}
             saveMetricsToTable('SessionMetrics', {
                 partitionKey: subjectId,
                 rowKey: interactionId,
+                subjectId,
                 userId,
                 promptTokens: chatUsage?.prompt_tokens || 0,
                 completionTokens: chatUsage?.completion_tokens || 0,
