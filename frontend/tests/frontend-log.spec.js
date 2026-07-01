@@ -18,7 +18,7 @@ test('log console errors', async ({ page }) => {
     }
   });
 
-  await page.goto('https://agreeable-beach-002ff0c0f.6.azurestaticapps.net/');
+  await page.goto('/');
   await page.waitForTimeout(4000);
   
   console.log('--- BROWSER LOGS ---');

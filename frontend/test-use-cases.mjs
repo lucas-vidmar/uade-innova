@@ -2,8 +2,8 @@ import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
 
-const FRONTEND_URL = 'http://localhost:5173';
-const BACKEND_URL = 'https://func-dashboard-ingest-q47bia47kk3na.azurewebsites.net/api';
+const FRONTEND_URL = process.env.SWA_URL || 'http://localhost:5173';
+const BACKEND_URL = process.env.API_BASE_URL || 'http://localhost:7071/api';
 const REPORT_DIR = 'test-report';
 
 const results = [];

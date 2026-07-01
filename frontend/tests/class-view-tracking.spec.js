@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-const PROD_URL = 'https://agreeable-beach-002ff0c0f.6.azurestaticapps.net';
+const PROD_URL = process.env.SWA_URL || 'http://localhost:3000';
 
 test.describe('Class View Tracking', () => {
 

@@ -68,6 +68,9 @@ param ingestionQueueName string = 'ingestion-tasks'
 @description('List of allowed CORS origins (e.g., ["https://myapp.azurestaticapps.net"]). Default "*" allows all origins during development.')
 param allowedCorsOrigins array = ['*']
 
+@description('Comma-separated CORS origins for app-level CORS middleware. Auto-derived from allowedCorsOrigins array.')
+var corsAllowedOrigins = join(allowedCorsOrigins, ',')
+
 
 
 @description('Table name for material state entities.')
@@ -380,6 +383,11 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         {
           name: 'DIRECTOR_BUDGET_MONTHLY_USD'
           value: '10000'
+        }
+        // CORS — app-level middleware origins
+        {
+          name: 'CORS_ALLOWED_ORIGINS'
+          value: corsAllowedOrigins
         }
       ]
     }

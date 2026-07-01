@@ -1,15 +1,11 @@
 import { v4 as uuidv4 } from 'uuid';
 import { resolveCorrelationId, resolveTraceContext, buildDependencyHeaders, withCorrelationResponseHeaders, generateCorrelationId } from '../services/correlation.js';
 
-const ALLOWED_ORIGINS = [
-  'https://agreeable-beach-002ff0c0f.6.azurestaticapps.net',
-  'http://localhost:4280',
-  'http://localhost:5173',
-];
+const ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS || 'http://localhost:4280,http://localhost:5173').split(',');
 
 function getCorsHeaders(request) {
   const origin = request.headers.get('origin') || '';
-  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : '';
+  const allowedOrigin = ALLOWED_ORIGINS.includes('*') || ALLOWED_ORIGINS.includes(origin) ? origin : '';
   if (!allowedOrigin) return {};
   return {
     'access-control-allow-origin': allowedOrigin,

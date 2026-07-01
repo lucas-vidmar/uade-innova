@@ -7,7 +7,8 @@ const puppeteer = require('puppeteer');
   page.on('response', response => {
     if(!response.ok()) console.log('RESPONSE NOT OK:', response.url(), response.status());
   });
-  await page.goto('https://agreeable-beach-002ff0c0f.6.azurestaticapps.net/');
+  const url = process.env.SWA_URL || 'http://localhost:3000';
+  await page.goto(url);
   await page.waitForTimeout(5000);
   await browser.close();
 })();
