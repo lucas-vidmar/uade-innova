@@ -14,11 +14,6 @@ const CONTAINER_CLASSES = process.env.AZURE_STORAGE_CONTAINER_CLASSES || 'classe
 const CONTAINER_PROCESSED = 'processed';
 const SUBJECTS_BLOB = 'subjects.json';
 
-const DEFAULT_SUBJECTS = [
-    { id: 'arq-software-2026', name: 'Arquitectura de Software', group: 'GRP-ARQ-SOFT-2026' },
-    { id: 'diseno-sistemas-2026', name: 'Diseño de Sistemas', group: 'GRP-DIS-SIST-2026' }
-];
-
 import path from 'path';
 
 const SESSION_METRICS_TABLE = 'SessionMetrics';
@@ -486,11 +481,9 @@ function normalizeSubject(subject = {}) {
 
 async function loadSubjects() {
     const saved = await loadJson(CONTAINER_CLASSES, SUBJECTS_BLOB);
-    // Solo cargamos los valores por defecto si el archivo no existe (null) o no es un array.
-    // Si es un array vacío [], significa que el usuario eliminó todo y debemos respetarlo.
-    if (saved === null || !Array.isArray(saved)) return [...DEFAULT_SUBJECTS];
-    
-    return saved.map(normalizeSubject).filter((s) => s.id && s.name);
+    if (saved === null || !Array.isArray(saved)) return null;
+    const normalized = saved.map(normalizeSubject).filter((s) => s.id && s.name);
+    return normalized.length > 0 ? normalized : null;
 }
 
 async function saveSubjects(subjects) {
@@ -519,6 +512,14 @@ app.http('get-subjects', {
         const userId = principal?.userId || principal?.oid || request.headers.get('x-mock-role') || 'anonymous';
 
         const allSubjects = await loadSubjects();
+
+        if (!allSubjects) {
+            return {
+                status: 503,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ error: 'Subjects not available', detail: 'No subject configuration found. A director must configure subjects first.' })
+            };
+        }
 
         // Enrollment-based filtering (primary) with group-based fallback (backward compatibility)
         let filteredSubjects = allSubjects;
@@ -582,7 +583,7 @@ app.http('save-subject', {
                 return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'El nombre de la materia es obligatorio' }) };
             }
 
-            const subjects = await loadSubjects();
+            const subjects = (await loadSubjects()) || [];
             const desiredId = payload.id || slugifySubjectId(payload.name);
             if (!desiredId) {
                 return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'No se pudo generar el ID de la materia' }) };
@@ -635,7 +636,7 @@ app.http('delete-subject', {
         }
 
         try {
-            const subjects = await loadSubjects();
+            const subjects = (await loadSubjects()) || [];
             const index = subjects.findIndex(s => s.id === subjectId);
             if (index === -1) {
                 return { status: 404, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: "Materia no encontrada" }) };
@@ -1600,7 +1601,7 @@ app.http('get-director-stats', {
         const effectiveTotalCost = useAzureCost ? azureCost.currentMonthSpend : metrics.totals.totalCost;
         const costPerActiveStudent = uniqueActiveUsers > 0 ? Number((effectiveTotalCost / uniqueActiveUsers).toFixed(6)) : 0;
 
-        const allSubjects = await loadSubjects();
+        const allSubjects = (await loadSubjects()) || [];
         const subjectAdoption = allSubjects.map(s => ({
             name: s.name,
             rate: Math.min(100, Math.round((metrics.wausBySubject.find(w => w.subjectId === s.id)?.currentWeek || 0) / Math.max(Object.values(metrics.wausBySubject).reduce((sum, w) => sum + w.currentWeek, 0) || 1, 1) * 100)),

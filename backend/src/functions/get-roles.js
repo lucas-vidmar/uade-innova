@@ -7,8 +7,11 @@ app.http('get-roles', {
     authLevel: 'anonymous', // SWA calls this internally, and the route must be accessible for its proxy
     handler: withCorrelation(async (request, context) => {
         const receivedCode = request.query.get('code');
-        const expectedCode = process.env.SWA_ROLES_SECRET || 'UADE-Pilot-Secure-Roles-Secret-2026';
-        
+        const expectedCode = process.env.SWA_ROLES_SECRET;
+        if (!expectedCode) {
+            context.log.error('SWA_ROLES_SECRET is not configured');
+            return { status: 500, body: JSON.stringify({ error: 'Server configuration error: SWA roles secret not set' }) };
+        }
         if (receivedCode !== expectedCode) {
             context.log.warn('Unauthorized attempt to access get-roles endpoint.');
             return { status: 401, body: JSON.stringify({ error: 'Unauthorized - Invalid SWA Secret' }) };

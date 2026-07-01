@@ -284,10 +284,12 @@ async function loadAndRenderClassViews(data, container) {
     try { subjects = (await api.getSubjects()) || []; } catch (e) { /* ignore */ }
   }
   if (subjects.length === 0) {
-    // Fallback: known subject IDs from the platform
-    subjects = [
-      { id: 'arq-software-2026' }, { id: 'diseno-sistemas-2026' }, { id: 'eco-internacional-2026' },
-    ];
+    const kpis = ['kpi-classes-viewed', 'kpi-students-viewed', 'kpi-avg-per-student'];
+    kpis.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = '-';
+    });
+    return;
   }
 
   try {

@@ -191,7 +191,7 @@ app.http('get-director-kpi-export', {
       let totalEnrolled = 0;
       try {
         const { loadSubjects } = await import('./classes-api.js');
-        const allSubjects = await loadSubjects();
+        const allSubjects = (await loadSubjects()) || [];
         totalEnrolled = allSubjects.reduce((sum, s) => sum + (s.enrolledCount || 60), 60);
       } catch (err) {
         context.log.warn(`[KpiExport] Could not load subjects: ${err.message}`);

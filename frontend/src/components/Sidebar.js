@@ -150,7 +150,7 @@ export function renderSidebar() {
               </div>
               <div class="notification-dropdown-foot">
                 <a href="#/student/notifications" class="notification-view-all">Ver todo</a>
-                <button class="notification-simulate" id="notification-simulate">Simular notificación</button>
+                ${import.meta.env.VITE_MOCK_AUTH_ENABLED === 'true' ? `<button class="notification-simulate" id="notification-simulate">Simular notificación</button>` : ''}
               </div>
             </div>
           </div>
@@ -449,6 +449,7 @@ async function initializeNotificationCenter({ userId, subjectId }) {
   };
 
   const onSimulate = (e) => {
+    if (import.meta.env.VITE_MOCK_AUTH_ENABLED !== 'true') return;
     e.stopPropagation();
     allNotifications = [
       {
@@ -527,6 +528,7 @@ async function initializeNotificationCenter({ userId, subjectId }) {
   };
 
   const onExternalTrigger = (event) => {
+    if (import.meta.env.VITE_MOCK_AUTH_ENABLED !== 'true') return;
     const detail = event?.detail || {};
     allNotifications = [
       {
