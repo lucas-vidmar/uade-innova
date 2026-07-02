@@ -6,8 +6,9 @@ import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-util
 import { app } from '@azure/functions';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { loadJson } from '../services/storage.js';
+import { CONFIG } from '../services/config.js';
 
-const CONTAINER_TASKS = process.env.AZURE_STORAGE_CONTAINER_TASKS || 'tasks-config';
+const CONTAINER_TASKS = CONFIG.containers.tasks;
 
 app.http('get-tasks', {
     methods: ['GET'],

@@ -2,8 +2,9 @@ import { app } from '@azure/functions';
 import { withCorrelation } from '../../../middleware/with-correlation.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../../../services/auth-utils.js';
 import { getTableClient } from '../../../services/storage.js';
+import { CONFIG } from '../../../services/config.js';
 
-const CORRECTIONS_TABLE = process.env.AZURE_TABLE_TRANSCRIPTION_CORRECTIONS || 'TranscriptionCorrections';
+const CORRECTIONS_TABLE = CONFIG.tables.transcriptionCorrections;
 
 app.http('reject-transcription-suggestion', {
   methods: ['POST'],

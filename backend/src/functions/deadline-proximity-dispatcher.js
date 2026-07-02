@@ -5,14 +5,15 @@ import { listBlobs, loadJson, getTableClient } from '../services/storage.js';
 import { listNotificationsBySubject, upsertNotificationForSubject } from '../services/notification-store.js';
 import { getEnrollmentsBySubject } from '../services/state-store.js';
 import { trackDispatcherRun } from '../services/telemetry.js';
+import { CONFIG } from '../services/config.js';
 
-const CONTAINER_DEADLINES = 'deadlines';
-const DEFAULT_TIMEZONE = 'America/Argentina/Buenos_Aires';
-const NOTIFICATION_PREFS_TABLE = process.env.AZURE_TABLE_NOTIFICATION_PREFERENCES || 'NotificationPreferences';
-const VALID_CADENCES = ['48h', '24h', 'both'];
+const CONTAINER_DEADLINES = CONFIG.containers.deadlines;
+const DEFAULT_TIMEZONE = CONFIG.timezone;
+const NOTIFICATION_PREFS_TABLE = CONFIG.tables.notificationPreferences;
+const VALID_CADENCES = CONFIG.validCadences;
 
 function resolveTimezone(deadline) {
-  const tz = deadline?.timezone || process.env.DEFAULT_TIMEZONE || DEFAULT_TIMEZONE;
+  const tz = deadline?.timezone || DEFAULT_TIMEZONE;
   if (moment.tz.zone(tz)) return tz;
   return DEFAULT_TIMEZONE;
 }
@@ -92,8 +93,8 @@ function buildReminderNotification({ subjectId, deadline, thresholdHours, dueAt,
 
 export async function runDeadlineProximityDispatcher(context = { log: () => {}, error: () => {} }, now = new Date()) {
   const startedAt = Date.now();
-  const windowHours = normalizeWindowHours(process.env.DEADLINE_PROXIMITY_WINDOW_HOURS);
-  const weightThreshold = Number(process.env.DEADLINE_HIGH_PRIORITY_WEIGHT_THRESHOLD) || 25;
+const windowHours = normalizeWindowHours(process.env.DEADLINE_PROXIMITY_WINDOW_HOURS);
+const weightThreshold = Number(process.env.DEADLINE_HIGH_PRIORITY_WEIGHT_THRESHOLD) || CONFIG.deadline.highPriorityWeightThreshold;
   const deadlineBlobs = await listBlobs(CONTAINER_DEADLINES);
   const subjectIds = deadlineBlobs
     .filter((name) => name.endsWith('.json'))
@@ -198,7 +199,7 @@ export async function runDeadlineProximityDispatcher(context = { log: () => {}, 
 }
 
 app.timer('deadline-proximity-dispatcher', {
-  schedule: process.env.DEADLINE_PROXIMITY_TIMER_CRON || '0 */30 * * * *',
+  schedule: CONFIG.cron.deadlineProximity,
   handler: withCorrelationTimer(async (_timer, context) => {
     await runDeadlineProximityDispatcher(context);
   }),

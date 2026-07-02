@@ -5,9 +5,10 @@ import { runVectorBackup } from '../services/vector-backup.js';
 import { listActiveApprovals } from '../services/backup-approval.js';
 import { loadJson, saveJson } from '../services/storage.js';
 import { trackVectorBackupRun } from '../services/telemetry.js';
+import { CONFIG } from '../services/config.js';
 
-const STATUS_CONTAINER = 'backup-status';
-const STATUS_BLOB = 'last-run.json';
+const STATUS_CONTAINER = CONFIG.containers.backupStatus;
+const STATUS_BLOB = CONFIG.blobs.backupLastRun;
 
 async function getLastRunStatus() {
     try {
@@ -114,7 +115,7 @@ export async function runScheduledBackup(context) {
 }
 
 app.timer('vector-backup-scheduler', {
-    schedule: process.env.VECTOR_BACKUP_WINDOW_CRON || '0 0 3 * * *',
+    schedule: CONFIG.cron.vectorBackup,
     handler: withCorrelationTimer(async (_timer, context) => {
         await runScheduledBackup(context);
     }),

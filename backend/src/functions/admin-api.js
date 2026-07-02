@@ -2,9 +2,10 @@ import { app } from '@azure/functions';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { getTableClient } from '../services/storage.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
+import { CONFIG } from '../services/config.js';
 
 const USER_PROFILES_TABLE = "UserProfiles";
-const ENROLLMENTS_TABLE_NAME = process.env.AZURE_TABLE_ENROLLMENTS || 'Enrollments';
+const ENROLLMENTS_TABLE_NAME = CONFIG.tables.enrollments;
 
 /**
  * Builds a map of userId → primary role by scanning the Enrollments table.

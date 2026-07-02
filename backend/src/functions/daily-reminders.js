@@ -3,9 +3,10 @@ import { withCorrelationTimer } from '../middleware/with-correlation.js';
 import { loadJson, listBlobs } from '../services/storage.js';
 import { upsertNotificationForSubject } from '../services/notification-store.js';
 import { listClassesBySubject, listMaterialsByClass } from '../services/state-store.js';
+import { CONFIG } from '../services/config.js';
 
-const CONTAINER_CLASSES = process.env.AZURE_STORAGE_CONTAINER_CLASSES || 'classes-config';
-const SUBJECTS_BLOB = 'subjects.json';
+const CONTAINER_CLASSES = CONFIG.containers.classes;
+const SUBJECTS_BLOB = CONFIG.blobs.subjects;
 
 function isClassWithin24Hours(classDateStr, now = new Date()) {
   const classDate = new Date(classDateStr);
@@ -75,7 +76,7 @@ export async function runDailyReminders(context = { log: () => {}, error: () => 
 }
 
 app.timer('daily-reminders', {
-  schedule: process.env.DAILY_REMINDERS_TIMER_CRON || '0 0 8 * * *',
+  schedule: CONFIG.cron.dailyReminders,
   handler: withCorrelationTimer(async (_timer, context) => {
     await runDailyReminders(context);
   }),

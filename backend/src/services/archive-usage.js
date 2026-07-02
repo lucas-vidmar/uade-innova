@@ -1,8 +1,9 @@
 import { BlobServiceClient } from '@azure/storage-blob';
 import { getTableClient } from './storage.js';
+import { CONFIG } from '../config.js';
 
 const CONTAINER_NAMES = ['class-materials', 'processed'];
-const MATERIALS_TABLE = process.env.AZURE_TABLE_MATERIALS || 'materials';
+const MATERIALS_TABLE = CONFIG.tables.materials;
 
 function getBlobServiceClient() {
   const connStr = process.env.AZURE_STORAGE_CONNECTION_STRING;

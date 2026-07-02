@@ -1,16 +1,15 @@
 import { getTableClient } from './storage.js';
+import { CONFIG } from '../config.js';
 
-const MATERIALS_TABLE = process.env.AZURE_TABLE_MATERIALS || 'materials';
-const CLASSES_TABLE = process.env.AZURE_TABLE_CLASSES || 'classes';
-const ENROLLMENTS_TABLE = process.env.AZURE_STORAGE_ENROLLMENTS_TABLE
-  || process.env.AZURE_TABLE_ENROLLMENTS
-  || 'Enrollments';
-const CORRECTIONS_TABLE = process.env.AZURE_TABLE_CORRECTIONS || 'Corrections';
-const CORRECTIONS_PENDING_TABLE = process.env.AZURE_TABLE_CORRECTIONS_PENDING || 'CorrectionsPending';
-const TRANSCRIPTION_CORRECTIONS_TABLE = process.env.AZURE_TABLE_TRANSCRIPTION_CORRECTIONS || 'TranscriptionCorrections';
-export const RATINGS_TABLE = process.env.AZURE_TABLE_CONVERSATION_RATINGS || 'ConversationRatings';
-export const CONVERSATIONS_TABLE = process.env.AZURE_TABLE_CONVERSATIONS || 'Conversations';
-const CLASS_VIEWS_TABLE = process.env.AZURE_TABLE_CLASS_VIEWS || 'ClassViews';
+const MATERIALS_TABLE = CONFIG.tables.materials;
+const CLASSES_TABLE = CONFIG.tables.classes;
+const ENROLLMENTS_TABLE = CONFIG.tables.enrollments;
+const CORRECTIONS_TABLE = CONFIG.tables.corrections;
+const CORRECTIONS_PENDING_TABLE = CONFIG.tables.correctionsPending;
+const TRANSCRIPTION_CORRECTIONS_TABLE = CONFIG.tables.transcriptionCorrections;
+export const RATINGS_TABLE = CONFIG.tables.conversationRatings;
+export const CONVERSATIONS_TABLE = CONFIG.tables.conversations;
+const CLASS_VIEWS_TABLE = CONFIG.tables.classViews;
 
 const ensuredTables = new Set();
 

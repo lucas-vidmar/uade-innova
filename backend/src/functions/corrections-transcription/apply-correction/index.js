@@ -6,8 +6,9 @@ import { getEnrollment } from '../../../services/state-store.js';
 import { getGlossary } from '../../../services/glossary-store.js';
 import { generateEmbedding } from '../../../services/ai.js';
 import { upsertChunks } from '../../../services/vector-store.js';
+import { CONFIG } from '../../../services/config.js';
 
-const CORRECTIONS_TABLE = process.env.AZURE_TABLE_TRANSCRIPTION_CORRECTIONS || 'TranscriptionCorrections';
+const CORRECTIONS_TABLE = CONFIG.tables.transcriptionCorrections;
 
 app.http('apply-transcription-correction', {
   methods: ['POST'],

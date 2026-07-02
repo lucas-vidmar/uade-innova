@@ -4,6 +4,7 @@ import { getEnrollment, RATINGS_TABLE } from '../services/state-store.js';
 import { getTableClient } from '../services/storage.js';
 import { computeWinner } from '../services/significance.js';
 import { app } from '@azure/functions';
+import { CONFIG } from '../services/config.js';
 
 app.http('get-sat-analytics', {
     methods: ['GET'],
@@ -68,7 +69,7 @@ app.http('get-sat-analytics', {
                 seg.satScore = seg.rated > 0 ? Math.round((seg.positive / seg.rated) * 100) / 100 : 0;
             }
 
-            const minRated = Number(process.env.SAT_MIN_RATED_THRESHOLD) || 10;
+            const minRated = CONFIG.sat.minRatedThreshold;
             const winner = computeWinner(resultArray, minRated);
 
             return {

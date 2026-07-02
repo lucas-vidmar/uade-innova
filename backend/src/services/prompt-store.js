@@ -1,7 +1,8 @@
 import { getTableClient } from './storage.js';
 import { v4 as uuidv4 } from 'uuid';
+import { CONFIG } from '../config.js';
 
-const PROMPTS_TABLE = process.env.AZURE_TABLE_PROMPTS || 'PromptVersions';
+const PROMPTS_TABLE = CONFIG.tables.prompts;
 
 export const PROMPT_TYPES = {
   'rag-master': {

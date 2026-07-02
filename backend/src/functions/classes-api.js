@@ -10,14 +10,15 @@ import { trackPollingEvent } from '../services/telemetry.js';
 import { chatCompletion, generateClassSummary, generateClassMap, generateClassAudio, generatePodcastScript } from '../services/ai.js';
 import { computeBudgetProjection as computeBudgetProjectionV2, getAzureCostForBudget } from '../services/azure-cost.js';
 
-const CONTAINER_CLASSES = process.env.AZURE_STORAGE_CONTAINER_CLASSES || 'classes-config';
+import { CONFIG } from '../services/config.js';
+const CONTAINER_CLASSES = CONFIG.containers.classes;
 const CONTAINER_PROCESSED = 'processed';
-const SUBJECTS_BLOB = 'subjects.json';
+const SUBJECTS_BLOB = CONFIG.blobs.subjects;
 
 import path from 'path';
 
 const SESSION_METRICS_TABLE = 'SessionMetrics';
-const INTERVENTIONS_TABLE = process.env.AZURE_TABLE_INTERVENTIONS || 'Interventions';
+const INTERVENTIONS_TABLE = CONFIG.tables.interventions;
 export const POWERBI_DEFAULT_DAYS = 14;
 
 function toIsoDate(value) {
@@ -1610,7 +1611,7 @@ app.http('get-director-stats', {
 
         let classesProcessed = 0;
         try {
-            const classesClient = getTableClient(process.env.AZURE_TABLE_CLASSES || 'classes');
+            const classesClient = getTableClient(CONFIG.tables.classes);
             for await (const _ of classesClient.listEntities()) {
                 classesProcessed++;
             }
@@ -1834,7 +1835,7 @@ app.http('reprocess-material', {
             }
 
             // 3. Re-subir blob con metadata para re-triggerear pipeline (async)
-            const containerName = process.env.AZURE_STORAGE_CONTAINER_MATERIALS || 'class-materials';
+            const containerName = CONFIG.containers.materials;
             const blobUrlExt = material.blobUrl ? path.extname(new URL(material.blobUrl).pathname) : '';
             const origExt = blobUrlExt || path.extname(material.filename || 'file');
             const blobVersion = Date.now();

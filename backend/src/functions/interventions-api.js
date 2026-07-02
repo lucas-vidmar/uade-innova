@@ -2,10 +2,11 @@ import { app } from '@azure/functions';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
 import { getTableClient } from '../services/storage.js';
+import { CONFIG } from '../services/config.js';
 
-const INTERVENTIONS_TABLE = process.env.AZURE_TABLE_INTERVENTIONS || 'Interventions';
-const RISK_THRESHOLDS_TABLE = process.env.AZURE_TABLE_RISK_THRESHOLDS || 'RiskThresholds';
-const USER_EVENTS_TABLE = process.env.AZURE_TABLE_USER_EVENTS || 'UserEvents';
+const INTERVENTIONS_TABLE = CONFIG.tables.interventions;
+const RISK_THRESHOLDS_TABLE = CONFIG.tables.riskThresholds;
+const USER_EVENTS_TABLE = CONFIG.tables.userEvents;
 
 const VALID_STATES = ['assigned', 'contacted', 'resolved'];
 const VALID_RISK_LEVELS = ['low', 'medium', 'high'];

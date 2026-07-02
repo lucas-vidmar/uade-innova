@@ -2,8 +2,9 @@ import { app } from '@azure/functions';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { getTableClient } from '../services/storage.js';
+import { CONFIG } from '../services/config.js';
 
-const TABLE_NAME = process.env.AZURE_TABLE_NOTIFICATION_PREFERENCES || 'NotificationPreferences';
+const TABLE_NAME = CONFIG.tables.notificationPreferences;
 
 const VALID_CADENCES = ['48h', '24h', 'both'];
 const DEFAULTS = { enabled: true, cadence: 'both' };

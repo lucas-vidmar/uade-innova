@@ -3,6 +3,7 @@ import { withCorrelation } from '../middleware/with-correlation.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
 import { trackNotificationInteraction } from '../services/telemetry.js';
 import { getTableClient } from '../services/storage.js';
+import { CONFIG } from '../services/config.js';
 
 const DIRECTOR_ROLES = ['Director'];
 
@@ -180,7 +181,7 @@ app.http('get-director-kpi-export', {
 
       let classesCount = 0;
       try {
-        const classesClient = getTableClient(process.env.AZURE_TABLE_CLASSES || 'classes');
+        const classesClient = getTableClient(CONFIG.tables.classes);
         for await (const _ of classesClient.listEntities()) {
           classesCount++;
         }

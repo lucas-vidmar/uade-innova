@@ -1,6 +1,7 @@
 import { validateFrontDoorId } from '../services/auth-utils.js';
 import { app } from '@azure/functions';
 import { withCorrelation } from '../middleware/with-correlation.js';
+import { CONFIG } from '../services/config.js';
 
 app.http('get-roles', {
     methods: ['POST'],
@@ -40,15 +41,15 @@ app.http('get-roles', {
             // Case-insensitive check for group names
             const hasGroup = (name) => groupClaims.some(g => g.toLowerCase() === name.toLowerCase());
 
-            if (hasGroup('Alumnos-Pilot')) {
+            if (hasGroup(CONFIG.entraGroups.alumnos)) {
                 roles.push('Alumno');
             }
 
-            if (hasGroup('Docentes-Pilot')) {
+            if (hasGroup(CONFIG.entraGroups.docentes)) {
                 roles.push('Docente');
             }
             
-            if (hasGroup('Directores-Pilot')) {
+            if (hasGroup(CONFIG.entraGroups.directores)) {
                 roles.push('Director');
             }
 

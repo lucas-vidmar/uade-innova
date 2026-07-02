@@ -1,16 +1,12 @@
 import { getTableClient } from './storage.js';
+import { CONFIG } from '../config.js';
 
-const SUBJECT_WEIGHTS_TABLE = process.env.AZURE_TABLE_SUBJECT_WEIGHTS || 'SubjectWeights';
+const SUBJECT_WEIGHTS_TABLE = CONFIG.tables.subjectWeights;
 
-export const DEFAULT_WEIGHTS = {
-  notes: 1.35,
-  bibliography: 1.1,
-  transcript: 1.0,
-  presentation: 0.95,
-};
+export const DEFAULT_WEIGHTS = { ...CONFIG.materialWeights };
 
-const WEIGHT_MIN = 0.0;
-const WEIGHT_MAX = 3.0;
+const WEIGHT_MIN = CONFIG.weightMin;
+const WEIGHT_MAX = CONFIG.weightMax;
 const VALID_TYPES = new Set(Object.keys(DEFAULT_WEIGHTS));
 
 function ensureWeight(value) {

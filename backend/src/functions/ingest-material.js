@@ -10,6 +10,7 @@ import { getMaterialPriority } from '../services/material-classification.js';
 import { ErrorCategory, normalizeCategorizedError, structuredErrorResponse } from '../services/error-categories.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { createStructuredLogger } from '../services/structured-logger.js';
+import { CONFIG } from '../services/config.js';
 
 const SESSION_METRICS_TABLE = 'SessionMetrics';
 
@@ -85,7 +86,7 @@ app.http('ingest-material', {
                 let uploadResult;
                 try {
                     uploadResult = await uploadStream(
-                        process.env.AZURE_STORAGE_CONTAINER_MATERIALS || 'class-materials',
+                        CONFIG.containers.materials,
                         blobName,
                         fileReadable,
                         fileContentType,

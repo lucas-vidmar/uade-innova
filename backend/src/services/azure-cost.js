@@ -229,11 +229,13 @@ export function computeBudgetProjection(daily, options = {}) {
     };
 }
 
+import { CONFIG } from '../config.js';
+
 function getMonthlyBudget() {
     const rawBudget = process.env.DIRECTOR_BUDGET_MONTHLY_USD;
-    if (!rawBudget) return 10000;
+    if (!rawBudget) return CONFIG.budget.monthlyUsd;
     const parsedBudget = Number(rawBudget);
-    if (!Number.isFinite(parsedBudget) || parsedBudget <= 0) return 10000;
+    if (!Number.isFinite(parsedBudget) || parsedBudget <= 0) return CONFIG.budget.monthlyUsd;
     return parsedBudget;
 }
 

@@ -9,8 +9,9 @@ import { runPipeline } from '../services/pipeline.js';
 import { saveJson } from '../services/storage.js';
 import { upsertMaterialState } from '../services/state-store.js';
 import { generateCorrelationId, resolveTraceContext } from '../services/correlation.js';
+import { CONFIG } from '../services/config.js';
 
-const CONTAINER_MATERIALS = process.env.AZURE_STORAGE_CONTAINER_MATERIALS || 'class-materials';
+const CONTAINER_MATERIALS = CONFIG.containers.materials;
 const CONTAINER_PROCESSED = 'processed';
 
 let blobServiceClient = null;

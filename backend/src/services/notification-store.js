@@ -1,7 +1,8 @@
 import { loadJson, saveJson } from './storage.js';
+import { CONFIG } from '../config.js';
 
 const CONTAINER_NOTIFICATIONS = 'notifications';
-const CONTAINER_CLASS_MATERIALS = process.env.AZURE_STORAGE_CONTAINER_MATERIALS || 'class-materials';
+const CONTAINER_CLASS_MATERIALS = CONFIG.containers.materials;
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 200;
 

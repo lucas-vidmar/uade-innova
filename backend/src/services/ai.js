@@ -7,8 +7,9 @@ import { DefaultAzureCredential, getBearerTokenProvider } from '@azure/identity'
 import { CategorizedError, ErrorCategory } from './error-categories.js';
 import { extractMermaidCode } from '../../shared/extract-mermaid.js';
 import { getActivePrompt } from './prompts.js';
+import { CONFIG } from '../config.js';
 
-const AOAI_TOKEN_SCOPE = 'https://cognitiveservices.azure.com/.default';
+const AOAI_TOKEN_SCOPE = CONFIG.ai.tokenScope;
 
 let _embeddingClient = null;
 let _chatClient = null;
@@ -27,7 +28,7 @@ function createAzureOpenAIClient(azureAdTokenProvider) {
         endpoint: process.env.AZURE_OPENAI_ENDPOINT,
         apiKey: process.env.AZURE_OPENAI_KEY || process.env.AZURE_OPENAI_API_KEY || undefined,
         azureADTokenProvider: azureAdTokenProvider,
-        apiVersion: '2024-08-01-preview',
+        apiVersion: CONFIG.ai.apiVersion,
     });
 }
 
@@ -44,7 +45,7 @@ function getEmbeddingClient() {
 
         const apiKey = process.env.AZURE_OPENAI_KEY || process.env.AZURE_OPENAI_API_KEY;
         if (apiKey) {
-            _embeddingClient = new AzureOpenAI({ endpoint, apiKey, apiVersion: '2024-08-01-preview' });
+            _embeddingClient = new AzureOpenAI({ endpoint, apiKey, apiVersion: CONFIG.ai.apiVersion });
             console.log('[AI] Embedding Client (Azure OpenAI + API Key) initialized');
         } else {
             _embeddingClient = createAzureOpenAIClient(getTokenProvider());
@@ -73,7 +74,7 @@ function getChatClient() {
                     headers.set('api-key', dsKey);
                     headers.delete('authorization');
                     const parsedUrl = new URL(url);
-                    parsedUrl.searchParams.set('api-version', '2024-08-01-preview');
+                    parsedUrl.searchParams.set('api-version', CONFIG.ai.apiVersion);
                     return fetch(parsedUrl.toString(), { ...init, headers });
                 },
             });
@@ -86,7 +87,7 @@ function getChatClient() {
 
             const apiKey = process.env.AZURE_OPENAI_KEY || process.env.AZURE_OPENAI_API_KEY;
             if (apiKey) {
-                _chatClient = new AzureOpenAI({ endpoint, apiKey, apiVersion: '2024-08-01-preview' });
+                _chatClient = new AzureOpenAI({ endpoint, apiKey, apiVersion: CONFIG.ai.apiVersion });
                 console.log('[AI] Chat Client (Azure OpenAI Fallback + API Key) initialized');
             } else {
                 _chatClient = createAzureOpenAIClient(getTokenProvider());
@@ -129,7 +130,7 @@ export async function generateEmbeddingsBatch(texts, options = {}) {
         }
     };
 
-    const model = process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT || 'text-embedding-3-small';
+    const model = CONFIG.ai.embeddingModel;
 
     const response = await executeWithRetry(() =>
         client.embeddings.create(
@@ -158,9 +159,9 @@ export function isChatUsingDeepSeek() {
 
 export function getChatModelName() {
     if (isChatUsingDeepSeek()) {
-        return process.env.AI_FOUNDRY_DEEPSEEK_MODEL || 'deepseek-v4-flash';
+        return CONFIG.ai.deepSeekModel;
     }
-    return process.env.AZURE_OPENAI_CHAT_DEPLOYMENT || 'gpt-4o-mini';
+    return process.env.AZURE_OPENAI_CHAT_DEPLOYMENT || CONFIG.ai.chatModel || 'gpt-4o-mini';
 }
 
 /**
@@ -175,14 +176,14 @@ export async function chatCompletion(messages, stream = false, overrides = {}) {
     
     // Si es DeepSeek, usamos el nombre del modelo de Foundry. Si es Azure OpenAI, el deployment.
     const model = isDeepSeek 
-        ? (process.env.AI_FOUNDRY_DEEPSEEK_MODEL || 'deepseek-v4-flash')
+        ? CONFIG.ai.deepSeekModel
         : process.env.AZURE_OPENAI_CHAT_DEPLOYMENT;
 
     const options = {
         model,
         messages,
-        temperature: 0.3,
-        max_tokens: 1500,
+        temperature: CONFIG.ai.temperature.chat,
+        max_tokens: CONFIG.ai.maxTokens.chat,
         stream,
         ...modelOverrides,
     };
@@ -226,13 +227,13 @@ export async function generateClassSummary(text, subjectName = "", options = {})
     const response = await chatCompletion([
         { role: "system", content: systemContent },
         { role: "user", content: userContent }
-    ], false, { temperature: 0.5, max_tokens: 2000, headers: options.headers });
+    ], false, { temperature: CONFIG.ai.temperature.summary, max_tokens: CONFIG.ai.maxTokens.summary, headers: options.headers });
 
     return {
         content: response.content,
         usage: response.usage,
         generatedAt: new Date().toISOString(),
-        model: process.env.AI_FOUNDRY_DEEPSEEK_MODEL || 'deepseek-v4-flash'
+        model: CONFIG.ai.deepSeekModel
     };
 }
 
@@ -248,7 +249,7 @@ export async function generateClassMap(text, options = {}) {
     const response = await chatCompletion([
         { role: "system", content: systemContent },
         { role: "user", content: userContent }
-    ], false, { temperature: 0.4, max_tokens: 1500, headers: options.headers });
+    ], false, { temperature: CONFIG.ai.temperature.mermaid, max_tokens: CONFIG.ai.maxTokens.mermaid, headers: options.headers });
 
     return {
         code: extractMermaidCode(response.content),
@@ -272,13 +273,13 @@ export async function generatePodcastScript(summaryText, subjectName = '', class
     const response = await chatCompletion([
         { role: "system", content: systemContent },
         { role: "user", content: userContent }
-    ], false, { temperature: 0.5, max_tokens: 2000, headers: options.headers });
+    ], false, { temperature: CONFIG.ai.temperature.podcast, max_tokens: CONFIG.ai.maxTokens.podcast, headers: options.headers });
 
     return {
         content: response.content,
         usage: response.usage,
         generatedAt: new Date().toISOString(),
-        model: process.env.AI_FOUNDRY_DEEPSEEK_MODEL || 'deepseek-v4-flash'
+        model: CONFIG.ai.deepSeekModel
     };
 }
 
@@ -286,23 +287,23 @@ export async function generatePodcastScript(summaryText, subjectName = '', class
  * Genera audio (TTS)
  * DeepSeek no suele tener TTS, mantenemos Azure OpenAI.
  */
-export async function generateClassAudio(text, voice = 'nova', options = {}) {
+export async function generateClassAudio(text, voice = CONFIG.ai.defaultVoice, options = {}) {
     const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
     if (!endpoint) throw new Error('AZURE_OPENAI_ENDPOINT is required for TTS.');
 
     const apiKey = process.env.AZURE_OPENAI_KEY || process.env.AZURE_OPENAI_API_KEY;
     let ttsClient;
     if (apiKey) {
-        ttsClient = new AzureOpenAI({ endpoint, apiKey, apiVersion: '2024-08-01-preview' });
+        ttsClient = new AzureOpenAI({ endpoint, apiKey, apiVersion: CONFIG.ai.apiVersion });
     } else {
         ttsClient = createAzureOpenAIClient(getTokenProvider());
     }
 
     const response = await ttsClient.audio.speech.create(
         {
-            model: process.env.AZURE_OPENAI_TTS_DEPLOYMENT || 'tts-1',
+            model: CONFIG.ai.ttsModel,
             voice,
-            input: text.substring(0, 4000),
+            input: text.substring(0, CONFIG.ai.maxTokens.ttsInput),
         },
         { headers: options.headers }
     );

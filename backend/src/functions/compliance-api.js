@@ -3,8 +3,9 @@ import { withCorrelation } from '../middleware/with-correlation.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
 import { loadJson } from '../services/storage.js';
 import { trackNotificationInteraction } from '../services/telemetry.js';
+import { CONFIG } from '../services/config.js';
 
-const COMPLIANCE_CONTAINER = process.env.AZURE_STORAGE_CONTAINER_COMPLIANCE || 'compliance';
+const COMPLIANCE_CONTAINER = CONFIG.containers.compliance;
 const POLICY_BLOB = 'retention-policy.json';
 const COMPLIANCE_ROLES = ['Director', 'Admin', 'Security'];
 

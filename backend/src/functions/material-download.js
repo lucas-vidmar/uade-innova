@@ -3,8 +3,9 @@ import { withCorrelation } from '../middleware/with-correlation.js';
 import { getMaterialState } from '../services/state-store.js';
 import { BlobSASPermissions, generateBlobSASQueryParameters, StorageSharedKeyCredential, SASProtocol } from '@azure/storage-blob';
 import { validateFrontDoorId } from '../services/auth-utils.js';
+import { CONFIG } from '../services/config.js';
 
-const CONTAINER_MATERIALS = process.env.AZURE_STORAGE_CONTAINER_MATERIALS || 'class-materials';
+const CONTAINER_MATERIALS = CONFIG.containers.materials;
 
 app.http('material-download', {
     methods: ['GET'],

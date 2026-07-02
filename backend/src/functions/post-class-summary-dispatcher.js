@@ -3,10 +3,11 @@ import { withCorrelationTimer } from '../middleware/with-correlation.js';
 import { loadJson, listBlobs } from '../services/storage.js';
 import { upsertNotificationForSubject } from '../services/notification-store.js';
 import { trackDispatcherRun } from '../services/telemetry.js';
+import { CONFIG } from '../services/config.js';
 
-const CONTAINER_CLASSES = process.env.AZURE_STORAGE_CONTAINER_CLASSES || 'classes-config';
-const CONTAINER_SUMMARIES = 'class-summaries';
-const SUBJECTS_BLOB = 'subjects.json';
+const CONTAINER_CLASSES = CONFIG.containers.classes;
+const CONTAINER_SUMMARIES = CONFIG.containers.summaries;
+const SUBJECTS_BLOB = CONFIG.blobs.subjects;
 
 function isPastClassDate(value, now = new Date()) {
   const parsed = new Date(value);
@@ -120,7 +121,7 @@ export async function runPostClassSummaryDispatcher(context = { log: () => {}, e
 }
 
 app.timer('post-class-summary-dispatcher', {
-  schedule: process.env.POST_CLASS_SUMMARY_TIMER_CRON || '0 */15 * * * *',
+  schedule: CONFIG.cron.postClassSummary,
   handler: withCorrelationTimer(async (_timer, context) => {
     await runPostClassSummaryDispatcher(context);
   }),

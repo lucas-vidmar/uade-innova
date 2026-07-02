@@ -17,14 +17,15 @@ import { listMaterialsBySubject, listReviewedCorrections } from '../services/sta
 import { getEnrollment, getConsentStatus } from '../services/state-store.js';
 import { getGlossary } from '../services/glossary-store.js';
 import { getSubjectWeights } from '../services/subject-weights.js';
+import { CONFIG } from '../services/config.js';
 import {
     MAX_RAG_CHUNKS, RETRIEVAL_CANDIDATES, MAX_CHUNKS_PER_SOURCE,
     filterMatchesByTranscriptFocus, buildHybridContext, diversifyBySourceFile,
     resolveMaterialPriority, resolveSourceMix, resolveSelectedClassCount, resolveFilterType
 } from '../services/rag-ranking.js';
-const MIN_HISTORY_TURNS = 3;
-const MAX_HISTORY_TURNS = 5;
-const DEFAULT_HISTORY_TURNS = 4;
+const MIN_HISTORY_TURNS = CONFIG.history.minTurns;
+const MAX_HISTORY_TURNS = CONFIG.history.maxTurns;
+const DEFAULT_HISTORY_TURNS = CONFIG.history.defaultTurns;
 
 function sanitizeTurn(turn) {
     if (!turn || typeof turn !== 'object') return null;

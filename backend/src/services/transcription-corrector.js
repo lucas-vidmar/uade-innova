@@ -2,8 +2,9 @@ import { chatCompletion } from './ai.js';
 import { getGlossary } from './glossary-store.js';
 import { getTableClient } from './storage.js';
 import { getActivePrompt } from './prompts.js';
+import { CONFIG } from '../config.js';
 
-const CORRECTIONS_TABLE = process.env.AZURE_TABLE_TRANSCRIPTION_CORRECTIONS || 'TranscriptionCorrections';
+const CORRECTIONS_TABLE = CONFIG.tables.transcriptionCorrections;
 
 async function ensureCorrectionsTable() {
   const client = getTableClient(CORRECTIONS_TABLE);

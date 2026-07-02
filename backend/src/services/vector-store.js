@@ -5,12 +5,13 @@
 import { CategorizedError, ErrorCategory } from './error-categories.js';
 import { trackVectorSearchDependency } from './telemetry.js';
 import { recordVectorOperation } from './vector-metrics.js';
+import { CONFIG } from '../config.js';
 
-const BATCH_SIZE = 100;
-const REQUEST_TIMEOUT_MS = 15000;
+const BATCH_SIZE = CONFIG.vector.batchSize;
+const REQUEST_TIMEOUT_MS = CONFIG.vector.requestTimeoutMs;
 
 function getIndexName() {
-    return process.env.PINECONE_INDEX_NAME || 'dashboard-edu-pilot';
+    return CONFIG.vector.indexName;
 }
 
 function getNamespace() {

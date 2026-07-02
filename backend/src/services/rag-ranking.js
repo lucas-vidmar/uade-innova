@@ -1,16 +1,14 @@
 import { getMaterialPriority } from './material-classification.js';
 import { DEFAULT_WEIGHTS } from './subject-weights.js';
+import { CONFIG } from '../config.js';
 
-export const MAX_RAG_CHUNKS = 4;
-export const RETRIEVAL_CANDIDATES = 10;
-export const MAX_CHUNKS_PER_SOURCE = 2;
+export const MAX_RAG_CHUNKS = CONFIG.rag.maxChunks;
+export const RETRIEVAL_CANDIDATES = CONFIG.rag.retrievalCandidates;
+export const MAX_CHUNKS_PER_SOURCE = CONFIG.rag.maxChunksPerSource;
 
 export const MATERIAL_TYPE_WEIGHT = { ...DEFAULT_WEIGHTS };
 
-export const MATERIAL_PRIORITY_WEIGHT = {
-    primary: 1,
-    secondary: 0.9,
-};
+export const MATERIAL_PRIORITY_WEIGHT = { ...CONFIG.materialPriorityWeights };
 
 export function tokenize(text = '') {
     return String(text)
