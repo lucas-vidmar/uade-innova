@@ -1,0 +1,108 @@
+- generic [ref=e2]:
+  - generic:
+    - complementary "Navegación principal" [ref=e3]:
+      - link "Ir al inicio" [ref=e4] [cursor=pointer]:
+        - /url: "#/teacher/dashboard"
+        - generic [ref=e5]: UI
+        - generic [ref=e6]: UADE Innova
+      - navigation [ref=e7]:
+        - link "Mis Catedras" [ref=e8] [cursor=pointer]:
+          - /url: "#/teacher/dashboard"
+          - img [ref=e9]
+          - generic [ref=e12]: Mis Catedras
+        - link "Gestor de Clases" [ref=e13] [cursor=pointer]:
+          - /url: "#/teacher/classes"
+          - img [ref=e14]
+          - generic [ref=e18]: Gestor de Clases
+        - link "Cargar Materiales" [ref=e19] [cursor=pointer]:
+          - /url: "#/teacher/upload"
+          - img [ref=e20]
+          - generic [ref=e23]: Cargar Materiales
+        - link "Gestión de Materiales" [ref=e24] [cursor=pointer]:
+          - /url: "#/teacher/materials"
+          - img [ref=e25]
+          - generic [ref=e28]: Gestión de Materiales
+        - link "Bandeja de Correcciones" [ref=e29] [cursor=pointer]:
+          - /url: "#/teacher/corrections"
+          - img [ref=e30]
+          - generic [ref=e32]: Bandeja de Correcciones
+        - link "Correcciones Transcripción" [ref=e33] [cursor=pointer]:
+          - /url: "#/teacher/transcription-corrections"
+          - img [ref=e34]
+          - generic [ref=e37]: Correcciones Transcripción
+        - link "Glosario" [ref=e38] [cursor=pointer]:
+          - /url: "#/teacher/glossary"
+          - img [ref=e39]
+          - generic [ref=e41]: Glosario
+        - link "Analitica" [ref=e42] [cursor=pointer]:
+          - /url: "#/teacher/analytics"
+          - img [ref=e43]
+          - generic [ref=e45]: Analitica
+        - button "Guía de inicio" [ref=e47] [cursor=pointer]:
+          - img [ref=e48]
+          - generic [ref=e51]: Guía de inicio
+    - banner [ref=e52]:
+      - button "Seleccionar materia activa" [ref=e55] [cursor=pointer]:
+        - generic [ref=e56]: Arquitectura de Software 2026 (2026-1)
+        - img [ref=e57]
+      - generic [ref=e59]:
+        - button "Cambiar tema" [ref=e60] [cursor=pointer]:
+          - img [ref=e61]
+        - generic [ref=e64] [cursor=pointer]: PX
+  - main [ref=e67]:
+    - generic [ref=e69]:
+      - generic [ref=e70]:
+        - generic [ref=e71]: Clases completas
+        - generic [ref=e72]: "0"
+      - generic [ref=e73]:
+        - generic [ref=e74]: Procesando
+        - generic [ref=e75]: "0"
+      - generic [ref=e76]:
+        - generic [ref=e77]: Sin material
+        - generic [ref=e78]: "0"
+    - heading "Cronograma — Arquitectura de Software 2026" [level=2] [ref=e80]:
+      - img [ref=e82]
+      - text: Cronograma — Arquitectura de Software 2026
+    - heading "Tareas y deadlines" [level=2] [ref=e87]:
+      - img [ref=e89]
+      - text: Tareas y deadlines
+    - button "Crear tarea" [ref=e94] [cursor=pointer]:
+      - img [ref=e96]
+      - text: Crear tarea
+    - generic [ref=e100]:
+      - generic [ref=e101]:
+        - generic [ref=e102]:
+          - generic [ref=e103]: Título
+          - textbox "Final Project" [ref=e104]
+        - generic [ref=e105]:
+          - generic [ref=e106]: Clase
+          - combobox [ref=e107] [cursor=pointer]
+        - generic [ref=e108]:
+          - generic [ref=e109]: Vencimiento
+          - textbox [ref=e110]
+      - generic [ref=e111]:
+        - generic [ref=e112]:
+          - generic [ref=e113]: Descripción
+          - textbox "Entrega final del proyecto..." [ref=e114]
+        - generic [ref=e115]:
+          - generic [ref=e116] [cursor=pointer]
+          - generic [ref=e118] [cursor=pointer]
+        - button "Guardar deadline" [ref=e120] [cursor=pointer]
+    - generic [ref=e121]:
+      - generic [ref=e122]:
+        - generic [ref=e123]: Deadlines activos
+        - generic [ref=e124]: "0"
+      - generic [ref=e126]: Sin deadlines configurados.
+    - heading "Alertas de Calidad IA" [level=2] [ref=e128]:
+      - img [ref=e130]
+      - text: Alertas de Calidad IA
+    - generic [ref=e133]:
+      - generic [ref=e134]:
+        - generic [ref=e135]: Reportes de alumnos
+        - generic [ref=e136]: "0"
+      - generic [ref=e138]: No hay reportes de calidad IA para esta materia.
+    - generic [ref=e139]:
+      - heading "Ponderación de fuentes — Arquitectura de Software 2026" [level=2] [ref=e141]
+      - generic [ref=e143]:
+        - paragraph [ref=e144]: Ajustá cuánto peso tiene cada tipo de material en las respuestas del chat. Un peso más alto prioriza ese tipo de material sobre otros.
+        - generic [ref=e145]: Cargando configuración...

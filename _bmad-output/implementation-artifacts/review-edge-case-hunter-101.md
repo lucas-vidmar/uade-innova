@@ -1,0 +1,146 @@
+# Edge Case Hunter Review — spec-gh-101-per-subject-token-alert
+
+You have read access to the project at `/Users/lucasvidmar/Documents/azure-educational-dashboard`. Review the diff below and the project codebase for edge cases.
+
+The change adds a per-subject anomalous token usage alert rule to the existing Bicep module. Focus on:
+- KQL query edge cases (null/missing fields, union behavior, type coercion)
+- Bicep resource naming collisions or conflicts
+- Alert rule interaction with existing global rule
+- Telemetry events that may not carry `subjectId`
+
+```diff
+diff --git a/backend/src/services/anomalous-usage-alert-iac.test.js b/backend/src/services/anomalous-usage-alert-iac.test.js
+index 0e56c39..f6d477f 100644
+--- a/backend/src/services/anomalous-usage-alert-iac.test.js
++++ b/backend/src/services/anomalous-usage-alert-iac.test.js
+@@ -28,4 +28,17 @@ test('main.bicep wires anomalous usage alert behind notification email', async (
+   assert.match(content, /module\s+anomalousUsageAlert\s+'\.\/modules\/anomalous-usage-alert\.bicep'\s*=\s*if\s*\(!empty\(notificationEmail\)\)/);
+   assert.match(content, /workspaceId:\s*appInsights\.outputs\.logAnalyticsWorkspaceId/);
+   assert.match(content, /notificationEmail:\s*notificationEmail/);
++  assert.match(content, /subjectTokenThreshold:\s*500000/);
++});
++
++test('per-subject anomalous usage alert rule is defined with lower threshold and subjectId grouping', async () => {
++  const content = await readRepoFile('infra/modules/anomalous-usage-alert.bicep');
++
++  assert.match(content, /param\s+subjectTokenThreshold\s+int\s*=\s*500000/);
++  assert.match(content, /perSubjectUsageRule/);
++  assert.match(content, /'\$\{scheduledQueryRuleName\}-per-subject'/);
++  assert.match(content, /customDimensions\.subjectId/);
++  assert.match(content, /summarize\s+tokens24h\s*=\s*sum\(coalesce\(totalTokens,\s*0\.0\)\)\s+by\s+userId,\s*subjectId/);
++  assert.match(content, /where\s+tokens24h\s*>\s*\$\{subjectTokenThreshold\}/);
++  assert.match(content, /name:\s+'subjectId'/);
+ });
+diff --git a/infra/main.bicep b/infra/main.bicep
+index 71ffe90..882a099 100644
+--- a/infra/main.bicep
++++ b/infra/main.bicep
+@@ -259,6 +259,7 @@ module anomalousUsageAlert './modules/anomalous-usage-alert.bicep' = if (!empty(
+     notificationEmail: notificationEmail
+     scheduledQueryRuleName: anomalousUsageAlertName
+     actionGroupName: anomalousUsageActionGroupName
++    subjectTokenThreshold: 500000
+     tags: tags
+   }
+ }
+diff --git a/infra/modules/anomalous-usage-alert.bicep b/infra/modules/anomalous-usage-alert.bicep
+index 8519643..867eb3f 100644
+--- a/infra/modules/anomalous-usage-alert.bicep
++++ b/infra/modules/anomalous-usage-alert.bicep
+@@ -21,6 +21,9 @@ param actionGroupName string = 'ag-anomalous-token-usage'
+ @description('Tags to apply to resources.')
+ param tags object = {}
+ 
++@description('Threshold for per-subject token anomaly alert (tokens per userId+subjectId over 24h).')
++param subjectTokenThreshold int = 500000
++
+ var tokenThreshold = 1000000
+ 
+ resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
+@@ -76,6 +79,78 @@ union isfuzzy=true ragFromCustomEvents, ragFromAppEvents
+           timeAggregation: 'Count'
+           operator: 'GreaterThanOrEqual'
+           threshold: 1
++          dimensions: [
++            {
++              name: 'userId'
++              operator: 'Include'
++              values: ['*']
++            }
++          ]
++          failingPeriods: {
++            numberOfEvaluationPeriods: 1
++            minFailingPeriodsToAlert: 1
++          }
++        }
++      ]
++    }
++    autoMitigate: true
++    muteActionsDuration: 'PT1H'
++    actions: {
++      actionGroups: [
++        actionGroup.id
++      ]
++    }
++  }
++}
++
++resource perSubjectUsageRule 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = {
++  name: '${scheduledQueryRuleName}-per-subject'
++  location: location
++  tags: tags
++  properties: {
++    description: 'Triggers when a user exceeds ${subjectTokenThreshold} tokens in a single subject over the last 24 hours.'
++    displayName: 'Per-subject anomalous token usage (>${subjectTokenThreshold} tokens / 24h per subject+user)'
++    severity: 2
++    enabled: true
++    scopes: [
++      workspaceId
++    ]
++    evaluationFrequency: 'PT5M'
++    windowSize: 'PT24H'
++    criteria: {
++      allOf: [
++        {
++          query: '''
++let ragFromCustomEvents =
++customEvents
++| where name == "RAGInteraction"
++| project timestamp, userId=tostring(customDimensions.userId), subjectId=tostring(customDimensions.subjectId), totalTokens=todouble(customMeasurements.totalTokens);
++let ragFromAppEvents =
++AppEvents
++| where Name == "RAGInteraction"
++| project timestamp=TimeGenerated, userId=tostring(Properties.userId), subjectId=tostring(Properties.subjectId), totalTokens=todouble(Measurements.totalTokens);
++union isfuzzy=true ragFromCustomEvents, ragFromAppEvents
++| where timestamp >= ago(24h)
++| where isnotempty(userId) and isnotempty(subjectId)
++| summarize tokens24h = sum(coalesce(totalTokens, 0.0)) by userId, subjectId
++| where tokens24h > ${subjectTokenThreshold}
++| project userId, subjectId, tokens24h
++'''
++          timeAggregation: 'Count'
++          operator: 'GreaterThanOrEqual'
++          threshold: 1
++          dimensions: [
++            {
++              name: 'userId'
++              operator: 'Include'
++              values: ['*']
++            }
++            {
++              name: 'subjectId'
++              operator: 'Include'
++              values: ['*']
++            }
++          ]
+           failingPeriods: {
+             numberOfEvaluationPeriods: 1
+             minFailingPeriodsToAlert: 1
+@@ -95,4 +170,6 @@ union isfuzzy=true ragFromCustomEvents, ragFromAppEvents
+ 
+ output actionGroupId string = actionGroup.id
+ output scheduledQueryRuleId string = anomalousUsageRule.id
++output perSubjectScheduledQueryRuleId string = perSubjectUsageRule.id
+ output threshold int = tokenThreshold
++output subjectTokenThresholdValue int = subjectTokenThreshold
+```

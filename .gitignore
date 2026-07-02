@@ -48,24 +48,18 @@ tmp/
 # APM dependencies
 apm_modules/
 
-#BMAD
-_bmad/
-_bmad-output/
+#BMAD — artifact patterns (not directories)
+_bmad/stories/
 .agents/skills/
-stories/
 
 # Tests
 .playwright-mcp/
 test-results/
 
-# Dev verification artifacts
-_dev-verify/
-
 # Session artifacts (Playwright snapshots, temp bundles, screenshots)
 main-chunk.js
-*-snapshot.yml
 **/screenshot*.png*.png
-*.png
+test-report/**/screenshot-*.png
 
 # Test artifacts
 *.snap
@@ -79,15 +73,9 @@ main-chunk.js
 .agents/victory_auditor/
 .agents/worker_qa*/
 
-# Test snapshots and deploy verification
-deploy-*.md
-
 # Test scripts
 scripts/seed-test-profiles.js
 scripts/test-students-enrollments.csv
-
-# Generated test reports
-test-report/
 
 # Test subset scripts
 test-subset*.mjs

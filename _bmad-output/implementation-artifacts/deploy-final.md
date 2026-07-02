@@ -1,0 +1,81 @@
+- generic [ref=e2]:
+  - generic:
+    - complementary "Navegación principal" [ref=e3]:
+      - link "Ir al inicio" [ref=e4] [cursor=pointer]:
+        - /url: "#/teacher/dashboard"
+        - generic [ref=e5]: UI
+        - generic [ref=e6]: UADE Innova
+      - navigation [ref=e7]:
+        - link "Mis Catedras" [ref=e8] [cursor=pointer]:
+          - /url: "#/teacher/dashboard"
+        - link "Gestor de Clases" [ref=e13] [cursor=pointer]:
+          - /url: "#/teacher/classes"
+        - link "Cargar Materiales" [ref=e19] [cursor=pointer]:
+          - /url: "#/teacher/upload"
+        - link "Gestión de Materiales" [ref=e24] [cursor=pointer]:
+          - /url: "#/teacher/materials"
+        - link "Bandeja de Correcciones" [ref=e29] [cursor=pointer]:
+          - /url: "#/teacher/corrections"
+        - link "Correcciones Transcripción" [ref=e33] [cursor=pointer]:
+          - /url: "#/teacher/transcription-corrections"
+        - link "Glosario" [ref=e38] [cursor=pointer]:
+          - /url: "#/teacher/glossary"
+        - link "Analitica" [ref=e42] [cursor=pointer]:
+          - /url: "#/teacher/analytics"
+        - button "Guía de inicio" [ref=e47] [cursor=pointer]
+    - banner [ref=e52]:
+      - button "Seleccionar materia activa" [ref=e55] [cursor=pointer]:
+        - generic [ref=e56]: Arquitectura de Software 2026 (2026-1)
+        - img [ref=e57]
+      - generic [ref=e59]:
+        - button "Cambiar tema" [ref=e60] [cursor=pointer]
+        - generic [ref=e64] [cursor=pointer]: PX
+  - main [ref=e67]:
+    - generic [ref=e68]:
+      - generic [ref=e69]:
+        - generic [ref=e70]: Clases completas
+        - generic [ref=e71]: "0"
+      - generic [ref=e72]:
+        - generic [ref=e73]: Procesando
+        - generic [ref=e74]: "0"
+      - generic [ref=e75]:
+        - generic [ref=e76]: Sin material
+        - generic [ref=e77]: "0"
+    - heading "Cronograma — Arquitectura de Software 2026" [level=2] [ref=e79]:
+      - img [ref=e81]
+      - text: Cronograma — Arquitectura de Software 2026
+    - heading "Tareas y deadlines" [level=2] [ref=e86]:
+      - img [ref=e88]
+      - text: Tareas y deadlines
+    - button "Crear tarea" [ref=e93] [cursor=pointer]:
+      - img [ref=e95]
+      - text: Crear tarea
+    - generic [ref=e99]:
+      - generic [ref=e100]:
+        - generic [ref=e101]
+        - generic [ref=e104]
+        - generic [ref=e107]
+      - generic [ref=e110]:
+        - generic [ref=e111]
+        - generic [ref=e114]
+        - button "Guardar deadline" [ref=e119] [cursor=pointer]
+    - generic [ref=e120]:
+      - generic [ref=e121]:
+        - generic [ref=e122]: Deadlines activos
+        - generic [ref=e123]: "0"
+      - generic [ref=e125]: Sin deadlines configurados.
+    - heading "Alertas de Calidad IA" [level=2] [ref=e127]:
+      - img [ref=e129]
+      - text: Alertas de Calidad IA
+    - generic [ref=e132]:
+      - generic [ref=e133]:
+        - generic [ref=e134]: Reportes de alumnos
+        - generic [ref=e135]: "0"
+      - generic [ref=e137]: No hay reportes de calidad IA para esta materia.
+    - generic [ref=e138]:
+      - heading "Ponderación de fuentes — Arquitectura de Software 2026" [level=2] [ref=e140]
+      - generic [ref=e142]:
+        - paragraph [ref=e143]: Ajustá cuánto peso tiene cada tipo de material en las respuestas del chat. Un peso más alto prioriza ese tipo de material sobre otros.
+        - generic [ref=e144]: Usando valores por defecto
+        - generic [ref=e145]
+        - generic [ref=e190]

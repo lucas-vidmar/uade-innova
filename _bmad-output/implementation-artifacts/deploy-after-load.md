@@ -1,0 +1,160 @@
+- generic [ref=e2]:
+  - generic:
+    - complementary "Navegación principal" [ref=e3]:
+      - link "Ir al inicio" [ref=e4] [cursor=pointer]:
+        - /url: "#/teacher/dashboard"
+        - generic [ref=e5]: UI
+        - generic [ref=e6]: UADE Innova
+      - navigation [ref=e7]:
+        - link "Mis Catedras" [ref=e8] [cursor=pointer]:
+          - /url: "#/teacher/dashboard"
+          - img [ref=e9]
+          - generic [ref=e12]: Mis Catedras
+        - link "Gestor de Clases" [ref=e13] [cursor=pointer]:
+          - /url: "#/teacher/classes"
+          - img [ref=e14]
+          - generic [ref=e18]: Gestor de Clases
+        - link "Cargar Materiales" [ref=e19] [cursor=pointer]:
+          - /url: "#/teacher/upload"
+          - img [ref=e20]
+          - generic [ref=e23]: Cargar Materiales
+        - link "Gestión de Materiales" [ref=e24] [cursor=pointer]:
+          - /url: "#/teacher/materials"
+          - img [ref=e25]
+          - generic [ref=e28]: Gestión de Materiales
+        - link "Bandeja de Correcciones" [ref=e29] [cursor=pointer]:
+          - /url: "#/teacher/corrections"
+          - img [ref=e30]
+          - generic [ref=e32]: Bandeja de Correcciones
+        - link "Correcciones Transcripción" [ref=e33] [cursor=pointer]:
+          - /url: "#/teacher/transcription-corrections"
+          - img [ref=e34]
+          - generic [ref=e37]: Correcciones Transcripción
+        - link "Glosario" [ref=e38] [cursor=pointer]:
+          - /url: "#/teacher/glossary"
+          - img [ref=e39]
+          - generic [ref=e41]: Glosario
+        - link "Analitica" [ref=e42] [cursor=pointer]:
+          - /url: "#/teacher/analytics"
+          - img [ref=e43]
+          - generic [ref=e45]: Analitica
+        - button "Guía de inicio" [ref=e47] [cursor=pointer]:
+          - img [ref=e48]
+          - generic [ref=e51]: Guía de inicio
+    - banner [ref=e52]:
+      - button "Seleccionar materia activa" [ref=e55] [cursor=pointer]:
+        - generic [ref=e56]: Arquitectura de Software 2026 (2026-1)
+        - img [ref=e57]
+      - generic [ref=e59]:
+        - button "Cambiar tema" [ref=e60] [cursor=pointer]:
+          - img [ref=e61]
+        - generic [ref=e64] [cursor=pointer]: PX
+  - main [ref=e67]:
+    - generic [ref=e70]:
+      - generic [ref=e71]:
+        - generic [ref=e72]: Clases completas
+        - generic [ref=e73]: "0"
+      - generic [ref=e74]:
+        - generic [ref=e75]: Procesando
+        - generic [ref=e76]: "0"
+      - generic [ref=e77]:
+        - generic [ref=e78]: Sin material
+        - generic [ref=e79]: "0"
+    - heading "Cronograma — Arquitectura de Software 2026" [level=2] [ref=e81]:
+      - img [ref=e83]
+      - text: Cronograma — Arquitectura de Software 2026
+    - heading "Tareas y deadlines" [level=2] [ref=e88]:
+      - img [ref=e90]
+      - text: Tareas y deadlines
+    - button "Crear tarea" [ref=e95] [cursor=pointer]:
+      - img [ref=e97]
+      - text: Crear tarea
+    - generic [ref=e101]:
+      - generic [ref=e102]:
+        - generic [ref=e103]:
+          - generic [ref=e104]: Título
+          - textbox "Final Project" [ref=e105]
+        - generic [ref=e106]:
+          - generic [ref=e107]: Clase
+          - combobox [ref=e108] [cursor=pointer]
+        - generic [ref=e109]:
+          - generic [ref=e110]: Vencimiento
+          - textbox [ref=e111]
+      - generic [ref=e112]:
+        - generic [ref=e113]:
+          - generic [ref=e114]: Descripción
+          - textbox "Entrega final del proyecto..." [ref=e115]
+        - generic [ref=e116]:
+          - generic [ref=e117] [cursor=pointer]:
+            - checkbox "Notificar 1 día antes" [checked] [ref=e118]
+            - text: Notificar 1 día antes
+          - generic [ref=e119] [cursor=pointer]:
+            - checkbox "Notificar el mismo día" [checked] [ref=e120]
+            - text: Notificar el mismo día
+        - button "Guardar deadline" [ref=e121] [cursor=pointer]
+    - generic [ref=e122]:
+      - generic [ref=e123]:
+        - generic [ref=e124]: Deadlines activos
+        - generic [ref=e125]: "0"
+      - generic [ref=e127]: Sin deadlines configurados.
+    - heading "Alertas de Calidad IA" [level=2] [ref=e129]:
+      - img [ref=e131]
+      - text: Alertas de Calidad IA
+    - generic [ref=e134]:
+      - generic [ref=e135]:
+        - generic [ref=e136]: Reportes de alumnos
+        - generic [ref=e137]: "0"
+      - generic [ref=e139]: No hay reportes de calidad IA para esta materia.
+    - generic [ref=e140]:
+      - heading "Ponderación de fuentes — Arquitectura de Software 2026" [level=2] [ref=e142]
+      - generic [ref=e144]:
+        - paragraph [ref=e145]: Ajustá cuánto peso tiene cada tipo de material en las respuestas del chat. Un peso más alto prioriza ese tipo de material sobre otros.
+        - generic [ref=e146]: Usando valores por defecto
+        - generic [ref=e147]:
+          - generic [ref=e148]:
+            - generic [ref=e149]:
+              - generic [ref=e150]:
+                - strong [ref=e151]: Apuntes del docente
+                - generic [ref=e152]: Notas y apuntes de clase preparados por el docente
+              - generic [ref=e153]: "1.35"
+            - slider [ref=e154]: "1.35"
+            - generic [ref=e155]:
+              - generic [ref=e156]: 0 (excluir)
+              - generic [ref=e157]: 1 (normal)
+              - generic [ref=e158]: 3 (máxima prioridad)
+          - generic [ref=e159]:
+            - generic [ref=e160]:
+              - generic [ref=e161]:
+                - strong [ref=e162]: Bibliografía
+                - generic [ref=e163]: Libros, papers y referencias bibliográficas
+              - generic [ref=e164]: "1.10"
+            - slider [ref=e165]: "1.1"
+            - generic [ref=e166]:
+              - generic [ref=e167]: 0 (excluir)
+              - generic [ref=e168]: 1 (normal)
+              - generic [ref=e169]: 3 (máxima prioridad)
+          - generic [ref=e170]:
+            - generic [ref=e171]:
+              - generic [ref=e172]:
+                - strong [ref=e173]: Transcripciones
+                - generic [ref=e174]: Transcripciones automáticas de las clases
+              - generic [ref=e175]: "1.00"
+            - slider [ref=e176]: "1"
+            - generic [ref=e177]:
+              - generic [ref=e178]: 0 (excluir)
+              - generic [ref=e179]: 1 (normal)
+              - generic [ref=e180]: 3 (máxima prioridad)
+          - generic [ref=e181]:
+            - generic [ref=e182]:
+              - generic [ref=e183]:
+                - strong [ref=e184]: Presentaciones
+                - generic [ref=e185]: Slides y presentaciones de clase
+              - generic [ref=e186]: "0.95"
+            - slider [ref=e187]: "0.95"
+            - generic [ref=e188]:
+              - generic [ref=e189]: 0 (excluir)
+              - generic [ref=e190]: 1 (normal)
+              - generic [ref=e191]: 3 (máxima prioridad)
+        - generic [ref=e192]:
+          - button "Guardar ponderación" [ref=e193] [cursor=pointer]
+          - button "Restablecer valores por defecto" [ref=e194] [cursor=pointer]
