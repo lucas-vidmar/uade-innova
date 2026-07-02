@@ -1,5 +1,6 @@
 import { test, mock } from 'node:test';
 import assert from 'node:assert';
+import { setupTestEnv } from '../src/test-utils/env.js';
 
 const fetchMock = mock.fn(async () => ({
     ok: true,
@@ -9,10 +10,7 @@ const fetchMock = mock.fn(async () => ({
 
 global.fetch = fetchMock;
 
-process.env.PINECONE_HOST = 'https://test-index-test.svc.pinecone.io';
-process.env.PINECONE_INDEX_NAME = 'test-index';
-process.env.PINECONE_API_KEY = 'fake-key';
-delete process.env.PINECONE_NAMESPACE;
+setupTestEnv();
 
 const { listAllVectorIds, fetchVectorsByIds, upsertChunks } = await import('../src/services/vector-store.js');
 

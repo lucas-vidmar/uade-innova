@@ -1,3 +1,5 @@
+// SEED SCRIPT — Solo para desarrollo/piloto. No ejecutar en producción.
+
 /**
  * scripts/seed-prompts.js — Migra prompts existentes (archivos + hardcodeados)
  * a la tabla PromptVersions en Azure Table Storage.

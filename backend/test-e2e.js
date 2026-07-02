@@ -11,7 +11,7 @@ const storageConnectionString = process.env.AZURE_STORAGE_CONNECTION_STRING || `
 
 const subjectId = 'test-subject-123';
 const classId = 'test-class-001';
-const secretCode = 'PineappleServerless';
+const secretCode = process.env.TEST_SECRET || 'PineappleServerless';
 
 async function seedClass() {
     console.log('--- 1. Seeding Test Class ---');

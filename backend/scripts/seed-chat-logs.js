@@ -1,4 +1,6 @@
-import { saveJson } from '../backend/src/services/storage.js';
+// SEED SCRIPT — Solo para desarrollo/piloto. No ejecutar en producción.
+
+import { saveJson } from '../src/services/storage.js';
 
 async function seed() {
     const CONTAINER = 'chat-logs';

@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+// SEED SCRIPT — Solo para desarrollo/piloto. No ejecutar en producción.
+
 /**
  * seed-enrollments.js — Bulk insert enrollment records into Azure Table Storage
  * from a CSV file (scripts/pilot-enrollments.csv).

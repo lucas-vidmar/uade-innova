@@ -1,5 +1,6 @@
 import { test, mock } from 'node:test';
 import assert from 'node:assert';
+import { setupTestEnv } from '../test-utils/env.js';
 
 const fetchMock = mock.fn(async () => ({
     ok: true,
@@ -9,9 +10,7 @@ const fetchMock = mock.fn(async () => ({
 
 global.fetch = fetchMock;
 
-process.env.PINECONE_HOST = 'https://test-index-test.svc.pinecone.io';
-process.env.PINECONE_INDEX_NAME = 'test-index';
-process.env.PINECONE_API_KEY = 'fake-key';
+setupTestEnv();
 
 const { querySimilarWithTelemetry } = await import('./vector-store.js');
 

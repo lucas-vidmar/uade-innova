@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+// SEED SCRIPT — Solo para desarrollo/piloto. No ejecutar en producción.
+
 /**
  * seed-initial-data.js — Seed inicial de datos para el dashboard educativo.
  * Inserta: UserProfiles, Enrollments, Subjects, Classes, Materials
@@ -328,6 +330,10 @@ async function seedMaterials() {
 }
 
 async function main() {
+  if (process.env.NODE_ENV === 'production') {
+    console.error('Seed scripts cannot run in production');
+    process.exit(1);
+  }
   console.log('=== Seed Inicial: Dashboard Educativo UADE ===\n');
 
   try {
