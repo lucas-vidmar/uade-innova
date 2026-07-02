@@ -50,7 +50,7 @@ export async function renderGlossaryManager(container) {
           </thead>
           <tbody>
             ${terms.map((t, i) => `
-              <tr data-index="${i}" style="border-bottom:1px solid var(--color-border)">
+              <tr class="glossary-term-row" data-index="${i}" style="border-bottom:1px solid var(--color-border)">
                 <td style="padding:var(--space-2) var(--space-4)">
                   <input type="text" class="form-input" value="${escapeHtml(t.term)}" data-field="term" style="height:34px;font-size:var(--font-size-sm)" placeholder="Término" />
                 </td>

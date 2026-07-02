@@ -72,6 +72,13 @@ main-chunk.js
 *.d.ts
 
 
+# Agent working artifacts (generated during AI sessions)
+.agents/ORIGINAL_REQUEST.md
+.agents/orchestrator/
+.agents/sentinel/
+.agents/victory_auditor/
+.agents/worker_qa*/
+
 # Test snapshots and deploy verification
 deploy-*.md
 
@@ -81,3 +88,9 @@ scripts/test-students-enrollments.csv
 
 # Generated test reports
 test-report/
+
+# Test subset scripts
+test-subset*.mjs
+
+# Generated QA reports
+QA_Tests_Report.md
