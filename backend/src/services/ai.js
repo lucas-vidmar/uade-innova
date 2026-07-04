@@ -5,7 +5,7 @@
 import { AzureOpenAI, OpenAI } from 'openai';
 import { DefaultAzureCredential, getBearerTokenProvider } from '@azure/identity';
 import { CategorizedError, ErrorCategory } from './error-categories.js';
-import { extractMermaidCode } from '../../../shared/extract-mermaid.js';
+import { extractMermaidCode } from './extract-mermaid.js';
 import { getActivePrompt } from './prompts.js';
 import { CONFIG } from '../config.js';
 
