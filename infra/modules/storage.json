@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.41.2.15936",
-      "templateHash": "1998126153182249684"
+      "templateHash": "15501287807204351975"
     }
   },
   "parameters": {
@@ -242,6 +242,51 @@
                   ],
                   "prefixMatch": [
                     "vector-snapshots/"
+                  ]
+                }
+              }
+            },
+            {
+              "enabled": true,
+              "name": "MoveChatLogsToCoolAfter30d",
+              "type": "Lifecycle",
+              "definition": {
+                "actions": {
+                  "baseBlob": {
+                    "tierToCool": {
+                      "daysAfterModificationGreaterThan": 30
+                    }
+                  }
+                },
+                "filters": {
+                  "blobTypes": [
+                    "blockBlob"
+                  ],
+                  "prefixMatch": [
+                    "chat-logs/",
+                    "vector-backups/"
+                  ]
+                }
+              }
+            },
+            {
+              "enabled": true,
+              "name": "DeleteChatLogsAfter90d",
+              "type": "Lifecycle",
+              "definition": {
+                "actions": {
+                  "baseBlob": {
+                    "delete": {
+                      "daysAfterModificationGreaterThan": 90
+                    }
+                  }
+                },
+                "filters": {
+                  "blobTypes": [
+                    "blockBlob"
+                  ],
+                  "prefixMatch": [
+                    "chat-logs/"
                   ]
                 }
               }

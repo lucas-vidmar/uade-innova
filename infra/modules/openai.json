@@ -1,0 +1,214 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.41.2.15936",
+      "templateHash": "13045060094401290057"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "eastus",
+      "metadata": {
+        "description": "Azure region for the OpenAI resource."
+      }
+    },
+    "name": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the Azure OpenAI resource."
+      }
+    },
+    "skuName": {
+      "type": "string",
+      "defaultValue": "S0",
+      "metadata": {
+        "description": "SKU for the OpenAI resource."
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Tags to apply to the resource."
+      }
+    },
+    "gptDeploymentName": {
+      "type": "string",
+      "defaultValue": "gpt-4o-mini",
+      "metadata": {
+        "description": "Name of the GPT deployment in Azure (the resource name, e.g. \"gpt-4o-mini\")."
+      }
+    },
+    "gptModelName": {
+      "type": "string",
+      "defaultValue": "gpt-4.1-mini",
+      "metadata": {
+        "description": "Actual Azure OpenAI model name (e.g. \"gpt-4.1-mini\")."
+      }
+    },
+    "gptModelVersion": {
+      "type": "string",
+      "defaultValue": "2024-07-18",
+      "metadata": {
+        "description": "Version of the GPT model."
+      }
+    },
+    "gptDeploymentCapacity": {
+      "type": "int",
+      "defaultValue": 10,
+      "metadata": {
+        "description": "Capacity (K TPM) for the GPT deployment."
+      }
+    },
+    "embeddingModelName": {
+      "type": "string",
+      "defaultValue": "text-embedding-3-small",
+      "metadata": {
+        "description": "Name of the embedding model to deploy."
+      }
+    },
+    "embeddingModelVersion": {
+      "type": "string",
+      "defaultValue": "1",
+      "metadata": {
+        "description": "Version of the embedding model."
+      }
+    },
+    "embeddingDeploymentCapacity": {
+      "type": "int",
+      "defaultValue": 10,
+      "metadata": {
+        "description": "Capacity (K TPM) for the embedding deployment."
+      }
+    },
+    "ttsModelName": {
+      "type": "string",
+      "defaultValue": "tts-1",
+      "metadata": {
+        "description": "Name of the TTS model to deploy."
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.CognitiveServices/accounts",
+      "apiVersion": "2024-10-01",
+      "name": "[parameters('name')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "kind": "OpenAI",
+      "sku": {
+        "name": "[parameters('skuName')]"
+      },
+      "properties": {
+        "customSubDomainName": "[parameters('name')]",
+        "publicNetworkAccess": "Enabled",
+        "disableLocalAuth": false
+      }
+    },
+    {
+      "type": "Microsoft.CognitiveServices/accounts/raiPolicies",
+      "apiVersion": "2024-10-01",
+      "name": "[format('{0}/{1}', parameters('name'), 'jailbreak-shield')]",
+      "properties": {
+        "basePolicyName": "Microsoft.Default",
+        "contentFilters": [
+          {
+            "name": "Jailbreak",
+            "source": "Prompt",
+            "enabled": true,
+            "blocking": true
+          },
+          {
+            "name": "Indirect Attack",
+            "source": "Prompt",
+            "enabled": true,
+            "blocking": true
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.CognitiveServices/accounts/deployments",
+      "apiVersion": "2024-10-01",
+      "name": "[format('{0}/{1}', parameters('name'), parameters('gptDeploymentName'))]",
+      "properties": {
+        "model": {
+          "format": "OpenAI",
+          "name": "[parameters('gptModelName')]",
+          "version": "[parameters('gptModelVersion')]"
+        },
+        "raiPolicyName": "jailbreak-shield"
+      },
+      "sku": {
+        "name": "Standard",
+        "capacity": "[parameters('gptDeploymentCapacity')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]",
+        "[resourceId('Microsoft.CognitiveServices/accounts/raiPolicies', parameters('name'), 'jailbreak-shield')]"
+      ]
+    },
+    {
+      "type": "Microsoft.CognitiveServices/accounts/deployments",
+      "apiVersion": "2024-10-01",
+      "name": "[format('{0}/{1}', parameters('name'), parameters('embeddingModelName'))]",
+      "properties": {
+        "model": {
+          "format": "OpenAI",
+          "name": "[parameters('embeddingModelName')]"
+        }
+      },
+      "sku": {
+        "name": "Standard",
+        "capacity": "[parameters('embeddingDeploymentCapacity')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts/deployments', parameters('name'), parameters('gptDeploymentName'))]",
+        "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "endpoint": {
+      "type": "string",
+      "metadata": {
+        "description": "The Azure OpenAI service endpoint URL."
+      },
+      "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', parameters('name')), '2024-10-01').endpoint]"
+    },
+    "name": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the Azure OpenAI resource."
+      },
+      "value": "[parameters('name')]"
+    },
+    "accountId": {
+      "type": "string",
+      "metadata": {
+        "description": "The resource ID of the Azure OpenAI resource."
+      },
+      "value": "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]"
+    },
+    "chatDeploymentName": {
+      "type": "string",
+      "value": "[parameters('gptDeploymentName')]"
+    },
+    "embeddingDeploymentName": {
+      "type": "string",
+      "value": "text-embedding-3-small"
+    },
+    "ttsDeploymentName": {
+      "type": "string",
+      "value": ""
+    }
+  }
+}

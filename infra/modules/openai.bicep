@@ -15,8 +15,11 @@ param skuName string = 'S0'
 @description('Tags to apply to the resource.')
 param tags object = {}
 
-@description('Name of the GPT model to deploy (used as Fallback for DeepSeek).')
-param gptModelName string = 'gpt-4o-mini'
+@description('Name of the GPT deployment in Azure (the resource name, e.g. "gpt-4o-mini").')
+param gptDeploymentName string = 'gpt-4o-mini'
+
+@description('Actual Azure OpenAI model name (e.g. "gpt-4.1-mini").')
+param gptModelName string = 'gpt-4.1-mini'
 
 @description('Version of the GPT model.')
 param gptModelVersion string = '2024-07-18'
@@ -87,7 +90,7 @@ resource raiPolicy 'Microsoft.CognitiveServices/accounts/raiPolicies@2024-10-01'
 // Note: Using latest version - do not specify version to avoid deprecation errors
 resource gptDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
   parent: openAiAccount
-  name: gptModelName
+  name: gptDeploymentName
   properties: {
     model: {
       format: 'OpenAI'
@@ -149,7 +152,7 @@ output name string = openAiAccount.name
 output accountId string = openAiAccount.id
 
 // Note: Deployment names are hardcoded to match manually-created deployments in Azure OpenAI
-output chatDeploymentName string = 'gpt-4o-mini'
+output chatDeploymentName string = gptDeploymentName
 
 output embeddingDeploymentName string = 'text-embedding-3-small'
 

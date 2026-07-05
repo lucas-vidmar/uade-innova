@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.41.2.15936",
-      "templateHash": "7738392776462125647"
+      "templateHash": "9642324590651818496"
     }
   },
   "parameters": {
@@ -39,11 +39,18 @@
         "description": "SKU del recurso Azure OpenAI."
       }
     },
+    "gptDeploymentName": {
+      "type": "string",
+      "defaultValue": "gpt-4o-mini",
+      "metadata": {
+        "description": "Nombre del deployment GPT en Azure OpenAI (debe coincidir con AZURE_OPENAI_CHAT_DEPLOYMENT)."
+      }
+    },
     "gptModelName": {
       "type": "string",
       "defaultValue": "gpt-4.1-mini",
       "metadata": {
-        "description": "Nombre del modelo GPT a deployar en Azure OpenAI (Fallback)."
+        "description": "Nombre del modelo GPT subyacente (ej: gpt-4.1-mini)."
       }
     },
     "gptModelVersion": {
@@ -488,6 +495,9 @@
           "skuName": {
             "value": "[parameters('openAiSkuName')]"
           },
+          "gptDeploymentName": {
+            "value": "[parameters('gptDeploymentName')]"
+          },
           "gptModelName": {
             "value": "[parameters('gptModelName')]"
           },
@@ -517,7 +527,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "4581918705070153877"
+              "templateHash": "13045060094401290057"
             }
           },
           "parameters": {
@@ -548,11 +558,18 @@
                 "description": "Tags to apply to the resource."
               }
             },
-            "gptModelName": {
+            "gptDeploymentName": {
               "type": "string",
               "defaultValue": "gpt-4o-mini",
               "metadata": {
-                "description": "Name of the GPT model to deploy (used as Fallback for DeepSeek)."
+                "description": "Name of the GPT deployment in Azure (the resource name, e.g. \"gpt-4o-mini\")."
+              }
+            },
+            "gptModelName": {
+              "type": "string",
+              "defaultValue": "gpt-4.1-mini",
+              "metadata": {
+                "description": "Actual Azure OpenAI model name (e.g. \"gpt-4.1-mini\")."
               }
             },
             "gptModelVersion": {
@@ -643,7 +660,7 @@
             {
               "type": "Microsoft.CognitiveServices/accounts/deployments",
               "apiVersion": "2024-10-01",
-              "name": "[format('{0}/{1}', parameters('name'), parameters('gptModelName'))]",
+              "name": "[format('{0}/{1}', parameters('name'), parameters('gptDeploymentName'))]",
               "properties": {
                 "model": {
                   "format": "OpenAI",
@@ -676,7 +693,7 @@
                 "capacity": "[parameters('embeddingDeploymentCapacity')]"
               },
               "dependsOn": [
-                "[resourceId('Microsoft.CognitiveServices/accounts/deployments', parameters('name'), parameters('gptModelName'))]",
+                "[resourceId('Microsoft.CognitiveServices/accounts/deployments', parameters('name'), parameters('gptDeploymentName'))]",
                 "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]"
               ]
             }
@@ -705,7 +722,7 @@
             },
             "chatDeploymentName": {
               "type": "string",
-              "value": "gpt-4o-mini"
+              "value": "[parameters('gptDeploymentName')]"
             },
             "embeddingDeploymentName": {
               "type": "string",
@@ -746,7 +763,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "1998126153182249684"
+              "templateHash": "15501287807204351975"
             }
           },
           "parameters": {
@@ -983,6 +1000,51 @@
                           ],
                           "prefixMatch": [
                             "vector-snapshots/"
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "enabled": true,
+                      "name": "MoveChatLogsToCoolAfter30d",
+                      "type": "Lifecycle",
+                      "definition": {
+                        "actions": {
+                          "baseBlob": {
+                            "tierToCool": {
+                              "daysAfterModificationGreaterThan": 30
+                            }
+                          }
+                        },
+                        "filters": {
+                          "blobTypes": [
+                            "blockBlob"
+                          ],
+                          "prefixMatch": [
+                            "chat-logs/",
+                            "vector-backups/"
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "enabled": true,
+                      "name": "DeleteChatLogsAfter90d",
+                      "type": "Lifecycle",
+                      "definition": {
+                        "actions": {
+                          "baseBlob": {
+                            "delete": {
+                              "daysAfterModificationGreaterThan": 90
+                            }
+                          }
+                        },
+                        "filters": {
+                          "blobTypes": [
+                            "blockBlob"
+                          ],
+                          "prefixMatch": [
+                            "chat-logs/"
                           ]
                         }
                       }
@@ -1655,7 +1717,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "14876262596353312547"
+              "templateHash": "3009242354899327952"
             }
           },
           "parameters": {
@@ -1895,6 +1957,9 @@
               }
             }
           },
+          "variables": {
+            "corsAllowedOrigins": "[join(parameters('allowedCorsOrigins'), ',')]"
+          },
           "resources": [
             {
               "type": "Microsoft.Web/serverfarms",
@@ -1962,8 +2027,20 @@
                       "value": "true"
                     },
                     {
+                      "name": "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING",
+                      "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(parameters('storageAccountId'), '2023-01-01').keys[0].value, environment().suffixes.storage)]"
+                    },
+                    {
+                      "name": "WEBSITE_CONTENTSHARE",
+                      "value": "[format('func-content-{0}', uniqueString(resourceGroup().id))]"
+                    },
+                    {
                       "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
                       "value": "[parameters('appInsightsConnectionString')]"
+                    },
+                    {
+                      "name": "LOG_LEVEL",
+                      "value": "info"
                     },
                     {
                       "name": "AZURE_OPENAI_ENDPOINT",
@@ -2136,6 +2213,10 @@
                     {
                       "name": "DIRECTOR_BUDGET_MONTHLY_USD",
                       "value": "10000"
+                    },
+                    {
+                      "name": "CORS_ALLOWED_ORIGINS",
+                      "value": "[variables('corsAllowedOrigins')]"
                     }
                   ]
                 }

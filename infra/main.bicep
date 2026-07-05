@@ -33,7 +33,10 @@ param openAiLocation string = 'eastus2'
 @description('SKU del recurso Azure OpenAI.')
 param openAiSkuName string = 'S0'
 
-@description('Nombre del modelo GPT a deployar en Azure OpenAI (Fallback).')
+@description('Nombre del deployment GPT en Azure OpenAI (debe coincidir con AZURE_OPENAI_CHAT_DEPLOYMENT).')
+param gptDeploymentName string = 'gpt-4o-mini'
+
+@description('Nombre del modelo GPT subyacente (ej: gpt-4.1-mini).')
 param gptModelName string = 'gpt-4.1-mini'
 
 @description('Versión del modelo GPT.')
@@ -155,6 +158,7 @@ module openAi './modules/openai.bicep' = {
     location: openAiLocation
     name: openAiName
     skuName: openAiSkuName
+    gptDeploymentName: gptDeploymentName
     gptModelName: gptModelName
     gptModelVersion: gptModelVersion
     gptDeploymentCapacity: gptDeploymentCapacity

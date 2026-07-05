@@ -208,6 +208,51 @@ resource blobLifecyclePolicy 'Microsoft.Storage/storageAccounts/managementPolici
             }
           }
         }
+        {
+          enabled: true
+          name: 'MoveChatLogsToCoolAfter30d'
+          type: 'Lifecycle'
+          definition: {
+            actions: {
+              baseBlob: {
+                tierToCool: {
+                  daysAfterModificationGreaterThan: 30
+                }
+              }
+            }
+            filters: {
+              blobTypes: [
+                'blockBlob'
+              ]
+              prefixMatch: [
+                'chat-logs/'
+                'vector-backups/'
+              ]
+            }
+          }
+        }
+        {
+          enabled: true
+          name: 'DeleteChatLogsAfter90d'
+          type: 'Lifecycle'
+          definition: {
+            actions: {
+              baseBlob: {
+                delete: {
+                  daysAfterModificationGreaterThan: 90
+                }
+              }
+            }
+            filters: {
+              blobTypes: [
+                'blockBlob'
+              ]
+              prefixMatch: [
+                'chat-logs/'
+              ]
+            }
+          }
+        }
       ]
     }
   }
