@@ -94,3 +94,11 @@ test-subset*.mjs
 
 # Generated QA reports
 QA_Tests_Report.md
+
+# Playwright session screenshots & snapshots
+mobile-*.png
+mobile-*.yml
+mobile-*.md
+desktop-*.png
+desktop-*.yml
+local-*.png

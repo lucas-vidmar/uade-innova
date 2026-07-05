@@ -42,6 +42,134 @@ function renderSearchResult(result, classesById) {
   `;
 }
 
+function bindSidebarCollapse() {
+  document.querySelectorAll('.sidebar-section').forEach(s => {
+    s.classList.add('collapsed');
+  });
+  document.querySelectorAll('.sidebar-section-header').forEach(header => {
+    header.removeEventListener('click', toggleSidebarSection);
+    header.addEventListener('click', toggleSidebarSection);
+  });
+}
+function toggleSidebarSection(e) {
+  const section = e.currentTarget.closest('.sidebar-section');
+  if (section) section.classList.toggle('collapsed');
+}
+
+function initMobileLayout() {
+  if (window.innerWidth > 768) return;
+
+  // ── Hide extra icons from top bar, add profile dropdown menu ──
+  const searchBtn = document.getElementById('mobile-search-btn');
+  if (searchBtn) searchBtn.style.display = 'none';
+  const themeBtn = document.getElementById('theme-toggle-nav');
+  if (themeBtn) themeBtn.style.display = 'none';
+  const notifCenter = document.getElementById('notification-center');
+  if (notifCenter) notifCenter.style.display = 'none';
+
+  const profileContainer = document.querySelector('.profile-initials-badge')?.closest('.top-utility-actions > div');
+  if (profileContainer && !document.getElementById('profile-menu')) {
+    const menu = document.createElement('div');
+    menu.id = 'profile-menu';
+    Object.assign(menu.style, { display: 'none', position: 'absolute', top: '100%', right: '0', background: 'var(--color-surface,#fff)', border: '1px solid var(--color-border,#e2e8f0)', borderRadius: '12px', padding: '4px', boxShadow: '0 4px 24px rgba(0,0,0,0.12)', zIndex: '1000', minWidth: '180px' });
+
+    menu.innerHTML = [
+      '<button class="profile-menu-item" data-action="search">',
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>',
+      ' Buscar</button>',
+      '<button class="profile-menu-item" data-action="theme">',
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>',
+      ' Cambiar tema</button>',
+      '<button class="profile-menu-item" data-action="notifications">',
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 17h5l-1.4-1.4a2 2 0 01-.6-1.4V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5"/><path d="M9 17a3 3 0 006 0"/></svg>',
+      ' Notificaciones</button>',
+    ].join('');
+
+    menu.querySelectorAll('.profile-menu-item').forEach(item => {
+      Object.assign(item.style, { display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '10px 12px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '13px', color: 'var(--color-text)', borderRadius: '8px' });
+      item.addEventListener('mouseenter', () => { item.style.background = 'var(--color-surface-2,#f1f5f9)'; });
+      item.addEventListener('mouseleave', () => { item.style.background = 'none'; });
+      item.addEventListener('click', e => {
+        e.stopPropagation();
+        menu.style.display = 'none';
+        const action = item.getAttribute('data-action');
+        if (action === 'search') document.querySelector('.dashboard-layout-grid.mb-8.items-center')?.classList.toggle('search-expanded');
+        else if (action === 'theme') document.getElementById('theme-toggle-nav')?.click();
+        else if (action === 'notifications') document.getElementById('notification-bell-btn')?.click();
+      });
+    });
+
+    profileContainer.style.position = 'relative';
+    profileContainer.appendChild(menu);
+
+    profileContainer.addEventListener('click', e => {
+      e.stopPropagation();
+      const m = document.getElementById('profile-menu');
+      if (m) m.style.display = m.style.display === 'block' ? 'none' : 'block';
+    });
+
+    document.addEventListener('click', e => {
+      const m = document.getElementById('profile-menu');
+      if (m && m.style.display === 'block' && !profileContainer.contains(e.target)) m.style.display = 'none';
+    });
+  }
+
+  // ── Clear chat placeholder on mobile ──
+  const chatInput = document.getElementById('chat-input');
+  if (chatInput) { chatInput.removeAttribute('placeholder'); }
+
+  // ── Pagination tabs + track for chat/info views ──
+  const layoutGrid = document.querySelector('.dashboard-layout-grid:not(.mb-8)');
+  if (!layoutGrid || document.getElementById('pagination-tabs')) return;
+
+  const tabBar = document.createElement('div');
+  tabBar.id = 'pagination-tabs';
+  tabBar.innerHTML = '<button class="page-tab" data-page="0">Chat</button><button class="page-tab" data-page="1">Info</button>';
+  Object.assign(tabBar.style, { display: 'flex', gap: '0' });
+  const nodes = layoutGrid.children;
+  if (nodes.length < 2) return;
+
+  const track = document.createElement('div');
+  track.className = 'pagination-track';
+  track.style.cssText = 'display:flex;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none;flex:1;gap:0;';
+
+  Array.from(nodes).forEach(child => {
+    child.style.setProperty('flex', '0 0 100%', 'important');
+    child.style.setProperty('scroll-snap-align', 'start', 'important');
+    child.style.setProperty('overflow-y', 'auto', 'important');
+    child.style.setProperty('min-height', '0', 'important');
+    track.appendChild(child);
+  });
+
+  layoutGrid.appendChild(track);
+
+  // Tab click handler
+  tabBar.querySelectorAll('.page-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const i = parseInt(btn.getAttribute('data-page'));
+      tabBar.querySelectorAll('.page-tab').forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+      setTimeout(() => track.scrollTo({ left: i * track.clientWidth, behavior: 'smooth' }), 50);
+    });
+  });
+
+  // Activate first tab by default
+  const firstTab = tabBar.querySelector('[data-page="0"]');
+  if (firstTab) firstTab.classList.add('active');
+
+  // Sync active tab on scroll
+  let scrollTimeout;
+  track.addEventListener('scroll', () => {
+    clearTimeout(scrollTimeout);
+    scrollTimeout = setTimeout(() => {
+      const i = Math.round(track.scrollLeft / track.clientWidth);
+      tabBar.querySelectorAll('.page-tab').forEach((t, idx) => t.classList.toggle('active', idx === i));
+    }, 50);
+  });
+
+  layoutGrid.parentElement.insertBefore(tabBar, layoutGrid);
+}
+
 function escapeHtml(value = '') {
   return String(value)
     .replace(/&/g, '&amp;')
@@ -334,6 +462,8 @@ export async function renderStudentDashboard(container) {
 
     bindHistoryClicks();
     requestAnimationFrame(applyTitleScroll);
+    bindSidebarCollapse();
+    initMobileLayout();
   };
 
   const loadChatSession = async (sessionId) => {
@@ -441,6 +571,8 @@ export async function renderStudentDashboard(container) {
       </div>
     `;
     requestAnimationFrame(applyTitleScroll);
+    bindSidebarCollapse();
+    initMobileLayout();
 
     // Update Metrics
     const metricsContainer = document.getElementById('dashboard-metrics-container');
@@ -528,6 +660,8 @@ export async function renderStudentDashboard(container) {
       };
     }
     requestAnimationFrame(applyTitleScroll);
+    bindSidebarCollapse();
+    initMobileLayout();
   };
 
   fetchClassesTask.then(updateClassesSidebar);
@@ -573,6 +707,8 @@ export async function renderStudentDashboard(container) {
   });
 
   renderBottomNav();
+  bindSidebarCollapse();
+  initMobileLayout();
 }
 
 function renderInactivityBanner() {
