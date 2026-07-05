@@ -102,19 +102,19 @@ test('student can search and see categorized results', async ({ page }) => {
 
   // ── Test 2: Results page shows categorized results ──
   await page.waitForSelector('.search-page-results', { timeout: 10000 });
-  await expect(page.locator('.search-page-summary')).toContainText('4 resultados');
+  await expect(page.locator('.sr-summary')).toContainText('4 resultados');
 
   // Verify all 4 category sections exist
-  await expect(page.locator('.search-category-section')).toHaveCount(4);
+  await expect(page.locator('.sr-section')).toHaveCount(4);
 
-  // Verify material result card
-  const materialCard = page.locator('.search-category-section').first();
-  await expect(materialCard.locator('.search-category-title')).toContainText('Materiales de clase');
+  // Verify material result section
+  const materialSection = page.locator('.sr-section').first();
+  await expect(materialSection.locator('.sr-section-title')).toContainText('Materiales de clase');
 
   // Verify class result card
-  const classSection = page.locator('.search-category-section').nth(1);
-  await expect(classSection.locator('.search-category-title')).toContainText('Clases');
-  await expect(classSection.locator('.search-result-title')).toContainText('Arquitectura Hexagonal');
+  const classSection = page.locator('.sr-section').nth(1);
+  await expect(classSection.locator('.sr-section-title')).toContainText('Clases');
+  await expect(classSection.locator('.sr-card-title')).toContainText('Arquitectura Hexagonal');
 
   // ── Test 3: Empty state ──
   await page.unroute('**/api/global-search');
@@ -128,8 +128,8 @@ test('student can search and see categorized results', async ({ page }) => {
   });
 
   await page.goto('/#/student/search?q=zzz');
-  await page.waitForSelector('.search-page-empty', { timeout: 10000 });
-  await expect(page.locator('.search-page-empty h3')).toContainText('zzz');
+  await page.waitForSelector('.sr-empty', { timeout: 10000 });
+  await expect(page.locator('.sr-empty h3')).toContainText('zzz');
 
   // ── Test 4: Re-search from results page ──
   await page.goto('/#/student/search?q=Architecture');
