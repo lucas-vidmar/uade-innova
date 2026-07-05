@@ -105,11 +105,11 @@ export async function ragQueryStream({ question, classIds, subjectId, sessionId,
     }
 }
 
-export async function globalSearch({ query, subjectId }) {
+export async function globalSearch({ query, subjectId, userId }) {
     const res = await apiFetch(`${BASE_URL}/global-search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, subjectId }),
+        body: JSON.stringify({ query, subjectId, userId }),
     });
 
     if (!res.ok) {

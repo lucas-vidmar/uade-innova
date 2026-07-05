@@ -37,10 +37,12 @@ const vectorStoreMocks = {
 const authUtilsMocks = {
     validateFrontDoorId: mock.fn(() => true),
     parseClientPrincipal: mock.fn(() => ({ userId: 'alu-001', userRoles: ['Alumno'] })),
+    getAuthenticatedUser: mock.fn(() => ({ userId: 'alu-001', sanitizedId: 'alu_001', principal: { userId: 'alu-001' }, role: 'Alumno' })),
 };
 
 const stateStoreMocks = {
     getEnrollment: mock.fn(async () => ({ status: 'active', role: 'student' })),
+    listClassesBySubject: mock.fn(async () => []),
 };
 
 const correlationMocks = {
@@ -84,6 +86,12 @@ const errorCategoriesMocks = {
 };
 mock.module('../services/error-categories.js', { namedExports: errorCategoriesMocks });
 
+const storageMocks = {
+    loadJson: mock.fn(async () => null),
+    listBlobs: mock.fn(async () => []),
+};
+mock.module('../services/storage.js', { namedExports: storageMocks });
+
 let capturedHandler;
 mock.module('@azure/functions', {
     namedExports: {
@@ -101,9 +109,22 @@ test('global-search handler should be registered', () => {
     assert.strictEqual(typeof capturedHandler, 'function');
 });
 
+function mockRequest(body, correlationId) {
+    return {
+        json: async () => body,
+        headers: {
+            get: (name) => {
+                if (name === 'x-correlation-id') return correlationId || null;
+                if (name === 'origin') return 'http://localhost:4280';
+                return null;
+            },
+        },
+    };
+}
+
 test('global-search should reject missing required fields with errorCategory', async () => {
     const response = await capturedHandler(
-        { json: async () => ({ query: 'Architecture' }) },
+        mockRequest({ query: 'Architecture' }),
         { error: mock.fn() }
     );
 
@@ -118,7 +139,7 @@ test('global-search should query full subject index scoped to transcript+bibliog
     vectorStoreMocks.querySimilar.mock.resetCalls();
 
     const response = await capturedHandler(
-        { json: async () => ({ query: 'Architecture', subjectId: 'arq-software-2026' }) },
+        mockRequest({ query: 'Architecture', subjectId: 'arq-software-2026' }),
         { error: mock.fn() }
     );
 
@@ -126,7 +147,7 @@ test('global-search should query full subject index scoped to transcript+bibliog
 
     const filter = vectorStoreMocks.querySimilar.mock.calls[0].arguments[1];
     assert.strictEqual(filter.subjectId.$eq, 'arq-software-2026');
-    assert.deepStrictEqual(filter.materialType.$in, ['transcript', 'bibliography']);
+    assert.deepStrictEqual(filter.materialType.$in, ['transcript', 'bibliography', 'presentation', 'notes']);
 
     const body = JSON.parse(response.body);
     assert.strictEqual(Array.isArray(body.results), true);
@@ -142,12 +163,7 @@ test('global-search should propagate correlation header to embedding call and re
     openaiMocks.generateEmbedding.mock.resetCalls();
 
     const response = await capturedHandler(
-        {
-            json: async () => ({ query: 'Architecture', subjectId: 'arq-software-2026' }),
-            headers: {
-                get: (name) => (name === 'x-correlation-id' ? 'corr-gs-123' : null),
-            },
-        },
+        mockRequest({ query: 'Architecture', subjectId: 'arq-software-2026' }, 'corr-gs-123'),
         { error: mock.fn() }
     );
 

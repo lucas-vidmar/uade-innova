@@ -706,6 +706,20 @@ export async function renderStudentDashboard(container) {
     }
   });
 
+  // Bind global search bar: Enter → navigate to search results page
+  const searchInput = document.getElementById('global-search-header');
+  if (searchInput) {
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const query = searchInput.value.trim();
+        if (query) {
+          window.location.hash = `#/student/search?q=${encodeURIComponent(query)}`;
+        }
+      }
+    });
+  }
+
   renderBottomNav();
   bindSidebarCollapse();
   initMobileLayout();
