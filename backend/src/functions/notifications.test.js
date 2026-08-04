@@ -10,6 +10,12 @@ const notificationStoreMocks = {
     listNotificationsBySubject: mock.fn(async () => []),
     listNotificationsSince: mock.fn(async () => []),
     markNotificationReadForUser: mock.fn(async () => ({ success: true, retryAttempts: 0, deadLetterWrites: 0 })),
+    dispatchClassSummaryNotification: mock.fn(async () => ({ success: true, retryAttempts: 0, deadLetterWrites: 0, dispatched: 1, recipientCount: 2 })),
+    notificationIdForClass: (subjectId, classId) => `notif-auto-summary-${subjectId}-${classId}`,
+};
+
+const storageMocks = {
+    loadJson: mock.fn(async () => []),
 };
 
 const telemetryMocks = {
@@ -22,6 +28,7 @@ const stateStoreMocks = {
 
 mock.module('../services/auth-utils.js', { namedExports: authMocks });
 mock.module('../services/notification-store.js', { namedExports: notificationStoreMocks });
+mock.module('../services/storage.js', { namedExports: storageMocks });
 mock.module('../services/telemetry.js', { namedExports: telemetryMocks });
 mock.module('../services/state-store.js', { namedExports: stateStoreMocks });
 
@@ -39,6 +46,12 @@ mock.module('@azure/functions', {
 await import('./notifications.js');
 
 test('get-notifications should filter by subject and honor limit', async () => {
+    notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => ([
+        { id: 'n1', type: 'material', title: 'A', message: 'm', createdAt: '2026-06-19T12:00:00Z', unread: true, targetHash: '#/student/dashboard', subjectId: 'arq-software-2026', recipientUserIds: [] },
+        { id: 'n2', type: 'summary', title: 'B', message: 'm', createdAt: '2026-06-19T13:00:00Z', unread: true, targetHash: '#/student/dashboard', subjectId: 'arq-software-2026', recipientUserIds: [] },
+        { id: 'n3', type: 'deadline', title: 'C', message: 'm', createdAt: '2026-06-19T14:00:00Z', unread: true, targetHash: '#/student/dashboard', subjectId: 'arq-software-2026', recipientUserIds: [] },
+    ]));
+
     const response = await handlers['get-notifications'](
         { query: new URLSearchParams({ subjectId: 'arq-software-2026', limit: '2' }) },
         { log: () => {} }
@@ -372,4 +385,125 @@ test('get-notifications should return unread state correctly and strip readByUse
     assert.strictEqual(gradeNotifs[0].readByUserIds, undefined, 'readByUserIds stripped from public response');
     const materialNotif = body.find((item) => item.id === 'notif-material-001');
     assert.strictEqual(materialNotif.unread, false, 'notification with unread:false preserves its read state');
+});
+
+// ── POST /api/notifications — dispatch class publish ────────────
+
+test('dispatch-class-publish-notification should reject non-teacher principals', async () => {
+    authMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'alu-001', userRoles: ['Alumno'] }));
+
+    const response = await handlers['dispatch-class-publish-notification'](
+        {
+            method: 'POST',
+            headers: new Map(),
+            json: async () => ({ subjectId: 'arq-software-2026', classId: 'class-03' }),
+        },
+        { log: () => {}, error: () => {} }
+    );
+
+    assert.strictEqual(response.status, 403);
+    assert.ok(notificationStoreMocks.dispatchClassSummaryNotification.mock.callCount() === 0);
+});
+
+test('dispatch-class-publish-notification should return 400 when body fields are missing', async () => {
+    authMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'doc-001', userRoles: ['Docente'] }));
+    stateStoreMocks.getEnrollment.mock.mockImplementation(async () => ({ status: 'active', role: 'teacher' }));
+
+    const response = await handlers['dispatch-class-publish-notification'](
+        {
+            method: 'POST',
+            headers: new Map(),
+            json: async () => ({ subjectId: 'arq-software-2026' }),
+        },
+        { log: () => {}, error: () => {} }
+    );
+
+    assert.strictEqual(response.status, 400);
+    const body = JSON.parse(response.body);
+    assert.ok(body.error.includes('subjectId, classId'));
+});
+
+test('dispatch-class-publish-notification should return 404 when class is not found', async () => {
+    authMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'doc-001', userRoles: ['Docente'] }));
+    stateStoreMocks.getEnrollment.mock.mockImplementation(async () => ({ status: 'active', role: 'teacher' }));
+    storageMocks.loadJson.mock.mockImplementation(async () => ([{ id: 'class-01', title: 'Clase 1' }]));
+
+    const response = await handlers['dispatch-class-publish-notification'](
+        {
+            method: 'POST',
+            headers: new Map(),
+            json: async () => ({ subjectId: 'arq-software-2026', classId: 'class-999' }),
+        },
+        { log: () => {}, error: () => {} }
+    );
+
+    assert.strictEqual(response.status, 404);
+});
+
+test('dispatch-class-publish-notification should dispatch and return notificationId', async () => {
+    authMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'doc-001', userRoles: ['Docente'] }));
+    stateStoreMocks.getEnrollment.mock.mockImplementation(async () => ({ status: 'active', role: 'teacher' }));
+    storageMocks.loadJson.mock.mockImplementation(async () => ([{
+        id: 'class-03',
+        title: 'Clase 3 — Arquitectura Hexagonal',
+        date: '2026-04-09',
+        studentIds: ['alu-001'],
+        summaryReady: true,
+    }]));
+    notificationStoreMocks.dispatchClassSummaryNotification.mock.mockImplementation(async () => ({ success: true, retryAttempts: 0, deadLetterWrites: 0, dispatched: 1, recipientCount: 2 }));
+
+    const before = notificationStoreMocks.dispatchClassSummaryNotification.mock.callCount();
+    const response = await handlers['dispatch-class-publish-notification'](
+        {
+            method: 'POST',
+            headers: new Map(),
+            json: async () => ({ subjectId: 'arq-software-2026', classId: 'class-03' }),
+        },
+        { log: () => {}, error: () => {} }
+    );
+
+    assert.strictEqual(response.status, 200);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.success, true);
+    assert.strictEqual(body.notificationId, 'notif-auto-summary-arq-software-2026-class-03');
+    assert.strictEqual(body.recipients, 2);
+    assert.strictEqual(notificationStoreMocks.dispatchClassSummaryNotification.mock.callCount(), before + 1);
+    const dispatchArg = notificationStoreMocks.dispatchClassSummaryNotification.mock.calls.at(-1).arguments[0];
+    assert.strictEqual(dispatchArg.subjectId, 'arq-software-2026');
+    assert.strictEqual(dispatchArg.classData.id, 'class-03');
+    assert.strictEqual(dispatchArg.origin, 'class-publish');
+});
+
+test('dispatch-class-publish-notification should return 500 when persistence fails', async () => {
+    authMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'doc-001', userRoles: ['Docente'] }));
+    stateStoreMocks.getEnrollment.mock.mockImplementation(async () => ({ status: 'active', role: 'teacher' }));
+    storageMocks.loadJson.mock.mockImplementation(async () => ([{ id: 'class-03', title: 'Clase 3' }]));
+    notificationStoreMocks.dispatchClassSummaryNotification.mock.mockImplementation(async () => ({ success: false, retryAttempts: 3, deadLetterWrites: 1 }));
+
+    const response = await handlers['dispatch-class-publish-notification'](
+        {
+            method: 'POST',
+            headers: new Map(),
+            json: async () => ({ subjectId: 'arq-software-2026', classId: 'class-03' }),
+        },
+        { log: () => {}, error: () => {} }
+    );
+
+    assert.strictEqual(response.status, 500);
+});
+
+test('dispatch-class-publish-notification should reject non-teacher enrollment', async () => {
+    authMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'doc-002', userRoles: ['Docente'] }));
+    stateStoreMocks.getEnrollment.mock.mockImplementation(async () => ({ status: 'active', role: 'student' }));
+
+    const response = await handlers['dispatch-class-publish-notification'](
+        {
+            method: 'POST',
+            headers: new Map(),
+            json: async () => ({ subjectId: 'arq-software-2026', classId: 'class-03' }),
+        },
+        { log: () => {}, error: () => {} }
+    );
+
+    assert.strictEqual(response.status, 403);
 });

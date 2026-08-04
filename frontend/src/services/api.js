@@ -34,6 +34,7 @@ import {
 } from './materials.api.js';
 import {
     getNotifications, markNotificationRead, markNotificationsRead,
+    dispatchClassPublishNotification,
     subscribeNotificationStream
 } from './notifications.api.js';
 import {
@@ -99,6 +100,7 @@ export const api = {
     getMaterialText, updateMaterialText, getMaterialDownloadUrl,
 
     getNotifications, markNotificationRead, markNotificationsRead,
+    dispatchClassPublishNotification,
     subscribeNotificationStream,
 
     getDeadlines, saveDeadline, deleteDeadline, getDeadlineReminders,

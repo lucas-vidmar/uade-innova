@@ -1,4 +1,5 @@
 import { loadJson, saveJson } from './storage.js';
+import { getEnrollmentsBySubject } from './state-store.js';
 import { CONFIG } from '../config.js';
 
 const CONTAINER_NOTIFICATIONS = 'notifications';
@@ -111,6 +112,54 @@ export async function upsertNotificationForSubject(subjectId, notification) {
     retryAttempts: result.retryAttempts,
     deadLetterWrites: result.deadLetterWritten ? 1 : 0,
   };
+}
+
+export function notificationIdForClass(subjectId, classId) {
+  return `notif-auto-summary-${subjectId}-${classId}`;
+}
+
+export function summaryMessageForClass(classData) {
+  const classLabel = classData?.title || classData?.id || 'Clase';
+  return `${classLabel} ya tiene resumen validado.`;
+}
+
+export async function resolveEnrolledStudentIds(subjectId, classData) {
+  const fromClass = Array.isArray(classData?.studentIds) ? classData.studentIds.map((item) => String(item).trim()).filter(Boolean) : [];
+  try {
+    const enrollments = await getEnrollmentsBySubject(subjectId);
+    const fromEnrollments = enrollments
+      .filter((e) => e.role === 'student' && e.status === 'active')
+      .map((e) => e.userId)
+      .filter(Boolean)
+      .map((item) => String(item).trim());
+    return Array.from(new Set([...fromEnrollments, ...fromClass]));
+  } catch {
+    return fromClass;
+  }
+}
+
+export async function dispatchClassSummaryNotification({ subjectId, classData, origin = 'class-publish' }) {
+  if (!subjectId || !classData?.id) {
+    return { success: false, retryAttempts: 0, deadLetterWrites: 0, dispatched: 0 };
+  }
+
+  const classId = String(classData.id);
+  const recipientUserIds = await resolveEnrolledStudentIds(subjectId, classData);
+
+  const { retryAttempts, deadLetterWrites } = await upsertNotificationForSubject(subjectId, {
+    id: notificationIdForClass(subjectId, classId),
+    type: 'summary',
+    title: 'Resumen validado por docente',
+    message: summaryMessageForClass(classData),
+    createdAt: new Date().toISOString(),
+    unread: true,
+    targetHash: `#/student/class/${classId}`,
+    subjectId,
+    recipientUserIds,
+    origin,
+  });
+
+  return { success: !deadLetterWrites, retryAttempts, deadLetterWrites, dispatched: 1, recipientCount: recipientUserIds.length };
 }
 
 export async function markNotificationReadForUser(subjectId, notificationId, userId) {

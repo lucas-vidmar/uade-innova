@@ -7,7 +7,7 @@ const storageMocks = {
 };
 
 const notificationStoreMocks = {
-  upsertNotificationForSubject: mock.fn(async () => true),
+  dispatchClassSummaryNotification: mock.fn(async () => ({ success: true, retryAttempts: 0, deadLetterWrites: 0, dispatched: 1 })),
 };
 
 const telemetryMock = {
@@ -57,7 +57,7 @@ test('post-class-summary-dispatcher should upsert summary notification for past 
   const telemetryBefore = telemetryMock.trackDispatcherRun.mock.callCount();
   const result = await dispatcher.runPostClassSummaryDispatcher({ log: () => {}, error: () => {} });
   assert.ok(result.dispatched >= 1);
-  assert.ok(notificationStoreMocks.upsertNotificationForSubject.mock.callCount() >= 1);
+  assert.ok(notificationStoreMocks.dispatchClassSummaryNotification.mock.callCount() >= 1);
   assert.strictEqual(telemetryMock.trackDispatcherRun.mock.callCount(), telemetryBefore + 1);
   const telemetryCall = telemetryMock.trackDispatcherRun.mock.calls.at(-1).arguments[0];
   assert.strictEqual(telemetryCall.dispatcherName, 'post-class-summary');
@@ -90,10 +90,10 @@ test('post-class-summary-dispatcher should skip future classes and avoid upsert'
     return null;
   });
 
-  const upsertBefore = notificationStoreMocks.upsertNotificationForSubject.mock.callCount();
+  const upsertBefore = notificationStoreMocks.dispatchClassSummaryNotification.mock.callCount();
   const telemetryBefore = telemetryMock.trackDispatcherRun.mock.callCount();
   const result = await dispatcher.runPostClassSummaryDispatcher({ log: () => {}, error: () => {} });
-  const upsertAfter = notificationStoreMocks.upsertNotificationForSubject.mock.callCount();
+  const upsertAfter = notificationStoreMocks.dispatchClassSummaryNotification.mock.callCount();
 
   assert.strictEqual(result.dispatched, 0);
   assert.strictEqual(upsertAfter, upsertBefore);
@@ -115,7 +115,7 @@ test('post-class-summary-dispatcher should report errors in telemetry when upser
     return null;
   });
 
-  notificationStoreMocks.upsertNotificationForSubject.mock.mockImplementation(async () => {
+  notificationStoreMocks.dispatchClassSummaryNotification.mock.mockImplementation(async () => {
     throw new Error('storage unavailable');
   });
 

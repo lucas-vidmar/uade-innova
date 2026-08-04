@@ -1,7 +1,7 @@
 import { app } from '@azure/functions';
 import { withCorrelationTimer } from '../middleware/with-correlation.js';
 import { loadJson, listBlobs } from '../services/storage.js';
-import { upsertNotificationForSubject } from '../services/notification-store.js';
+import { dispatchClassSummaryNotification } from '../services/notification-store.js';
 import { trackDispatcherRun } from '../services/telemetry.js';
 import { CONFIG } from '../services/config.js';
 
@@ -13,15 +13,6 @@ function isPastClassDate(value, now = new Date()) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return false;
   return parsed.getTime() <= now.getTime();
-}
-
-function notificationIdForClass(subjectId, classId) {
-  return `notif-auto-summary-${subjectId}-${classId}`;
-}
-
-function summaryMessageForClass(classData) {
-  const classLabel = classData?.title || classData?.id || 'Clase';
-  return `${classLabel} ya tiene resumen validado.`;
 }
 
 async function loadSubjectIds() {
@@ -72,16 +63,9 @@ export async function runPostClassSummaryDispatcher(context = { log: () => {}, e
         }
 
         const classId = String(classData.id);
-        const { retryAttempts: retries, deadLetterWrites: dlWrites } = await upsertNotificationForSubject(subjectId, {
-          id: notificationIdForClass(subjectId, classId),
-          type: 'summary',
-          title: 'Resumen validado por docente',
-          message: summaryMessageForClass(classData),
-          createdAt: new Date().toISOString(),
-          unread: true,
-          targetHash: `#/student/class/${classId}`,
+        const { retryAttempts: retries, deadLetterWrites: dlWrites } = await dispatchClassSummaryNotification({
           subjectId,
-          recipientUserIds: Array.isArray(classData.studentIds) ? classData.studentIds : [],
+          classData,
           origin: 'post-class-summary-timer',
         });
 

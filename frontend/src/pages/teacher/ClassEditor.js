@@ -534,6 +534,9 @@ export async function renderClassEditor(container) {
                 toast('success', validated ? 'Publicado' : 'Guardado', validated ? 'El contenido ya es visible para los alumnos.' : 'Cambios guardados en la base de datos.');
 
                 if (validated) {
+                    api.dispatchClassPublishNotification({ subjectId, classId }).catch((err) => {
+                        console.warn('[ClassEditor] Publish notification dispatch failed (non-critical):', err?.message);
+                    });
                     window.location.hash = '#/teacher/classes';
                 }
             } catch (e) {

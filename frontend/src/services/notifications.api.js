@@ -94,6 +94,29 @@ export async function markNotificationsRead({ notificationIds = [], userId, subj
     return res.json();
 }
 
+export async function dispatchClassPublishNotification({ subjectId, classId } = {}) {
+    if (!subjectId || !classId) {
+        throw new Error('Missing required fields: subjectId, classId');
+    }
+
+    const res = await apiFetch(`${BASE_URL}/notifications`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subjectId, classId }),
+    });
+
+    if (!res.ok) {
+        let message = `Error ${res.status}: No se pudo enviar la notificación de publicación`;
+        try {
+            const payload = await res.json();
+            if (payload?.error) message = payload.error;
+        } catch {}
+        throw new Error(message);
+    }
+
+    return res.json();
+}
+
 export async function subscribeNotificationStream({ userId, subjectId, signal } = {}, onEvent) {
     const params = new URLSearchParams();
     if (userId) params.set('userId', userId);

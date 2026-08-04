@@ -3,7 +3,16 @@ import { withCorrelation } from '../middleware/with-correlation.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { getEnrollment } from '../services/state-store.js';
 import * as notificationStore from '../services/notification-store.js';
+import { loadJson } from '../services/storage.js';
+import { CONFIG } from '../services/config.js';
 import { trackNotificationInteraction } from '../services/telemetry.js';
+
+const CONTAINER_CLASSES = CONFIG.containers.classes;
+
+function isTeacherOrDirector(principal) {
+  const roles = Array.isArray(principal?.userRoles) ? principal.userRoles : [];
+  return roles.includes('Docente') || roles.includes('Director');
+}
 
 function normalizeLimit(value) {
   const parsed = Number(value);
@@ -157,6 +166,68 @@ app.http('get-notifications', {
     context.log(`[notifications] returning ${data.length} records (subjectId=${subjectId || 'all'}, userId=${userId || 'anonymous'}, skip=${skip}, type=${typeFilter || 'all'})`);
     trackNotificationInteraction({ action: 'fetch_feed', status: 'success', userId, subjectId, notificationId: 'feed' }).catch((err) => context.error('[Telemetry] Error emitting NotificationInteraction:', err));
     return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) };
+  }),
+});
+
+app.http('dispatch-class-publish-notification', {
+  methods: ['POST'],
+  authLevel: 'anonymous',
+  route: 'notifications',
+    handler: withCorrelation(async (request, context) => {
+    if (!validateFrontDoorId(request)) return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+
+    const principal = parseClientPrincipal(request);
+    const isDev = process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
+    if (!isDev && !isTeacherOrDirector(principal)) {
+      return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Docente o Director requerido' }) };
+    }
+
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Invalid JSON payload' }) };
+    }
+
+    const subjectId = body?.subjectId ? String(body.subjectId) : null;
+    const classId = body?.classId ? String(body.classId) : null;
+    if (!subjectId || !classId) {
+      return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Missing required fields: subjectId, classId' }) };
+    }
+
+    const userId = principal?.userId || principal?.oid || 'anonymous';
+    const isDirector = principal?.userRoles?.includes('Director');
+    if (!isDev && !isDirector) {
+      try {
+        const enrollment = await getEnrollment(subjectId, userId);
+        if (!enrollment || enrollment.role !== 'teacher' || enrollment.status !== 'active') {
+          context.log(`[notifications] Publish dispatch denied: userId=${userId} subjectId=${subjectId}`);
+          return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'No tienes permisos para publicar notificaciones en esta materia.' }) };
+        }
+      } catch (err) {
+        return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Error verificando permisos.' }) };
+      }
+    }
+
+    try {
+      const classes = await loadJson(CONTAINER_CLASSES, `${subjectId}.json`);
+      const classData = Array.isArray(classes) ? classes.find((c) => String(c.id) === classId) : null;
+      if (!classData) {
+        return { status: 404, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Clase no encontrada' }) };
+      }
+
+      const result = await notificationStore.dispatchClassSummaryNotification({ subjectId, classData, origin: 'class-publish' });
+      const notificationId = notificationStore.notificationIdForClass(subjectId, classId);
+      context.log(`[notifications] Publish dispatch subjectId=${subjectId} classId=${classId} notificationId=${notificationId} recipients=${result.recipientCount} retries=${result.retryAttempts}`);
+      trackNotificationInteraction({ action: 'dispatch_class_publish', status: result.success ? 'success' : 'error', userId, subjectId, notificationId }).catch((err) => context.error('[Telemetry] Error emitting NotificationInteraction:', err));
+      if (!result.success) {
+        return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Failed to persist notification' }) };
+      }
+      return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: true, notificationId, recipients: result.recipientCount }) };
+    } catch (err) {
+      context.error(`[notifications] Publish dispatch failed subjectId=${subjectId} classId=${classId}: ${err.message}`);
+      return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Unable to dispatch notification' }) };
+    }
   }),
 });
 

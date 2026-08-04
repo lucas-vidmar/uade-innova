@@ -6,7 +6,12 @@ const storageMocks = {
   saveJson: mock.fn(async () => true),
 };
 
+const stateStoreMocks = {
+  getEnrollmentsBySubject: mock.fn(async () => []),
+};
+
 mock.module('./storage.js', { namedExports: storageMocks });
+mock.module('./state-store.js', { namedExports: stateStoreMocks });
 
 const store = await import('./notification-store.js');
 
@@ -120,4 +125,58 @@ test('should mark notification read with retry on transient failure', async () =
   const result = await store.markNotificationReadForUser('s1', 'notif-retry-read', 'user-1');
   assert.strictEqual(result.success, true);
   assert.strictEqual(result.retryAttempts, 1);
+});
+
+test('dispatchClassSummaryNotification should merge enrolled students with class studentIds', async () => {
+  storageMocks.loadJson.mock.mockImplementation(async () => []);
+  stateStoreMocks.getEnrollmentsBySubject.mock.mockImplementation(async () => ([
+    { subjectId: 's1', userId: 'alu-001', role: 'student', status: 'active' },
+    { subjectId: 's1', userId: 'alu-002', role: 'student', status: 'active' },
+    { subjectId: 's1', userId: 'alu-003', role: 'teacher', status: 'active' },
+    { subjectId: 's1', userId: 'alu-004', role: 'student', status: 'inactive' },
+  ]));
+
+  const result = await store.dispatchClassSummaryNotification({
+    subjectId: 's1',
+    classData: { id: 'class-03', title: 'Clase 3', studentIds: ['alu-005'] },
+    origin: 'class-publish',
+  });
+
+  assert.strictEqual(result.success, true);
+  assert.strictEqual(result.dispatched, 1);
+  assert.strictEqual(result.recipientCount, 3);
+  const [, , payload] = storageMocks.saveJson.mock.calls.at(-1).arguments;
+  const saved = payload[0];
+  assert.strictEqual(saved.id, 'notif-auto-summary-s1-class-03');
+  assert.strictEqual(saved.type, 'summary');
+  assert.strictEqual(saved.origin, 'class-publish');
+  assert.deepStrictEqual(saved.recipientUserIds, ['alu-001', 'alu-002', 'alu-005']);
+  assert.strictEqual(saved.targetHash, '#/student/class/class-03');
+});
+
+test('dispatchClassSummaryNotification should fall back to class studentIds when enrollments fail', async () => {
+  storageMocks.loadJson.mock.mockImplementation(async () => []);
+  stateStoreMocks.getEnrollmentsBySubject.mock.mockImplementation(async () => {
+    throw new Error('storage unavailable');
+  });
+
+  const result = await store.dispatchClassSummaryNotification({
+    subjectId: 's1',
+    classData: { id: 'class-01', title: 'Clase 1', studentIds: ['alu-001', 'alu-002'] },
+  });
+
+  assert.strictEqual(result.success, true);
+  assert.strictEqual(result.recipientCount, 2);
+  const [, , payload] = storageMocks.saveJson.mock.calls.at(-1).arguments;
+  assert.deepStrictEqual(payload[0].recipientUserIds, ['alu-001', 'alu-002']);
+});
+
+test('dispatchClassSummaryNotification should skip when classData is missing id', async () => {
+  storageMocks.loadJson.mock.mockImplementation(async () => []);
+  const saveBefore = storageMocks.saveJson.mock.callCount();
+
+  const result = await store.dispatchClassSummaryNotification({ subjectId: 's1', classData: {} });
+  assert.strictEqual(result.success, false);
+  assert.strictEqual(result.dispatched, 0);
+  assert.strictEqual(storageMocks.saveJson.mock.callCount(), saveBefore);
 });
