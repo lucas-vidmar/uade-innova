@@ -123,6 +123,7 @@ development_status:
   # Epic 11: Post-Test Quality Remediation
   epic-11: in-progress
   11-210-apertura-de-aula: done
+  11-216-docente-rag-sandbox: review
   11-1-1-persistent-ai-consent-across-sessions: backlog
   11-1-2-reportar-respuesta-incorrecta-button-in-chatwidget: backlog
   11-1-3-thumbs-up-down-feedback-always-visible: backlog

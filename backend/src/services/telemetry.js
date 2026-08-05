@@ -80,6 +80,8 @@ export async function trackRAGInteraction({
     sourceMix,
     correlationId,
     winnerDeclared,
+    sandbox,
+    simulateStudent,
 }) {
     const client = await getClient();
     if (!client) return;
@@ -94,6 +96,8 @@ export async function trackRAGInteraction({
             firstTokenAt: firstTokenAt || null,
             filterType: filterType || 'unknown',
             sourceMix: sourceMix || 'unknown',
+            ...(sandbox && { sandbox: 'true' }),
+            ...(simulateStudent && { simulateStudent: 'true' }),
             ...(correlationId && { correlationId }),
             ...(winnerDeclared && { winnerDeclared }),
         },

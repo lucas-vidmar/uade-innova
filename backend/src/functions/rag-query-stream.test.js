@@ -8,6 +8,7 @@ const openaiMocks = {
         embedding: [0.1, 0.2, 0.3],
         usage: { total_tokens: 5 }
     })),
+    getChatModelName: mock.fn(() => 'deepseek-v4-flash'),
     chatCompletion: mock.fn(async (messages, stream) => {
         if (!stream) return { content: 'sync', usage: { total_tokens: 10 } };
         
@@ -40,6 +41,7 @@ const vectorStoreMocks = {
 
 const storageMocks = {
     saveJson: mock.fn(async () => true),
+    loadJson: mock.fn(async () => null),
     saveMetricsToTable: mock.fn(async () => true),
     getTableClient: mock.fn(() => ({
         createTable: mock.fn(async () => {}),
@@ -53,6 +55,7 @@ const storageMocks = {
 };
 
 const promptsMocks = {
+    getActivePrompt: mock.fn(async () => null),
     getShadowPrompt: mock.fn(() => ({ id: 'v1', content: 'System Prompt' }))
 };
 
@@ -71,6 +74,7 @@ const stateStoreMocks = {
     getEnrollment: mock.fn(async () => ({ status: 'active', role: 'student' })),
     getConsentStatus: mock.fn(async () => true),
     listMaterialsBySubject: mock.fn(async () => []),
+    listReviewedCorrections: mock.fn(async () => []),
 };
 
 mock.module('../services/ai.js', { namedExports: openaiMocks });

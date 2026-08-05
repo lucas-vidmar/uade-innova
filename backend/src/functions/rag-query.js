@@ -157,7 +157,7 @@ app.http('rag-query', {
             return jsonResponse(400, { error: 'Body JSON inválido' });
         }
 
-        const { question, classIds, subjectId, sessionId, stream = false, conversationHistory, historyWindowSize, transcriptFocus } = body;
+        const { question, classIds, subjectId, sessionId, stream = false, conversationHistory, historyWindowSize, transcriptFocus, sandbox = false, simulateStudent = false } = body;
 
         if (!question || !subjectId) {
                 return jsonResponse(400, { error: 'Faltan campos requeridos: question, subjectId' });
@@ -165,14 +165,38 @@ app.http('rag-query', {
 
         const recentConversationHistory = normalizeConversationHistory(conversationHistory, historyWindowSize);
 
-        // ── 1b. Enrollment access check ──────────────────────────────────
-        const enrollment = await getEnrollment(subjectId, userId).catch(() => null);
         const principal = parseClientPrincipal(request);
         const userRoles = principal?.userRoles || [];
         const isTeacherOrDirector = userRoles.includes('Docente') || userRoles.includes('Director');
 
+        // ── 1b. Sandbox mode (teacher RAG playground) ────────────────────
+        // sandbox is accepted via query string (?sandbox=true) OR body. When
+        // active, enrollment + consent gates are bypassed unconditionally and
+        // the teacher subject scope (subjectId/classIds) drives retrieval.
+        const sandboxMode = sandbox === true || request.query?.get?.('sandbox') === 'true';
+        const simulateStudentMode = sandboxMode && simulateStudent === true;
 
-        if (!isTeacherOrDirector && principal) {
+        // ── 1b2. Sandbox requires Docente/Director role ─────────────────
+        // The frontend route is teacher-only (client-side guard), but the backend
+        // is authLevel:anonymous — so the role must be verified server-side to
+        // prevent students from bypassing enrollment/consent/reviewed filters.
+        if (sandboxMode && principal && !isTeacherOrDirector) {
+            context.log(`[RAG] Sandbox denied: no es Docente/Director. userId=${userId}, subjectId=${subjectId}`);
+            return jsonResponse(403, {
+                error: 'SANDBOX_FORBIDDEN',
+                message: 'El sandbox de RAG solo está disponible para docentes y directores.',
+            });
+        }
+
+        if (sandboxMode) {
+            context.log(`[RAG] Sandbox mode active: userId=${userId}, subjectId=${subjectId}, simulateStudent=${simulateStudentMode}`);
+        }
+
+        // ── 1c. Enrollment access check ──────────────────────────────────
+        const enrollment = await getEnrollment(subjectId, userId).catch(() => null);
+
+
+        if (!sandboxMode && !isTeacherOrDirector && principal) {
             if (!enrollment || enrollment.status !== 'active') {
                 context.log(`[Enrollment] Access denied: userId=${userId}, subjectId=${subjectId}`);
                 return jsonResponse(403, {
@@ -182,8 +206,8 @@ app.http('rag-query', {
             }
         }
 
-        // ── 1c. AI content consent check ────────────────────────────────
-        if (!isTeacherOrDirector && principal) {
+        // ── 1d. AI content consent check ────────────────────────────────
+        if (!sandboxMode && !isTeacherOrDirector && principal) {
             const consentAccepted = await getConsentStatus(userId).catch(() => false);
             if (!consentAccepted) {
                 context.log(`[Consent] Consent required: userId=${userId}`);
@@ -329,14 +353,20 @@ app.http('rag-query', {
             const reviewedMaterialIds = new Set(
                 allMaterials.filter(m => m.reviewed === true).map(m => m.materialId || m.id)
             );
+            // En sandbox, el modo "Simular alumno" reproduce la vista de estudiante
+            // (solo materiales publicados/revisados). El modo docente (default)
+            // omite el filtro para poder testear borradores antes de publicar.
+            const applyReviewedFilter = !sandboxMode || simulateStudentMode;
             // Si hay al menos un material revisado, filtrar; si no hay ninguno revisado,
             // dejamos pasar todo para no bloquear el chat completamente.
-            if (reviewedMaterialIds.size > 0) {
+            if (applyReviewedFilter && reviewedMaterialIds.size > 0) {
                 const before = matches.length;
                 matches = matches.filter(m => reviewedMaterialIds.has(m.metadata?.materialId));
                 if (before !== matches.length) {
                     context.log(`[RAG] Filtro de revisión: ${before} → ${matches.length} matches (${reviewedMaterialIds.size} materiales revisados)`);
                 }
+            } else if (sandboxMode && !simulateStudentMode) {
+                context.log(`[RAG] Sandbox teacher preview: omitiendo filtro de revisión (${reviewedMaterialIds.size} revisados, ${matches.length} matches)`);
             }
         } catch (reviewErr) {
             context.error('[RAG] Error obteniendo materiales para filtro/prioridad (no bloqueante):', reviewErr);
@@ -569,6 +599,8 @@ ${contextText}
                             selectedClassCount,
                             sourceMix: resolveSourceMix(sources),
                             correlationId,
+                            sandbox: sandboxMode,
+                            simulateStudent: simulateStudentMode,
                         }).catch(err => context.error('[Telemetry] Error emitting RAGInteraction event from stream:', err));
 
 
@@ -584,23 +616,27 @@ ${contextText}
                             answer: fullAnswer,
                             sources,
                             promptVersion: promptId,
+                            sandbox: sandboxMode,
+                            simulateStudent: simulateStudentMode,
                             timestamp: new Date().toISOString(),
                         };
 
-                        saveJson('chat-logs', `${userAuth.sanitizedId}/${subjectId}/${interactionId}.json`, chatLog)
-                            .catch(e => context.error('Error guardando log de chat (stream):', e));
+                        if (!sandboxMode) {
+                            saveJson('chat-logs', `${userAuth.sanitizedId}/${subjectId}/${interactionId}.json`, chatLog)
+                                .catch(e => context.error('Error guardando log de chat (stream):', e));
 
-                        saveMetricsToTable('SessionMetrics', {
-                            partitionKey: subjectId,
-                            rowKey: interactionId,
-                            subjectId,
-                            userId,
-                            promptTokens: finalUsage?.prompt_tokens || 0,
-                            completionTokens: finalUsage?.completion_tokens || 0,
-                            totalTokens: totalInteractionTokens,
-                            promptVersion: promptId,
-                            timestamp: new Date()
-                        }).catch(e => context.error('Error guardando Table Metrics (stream):', e));
+                            saveMetricsToTable('SessionMetrics', {
+                                partitionKey: subjectId,
+                                rowKey: interactionId,
+                                subjectId,
+                                userId,
+                                promptTokens: finalUsage?.prompt_tokens || 0,
+                                completionTokens: finalUsage?.completion_tokens || 0,
+                                totalTokens: totalInteractionTokens,
+                                promptVersion: promptId,
+                                timestamp: new Date()
+                            }).catch(e => context.error('Error guardando Table Metrics (stream):', e));
+                        }
 
                         // Enviar evento de finalización
                         controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ usage: finalUsage, answer: fullAnswer })}\n\n`));
@@ -702,6 +738,8 @@ ${contextText}
             selectedClassCount: resolveSelectedClassCount(classIds),
             sourceMix,
             correlationId,
+            sandbox: sandboxMode,
+            simulateStudent: simulateStudentMode,
         }).catch(err => context.error('[Telemetry] Error emitting RAGInteraction event:', err));
 
         // ── 7. Construir respuesta con fuentes ────────────────────
@@ -731,28 +769,32 @@ ${contextText}
             answer,
             sources,
             promptVersion: promptId,
+            sandbox: sandboxMode,
+            simulateStudent: simulateStudentMode,
             timestamp: new Date().toISOString(),
             feedback: null
         };
 
-        try {
-            // Guardamos en un container específico para logs
-            await saveJson('chat-logs', `${sanitizedId}/${subjectId}/${interactionId}.json`, chatLog);
+        if (!sandboxMode) {
+            try {
+                // Guardamos en un container específico para logs
+                await saveJson('chat-logs', `${sanitizedId}/${subjectId}/${interactionId}.json`, chatLog);
 
-            // Asíncronamente persistimos las métricas RAG en la Table Storage (HU #83)
-            saveMetricsToTable('SessionMetrics', {
-                partitionKey: subjectId,
-                rowKey: interactionId,
-                subjectId,
-                userId,
-                promptTokens: chatUsage?.prompt_tokens || 0,
-                completionTokens: chatUsage?.completion_tokens || 0,
-                totalTokens: totalInteractionTokens,
-                promptVersion: promptId,
-                timestamp: new Date()
-            }).catch(e => context.error('Error insertando Table Metrics de sesión silenciosa:', e));
-        } catch (logErr) {
-            context.error('Error guardando log de chat:', logErr);
+                // Asíncronamente persistimos las métricas RAG en la Table Storage (HU #83)
+                saveMetricsToTable('SessionMetrics', {
+                    partitionKey: subjectId,
+                    rowKey: interactionId,
+                    subjectId,
+                    userId,
+                    promptTokens: chatUsage?.prompt_tokens || 0,
+                    completionTokens: chatUsage?.completion_tokens || 0,
+                    totalTokens: totalInteractionTokens,
+                    promptVersion: promptId,
+                    timestamp: new Date()
+                }).catch(e => context.error('Error insertando Table Metrics de sesión silenciosa:', e));
+            } catch (logErr) {
+                context.error('Error guardando log de chat:', logErr);
+            }
         }
 
         return jsonResponse(200, { id: interactionId, answer, sources });

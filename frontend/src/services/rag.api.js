@@ -2,12 +2,12 @@ import {
     BASE_URL, apiFetch, fetchWithTimeout, delay
 } from './core.js';
 
-export async function ragQuery({ question, classIds, subjectId, conversationHistory = [], historyWindowSize = 4, transcriptFocus = null }) {
+export async function ragQuery({ question, classIds, subjectId, conversationHistory = [], historyWindowSize = 4, transcriptFocus = null, sandbox = false, simulateStudent = false }) {
     try {
-        const res = await apiFetch(`${BASE_URL}/rag-query`, {
+        const res = await apiFetch(`${BASE_URL}/rag-query${sandbox ? '?sandbox=true' : ''}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question, classIds, subjectId, stream: false, conversationHistory, historyWindowSize, transcriptFocus }),
+            body: JSON.stringify({ question, classIds, subjectId, stream: false, conversationHistory, historyWindowSize, transcriptFocus, sandbox, simulateStudent }),
         });
 
         if (res.status === 429) {
@@ -25,11 +25,11 @@ export async function ragQuery({ question, classIds, subjectId, conversationHist
     }
 }
 
-export async function ragQueryStream({ question, classIds, subjectId, sessionId, conversationHistory = [], historyWindowSize = 4, transcriptFocus = null }, onEvent) {
-    const response = await apiFetch(`${BASE_URL}/rag-query`, {
+export async function ragQueryStream({ question, classIds, subjectId, sessionId, conversationHistory = [], historyWindowSize = 4, transcriptFocus = null, sandbox = false, simulateStudent = false }, onEvent) {
+    const response = await apiFetch(`${BASE_URL}/rag-query${sandbox ? '?sandbox=true' : ''}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, classIds, subjectId, sessionId, stream: true, conversationHistory, historyWindowSize, transcriptFocus }),
+        body: JSON.stringify({ question, classIds, subjectId, sessionId, stream: true, conversationHistory, historyWindowSize, transcriptFocus, sandbox, simulateStudent }),
     });
 
     if (response.status === 429) {

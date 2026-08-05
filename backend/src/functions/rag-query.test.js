@@ -10,7 +10,8 @@ const openaiMocks = {
     chatCompletion: mock.fn(async () => ({ 
         content: 'Respuesta simulada.',
         usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 }
-    }))
+    })),
+    getChatModelName: mock.fn(() => 'deepseek-v4-flash')
 };
 
 const defaultQuerySimilarImpl = async (embedding, filter, topK) => {
@@ -38,6 +39,7 @@ const vectorStoreMocks = {
 
 const storageMocks = {
     saveJson: mock.fn(async () => true),
+    loadJson: mock.fn(async () => null),
     saveMetricsToTable: mock.fn(async () => true),
     getTableClient: mock.fn(() => ({
         createTable: mock.fn(async () => {}),
@@ -51,6 +53,7 @@ const storageMocks = {
 };
 
 const promptsMocks = {
+    getActivePrompt: mock.fn(async () => null),
     getShadowPrompt: mock.fn(() => ({
         id: 'v1-baseline',
     content: `<rol>
@@ -89,6 +92,7 @@ const stateStoreMocks = {
     getEnrollment: mock.fn(async () => ({ status: 'active' })),
     getConsentStatus: mock.fn(async () => true),
     listMaterialsBySubject: mock.fn(async () => []),
+    listReviewedCorrections: mock.fn(async () => []),
 };
 
 const subjectWeightsMocks = {
@@ -920,4 +924,267 @@ test('rag-query should handle subject weights service error gracefully', async (
     });
     assert.strictEqual(errorLogged, true, 'Weight loading error should be logged as non-blocking');
     assert.strictEqual(openaiMocks.chatCompletion.mock.callCount(), 1, 'RAG should still proceed after weight error');
+});
+
+test('rag-query sandbox mode should bypass enrollment check via query param', async () => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    for (let i = 0; i < 3; i++) { try { await openaiMocks.chatCompletion('drain'); } catch {} }
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.mockImplementation(async () => ({
+        content: 'Respuesta sandbox sin enrollment.',
+        usage: { prompt_tokens: 30, completion_tokens: 20, total_tokens: 50 },
+    }));
+
+    // Force enrollment to fail — without sandbox this returns 403 ENROLLMENT_REQUIRED
+    stateStoreMocks.getEnrollment.mock.mockImplementation(async () => null);
+    stateStoreMocks.getConsentStatus.mock.mockImplementation(async () => false);
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'doc-001', oid: 'doc-001', userRoles: ['Docente'] }));
+
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter, topK) => {
+        if (filter?.materialType?.$eq === 'verified-answer') return [];
+        return [{ score: 0.9, metadata: { materialType: 'notes', text: 'Contenido sandbox', classIds: ['class1'], chunkIndex: 0, sourceFilename: 'apunte.pdf' } }];
+    });
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = {
+        json: async () => ({ question: '¿Qué tema cubre la clase?', subjectId: 'materia1', classIds: ['class1'] }),
+        query: { get: (name) => (name === 'sandbox' ? 'true' : null) },
+        headers: new Map(),
+        user: { id: 'test-user' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(response.status, 200, 'Sandbox should bypass enrollment gate');
+    assert.strictEqual(body.answer, 'Respuesta sandbox sin enrollment.');
+    assert.strictEqual(openaiMocks.chatCompletion.mock.callCount(), 1, 'RAG should complete in sandbox mode');
+
+    // Restore defaults
+    stateStoreMocks.getEnrollment.mock.mockImplementation(async () => ({ status: 'active' }));
+    stateStoreMocks.getConsentStatus.mock.mockImplementation(async () => true);
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ oid: 'test-user-oid', userRoles: ['Alumno'] }));
+});
+
+test('rag-query sandbox mode should skip reviewed filter in teacher preview (simulateStudent=false)', async (t) => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    for (let i = 0; i < 3; i++) { try { await openaiMocks.chatCompletion('drain'); } catch {} }
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.mockImplementation(async () => ({
+        content: 'Respuesta preview docente.',
+        usage: { prompt_tokens: 30, completion_tokens: 20, total_tokens: 50 },
+    }));
+
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'doc-001', oid: 'doc-001', userRoles: ['Docente'] }));
+
+    // One unreviewed draft material that would normally be filtered out
+    stateStoreMocks.listMaterialsBySubject.mock.mockImplementation(async () => [
+        { id: 'mat-draft-1', materialId: 'mat-draft-1', reviewed: false, priority: 'primary' },
+    ]);
+
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter, topK) => {
+        if (filter?.materialType?.$eq === 'verified-answer') return [];
+        return [{ score: 0.91, metadata: { materialType: 'notes', materialId: 'mat-draft-1', text: 'Borrador sin publicar', classIds: ['class1'], chunkIndex: 0, sourceFilename: 'draft.pdf' } }];
+    });
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = {
+        json: async () => ({ question: '¿Qué hay en el borrador?', subjectId: 'materia1', classIds: ['class1'], sandbox: true, simulateStudent: false }),
+        headers: new Map(),
+        user: { id: 'test-user' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(body.sources.length, 1, 'Draft material should be returned in teacher preview');
+    assert.strictEqual(body.sources[0].materialId, 'mat-draft-1');
+
+    t.after(() => {
+        stateStoreMocks.listMaterialsBySubject.mock.mockImplementation(async () => []);
+        authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ oid: 'test-user-oid', userRoles: ['Alumno'] }));
+    });
+});
+
+test('rag-query sandbox mode should keep reviewed filter when simulateStudent=true', async (t) => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    for (let i = 0; i < 3; i++) { try { await openaiMocks.chatCompletion('drain'); } catch {} }
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.mockImplementation(async () => ({
+        content: 'Respuesta vista alumno.',
+        usage: { prompt_tokens: 30, completion_tokens: 20, total_tokens: 50 },
+    }));
+
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'doc-001', oid: 'doc-001', userRoles: ['Docente'] }));
+
+    // Reviewed and unreviewed materials exist; only reviewed survive the filter
+    stateStoreMocks.listMaterialsBySubject.mock.mockImplementation(async () => [
+        { id: 'mat-reviewed-1', materialId: 'mat-reviewed-1', reviewed: true, priority: 'primary' },
+        { id: 'mat-draft-1', materialId: 'mat-draft-1', reviewed: false, priority: 'primary' },
+    ]);
+
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter, topK) => {
+        if (filter?.materialType?.$eq === 'verified-answer') return [];
+        return [
+            { score: 0.93, metadata: { materialType: 'notes', materialId: 'mat-reviewed-1', text: 'Publicado', classIds: ['class1'], chunkIndex: 0, sourceFilename: 'published.pdf' } },
+            { score: 0.9, metadata: { materialType: 'notes', materialId: 'mat-draft-1', text: 'Borrador', classIds: ['class1'], chunkIndex: 1, sourceFilename: 'draft.pdf' } },
+        ];
+    });
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = {
+        json: async () => ({ question: '¿Qué ve un alumno?', subjectId: 'materia1', classIds: ['class1'], sandbox: true, simulateStudent: true }),
+        headers: new Map(),
+        user: { id: 'test-user' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(body.sources.length, 1, 'Only reviewed material should survive in student simulation');
+    assert.strictEqual(body.sources[0].materialId, 'mat-reviewed-1');
+
+    t.after(() => {
+        stateStoreMocks.listMaterialsBySubject.mock.mockImplementation(async () => []);
+        authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ oid: 'test-user-oid', userRoles: ['Alumno'] }));
+    });
+});
+
+test('rag-query sandbox mode should bypass consent check', async () => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    for (let i = 0; i < 3; i++) { try { await openaiMocks.chatCompletion('drain'); } catch {} }
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.mockImplementation(async () => ({
+        content: 'Respuesta sin consentimiento.',
+        usage: { prompt_tokens: 30, completion_tokens: 20, total_tokens: 50 },
+    }));
+
+    stateStoreMocks.getEnrollment.mock.mockImplementation(async () => null);
+    stateStoreMocks.getConsentStatus.mock.mockImplementation(async () => false);
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'doc-001', oid: 'doc-001', userRoles: ['Docente'] }));
+
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter, topK) => {
+        if (filter?.materialType?.$eq === 'verified-answer') return [];
+        return [{ score: 0.9, metadata: { materialType: 'notes', text: 'Contenido sin consent', classIds: ['class1'], chunkIndex: 0, sourceFilename: 'apunte.pdf' } }];
+    });
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = {
+        json: async () => ({ question: 'Pregunta sin consentimiento', subjectId: 'materia1', classIds: ['class1'], sandbox: true }),
+        headers: new Map(),
+        user: { id: 'test-user' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    assert.strictEqual(response.status, 200, 'Sandbox should bypass consent gate');
+
+    // Restore defaults
+    stateStoreMocks.getEnrollment.mock.mockImplementation(async () => ({ status: 'active' }));
+    stateStoreMocks.getConsentStatus.mock.mockImplementation(async () => true);
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ oid: 'test-user-oid', userRoles: ['Alumno'] }));
+});
+
+test('rag-query sandbox mode should reject non-teacher principals with 403', async () => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    for (let i = 0; i < 3; i++) { try { await openaiMocks.chatCompletion('drain'); } catch {} }
+    openaiMocks.chatCompletion.mock.resetCalls();
+
+    stateStoreMocks.getEnrollment.mock.mockImplementation(async () => null);
+    stateStoreMocks.getConsentStatus.mock.mockImplementation(async () => false);
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'alu-001', oid: 'alu-001', userRoles: ['Alumno'] }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = {
+        json: async () => ({ question: 'Intento alumno', subjectId: 'materia1', classIds: ['class1'], sandbox: true }),
+        headers: new Map(),
+        user: { id: 'test-user' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(response.status, 403, 'Sandbox must reject non-teacher roles');
+    assert.strictEqual(body.error, 'SANDBOX_FORBIDDEN');
+    assert.strictEqual(openaiMocks.chatCompletion.mock.callCount(), 0, 'LLM should not run for denied sandbox');
+
+    // Restore defaults
+    stateStoreMocks.getEnrollment.mock.mockImplementation(async () => ({ status: 'active' }));
+    stateStoreMocks.getConsentStatus.mock.mockImplementation(async () => true);
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ oid: 'test-user-oid', userRoles: ['Alumno'] }));
+});
+
+test('rag-query sandbox mode should not persist chat logs or session metrics', async (t) => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    for (let i = 0; i < 3; i++) { try { await openaiMocks.chatCompletion('drain'); } catch {} }
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.mockImplementation(async () => ({
+        content: 'Respuesta sin persistencia.',
+        usage: { prompt_tokens: 30, completion_tokens: 20, total_tokens: 50 },
+    }));
+
+    storageMocks.saveJson.mock.resetCalls();
+    storageMocks.saveMetricsToTable.mock.resetCalls();
+
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'doc-001', oid: 'doc-001', userRoles: ['Docente'] }));
+    stateStoreMocks.getEnrollment.mock.mockImplementation(async () => null);
+    stateStoreMocks.getConsentStatus.mock.mockImplementation(async () => false);
+
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter, topK) => {
+        if (filter?.materialType?.$eq === 'verified-answer') return [];
+        return [{ score: 0.9, metadata: { materialType: 'notes', text: 'Contenido sin persistencia', classIds: ['class1'], chunkIndex: 0, sourceFilename: 'apunte.pdf' } }];
+    });
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = {
+        json: async () => ({ question: '¿Qué no se persiste?', subjectId: 'materia1', classIds: ['class1'], sandbox: true }),
+        headers: new Map(),
+        user: { id: 'test-user' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(body.answer, 'Respuesta sin persistencia.');
+    assert.strictEqual(storageMocks.saveJson.mock.callCount(), 0, 'chat-logs must not be persisted in sandbox');
+    assert.strictEqual(storageMocks.saveMetricsToTable.mock.callCount(), 0, 'SessionMetrics must not be persisted in sandbox');
+
+    t.after(() => {
+        authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ oid: 'test-user-oid', userRoles: ['Alumno'] }));
+        stateStoreMocks.getEnrollment.mock.mockImplementation(async () => ({ status: 'active' }));
+        stateStoreMocks.getConsentStatus.mock.mockImplementation(async () => true);
+    });
+});
+
+test('rag-query sandbox mode should keep subjectId scope in Pinecone filter', async (t) => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    for (let i = 0; i < 3; i++) { try { await openaiMocks.chatCompletion('drain'); } catch {} }
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.mockImplementation(async () => ({
+        content: 'Respuesta scoped.',
+        usage: { prompt_tokens: 30, completion_tokens: 20, total_tokens: 50 },
+    }));
+
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'doc-001', oid: 'doc-001', userRoles: ['Docente'] }));
+
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+    let standardFilter = null;
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter, topK) => {
+        if (filter?.materialType?.$eq === 'verified-answer') return [];
+        standardFilter = filter;
+        return [{ score: 0.9, metadata: { materialType: 'notes', text: 'Contenido scoped', classIds: ['class1'], chunkIndex: 0, sourceFilename: 'apunte.pdf' } }];
+    });
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = {
+        json: async () => ({ question: '¿Qué ves?', subjectId: 'materia-scope', classIds: ['class1'], sandbox: true }),
+        headers: new Map(),
+        user: { id: 'test-user' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+    assert.ok(standardFilter, 'Standard Pinecone query should have run');
+    assert.deepStrictEqual(standardFilter.subjectId, { $eq: 'materia-scope' }, 'Sandbox must keep subjectId scope in filter');
+
+    t.after(() => {
+        authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ oid: 'test-user-oid', userRoles: ['Alumno'] }));
+    });
 });

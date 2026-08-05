@@ -27,6 +27,7 @@ const ROUTES = {
     '/teacher/classes': () => import('./pages/teacher/ClassManager.js').then(m => m.renderClassManager),
     '/teacher/upload': () => import('./pages/teacher/UploadMaterials.js').then(m => m.renderTeacherUpload),
     '/teacher/analytics': () => import('./pages/teacher/Analytics.js').then(m => m.renderTeacherAnalytics),
+    '/teacher/rag-sandbox': () => import('./pages/teacher/RagSandbox.js').then(m => m.renderTeacherRagSandbox),
     '/teacher/materials': () => import('./pages/teacher/MaterialManager.js').then(m => m.renderMaterialManager),
     '/teacher/corrections': () => import('./pages/teacher/CorrectionInbox.js').then(m => m.renderCorrectionInbox),
     '/teacher/correction': () => import('./pages/teacher/CorrectionDetail.js').then(m => m.renderCorrectionDetail),

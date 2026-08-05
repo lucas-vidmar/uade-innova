@@ -26,6 +26,7 @@ const NAV = {
     { id: 'teacher-corrections', icon: 'alert', label: 'Bandeja de Correcciones', path: '#/teacher/corrections' },
     { id: 'teacher-transcription-corrections', icon: 'edit', label: 'Correcciones Transcripción', path: '#/teacher/transcription-corrections' },
     { id: 'teacher-glossary', icon: 'book', label: 'Glosario', path: '#/teacher/glossary' },
+    { id: 'teacher-rag-sandbox', icon: 'flask', label: 'RAG Sandbox', path: '#/teacher/rag-sandbox' },
     { id: 'teacher-analytics', icon: 'chart', label: 'Analitica', path: '#/teacher/analytics' },
   ],
   director: [
@@ -634,6 +635,7 @@ function getIcon(icon) {
     database: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></svg>',
     users: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
     cpu: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 1v3"/><path d="M15 1v3"/><path d="M9 20v3"/><path d="M15 20v3"/><path d="M1 9h3"/><path d="M1 15h3"/><path d="M20 9h3"/><path d="M20 15h3"/></svg>',
+    flask: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 2v6L4 18a2 2 0 0 0 1.7 3h12.6a2 2 0 0 0 1.7-3L14 8V2"/><path d="M8 2h8"/><path d="M7 15h10"/></svg>',
   };
 
   return icons[icon] || icons.home;

@@ -32,6 +32,24 @@ test('trackRAGInteraction is a no-op when APPLICATIONINSIGHTS_CONNECTION_STRING 
     );
 });
 
+test('trackRAGInteraction accepts sandbox flags without throwing', async () => {
+    await assert.doesNotReject(() =>
+        trackRAGInteraction({
+            userId: 'doc-001',
+            subjectId: 'arq-software-2026',
+            promptTokens: 100,
+            completionTokens: 200,
+            totalTokens: 300,
+            durationMs: 1500,
+            promptVersion: 'v1',
+            interactionId: 'test-sandbox-id',
+            correlationId: 'abc-123.trace',
+            sandbox: true,
+            simulateStudent: true,
+        })
+    );
+});
+
 test('trackUserLogin is a no-op when APPLICATIONINSIGHTS_CONNECTION_STRING is not set', async () => {
     await assert.doesNotReject(() =>
         trackUserLogin({
