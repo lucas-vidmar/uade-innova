@@ -25,13 +25,29 @@ export async function renderTeacherAnalytics(container) {
       .replace(/'/g, '&#39;');
   }
 
+  function teacherStatusLabel(status) {
+    if (status === 'green') return 'Saludable';
+    if (status === 'yellow') return 'En observación';
+    if (status === 'red') return 'Crítico';
+    return 'Desconocido';
+  }
+
+  function teacherSafetyColor(percent) {
+    const value = Number(percent);
+    if (!Number.isFinite(value)) return 'var(--color-text-muted)';
+    if (value >= 99) return '#10b981';
+    if (value >= 95) return '#f59e0b';
+    return '#ef4444';
+  }
+
   try {
-    const [data, alerts, classes, classViews, enrollments] = await Promise.all([
+    const [data, alerts, classes, classViews, enrollments, safetyRate] = await Promise.all([
       api.getTeacherAnalytics(activeSubjectId),
       api.getTeacherAlerts(activeSubjectId),
       api.getClasses(activeSubjectId).catch(() => []),
       api.getClassViews(activeSubjectId).catch(() => []),
       api.getEnrollments(activeSubjectId).catch(() => []),
+      api.getSafetyRate(activeSubjectId, 30).catch(() => null),
     ]);
     if (!data || !data.topQuestions || !data.frictionTopics) {
       throw new Error('Datos de analítica incompletos');
@@ -40,6 +56,21 @@ export async function renderTeacherAnalytics(container) {
     const highAlerts = (alerts || []).filter((item) => item.severity === 'high');
 
     container.innerHTML = `
+    <div class="grid-3" id="teacher-safety-rate-grid" style="margin-bottom:var(--space-8)">
+      <div class="card" id="teacher-safety-rate-card">
+        <div class="card-header">
+          <span class="card-title">🛡️ Tasa Fallo Seguro</span>
+          <span class="badge ${safetyRate?.status === 'red' ? 'badge-error' : safetyRate?.status === 'yellow' ? 'badge-warning' : 'badge-success'}">${safetyRate?.status ? teacherStatusLabel(safetyRate.status) : 'Sin datos'}</span>
+        </div>
+        <div style="padding:var(--space-4)">
+          <div style="font-size:2rem;font-weight:700;color:${teacherSafetyColor(safetyRate?.safetyRatePercent)}">${safetyRate ? Number(safetyRate.safetyRatePercent).toFixed(1) + '%' : '-'}</div>
+          <div style="font-size:var(--font-size-xs);color:var(--color-text-secondary);margin-top:var(--space-2)">
+            ${safetyRate ? `${safetyRate.totalRequests} consultas · ${safetyRate.blockedBySafety} bloqueos por seguridad · ${safetyRate.errorCategorizedFailures} fallos categorizados` : 'Sin datos de consultas RAG todavía.'}
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="card" id="teacher-alerts-card" style="margin-bottom:var(--space-8)">
       <div class="card-header">
         <span class="card-title">🚨 Alertas docentes (engagement/material)</span>

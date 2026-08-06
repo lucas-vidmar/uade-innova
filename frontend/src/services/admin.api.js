@@ -52,6 +52,20 @@ export async function getDirectorPowerBiMetrics(days = 14) {
     }
 }
 
+export async function getSafetyRate(subjectId, days = 30) {
+    try {
+        const params = new URLSearchParams();
+        if (subjectId) params.set('subjectId', subjectId);
+        params.set('days', days);
+        const res = await fetchWithTimeout(`${BASE_URL}/safety-rate?${params.toString()}`, { timeout: 4000 });
+        if (!res.ok) return null;
+        return await res.json();
+    } catch (err) {
+        console.error('[API] getSafetyRate failed:', err);
+        return null;
+    }
+}
+
 function sessionMockingEnabled() {
     try {
         return sessionStorage.getItem('edu_logged_in') !== 'false'

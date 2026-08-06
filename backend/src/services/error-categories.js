@@ -148,6 +148,25 @@ export function buildStructuredErrorBody(message, errorCategory = ErrorCategory.
     return body;
 }
 
+/**
+ * Resuelve el estado de la Tasa Fallo Seguro según el porcentaje de
+ * completado seguro. Umbrales definidos en la user story #212.
+ * @param {number} percent - safetyRatePercent (0-100)
+ * @returns {'green'|'yellow'|'red'}
+ */
+export function resolveSafetyStatus(percent) {
+    const value = Number(percent);
+    if (!Number.isFinite(value)) return 'green';
+    if (value >= 99) return 'green';
+    if (value >= 95) return 'yellow';
+    return 'red';
+}
+
+export const SAFETY_RATE_THRESHOLDS = Object.freeze({
+    GREEN_PERCENT: 99,
+    YELLOW_PERCENT: 95,
+});
+
 export function structuredErrorResponse(status, message, errorCategory = ErrorCategory.INTERNAL, code = 'UNSPECIFIED_ERROR') {
     return {
         status,

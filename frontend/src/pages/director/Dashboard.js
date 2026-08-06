@@ -12,12 +12,14 @@ export async function renderDirectorDashboard(container) {
     container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando datos directivos...</div>`;
     let _kpiData = null;
 
-    const [rawData, rawMetrics] = await Promise.all([
+    const [rawData, rawMetrics, rawSafety] = await Promise.all([
         api.getDirectorStats().catch(() => null),
         api.getDirectorPowerBiMetrics(60).catch(() => null),
+        api.getSafetyRate(null, 30).catch(() => null),
     ]);
     const data = rawData || {};
     const powerBiMetrics = rawMetrics;
+    const safetyRate = rawSafety;
 
     const wausBySubject = data.wausBySubject || [];
     const materialUploads = data.materialUploads || { byTeacher: [] };
@@ -44,6 +46,36 @@ export async function renderDirectorDashboard(container) {
       <button class="btn btn-secondary btn-sm" id="btn-export-pdf" style="display:inline-flex;align-items:center;gap:var(--space-2)">
         <span>&#x2193;</span> Exportar PDF
       </button>
+    </div>
+
+    <!-- Tasa Fallo Seguro card -->
+    <div class="card" id="safety-rate-card" style="margin-bottom:var(--space-8)">
+      <div class="card-header">
+        <span class="card-title">${icon('shield')} Tasa Fallo Seguro</span>
+        <span class="badge ${safetyRate?.status === 'red' ? 'badge-error' : safetyRate?.status === 'yellow' ? 'badge-warning' : 'badge-success'}">${safetyRate?.status ? statusLabel(safetyRate.status) : 'Sin datos'}</span>
+      </div>
+      <div class="grid-4" style="margin-bottom:var(--space-2)">
+        <div class="kpi-card" id="safety-rate-percent">
+          <div class="kpi-label">Completado seguro</div>
+          <div class="kpi-value" style="color:${safetyColor(safetyRate?.safetyRatePercent)}">${safetyRate ? formatPercent(safetyRate.safetyRatePercent) : '-'}</div>
+          ${renderTrendArrow(safetyRate?.trend)}
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Solicitudes RAG</div>
+          <div class="kpi-value">${safetyRate?.totalRequests ?? '-'}</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Bloqueos por seguridad</div>
+          <div class="kpi-value">${safetyRate?.blockedBySafety ?? '-'}</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Fallos categorizados</div>
+          <div class="kpi-value">${safetyRate?.errorCategorizedFailures ?? '-'}</div>
+        </div>
+      </div>
+      <small style="display:block;color:var(--color-text-secondary)">
+        Fuente: SessionMetrics + RAGErrorEvents · Ventana 30d · Actualizado: ${safetyRate?.updatedAt ? new Date(safetyRate.updatedAt).toLocaleString('es-AR') : 'n/a'}
+      </small>
     </div>
 
     <!-- KPIs row -->
@@ -624,12 +656,43 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+function statusLabel(status) {
+  if (status === 'green') return 'Saludable';
+  if (status === 'yellow') return 'En observación';
+  if (status === 'red') return 'Crítico';
+  return 'Desconocido';
+}
+
+function safetyColor(percent) {
+  const value = Number(percent);
+  if (!Number.isFinite(value)) return 'var(--color-text-muted)';
+  if (value >= 99) return '#10b981';
+  if (value >= 95) return '#f59e0b';
+  return '#ef4444';
+}
+
+function formatPercent(percent) {
+  return `${Number(percent).toFixed(1)}%`;
+}
+
+function renderTrendArrow(trend) {
+  if (!trend) return '';
+  const seven = Number(trend['7d']);
+  const thirty = Number(trend['30d']);
+  if (!Number.isFinite(seven) || !Number.isFinite(thirty)) return '';
+  const diff = Math.round((seven - thirty) * 10) / 10;
+  const direction = diff > 0 ? 'positive' : diff < 0 ? 'negative' : '';
+  const arrow = diff > 0 ? '&#9650;' : diff < 0 ? '&#9660;' : '&#9650;';
+  return `<span class="kpi-delta ${direction}" title="Trend: 7d vs 30d">${arrow} ${Math.abs(diff).toFixed(1)}pts</span>`;
+}
+
 function icon(name) {
     const icons = {
         alert: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.86 1.82 18a2 2 0 0 0 1.72 3h16.92a2 2 0 0 0 1.72-3L13.7 3.86a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
         book: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>',
         chart: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><rect x="7" y="10" width="3" height="6"/><rect x="12" y="7" width="3" height="9"/><rect x="17" y="5" width="3" height="11"/></svg>',
         database: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></svg>',
+        shield: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>',
     };
     return `<span class="ui-icon" aria-hidden="true">${icons[name] || icons.alert}</span>`;
 }

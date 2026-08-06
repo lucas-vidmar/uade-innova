@@ -63,6 +63,23 @@ test('teacher sees engagement and material alerts in analytics view', async ({ p
     });
   });
 
+  await page.route('**/api/safety-rate?**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        subjectId: 'arq-software-2026',
+        totalRequests: 88,
+        safeCompletions: 87,
+        blockedBySafety: 0,
+        errorCategorizedFailures: 1,
+        safetyRatePercent: 98.9,
+        status: 'yellow',
+        trend: { '7d': 100, '30d': 98.9 },
+      }),
+    });
+  });
+
   await page.goto('/#/teacher/analytics');
 
   await expect(page.locator('#teacher-alerts-card')).toContainText('Alertas docentes');

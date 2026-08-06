@@ -3,6 +3,8 @@ import { withCorrelation } from '../middleware/with-correlation.js';
 import { listBlobs, loadJson } from '../services/storage.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { getEnrollment } from '../services/state-store.js';
+import { computeSafetyRate } from '../services/safety-rate.js';
+import { resolveSafetyStatus } from '../services/error-categories.js';
 
 const CONTAINER_CHAT = 'chat-logs';
 
@@ -53,7 +55,7 @@ app.http('get-teacher-analytics', {
                 if (process.env.AZURE_FUNCTIONS_ENVIRONMENT !== 'Development') {
                     const enrollment = await getEnrollment(subjectId, userId);
                     if (!enrollment || enrollment.role !== 'teacher' || enrollment.status !== 'active') {
-                        context.log.warn(`[Analytics] Unauthorized access: User ${userId} is not an active teacher for ${subjectId}`);
+                        context.warn(`[Analytics] Unauthorized access: User ${userId} is not an active teacher for ${subjectId}`);
                         return { status: 403, body: "Forbidden - You are not assigned to this subject" };
                     }
                 }
@@ -124,6 +126,61 @@ app.http('get-teacher-analytics', {
         } catch (err) {
             context.error('Error procesando analitica:', err);
             return { status: 500, body: 'Error interno procesando analitica' };
+        }
+    })
+});
+
+// ── GET /api/safety-rate?subjectId={id} ─────────────────────────────
+// Tasa Fallo Seguro: proporción de interacciones RAG que completan de forma
+// segura (sin bloqueos por safety ni fallos categorizados).
+app.http('get-safety-rate', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'safety-rate',
+    handler: withCorrelation(async (request, context) => {
+        if (!validateFrontDoorId(request)) {
+            return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+        }
+
+        const subjectId = request.query.get('subjectId');
+        const rawDays = request.query.get('days');
+        const ALLOWED_DAYS = [7, 14, 30];
+        const days = ALLOWED_DAYS.includes(Number(rawDays)) ? Number(rawDays) : 30;
+
+        try {
+            const principal = parseClientPrincipal(request);
+            const userId = principal?.userId || principal?.oid || 'anonymous';
+            const roles = principal?.userRoles || [];
+            const isDirector = roles.includes('Director');
+            const isTeacher = roles.includes('Docente');
+
+            if (!isDirector) {
+                if (!isTeacher && process.env.AZURE_FUNCTIONS_ENVIRONMENT !== 'Development') {
+                    return { status: 403, body: JSON.stringify({ error: 'Forbidden - Teacher access required' }) };
+                }
+
+                if (process.env.AZURE_FUNCTIONS_ENVIRONMENT !== 'Development' && subjectId) {
+                    const enrollment = await getEnrollment(subjectId, userId);
+                    if (!enrollment || enrollment.role !== 'teacher' || enrollment.status !== 'active') {
+                        context.warn(`[SafetyRate] Unauthorized access: User ${userId} is not an active teacher for ${subjectId}`);
+                        return { status: 403, body: JSON.stringify({ error: 'Forbidden - You are not assigned to this subject' }) };
+                    }
+                }
+            }
+
+            const data = await computeSafetyRate(context, { subjectId: subjectId || undefined, windowDays: days });
+
+            return {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    ...data,
+                    status: resolveSafetyStatus(data.safetyRatePercent),
+                }),
+            };
+        } catch (err) {
+            context.error(`[SafetyRate] Error subjectId=${subjectId || 'all'}:`, err);
+            return { status: 500, body: JSON.stringify({ error: 'Error interno calculando Tasa Fallo Seguro' }) };
         }
     })
 });

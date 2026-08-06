@@ -54,7 +54,7 @@ import {
 } from './profile.api.js';
 import {
     getDirectorStats, getDirectorKpiExport, getDirectorPowerBiMetrics,
-    getAdminUsers, getVectorHealth, getArchiveUsage,
+    getSafetyRate, getAdminUsers, getVectorHealth, getArchiveUsage,
     getRetentionPolicy, getRetentionExport,
     getSubjectWeights, saveSubjectWeights
 } from './admin.api.js';
@@ -116,7 +116,7 @@ export const api = {
     getReminderPreferences, saveReminderPreferences,
 
     getDirectorStats, getDirectorKpiExport, getDirectorPowerBiMetrics,
-    getAdminUsers, getVectorHealth, getArchiveUsage,
+    getSafetyRate, getAdminUsers, getVectorHealth, getArchiveUsage,
     getRetentionPolicy, getRetentionExport,
     getSubjectWeights, saveSubjectWeights,
 

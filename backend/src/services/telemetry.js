@@ -8,6 +8,8 @@
  * so that local development is unaffected.
  */
 
+import { recordRAGErrorEvent } from './safety-rate.js';
+
 let _clientPromise = null;
 
 /**
@@ -329,6 +331,20 @@ export async function trackRAGError({
     stackTrace,
 }) {
     const client = await getClient();
+
+    // Persist to Table Storage for the Tasa Fallo Seguro metric (Issue #212).
+    // Runs regardless of App Insights availability so the metric has data
+    // even in local/development environments.
+    await recordRAGErrorEvent({
+        errorCategory,
+        code,
+        message,
+        subjectId,
+        userId,
+        classIds,
+        correlationId,
+    }).catch(e => console.warn('[Telemetry] Error persisting RAG error event for safety-rate:', e.message));
+
     if (!client) return;
 
     client.trackEvent({
