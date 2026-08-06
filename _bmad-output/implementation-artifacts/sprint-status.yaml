@@ -7,7 +7,7 @@
 #     para reflejar cambios de estado.
 # =============================================================================
 # generated: 2026-06-20
-# last_updated: 2026-08-05
+# last_updated: 2026-08-06
 # project: UADE Innova Dashboard Educativo
 # project_key: UADE-EDU
 # tracking_system: github-issues
@@ -32,7 +32,7 @@
 #   - done: Retrospective has been completed
 
 generated: "2026-06-20"
-last_updated: "2026-08-05"
+last_updated: "2026-08-06"
 
 project: "UADE Innova Dashboard Educativo"
 project_key: "UADE-EDU"
@@ -123,6 +123,7 @@ development_status:
   # Epic 11: Post-Test Quality Remediation
   epic-11: in-progress
   11-210-apertura-de-aula: done
+  11-212-tasa-fallo-seguro: done
   11-216-docente-rag-sandbox: done
   11-1-1-persistent-ai-consent-across-sessions: backlog
   11-1-2-reportar-respuesta-incorrecta-button-in-chatwidget: backlog
