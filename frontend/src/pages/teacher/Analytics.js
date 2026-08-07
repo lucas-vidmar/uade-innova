@@ -40,6 +40,159 @@ export async function renderTeacherAnalytics(container) {
     return '#ef4444';
   }
 
+  function gapSeverityLabel(severity) {
+    if (severity === 'red') return 'Crítico';
+    if (severity === 'yellow') return 'Moderado';
+    return 'Leve';
+  }
+
+  function gapSeverityColor(severity) {
+    if (severity === 'red') return '#ef4444';
+    if (severity === 'yellow') return '#f59e0b';
+    return '#10b981';
+  }
+
+  function tokenize(text = '') {
+    return String(text)
+      .toLowerCase()
+      .split(/[^a-z0-9áéíóúñü]+/i)
+      .filter((w) => w.length > 2);
+  }
+
+  function computeThematicGaps(frictionTopics, classes, classViews) {
+    if (!frictionTopics || frictionTopics.length === 0) return [];
+    const maxQueries = Math.max(...frictionTopics.map((t) => Number(t.queries) || 0), 1);
+    const allClassTopics = (classes || []).flatMap((c) => (Array.isArray(c.topics) ? c.topics : []));
+    const viewedClassIds = new Set((classViews || []).map((v) => v.classId));
+
+    return frictionTopics
+      .map((t) => {
+        const queries = Number(t.queries) || 0;
+        const unresolved = Number(t.unresolved) || 0;
+        const unresolvedRatio = queries > 0 ? unresolved / queries : 0;
+        const volume = maxQueries > 0 ? queries / maxQueries : 0;
+
+        const tokens = tokenize(t.topic);
+        const matchingTopics = allClassTopics.filter((ct) =>
+          tokens.some((tok) => String(ct).toLowerCase().includes(tok))
+        );
+        const coverage = allClassTopics.length > 0 ? matchingTopics.length / allClassTopics.length : 0;
+        const lowCoverage = 1 - coverage;
+
+        const viewedCoverage = (classes || []).filter((c) => viewedClassIds.has(c.id)).length /
+          Math.max((classes || []).length, 1);
+
+        const score = unresolvedRatio * volume * (0.5 + lowCoverage + viewedCoverage);
+        const severity = unresolvedRatio < 0.3 ? 'green' : unresolvedRatio <= 0.6 ? 'yellow' : 'red';
+
+        return {
+          topic: t.topic,
+          queries,
+          unresolved,
+          unresolvedRatio,
+          volume,
+          coverage,
+          lowCoverage,
+          score,
+          severity,
+          matchingTopics,
+        };
+      })
+      .sort((a, b) => b.score - a.score);
+  }
+
+  function renderThematicGaps(gaps, topQuestions) {
+    const relatedQueriesFor = (topic) => {
+      const tokens = tokenize(topic);
+      if (tokens.length === 0) return [];
+      return (topQuestions || []).filter((q) =>
+        tokens.some((tok) => String(q.text).toLowerCase().includes(tok))
+      );
+    };
+
+    const suggestedTopicsFor = (gap) => {
+      if (gap.matchingTopics && gap.matchingTopics.length > 0) return gap.matchingTopics;
+      const candidates = new Set();
+      (topQuestions || []).forEach((q) => {
+        tokenize(q.text).forEach((tok) => {
+          candidates.add(tok.charAt(0).toUpperCase() + tok.slice(1));
+        });
+      });
+      return Array.from(candidates).slice(0, 5);
+    };
+
+    if (!gaps || gaps.length === 0) {
+      return `
+        <div class="card" id="teacher-gaps-card" style="margin-bottom:var(--space-8)">
+          <div class="card-header">
+            <span class="card-title">🕳️ Vacíos Temáticos</span>
+            <span class="badge badge-info">Sin datos</span>
+          </div>
+          <div class="empty-state" style="padding:20px">Aún no hay suficiente fricción detectada para calcular vacíos temáticos.</div>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="card" id="teacher-gaps-card" style="margin-bottom:var(--space-8)">
+        <div class="card-header">
+          <span class="card-title">🕳️ Vacíos Temáticos</span>
+          <span class="badge badge-warning">Fricción × Cobertura × Volumen</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:var(--space-4)" id="teacher-gaps-list">
+          ${gaps.map((g, i) => {
+      const pct = Math.round(g.unresolvedRatio * 100);
+      const color = gapSeverityColor(g.severity);
+      const related = relatedQueriesFor(g.topic);
+      const suggested = suggestedTopicsFor(g);
+      return `
+              <div class="gap-item" data-severity="${g.severity}" data-topic="${escapeHtml(g.topic)}">
+                <div class="gap-item-head">
+                  <div style="flex:1;min-width:0">
+                    <div style="display:flex;align-items:center;gap:var(--space-2)">
+                      <span style="font-size:var(--font-size-sm);font-weight:600">${i + 1}. ${escapeHtml(g.topic)}</span>
+                      <span class="badge gap-badge gap-severity-${g.severity}">${gapSeverityLabel(g.severity)}</span>
+                    </div>
+                    <div style="font-size:var(--font-size-xs);color:var(--color-text-muted);margin-top:4px">
+                      ${g.unresolvedRatio > 0 ? `${pct}% sin resolver · ` : ''}${g.queries} consultas · cobertura de clases ${Math.round(g.coverage * 100)}%
+                    </div>
+                  </div>
+                  <button class="gap-expand-toggle" data-gap-index="${i}" aria-expanded="false" aria-label="Ver consultas y temas para ${escapeHtml(g.topic)}">▾</button>
+                </div>
+                <div class="progress-bar">
+                  <div class="progress-fill" style="--progress-value:${pct}%;background:${color}"></div>
+                </div>
+                <div class="gap-expand" data-gap-panel="${i}" hidden>
+                  ${related.length > 0 ? `
+                    <div class="gap-expand-section">
+                      <div class="gap-expand-title">📝 Consultas de alumnos relacionadas</div>
+                      <ul class="gap-query-list">
+                        ${related.slice(0, 5).map(q => `<li>${escapeHtml(q.text)} <span class="gap-query-count">${q.count}</span></li>`).join('')}
+                      </ul>
+                    </div>
+                  ` : `
+                    <div class="gap-expand-section">
+                      <div class="gap-expand-title">📝 Consultas de alumnos relacionadas</div>
+                      <div style="font-size:var(--font-size-xs);color:var(--color-text-muted)">Sin consultas relacionadas detectadas.</div>
+                    </div>
+                  `}
+                  ${suggested.length > 0 ? `
+                    <div class="gap-expand-section">
+                      <div class="gap-expand-title">🎯 Temas a reforzar en clase</div>
+                      <div style="display:flex;flex-wrap:wrap;gap:var(--space-2)">
+                        ${suggested.slice(0, 6).map(s => `<span class="gap-suggested-topic">${escapeHtml(s)}</span>`).join('')}
+                      </div>
+                    </div>
+                  ` : ''}
+                </div>
+              </div>
+            `;
+    }).join('')}
+        </div>
+      </div>
+    `;
+  }
+
   try {
     const [data, alerts, classes, classViews, enrollments, safetyRate] = await Promise.all([
       api.getTeacherAnalytics(activeSubjectId),
@@ -54,6 +207,7 @@ export async function renderTeacherAnalytics(container) {
     }
     const maxCount = Math.max(...data.topQuestions.map(q => q.count));
     const highAlerts = (alerts || []).filter((item) => item.severity === 'high');
+    const gaps = computeThematicGaps(data.frictionTopics, classes, classViews);
 
     container.innerHTML = `
     <div class="grid-3" id="teacher-safety-rate-grid" style="margin-bottom:var(--space-8)">
@@ -162,6 +316,8 @@ export async function renderTeacherAnalytics(container) {
       </div>
     </div>
 
+    ${renderThematicGaps(gaps, data.topQuestions)}
+
     <!-- Queries over time (simple bar chart) -->
     <div class="card">
       <div class="card-header">
@@ -182,6 +338,17 @@ export async function renderTeacherAnalytics(container) {
 
     ${renderStudentProgress(classes, classViews, enrollments, escapeHtml)}
   `;
+
+    container.querySelectorAll('.gap-expand-toggle').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const panel = container.querySelector(`[data-gap-panel="${btn.dataset.gapIndex}"]`);
+        if (!panel) return;
+        const expanded = panel.hidden;
+        panel.hidden = !expanded;
+        btn.setAttribute('aria-expanded', String(expanded));
+        btn.textContent = expanded ? '▴' : '▾';
+      });
+    });
   } catch (err) {
     console.error('Error loading analytics:', err);
     container.innerHTML = `
