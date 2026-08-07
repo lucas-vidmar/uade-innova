@@ -114,10 +114,18 @@ development_status:
   10-2-validate-content-encoding-for-transcript-files: done
   10-8-surface-localstorage-write-failures: done
   10-3-abort-llm-stream-on-client-disconnect: done
-  10-8-surface-localstorage-write-failures: done
   10-9-file-size-guard: done
   10-5-exclude-mock-data-from-production-bundle: done
   10-7-extract-rag-ranking-logic-from-rag-query-js: done
+  10-6-split-api-into-domain-modules: done
+  10-10-terms-of-use-blob-fallback: done
+  10-4-disable-mock-auth-fallback: in-progress
+  10-11-oidc-token-validation: backlog
+  10-12-restrict-cors: backlog
+  10-13-secrets-to-keyvault-managed-identity: backlog
+  10-14-content-safety-filters: backlog
+  10-15-upload-quota-and-rag-rate-limiter: backlog
+  10-16-vector-migration-deferred-tech-debt: backlog
   epic-10-retrospective: optional
 
   # Epic 11: Post-Test Quality Remediation
@@ -125,6 +133,9 @@ development_status:
   11-210-apertura-de-aula: done
   11-212-tasa-fallo-seguro: done
   11-216-docente-rag-sandbox: done
+  11-213-vacios-tematicos-dashboard: done
+  11-214-bloqueo-abuso-api: backlog
+  11-215-autoevaluacion: backlog
   11-1-1-persistent-ai-consent-across-sessions: backlog
   11-1-2-reportar-respuesta-incorrecta-button-in-chatwidget: backlog
   11-1-3-thumbs-up-down-feedback-always-visible: backlog
