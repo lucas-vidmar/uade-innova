@@ -61,6 +61,7 @@ apm_modules/
 
 #BMAD — artifact patterns (not directories)
 _bmad/stories/
+_bmad-output/
 .agents/skills/
 
 # Tests
