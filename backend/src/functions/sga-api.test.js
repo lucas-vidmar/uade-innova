@@ -101,12 +101,12 @@ test('sga-get-tasks returns 400 when studentId is missing', async () => {
     assert.equal(response.status, 400);
 });
 
-test('sga-get-tasks returns schema-conformant tasks', async () => {
+test('sga-get-tasks returns an empty task list while SGA API is not connected', async () => {
     const response = await handlers['sga-get-tasks']({ query: new URLSearchParams({ studentId: 'alu-001' }) }, {});
     assert.equal(response.status, 200);
     const payload = JSON.parse(response.body);
-    assert.ok(Array.isArray(payload) && payload.length > 0);
-    payload.forEach(assertTaskSchema);
+    assert.ok(Array.isArray(payload));
+    assert.equal(payload.length, 0);
 });
 
 test('sga-get-early-alerts returns schema-conformant alerts', async () => {
@@ -117,29 +117,22 @@ test('sga-get-early-alerts returns schema-conformant alerts', async () => {
     payload.forEach(assertEarlyAlertSchema);
 });
 
-test('sga-get-early-alerts flags at-risk when attendance is below 50%', async () => {
+test('sga-get-early-alerts returns an empty list while SGA API is not connected', async () => {
     const response = await handlers['sga-get-early-alerts']({ query: new URLSearchParams({ subjectId: 'arq-software-2026' }) }, {});
     assert.equal(response.status, 200);
 
     const payload = JSON.parse(response.body);
-    const target = payload.find((item) => item.studentId === 'alu-012');
-    assert.ok(target);
-    assert.equal(target.attendance, '45%');
-    assert.equal(target.risk, 'high');
-    assert.equal(target.interventionFlag, 'at_risk');
+    assert.ok(Array.isArray(payload));
+    assert.equal(payload.length, 0);
 });
 
-test('sga-get-early-alerts can filter intervention list only', async () => {
+test('sga-get-early-alerts accepts interventionOnly filter and returns an empty list', async () => {
     const response = await handlers['sga-get-early-alerts']({ query: new URLSearchParams({ subjectId: 'arq-software-2026', interventionOnly: 'true' }) }, {});
     assert.equal(response.status, 200);
 
     const payload = JSON.parse(response.body);
     assert.ok(Array.isArray(payload));
-    assert.ok(payload.length > 0);
-    payload.forEach((item) => {
-        assert.equal(item.interventionFlag, 'at_risk');
-        assert.ok(parseInt(item.attendance, 10) < 50);
-    });
+    assert.equal(payload.length, 0);
 });
 
 test('sga-get-attendance requires teacher/director access', async () => {
@@ -153,13 +146,15 @@ test('sga-get-attendance requires teacher/director access', async () => {
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
 });
 
-test('sga-get-attendance returns schema-conformant payload for authorized role', async () => {
+test('sga-get-attendance returns a null payload for authorized role while SGA API is not connected', async () => {
     authMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
     const response = await handlers['sga-get-attendance']({ query: new URLSearchParams({ subjectId: 'arq-software-2026' }) }, {});
     assert.equal(response.status, 200);
 
     const payload = JSON.parse(response.body);
-    assertAttendanceSchema(payload);
+    assert.strictEqual(payload.subjectId, 'arq-software-2026');
+    assert.strictEqual(payload.average, null);
+    assert.strictEqual(payload.trend, null);
 });
 
 test('sga-get-teacher-alerts requires subjectId', async () => {
@@ -179,14 +174,12 @@ test('sga-get-teacher-alerts requires teacher/director access', async () => {
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
 });
 
-test('sga-get-teacher-alerts returns engagement/material alerts for authorized role', async () => {
+test('sga-get-teacher-alerts returns an empty list for authorized role while SGA API is not connected', async () => {
     authMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'] }));
     const response = await handlers['sga-get-teacher-alerts']({ query: new URLSearchParams({ subjectId: 'arq-software-2026' }) }, {});
     assert.equal(response.status, 200);
 
     const payload = JSON.parse(response.body);
-    assert.ok(Array.isArray(payload) && payload.length > 0);
-    payload.forEach(assertTeacherAlertSchema);
-    assert.ok(payload.some((item) => item.type === 'low_engagement'));
-    assert.ok(payload.some((item) => item.type === 'material_report'));
+    assert.ok(Array.isArray(payload));
+    assert.equal(payload.length, 0);
 });

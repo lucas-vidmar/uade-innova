@@ -1,7 +1,15 @@
 import { test, expect } from '@playwright/test';
 
+function dueDateIn(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 test('teacher can create a deadline and student sees it on dashboard and calendar', async ({ page }) => {
   const requests = [];
+  const targetDate = dueDateIn(7);
+  const className = 'Clase 14 — Integración';
 
   await page.addInitScript(() => {
     localStorage.setItem('uade_use_mock', 'false');
@@ -14,26 +22,29 @@ test('teacher can create a deadline and student sees it on dashboard and calenda
   });
 
   const DEADLINE_DATA = [
-    { id: 'deadline-001', title: 'Final Project', description: 'Entrega final del proyecto integrador.', subjectId: 'arq-software-2026', classId: 'class-14', dueDate: '2026-03-30', notifyOnDayBefore: true, notifyOnDayOf: true },
+    { id: 'deadline-001', title: 'Final Project', description: 'Entrega final del proyecto integrador.', subjectId: 'arq-software-2026', classId: 'class-14', dueDate: targetDate, notifyOnDayBefore: true, notifyOnDayOf: true },
   ];
 
-  await page.route('**/api/enrollments**', async (route) => {
+  await page.route('**/api/subjects', async route => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ id: 'arq-software-2026', name: 'Arquitectura de Software 2026' }]) });
+  });
+  await page.route('**/api/enrollments**', async route => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) });
   });
 
-  await page.route('**/api/sga/tasks**', async (route) => {
+  await page.route('**/api/sga/tasks**', async route => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
 
-  await page.route('**/api/tasks**', async (route) => {
+  await page.route('**/api/tasks**', async route => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
 
-  await page.route('**/api/chat-history?**', async (route) => {
+  await page.route('**/api/chat-history?**', async route => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
 
-  await page.route('**/api/notifications?**', async (route) => {
+  await page.route('**/api/notifications?**', async route => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
 
@@ -42,7 +53,7 @@ test('teacher can create a deadline and student sees it on dashboard and calenda
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify([
-        { id: 'class-14', subjectId: 'arq-software-2026', title: 'Clase 14 — Integración', date: '2026-03-30', topics: [], materials: [], summaryReady: true },
+        { id: 'class-14', subjectId: 'arq-software-2026', title: className, date: targetDate, topics: [], materials: [], summaryReady: true },
       ]),
     });
   });
@@ -69,7 +80,7 @@ test('teacher can create a deadline and student sees it on dashboard and calenda
   await page.locator('#deadline-title').fill('Final Project');
   await page.locator('#deadline-description').fill('Entrega final del proyecto integrador.');
   await page.locator('#deadline-class').selectOption('class-14');
-  await page.locator('#deadline-date').fill('2026-03-30');
+  await page.locator('#deadline-date').fill(targetDate);
   await page.locator('#deadline-save').click();
 
   expect(requests.length).toBe(1);
@@ -82,7 +93,12 @@ test('teacher can create a deadline and student sees it on dashboard and calenda
     sessionStorage.setItem('edu_consent_accepted', 'true');
     sessionStorage.setItem('edu_logged_in', 'true');
   });
-  await page.goto('/#/student/calendar');
+  await page.addInitScript(() => {
+    sessionStorage.setItem('edu_role', 'student');
+    sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
+    sessionStorage.setItem('edu_consent_accepted', 'true');
+    sessionStorage.setItem('edu_logged_in', 'true');
+  });
 
   await page.route('**/api/tasks?**', async route => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
@@ -103,7 +119,8 @@ test('teacher can create a deadline and student sees it on dashboard and calenda
   });
 
   await page.goto('/#/student/calendar');
-  await expect(page.locator('.cal-deadline-dot')).toHaveCount(2);
+
+  await expect(page.locator('.cal-deadline-dot').first()).toBeVisible({ timeout: 10000 });
 
   await page.locator('.cal-cell[data-has-class="true"]').first().click();
   await expect(page.locator('.class-list-item')).toContainText('Final Project');

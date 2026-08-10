@@ -49,6 +49,6 @@ test('student sees mixed notes and bibliography sources in chat response', async
   await page.locator('#chat-send').click();
 
   await expect(page.locator('.chat-msg-assistant .chat-bubble-assistant').last()).toContainText('arquitectura hexagonal', { timeout: 20000 });
-  await expect(page.locator('.chat-msg-assistant .source-chip').filter({ hasText: 'notas-docente.docx' })).toBeVisible();
-  await expect(page.locator('.chat-msg-assistant .source-chip').filter({ hasText: 'bibliografia-cap1.pdf' })).toBeVisible();
+  await expect(page.locator('.chat-msg-assistant .source-circle-item').filter({ hasText: 'notas-docente.docx' })).toBeVisible();
+  await expect(page.locator('.chat-msg-assistant .source-circle-item').filter({ hasText: 'bibliografia-cap1.pdf' })).toBeVisible();
 });

@@ -25,6 +25,22 @@ test('student can report issue and teacher sees alert', async ({ page }) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) });
   });
 
+  await page.route('**/api/subjects', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ id: 'arq-software-2026', name: 'Arquitectura de Software 2026' }]) });
+  });
+
+  await page.route('**/api/get-profile', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ consentAccepted: true }) });
+  });
+
+  await page.route('**/api/reminder-preferences', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ enabled: true, cadence: 'both' }) });
+  });
+
+  await page.route('**/api/consent', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ accepted: true }) });
+  });
+
   await page.route('**/api/sga/tasks**', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
@@ -118,7 +134,7 @@ test('student can report issue and teacher sees alert', async ({ page }) => {
     });
   });
 
-  await page.goto('/#/student/dashboard');
+  await page.goto('/#/student/dashboard?sessionId=ai-issue-001');
 
   const reportBtn = page.locator('.report-issue-btn').first();
   await expect(reportBtn).toBeVisible();
@@ -131,7 +147,19 @@ test('student can report issue and teacher sees alert', async ({ page }) => {
 
   await page.evaluate(() => {
     sessionStorage.setItem('edu_role', 'teacher');
+    localStorage.setItem('uade.dynamic.enrollments', JSON.stringify({
+      'doc-001': [{ subjectId: 'arq-software-2026', role: 'teacher', status: 'active' }],
+    }));
   });
+  await page.addInitScript(() => {
+    sessionStorage.setItem('edu_role', 'teacher');
+    sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
+    localStorage.setItem('uade.dynamic.enrollments', JSON.stringify({
+      'doc-001': [{ subjectId: 'arq-software-2026', role: 'teacher', status: 'active' }],
+    }));
+  });
+  await page.goto('/#/teacher/dashboard');
+  await page.reload();
   await page.goto('/#/teacher/dashboard');
 
   await expect(page.getByText('Alertas de Calidad IA')).toBeVisible();

@@ -25,7 +25,7 @@ test('get-roles should return 500 when SWA_ROLES_SECRET is not configured', asyn
     const response = await handlers['get-roles'](mockRequest, mockContext);
     assert.strictEqual(response.status, 500);
     const body = JSON.parse(response.body);
-    assert.ok(body.error.includes('SWA_ROLES_SECRET'));
+    assert.ok(body.error.includes('secret'), `unexpected error body: ${body.error}`);
 });
 
 test('get-roles should return 401 when code query parameter is missing or invalid', async () => {

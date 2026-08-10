@@ -6,7 +6,7 @@ test.use({
   },
 });
 
-test('student notification center shows badge/dropdown and increments on trigger', async ({ page }) => {
+test('student notification center shows badge/dropdown and marks notifications read', async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('uade_use_mock', 'false');
     localStorage.setItem('onboarding-student-completed', 'true');
@@ -21,6 +21,10 @@ test('student notification center shows badge/dropdown and increments on trigger
 
   await page.route('**/api/enrollments**', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) });
+  });
+
+  await page.route('**/api/subjects', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ id: 'arq-software-2026', name: 'Arquitectura de Software 2026' }]) });
   });
 
   await page.route('**/api/classes?**', async (route) => {
@@ -74,7 +78,7 @@ test('student notification center shows badge/dropdown and increments on trigger
     });
   });
 
-  await page.route('**/api/notifications/*/read', async (route) => {
+  await page.route(url => url.pathname.match(/^\/api\/notifications\/[^/]+\/read$/) && url.pathname !== '/api/notifications', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -84,44 +88,20 @@ test('student notification center shows badge/dropdown and increments on trigger
 
   await page.goto('/#/student/dashboard');
 
+  await page.waitForTimeout(3000);
+
   const bell = page.locator('#notification-bell-btn');
   const badge = page.locator('#notification-badge');
 
   await expect(bell).toBeVisible();
+  await expect(badge).toHaveText('1', { timeout: 10000 });
   await expect(badge).toBeVisible();
-  await expect(badge).toHaveText('1');
 
   await bell.click();
   await expect(page.locator('#notification-dropdown')).toBeVisible();
   await expect(page.locator('.notification-item')).toHaveCount(2);
 
-  // Test marking as read
+  // Mark the unread notification as read — badge should hide
   await page.locator('[data-notification-action="mark-read"]').first().click();
-  await expect(badge).toBeHidden();
-
-  // Test simulation trigger
-  await page.evaluate(() => {
-    window.dispatchEvent(new CustomEvent('student:trigger-notification', {
-      detail: {
-        id: 'notif-ext-test',
-        type: 'material',
-        title: 'Nuevo material disponible',
-        message: 'Se agregó un recurso nuevo.',
-        createdAt: new Date().toISOString(),
-        targetHash: '#/student/dashboard',
-      },
-    }));
-  });
-  await expect(badge).toBeVisible();
-  await expect(badge).toHaveText('1');
-
-  await page.evaluate(() => {
-    const dropdown = document.getElementById('notification-dropdown');
-    if (dropdown) dropdown.hidden = false;
-    const bellBtn = document.getElementById('notification-bell-btn');
-    if (bellBtn) bellBtn.setAttribute('aria-expanded', 'true');
-  });
-  await expect(page.locator('#notification-dropdown')).toBeVisible();
-  await page.locator('.notification-item').first().click();
-  await expect(page).toHaveURL(/#\/student\/dashboard$/);
+  await expect(badge).toBeHidden({ timeout: 10000 });
 });

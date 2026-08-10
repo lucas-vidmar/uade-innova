@@ -62,5 +62,5 @@ test('student chat remains usable while vector retrieval telemetry is active', a
   await page.locator('#chat-send').click();
 
   await expect(page.locator('.chat-msg-assistant .chat-bubble-assistant').last()).toContainText('separa dominio e infraestructura', { timeout: 20_000 });
-  await expect(page.locator('.chat-msg-assistant .source-chip').filter({ hasText: 'clase3_transcript.txt' })).toBeVisible();
+  await expect(page.locator('.chat-msg-assistant .source-circle-item').filter({ hasText: 'clase3_transcript.txt' })).toBeVisible();
 });

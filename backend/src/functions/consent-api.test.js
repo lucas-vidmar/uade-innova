@@ -147,5 +147,5 @@ test('post-consent returns 400 when body missing accepted field', async () => {
     assert.strictEqual(res.status, 400);
     const body = JSON.parse(res.body);
     assert.strictEqual(body.success, false);
-    assert.strictEqual(body.error.code, 'CONSENT_NOT_ACCEPTED');
+    assert.strictEqual(body.error.code, 'INVALID_CONSENT');
 });

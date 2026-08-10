@@ -74,6 +74,9 @@ mock.module('../services/state-store.js', {
         deleteMaterialsBySubject: mock.fn(async () => true),
         getEnrollmentsByUser: mock.fn(async () => []),
         getEnrollment: mock.fn(async () => null),
+        listMaterialsByClass: mock.fn(async () => []),
+        listClassViewsByStudent: mock.fn(async () => []),
+        deleteClassViewsBySubject: mock.fn(async () => true),
     }
 });
 mock.module('uuid', { namedExports: { v4: () => '1234' } });
@@ -93,6 +96,16 @@ mock.module('@azure/functions', {
 // Set required env var before importing module that validates it at load time
 process.env.DIRECTOR_BUDGET_MONTHLY_USD = '97.50';
 
+// Azure Functions context.log is a callable function with .warn/.error/.info methods
+function makeMockLog() {
+    const log = mock.fn();
+    log.warn = mock.fn();
+    log.error = mock.fn();
+    log.info = mock.fn();
+    log.metric = mock.fn();
+    return log;
+}
+
 // Import the function under test
 await import('./classes-api.js');
 
@@ -104,7 +117,7 @@ test('classes-api save-class-map should return 403 for unauthorized users', asyn
     const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = "Production";
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: { classId: 'test-class' } };
 
     const response = await handlers['save-class-map'](mockRequest, mockContext);
@@ -123,7 +136,7 @@ test('classes-api save-class-map should return 200 for Docente', async (t) => {
     const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = "Production";
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { 
         params: { classId: 'test-class' },
         json: async () => ({ mapCode: 'mock-map' })
@@ -140,7 +153,7 @@ test('classes-api save-class-summary should require authorization', async (t) =>
     const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = "Production";
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: { classId: '123' }, json: async () => ({ summary: 'test' }) };
 
     const response = await handlers['save-class-summary'](mockRequest, mockContext);
@@ -154,7 +167,7 @@ test('classes-api delete-material should require authorization', async (t) => {
     const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = "Production";
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: { materialId: '123' } };
 
     const response = await handlers['delete-material'](mockRequest, mockContext);
@@ -168,7 +181,7 @@ test('classes-api save-classes should require authorization', async (t) => {
     const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = "Production";
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { 
         params: {},
         query: new Map([['subjectId', 'test']]), 
@@ -186,7 +199,7 @@ test('classes-api get-director-stats should require Director role', async () => 
     const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: {}, query: new Map() };
 
     const response = await handlers['get-director-stats'](mockRequest, mockContext);
@@ -198,7 +211,7 @@ test('classes-api get-director-stats should require Director role', async () => 
 test('classes-api get-director-stats returns aggregate summary without student identifiers', async () => {
     authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: {}, query: new Map() };
 
     const response = await handlers['get-director-stats'](mockRequest, mockContext);
@@ -220,7 +233,7 @@ test('classes-api get-director-powerbi-metrics should require Director role', as
     const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: {}, query: new Map() };
 
     const response = await handlers['get-director-powerbi-metrics'](mockRequest, mockContext);
@@ -248,7 +261,7 @@ test('classes-api get-director-powerbi-metrics returns aggregated daily metrics'
         ])
     }));
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: {}, query: new Map([['days', '2']]) };
 
     const response = await handlers['get-director-powerbi-metrics'](mockRequest, mockContext);
@@ -293,7 +306,7 @@ test('classes-api get-director-stats returns costBySubject with subject-level br
         ])
     }));
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: {}, query: new Map() };
 
     const response = await handlers['get-director-stats'](mockRequest, mockContext);
@@ -324,7 +337,7 @@ test('classes-api get-director-stats returns wausBySubject with weekly user coun
         ])
     }));
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: {}, query: new Map() };
 
     const response = await handlers['get-director-stats'](mockRequest, mockContext);
@@ -349,7 +362,7 @@ test('classes-api get-director-stats returns materialUploads with teacher breakd
         ])
     }));
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: {}, query: new Map() };
 
     const response = await handlers['get-director-stats'](mockRequest, mockContext);
@@ -381,7 +394,7 @@ test('classes-api get-director-stats returns budget object with projection', asy
         ])
     }));
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: {}, query: new Map() };
 
     const response = await handlers['get-director-stats'](mockRequest, mockContext);
@@ -409,7 +422,7 @@ test('classes-api get-director-stats returns costPerActiveStudent', async () => 
         ])
     }));
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: {}, query: new Map() };
 
     const response = await handlers['get-director-stats'](mockRequest, mockContext);
@@ -430,7 +443,7 @@ test('classes-api get-director-powerbi-metrics returns costBySubject array', asy
         ])
     }));
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: {}, query: new Map([['days', '3']]) };
 
     const response = await handlers['get-director-powerbi-metrics'](mockRequest, mockContext);
@@ -458,7 +471,7 @@ test('classes-api get-director-powerbi-metrics costByClass respects subjectId fi
         ])
     }));
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: {}, query: new Map([['subjectId', 'arq-software-2026'], ['days', '3']]) };
 
     const response = await handlers['get-director-powerbi-metrics'](mockRequest, mockContext);
@@ -483,7 +496,7 @@ test('classes-api get-director-session-metrics-history returns all rows when no 
         ])
     }));
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: {}, query: new Map() };
 
     const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
@@ -510,7 +523,7 @@ test('classes-api get-director-session-metrics-history filters by subjectId', as
         ])
     }));
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: {}, query: new Map([['subjectId', 'arq-software-2026']]) };
 
     const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
@@ -531,7 +544,7 @@ test('classes-api get-director-session-metrics-history returns empty for non-exi
         ])
     }));
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: {}, query: new Map([['subjectId', 'nonexistent']]) };
 
     const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
@@ -553,7 +566,7 @@ test('classes-api get-director-session-metrics-history excludes material-upload 
         ])
     }));
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: {}, query: new Map() };
 
     const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
@@ -571,7 +584,7 @@ test('classes-api get-director-session-metrics-history returns empty array when 
         listEntities: makeListEntitiesResult([])
     }));
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: {}, query: new Map() };
 
     const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
@@ -587,7 +600,7 @@ test('classes-api get-director-session-metrics-history returns 403 for non-Direc
     const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: {}, query: new Map() };
 
     const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
@@ -602,7 +615,7 @@ test('classes-api get-director-session-metrics-history returns 403 for non-Direc
 test('classes-api get-director-session-metrics-history returns 403 when Front Door validation fails', async () => {
     authUtilsMocks.validateFrontDoorId.mock.mockImplementation(() => false);
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: {}, query: new Map() };
 
     const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
@@ -625,7 +638,7 @@ test('classes-api get-director-session-metrics-history trims whitespace from sub
         ])
     }));
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: {}, query: new Map([['subjectId', '  arq-software-2026  ']]) };
 
     const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
@@ -647,7 +660,7 @@ test('classes-api get-director-session-metrics-history paginates with default li
         ])
     }));
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: {}, query: new Map() };
 
     const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
@@ -666,7 +679,7 @@ test('classes-api get-director-session-metrics-history returns 400 for invalid c
         listEntities: makeListEntitiesResult([])
     }));
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: {}, query: new Map([['continuationToken', 'not-valid-base64']]) };
 
     const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
@@ -686,7 +699,7 @@ test('classes-api get-director-session-metrics-history limit clamps to max 1000'
         ])
     }));
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: {}, query: new Map([['limit', '9999']]) };
 
     const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
@@ -704,7 +717,7 @@ test('classes-api get-director-session-metrics-history filters by subjectId with
         ])
     }));
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: {}, query: new Map([['subjectId', 'arq-software-2026']]) };
 
     const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
@@ -725,7 +738,7 @@ test('classes-api get-director-session-metrics-history defaults limit to 1000 wh
         ])
     }));
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: {}, query: new Map([['limit', '0']]) };
 
     const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
@@ -746,7 +759,7 @@ test('classes-api get-director-session-metrics-history defaults limit to 1000 wh
         ])
     }));
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const mockRequest = { params: {}, query: new Map([['limit', '']]) };
 
     const response = await handlers['get-director-session-metrics-history'](mockRequest, mockContext);
@@ -763,7 +776,7 @@ test('classes-api get-director-session-metrics-history rejects array continuatio
         listEntities: makeListEntitiesResult([])
     }));
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const arrayToken = Buffer.from(JSON.stringify([1, 2, 3])).toString('base64');
     const mockRequest = { params: {}, query: new Map([['continuationToken', arrayToken]]) };
 
@@ -781,7 +794,7 @@ test('classes-api get-director-session-metrics-history rejects string continuati
         listEntities: makeListEntitiesResult([])
     }));
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
     const strToken = Buffer.from(JSON.stringify('raw-string')).toString('base64');
     const mockRequest = { params: {}, query: new Map([['continuationToken', strToken]]) };
 
@@ -823,7 +836,7 @@ test('classes-api get-director-session-metrics-history multi-page iteration with
         listEntities: listFn
     }));
 
-    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
 
     // First page
     const req1 = { params: {}, query: new Map([['limit', '1']]) };

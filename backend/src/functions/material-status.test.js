@@ -15,12 +15,13 @@ const storageMocks = {
         listEntities: async function* () { }
     })),
     uploadFile: mock.fn(async () => true),
-    downloadFile: mock.fn(async () => null),
+    downloadFile: mock.fn(async () => Buffer.from('file-content')),
 };
 
 const stateStoreMocks = {
     listClassesBySubject: mock.fn(async () => []),
     listMaterialsBySubject: mock.fn(async () => []),
+    listMaterialsByClass: mock.fn(async () => []),
     replaceClassesForSubject: mock.fn(async () => true),
     deleteMaterialStateById: mock.fn(async () => true),
     getMaterialState: mock.fn(async () => null),
@@ -29,6 +30,8 @@ const stateStoreMocks = {
     deleteMaterialsBySubject: mock.fn(async () => true),
     getEnrollment: mock.fn(async () => ({ status: 'active', role: 'student' })),
     getEnrollmentsByUser: mock.fn(async () => []),
+    listClassViewsByStudent: mock.fn(async () => []),
+    deleteClassViewsBySubject: mock.fn(async () => true),
 };
 
 const vectorStoreMocks = {

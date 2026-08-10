@@ -53,6 +53,12 @@ test('director can review DAU, token and cost metrics for Power BI', async ({ pa
         subjectAdoption: [
           { name: 'Arq. de Software', rate: 82 },
         ],
+        materialUploads: {
+          byTeacher: [
+            { teacherId: 'doc-001', transcripts: 6, presentations: 4, notes: 3, bibliography: 1, total: 14 },
+          ],
+          byType: { transcripts: 6, presentations: 4, notes: 3, bibliography: 1 },
+        },
         earlyAlertSummary: {
           totalStudentsAtRisk: 3,
           highRiskCount: 1,
@@ -101,7 +107,7 @@ test('director can review DAU, token and cost metrics for Power BI', async ({ pa
     });
   });
 
-  await page.route('**/api/vector-health**', async (route) => {
+  await page.route('**/api/vector-health', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -109,14 +115,35 @@ test('director can review DAU, token and cost metrics for Power BI', async ({ pa
     });
   });
 
+  await page.route('**/api/safety-rate?**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'green',
+        safetyRatePercent: 99.2,
+        totalRequests: 171,
+        blockedBySafety: 1,
+        errorCategorizedFailures: 2,
+        trend: 'up',
+        updatedAt: '2026-04-10T12:00:00Z',
+      }),
+    });
+  });
+
+  await page.route('**/api/class-views?**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+
   await page.goto('/#/director/dashboard');
 
-  await expect(page.locator('#cost-per-subject-card')).toContainText('Costo por Materia');
-  await expect(page.locator('#cost-per-subject-card')).toContainText('SessionMetrics');
-  await expect(page.locator('#cost-per-subject-card')).toContainText('$0.15/1M');
-  await expect(page.locator('#cost-per-subject-card')).toContainText('$0.60/1M');
-  await expect(page.locator('#cost-per-subject-card')).toContainText('$0.0527');
-  await expect(page.locator('#cost-per-subject-card')).toContainText('$0.000158');
+  await expect(page.locator('#safety-rate-card')).toContainText('Tasa Fallo Seguro');
+  await expect(page.locator('.kpi-label', { hasText: 'Usuarios activos (hoy)' }).first()).toBeVisible();
+  await expect(page.locator('.kpi-label', { hasText: 'Adopción global' }).first()).toBeVisible();
+
+  await expect(page.locator('#rag-interactions-chart')).toBeVisible();
+  await expect(page.locator('#teacher-uploads-table')).toBeVisible();
+  await expect(page.locator('#waus-bar-chart')).toBeVisible();
 
   await expect(page.locator('#director-alerts-aggregate-table')).toBeVisible();
   await expect(page.locator('#director-alerts-aggregate-table')).toContainText('Riesgo alto');

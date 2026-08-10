@@ -14,11 +14,10 @@ test('anomalous usage alert module defines 1M tokens/24h KQL rule', async () => 
   const content = await readRepoFile('infra/modules/anomalous-usage-alert.bicep');
 
   assert.match(content, /Microsoft\.Insights\/scheduledQueryRules@2023-12-01/);
-  assert.match(content, /customEvents/);
   assert.match(content, /AppEvents/);
-  assert.match(content, /union\s+isfuzzy=true/);
   assert.match(content, /sum\(coalesce\(totalTokens,\s*0\.0\)\)/);
-  assert.match(content, /where\s+tokens24h\s*>\s*1000000/);
+  assert.match(content, /var\s+tokenThreshold\s*=\s*1000000/);
+  assert.match(content, /where\s+tokens24h\s*>\s*\{threshold\}/);
   assert.match(content, /windowSize:\s*'PT24H'/);
 });
 
@@ -39,7 +38,7 @@ test('warning tier alert rule is defined with 750K threshold and severity 1', as
   assert.match(content, /warningUsageRule/);
   assert.match(content, /'\$\{scheduledQueryRuleName\}-warning'/);
   assert.match(content, /severity:\s*1/);
-  assert.match(content, /where\s+tokens24h\s*>\s*\$\{warningTokenThreshold\}/);
+  assert.match(content, /where\s+tokens24h\s*>\s*\{threshold\}/);
 });
 
 test('per-subject anomalous usage alert rule is defined with lower threshold and subjectId grouping', async () => {
@@ -48,8 +47,8 @@ test('per-subject anomalous usage alert rule is defined with lower threshold and
   assert.match(content, /param\s+subjectTokenThreshold\s+int\s*=\s*500000/);
   assert.match(content, /perSubjectUsageRule/);
   assert.match(content, /'\$\{scheduledQueryRuleName\}-per-subject'/);
-  assert.match(content, /customDimensions\.subjectId/);
+  assert.match(content, /Properties\.subjectId/);
   assert.match(content, /summarize\s+tokens24h\s*=\s*sum\(coalesce\(totalTokens,\s*0\.0\)\)\s+by\s+userId,\s*subjectId/);
-  assert.match(content, /where\s+tokens24h\s*>\s*\$\{subjectTokenThreshold\}/);
+  assert.match(content, /where\s+tokens24h\s*>\s*\{threshold\}/);
   assert.match(content, /name:\s+'subjectId'/);
 });

@@ -1,53 +1,100 @@
 import { test, expect } from '@playwright/test';
 
-const PROD_URL = process.env.SWA_URL || 'http://localhost:3000';
-
 test.describe('Class View Tracking', () => {
 
   test('student dashboard shows class badges (Nuevo/Bloqueado)', async ({ page }) => {
     await page.addInitScript(() => {
+      localStorage.setItem('uade_use_mock', 'false');
       sessionStorage.setItem('edu_role', 'student');
       sessionStorage.setItem('edu_uid', 'alu-001');
+      sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
+      sessionStorage.setItem('edu_logged_in', 'true');
+      sessionStorage.setItem('edu_consent_accepted', 'true');
     });
 
-    await page.goto(`${PROD_URL}/#/student/dashboard`, { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(5000);
+    await page.route('**/api/subjects', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ id: 'arq-software-2026', name: 'Arquitectura de Software 2026' }]) });
+    });
+    await page.route('**/api/enrollments**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) });
+    });
+    await page.route('**/api/classes?**', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          { id: 'class-01', subjectId: 'arq-software-2026', title: 'Clase 1 — Arquitectura', date: '2026-03-05', topics: [], materials: [], summaryReady: true },
+          { id: 'class-02', subjectId: 'arq-software-2026', title: 'Clase 2 — DDD', date: '2026-03-12', topics: [], materials: [], summaryReady: false },
+        ]),
+      });
+    });
+    await page.route('**/api/chat-history?**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    });
+    await page.route('**/api/tasks**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    });
+    await page.route('**/api/deadlines?**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    });
+
+    await page.goto('http://localhost:3000/#/student/dashboard', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#section-classes', { timeout: 10000 });
 
     const content = await page.textContent('body');
-
-    // Verify the class sections exist
     expect(content).toContain('Clases');
 
-    // "Nuevo" should appear for unviewed classes that are available
     const hasNuevo = content.includes('Nuevo');
     const hasBloqueado = content.includes('Bloqueado');
-
     console.log(`Dashboard badges: Nuevo=${hasNuevo}, Bloqueado=${hasBloqueado}`);
-
-    // At least one of these badges should be present
     expect(hasNuevo || hasBloqueado).toBe(true);
   });
 
   test('student can view a class and see updated badge', async ({ page }) => {
     await page.addInitScript(() => {
+      localStorage.setItem('uade_use_mock', 'false');
       sessionStorage.setItem('edu_role', 'student');
       sessionStorage.setItem('edu_uid', 'alu-001');
+      sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
+      sessionStorage.setItem('edu_logged_in', 'true');
+      sessionStorage.setItem('edu_consent_accepted', 'true');
     });
 
-    await page.goto(`${PROD_URL}/#/student/dashboard`, { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(5000);
+    await page.route('**/api/subjects', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ id: 'arq-software-2026', name: 'Arquitectura de Software 2026' }]) });
+    });
+    await page.route('**/api/enrollments**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) });
+    });
+    await page.route('**/api/classes?**', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          { id: 'class-01', subjectId: 'arq-software-2026', title: 'Clase 1 — Arquitectura', date: '2026-03-05', topics: [], materials: [], summaryReady: true },
+        ]),
+      });
+    });
+    await page.route('**/api/chat-history?**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    });
+    await page.route('**/api/tasks**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    });
+    await page.route('**/api/deadlines?**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    });
+
+    await page.goto('http://localhost:3000/#/student/dashboard', { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#section-classes', { timeout: 10000 });
 
-    // Try clicking the first "Nuevo" badge link
     const nuevoItem = page.locator('text=Nuevo').first();
     const exists = await nuevoItem.count();
 
     if (exists > 0) {
-      // Click on the parent list item
       await nuevoItem.locator('..').click();
       await page.waitForTimeout(3000);
 
-      // After viewing, the localStorage should have been updated
       const viewedState = await page.evaluate(() => {
         const views = JSON.parse(localStorage.getItem('edu_class_views') || '{}');
         return Object.keys(views).length;

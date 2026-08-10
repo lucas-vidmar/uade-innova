@@ -66,6 +66,6 @@ test('student sees primary and secondary material tags in chat sources', async (
   await page.locator('#chat-send').click();
 
   const lastAssistant = page.locator('.chat-msg-assistant').last();
-  await expect(lastAssistant.locator('.source-chip').filter({ hasText: 'apuntes-docente.md' }).locator('.source-priority')).toContainText('Primario');
-  await expect(lastAssistant.locator('.source-chip').filter({ hasText: 'clean-architecture.pdf' }).locator('.source-priority')).toContainText('Secundario');
+  await expect(lastAssistant.locator('.source-circle-item').filter({ hasText: 'apuntes-docente.md' }).locator('.source-priority')).toContainText('Primario');
+  await expect(lastAssistant.locator('.source-circle-item').filter({ hasText: 'clean-architecture.pdf' }).locator('.source-priority')).toContainText('Secundario');
 });

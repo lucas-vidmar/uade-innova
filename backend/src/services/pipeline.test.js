@@ -28,6 +28,11 @@ const openaiMocks = {
         usage: { total_tokens: 30 },
         generatedAt: new Date().toISOString()
     })),
+    generatePodcastScript: mock.fn(async () => ({
+        content: 'podcast script',
+        usage: { total_tokens: 20 },
+        generatedAt: new Date().toISOString()
+    })),
     chatCompletion: mock.fn(async () => ({ content: 'ok', usage: { total_tokens: 5 } })),
 };
 
@@ -128,7 +133,7 @@ test('runPipeline should continue when index health stats retrieval fails', asyn
         blobUrl: 'http://test'
     }, mockContext);
 
-    const warnCalls = mockContext.log.warn.mock.calls;
+    const warnCalls = mockContext.log.mock.calls;
     const warningLogged = warnCalls.some((call) =>
         call.arguments?.[0]?.includes('No se pudo obtener stats del índice')
     );
@@ -253,7 +258,7 @@ test('runPipeline rejects material exceeding MAX_MATERIAL_TOKENS with MATERIAL_T
     assert.strictEqual(err.code, 'MATERIAL_TOO_LARGE', 'Error code should be MATERIAL_TOO_LARGE');
     assert.strictEqual(err.errorCategory, 'VALIDATION', 'Category should be VALIDATION');
     assert.strictEqual(err.status, 413, 'Status should be 413');
-    assert.strictEqual(logWarn.mock.calls.some(c =>
+    assert.strictEqual(logFn.mock.calls.some(c =>
         c.arguments?.[0]?.includes('[Pipeline] Material rejected: too large')
     ), true, 'Should warn about oversized material');
     assert.strictEqual(parserMocks.chunkText.mock.calls.length, 0, 'Pipeline should halt before chunking');

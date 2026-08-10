@@ -7,6 +7,7 @@ const openaiMocks = {
         embedding: [0.1, 0.2, 0.3],
         usage: { total_tokens: 5 }
     })),
+    getChatModelName: mock.fn(() => 'deepseek-v4-flash'),
     chatCompletion: mock.fn(async () => ({ 
         content: 'Respuesta simulada.',
         usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 }
@@ -35,6 +36,7 @@ const vectorStoreMocks = {
 
 const storageMocks = {
     saveJson: mock.fn(async () => true),
+    loadJson: mock.fn(async () => null),
     saveMetricsToTable: mock.fn(async () => true),
     getTableClient: mock.fn(() => ({
         createTable: mock.fn(async () => {}),
@@ -62,10 +64,12 @@ const stateStoreMocks = {
     getEnrollment: mock.fn(async () => ({ status: 'active', role: 'student' })),
     getConsentStatus: mock.fn(async () => true),
     listMaterialsBySubject: mock.fn(async () => []),
+    listReviewedCorrections: mock.fn(async () => []),
 };
 
 const promptsMocks = {
     getShadowPrompt: mock.fn(() => ({ id: 'test-prompt', content: 'System prompt' })),
+    getActivePrompt: mock.fn(() => ({ id: 'test-prompt', content: 'System prompt' })),
 };
 
 const correlationMocks = {

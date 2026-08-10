@@ -49,6 +49,9 @@ const storageMocks = {
 const stateStoreMocks = {
     getEnrollment: mock.fn(async () => ({ status: 'active', role: 'teacher' })),
     upsertCorrection: mock.fn(async () => true),
+    listCorrections: mock.fn(async () => []),
+    getCorrection: mock.fn(async () => null),
+    getConversation: mock.fn(async () => null),
     RATINGS_TABLE: 'ConversationRatings',
 };
 

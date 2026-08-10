@@ -4,7 +4,7 @@ test('director can see anomalous usage alert policy in admin panel', async ({ pa
   test.skip(browserName !== 'chromium', 'This usability check must run on Chrome/Chromium.');
 
   await page.addInitScript(() => {
-    sessionStorage.setItem('edu_role', 'director');
+    sessionStorage.setItem('edu_role', 'admin');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');
   });

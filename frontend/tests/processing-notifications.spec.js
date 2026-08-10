@@ -360,6 +360,11 @@ test('materials finishing outside 3s window show separate toasts', async ({ page
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');
     localStorage.setItem('edu_consent_accepted', 'true');
+    localStorage.setItem('uade_use_mock', 'false');
+    localStorage.setItem('onboarding-student-completed', 'true');
+    localStorage.setItem('onboarding-teacher-completed', 'true');
+    localStorage.setItem('onboarding-director-completed', 'true');
+    localStorage.setItem('uade.local.subjects', JSON.stringify([{ id: 'arq-software-2026', name: 'Arq. de Software' }]));
     window.__UADE_PROCESSING_POLL_MS = 250;
   });
 
@@ -382,7 +387,7 @@ test('materials finishing outside 3s window show separate toasts', async ({ page
   });
 
   // Dedicated batch endpoint mock — only counts batch calls
-  await page.route('**/api/material-status?**', async route => {
+  await page.route('**/api/material-status**', async route => {
     batchCallCount += 1;
     const results = [];
     if (batchCallCount >= 1) {

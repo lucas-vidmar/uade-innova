@@ -54,7 +54,7 @@ test('save-deadline should persist a class-linked deadline', async () => {
                 dueDate: '2026-04-30',
             }),
         },
-        {}
+        { log: mock.fn(), warn: mock.fn(), error: mock.fn() }
     );
 
     assert.strictEqual(response.status, 200);
