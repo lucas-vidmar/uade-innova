@@ -39,7 +39,10 @@ test('student sees 429 guidance and cooldown countdown when API rate limit is hi
   await page.route('**/api/rag-query', async (route) => {
     await route.fulfill({
       status: 429,
-      headers: { 'Retry-After': '5' },
+      headers: {
+        'Retry-After': '5',
+        'Access-Control-Expose-Headers': 'Retry-After',
+      },
       contentType: 'application/json',
       body: JSON.stringify({ error: 'Too many requests', errorCategory: 'RATE_LIMIT' }),
     });

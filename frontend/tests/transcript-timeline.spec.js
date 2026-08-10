@@ -71,6 +71,14 @@ test('student clicks transcript hit-point and sees transcript section activated 
     });
   });
 
+  await page.route('**/api/class-audio-script/**', async route => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ script: null }) });
+  });
+
+  await page.route('**/api/subjects', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ id: 'arq-software-2026', name: 'Arquitectura de Software 2026' }]) });
+  });
+
   await page.route('**/api/chat-history?**', async route => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });

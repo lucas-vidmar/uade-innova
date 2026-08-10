@@ -84,6 +84,21 @@ test.describe('Class View Tracking', () => {
     await page.route('**/api/deadlines?**', async route => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
     });
+    await page.route('**/api/class-summary/**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ summary: 'Resumen de la clase' }) });
+    });
+    await page.route('**/api/class-map/**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ mapCode: null }) });
+    });
+    await page.route('**/api/class-timeline/**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ markers: [], sections: [] }) });
+    });
+    await page.route('**/api/class-audio-script/**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ script: null }) });
+    });
+    await page.route('**/api/class-views', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true }) });
+    });
 
     await page.goto('http://localhost:3000/#/student/dashboard', { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#section-classes', { timeout: 10000 });
