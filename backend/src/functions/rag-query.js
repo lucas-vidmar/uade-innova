@@ -11,6 +11,7 @@ import { trackRAGInteraction, trackRAGError } from '../services/telemetry.js';
 import { parseClientPrincipal, validateFrontDoorId, getAuthenticatedUser } from '../services/auth-utils.js';
 import { normalizeCategorizedError, ErrorCategory } from '../services/error-categories.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
+import { withRateLimit } from '../middleware/with-rate-limit.js';
 import { createStructuredLogger } from '../services/structured-logger.js';
 import { v4 as uuidv4 } from 'uuid';
 import { listMaterialsBySubject, listReviewedCorrections } from '../services/state-store.js';
@@ -137,7 +138,7 @@ app.http('rag-query', {
     methods: ['POST'],
     authLevel: 'anonymous',
     route: 'rag-query',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withRateLimit(async (request, context) => {
         const { correlationId, dependencyHeaders } = context;
 
         const log = createStructuredLogger('rag-query', context);
@@ -798,5 +799,5 @@ ${contextText}
         }
 
         return jsonResponse(200, { id: interactionId, answer, sources });
-    }),
+    }, 'chat')),
 });

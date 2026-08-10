@@ -3419,6 +3419,20 @@
     box-shadow: none;
 }
 
+.chat-send-btn.cooldown {
+    width: auto;
+    min-width: 84px;
+    padding: 0 10px;
+    background: var(--color-warning-bg);
+    color: var(--color-warning);
+    border: 1px solid var(--color-warning);
+    cursor: not-allowed;
+    box-shadow: none;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
 .chat-footer-hint {
     font-size: 10px;
     color: var(--color-text-muted);

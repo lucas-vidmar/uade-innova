@@ -2,6 +2,12 @@ import {
     BASE_URL, apiFetch, fetchWithTimeout, delay
 } from './core.js';
 
+const parseRetryAfter = (res, fallback = 60) => {
+    const header = res?.headers?.get('Retry-After');
+    const seconds = parseInt(header, 10);
+    return Number.isFinite(seconds) && seconds > 0 ? seconds : fallback;
+};
+
 export async function ragQuery({ question, classIds, subjectId, conversationHistory = [], historyWindowSize = 4, transcriptFocus = null, sandbox = false, simulateStudent = false }) {
     try {
         const res = await apiFetch(`${BASE_URL}/rag-query${sandbox ? '?sandbox=true' : ''}`, {
@@ -11,7 +17,11 @@ export async function ragQuery({ question, classIds, subjectId, conversationHist
         });
 
         if (res.status === 429) {
-            throw new Error('The AI tutor is resting, please try again in a few minutes');
+            const rateLimitError = new Error('Límite de consultas alcanzado');
+            rateLimitError.status = 429;
+            rateLimitError.errorCategory = 'RATE_LIMIT';
+            rateLimitError.retryAfterSec = parseRetryAfter(res);
+            throw rateLimitError;
         }
 
         if (!res.ok) {
@@ -20,6 +30,7 @@ export async function ragQuery({ question, classIds, subjectId, conversationHist
 
         return res.json();
     } catch (err) {
+        if (err?.errorCategory === 'RATE_LIMIT') throw err;
         console.error('[API] ragQuery failed:', err);
         return { answer: 'Error de conexión con el servicio de IA.', sources: [] };
     }
@@ -33,8 +44,10 @@ export async function ragQueryStream({ question, classIds, subjectId, sessionId,
     });
 
     if (response.status === 429) {
-        const rateLimitError = new Error('The AI tutor is resting, please try again in a few minutes');
-        rateLimitError.errorCategory = 'LLM';
+        const rateLimitError = new Error('Límite de consultas alcanzado');
+        rateLimitError.status = 429;
+        rateLimitError.errorCategory = 'RATE_LIMIT';
+        rateLimitError.retryAfterSec = parseRetryAfter(response);
         throw rateLimitError;
     }
 

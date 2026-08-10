@@ -34,6 +34,9 @@ param subjectTokenThreshold int = 500000
 @description('Threshold for warning-tier token anomaly alert (tokens per user over 24h, before critical threshold).')
 param warningTokenThreshold int = 750000
 
+@description('Threshold for per-user request count anomaly alert (RAG requests per user over 1h).')
+param requestCountThreshold int = 100
+
 var tokenThreshold = 1000000
 
 var perSubjectQueryTemplate = '''
@@ -74,6 +77,20 @@ AppEvents
 '''
 
 var criticalQuery = replace(criticalQueryTemplate, '{threshold}', format('{0}', tokenThreshold))
+
+var requestCountQueryTemplate = '''
+AppEvents
+| where Name == "RAGInteraction"
+| where TimeGenerated >= ago(1h)
+| where isnotempty(tostring(Properties.userId))
+| where tostring(Properties.sandbox) != "true" and tostring(Properties.simulateStudent) != "true"
+| extend userId = tostring(Properties.userId)
+| summarize requestCount1h = count() by userId
+| where requestCount1h > {threshold}
+| project userId, requestCount1h
+'''
+
+var requestCountQuery = replace(requestCountQueryTemplate, '{threshold}', format('{0}', requestCountThreshold))
 
 resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
   name: actionGroupName
@@ -236,10 +253,56 @@ resource warningUsageRule 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = 
   }
 }
 
+resource requestCountUsageRule 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = {
+  name: '${scheduledQueryRuleName}-req-count'
+  location: location
+  tags: tags
+  properties: {
+    description: 'Triggers when a single user exceeds ${requestCountThreshold} RAG requests over the last hour.'
+    displayName: 'Anomalous request count (>${requestCountThreshold} RAG requests / 1h per user)'
+    severity: 2
+    enabled: true
+    scopes: [
+      workspaceId
+    ]
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT1H'
+    criteria: {
+      allOf: [
+        {
+          query: requestCountQuery
+          timeAggregation: 'Count'
+          operator: 'GreaterThanOrEqual'
+          threshold: 1
+          dimensions: [
+            {
+              name: 'userId'
+              operator: 'Include'
+              values: ['*']
+            }
+          ]
+          failingPeriods: {
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
+          }
+        }
+      ]
+    }
+    autoMitigate: true
+    actions: {
+      actionGroups: [
+        actionGroup.id
+      ]
+    }
+  }
+}
+
 output actionGroupId string = actionGroup.id
 output scheduledQueryRuleId string = anomalousUsageRule.id
 output perSubjectScheduledQueryRuleId string = perSubjectUsageRule.id
 output warningScheduledQueryRuleId string = warningUsageRule.id
+output requestCountScheduledQueryRuleId string = requestCountUsageRule.id
 output threshold int = tokenThreshold
 output subjectTokenThresholdValue int = subjectTokenThreshold
 output warningTokenThresholdValue int = warningTokenThreshold
+output requestCountThresholdValue int = requestCountThreshold

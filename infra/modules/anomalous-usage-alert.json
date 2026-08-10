@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.41.2.15936",
-      "templateHash": "11619045962253992107"
+      "templateHash": "13369205604969593958"
     }
   },
   "parameters": {
@@ -25,6 +25,14 @@
       "type": "string",
       "metadata": {
         "description": "Email destination for alert notifications."
+      }
+    },
+    "webhookUri": {
+      "type": "securestring",
+      "defaultValue": "",
+      "maxLength": 2000,
+      "metadata": {
+        "description": "Optional webhook URI for Teams/HTTP notification channel (e.g. Teams connector). Empty string disables webhook."
       }
     },
     "scheduledQueryRuleName": {
@@ -61,16 +69,26 @@
       "metadata": {
         "description": "Threshold for warning-tier token anomaly alert (tokens per user over 24h, before critical threshold)."
       }
+    },
+    "requestCountThreshold": {
+      "type": "int",
+      "defaultValue": 100,
+      "metadata": {
+        "description": "Threshold for per-user request count anomaly alert (RAG requests per user over 1h)."
+      }
     }
   },
   "variables": {
+    "trimmedWebhookUri": "[trim(parameters('webhookUri'))]",
     "tokenThreshold": 1000000,
     "perSubjectQueryTemplate": "AppEvents\n| where Name == \"RAGInteraction\"\n| where TimeGenerated >= ago(24h)\n| where isnotempty(tostring(Properties.userId)) and isnotempty(tostring(Properties.subjectId))\n| extend userId = tostring(Properties.userId), subjectId = tostring(Properties.subjectId), totalTokens = todouble(Measurements.totalTokens)\n| summarize tokens24h = sum(coalesce(totalTokens, 0.0)) by userId, subjectId\n| where tokens24h > {threshold}\n| project userId, subjectId, tokens24h\n",
     "perSubjectQuery": "[replace(variables('perSubjectQueryTemplate'), '{threshold}', format('{0}', parameters('subjectTokenThreshold')))]",
     "warningQueryTemplate": "AppEvents\n| where Name == \"RAGInteraction\"\n| where TimeGenerated >= ago(24h)\n| where isnotempty(tostring(Properties.userId))\n| extend userId = tostring(Properties.userId), totalTokens = todouble(Measurements.totalTokens)\n| summarize tokens24h = sum(coalesce(totalTokens, 0.0)) by userId\n| where tokens24h > {threshold}\n| project userId, tokens24h\n",
     "warningQuery": "[replace(variables('warningQueryTemplate'), '{threshold}', format('{0}', parameters('warningTokenThreshold')))]",
     "criticalQueryTemplate": "AppEvents\n| where Name == \"RAGInteraction\"\n| where TimeGenerated >= ago(24h)\n| where isnotempty(tostring(Properties.userId))\n| extend userId = tostring(Properties.userId), totalTokens = todouble(Measurements.totalTokens)\n| summarize tokens24h = sum(coalesce(totalTokens, 0.0)) by userId\n| where tokens24h > {threshold}\n| project userId, tokens24h\n",
-    "criticalQuery": "[replace(variables('criticalQueryTemplate'), '{threshold}', format('{0}', variables('tokenThreshold')))]"
+    "criticalQuery": "[replace(variables('criticalQueryTemplate'), '{threshold}', format('{0}', variables('tokenThreshold')))]",
+    "requestCountQueryTemplate": "AppEvents\n| where Name == \"RAGInteraction\"\n| where TimeGenerated >= ago(1h)\n| where isnotempty(tostring(Properties.userId))\n| where tostring(Properties.sandbox) != \"true\" and tostring(Properties.simulateStudent) != \"true\"\n| extend userId = tostring(Properties.userId)\n| summarize requestCount1h = count() by userId\n| where requestCount1h > {threshold}\n| project userId, requestCount1h\n",
+    "requestCountQuery": "[replace(variables('requestCountQueryTemplate'), '{threshold}', format('{0}', parameters('requestCountThreshold')))]"
   },
   "resources": [
     {
@@ -88,7 +106,8 @@
             "emailAddress": "[parameters('notificationEmail')]",
             "useCommonAlertSchema": true
           }
-        ]
+        ],
+        "webhookReceivers": "[if(not(empty(variables('trimmedWebhookUri'))), createArray(createObject('name', 'operations-webhook', 'serviceUri', variables('trimmedWebhookUri'), 'useCommonAlertSchema', true())), createArray())]"
       }
     },
     {
@@ -247,6 +266,56 @@
       "dependsOn": [
         "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
       ]
+    },
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-12-01",
+      "name": "[format('{0}-req-count', parameters('scheduledQueryRuleName'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "[format('Triggers when a single user exceeds {0} RAG requests over the last hour.', parameters('requestCountThreshold'))]",
+        "displayName": "[format('Anomalous request count (>{0} RAG requests / 1h per user)', parameters('requestCountThreshold'))]",
+        "severity": 2,
+        "enabled": true,
+        "scopes": [
+          "[parameters('workspaceId')]"
+        ],
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT1H",
+        "criteria": {
+          "allOf": [
+            {
+              "query": "[variables('requestCountQuery')]",
+              "timeAggregation": "Count",
+              "operator": "GreaterThanOrEqual",
+              "threshold": 1,
+              "dimensions": [
+                {
+                  "name": "userId",
+                  "operator": "Include",
+                  "values": [
+                    "*"
+                  ]
+                }
+              ],
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 1,
+                "minFailingPeriodsToAlert": 1
+              }
+            }
+          ]
+        },
+        "autoMitigate": true,
+        "actions": {
+          "actionGroups": [
+            "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+      ]
     }
   ],
   "outputs": {
@@ -266,6 +335,10 @@
       "type": "string",
       "value": "[resourceId('Microsoft.Insights/scheduledQueryRules', format('{0}-warning', parameters('scheduledQueryRuleName')))]"
     },
+    "requestCountScheduledQueryRuleId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Insights/scheduledQueryRules', format('{0}-req-count', parameters('scheduledQueryRuleName')))]"
+    },
     "threshold": {
       "type": "int",
       "value": "[variables('tokenThreshold')]"
@@ -277,6 +350,10 @@
     "warningTokenThresholdValue": {
       "type": "int",
       "value": "[parameters('warningTokenThreshold')]"
+    },
+    "requestCountThresholdValue": {
+      "type": "int",
+      "value": "[parameters('requestCountThreshold')]"
     }
   }
 }

@@ -17,6 +17,7 @@ const ERROR_MESSAGES = {
   SAFETY: 'No se pudo procesar la consulta. Reformulá la pregunta e intentá de nuevo.',
   PARSING: 'Hay un problema con el formato de los materiales de la clase. El docente ya fue notificado.',
   LLM: 'El asistente no pudo generar una respuesta en este momento. Esperá unos segundos y volvé a intentar.',
+  RATE_LIMIT: 'Se alcanzó el límite de consultas. Esperá unos segundos y volvé a intentar.',
   UNKNOWN: 'Ocurrió un error inesperado. Por favor, intentá nuevamente.',
 };
 
@@ -27,6 +28,8 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
   let messages = [...initialMessages];
   let currentSessionId = sessionId || crypto.randomUUID();
   let isLoading = false;
+  let cooldownUntil = 0;
+  let cooldownInterval = null;
   let transcriptFocus = initialTranscriptFocus;
 
   const container = document.createElement('div');
@@ -60,6 +63,9 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
   }
 
   const render = () => {
+    const cooldownActive = cooldownUntil > Date.now();
+    const cooldownRemaining = cooldownActive ? Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000)) : 0;
+    const chatDisabled = isLoading || selectedClassIds.length === 0 || !hasEnrollment || cooldownActive;
     container.innerHTML = `
       <!-- Class selector -->
       <div class="chat-sources-bar">
@@ -109,15 +115,15 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
               class="chat-input"
               placeholder="${!hasEnrollment ? 'No estás matriculado en esta materia.' : (selectedClassIds.length === 0 ? 'Seleccioná al menos una clase para chatear...' : 'Preguntá sobre los materiales de clase...')}"
               rows="1"
-              ${isLoading || selectedClassIds.length === 0 || !hasEnrollment ? 'disabled' : ''}
+              ${chatDisabled ? 'disabled' : ''}
             ></textarea>
             <button
-              class="chat-send-btn ${isLoading || selectedClassIds.length === 0 || !hasEnrollment ? 'disabled' : ''}"
+              class="chat-send-btn ${chatDisabled ? 'disabled' : ''} ${cooldownActive ? 'cooldown' : ''}"
               id="chat-send"
-              ${isLoading || selectedClassIds.length === 0 || !hasEnrollment ? 'disabled' : ''}
-              title="Enviar mensaje"
+              ${chatDisabled ? 'disabled' : ''}
+              title="${cooldownActive ? 'Límite de consultas alcanzado' : 'Enviar mensaje'}"
             >
-              ${isLoading ? '<span class="spinner"></span>' : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" stroke-linecap="round" stroke-linejoin="round"/></svg>`}
+              ${isLoading ? '<span class="spinner"></span>' : (cooldownActive ? `Esperá ${cooldownRemaining}s` : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" stroke-linecap="round" stroke-linejoin="round"/></svg>`)}
             </button>
           </div>
           ${!hasEnrollment ? '<p class="chat-footer-hint text-error">No estás matriculado en esta materia. Contactá a administración.</p>' : '<p class="chat-footer-hint">La IA puede cometer errores, recordá que serás evaluado de acuerdo a la bibliografía que figura en el programa analítico.</p>'}
@@ -309,6 +315,34 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
     });
   };
 
+  const startCooldown = (retryAfterSec) => {
+    const seconds = Math.max(1, Math.floor(Number(retryAfterSec) || 60));
+    const nextUntil = Date.now() + seconds * 1000;
+    if (nextUntil <= cooldownUntil) return;
+    if (cooldownInterval) clearInterval(cooldownInterval);
+    cooldownUntil = nextUntil;
+    render();
+
+    const update = () => {
+      if (Date.now() >= cooldownUntil) {
+        clearInterval(cooldownInterval);
+        cooldownInterval = null;
+        cooldownUntil = 0;
+        render();
+        return;
+      }
+      const sendBtn = container.querySelector('#chat-send');
+      if (sendBtn) {
+        const remaining = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000));
+        sendBtn.title = 'Límite de consultas alcanzado';
+        sendBtn.innerHTML = `Esperá ${remaining}s`;
+      }
+    };
+
+    cooldownInterval = setInterval(update, 1000);
+    update();
+  };
+
   const sendMessage = async () => {
     const input = container.querySelector('#chat-input');
     const question = input?.value?.trim();
@@ -403,6 +437,9 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
           assistantMsg.streaming = false;
           const bubbleEl = msgEl.querySelector('.chat-bubble-assistant');
           if (bubbleEl) bubbleEl.textContent = assistantMsg.content;
+          if (category === 'RATE_LIMIT' && data.retryAfterSec) {
+            startCooldown(data.retryAfterSec);
+          }
         } else if (type === 'delta') {
           if (assistantMsg.content === '<span class="chat-typing-dots"><span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></span>') {
             assistantMsg.content = '';
@@ -478,14 +515,13 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
       assistantMsg.content = ERROR_MESSAGES[category] || ERROR_MESSAGES.UNKNOWN;
       assistantMsg.streaming = false;
       render();
+      if (category === 'RATE_LIMIT' && err.retryAfterSec) {
+        startCooldown(err.retryAfterSec);
+      }
       if (onMessageSent) onMessageSent({ sessionId: currentSessionId });
     } finally {
       isLoading = false;
-      const sendBtn = container.querySelector('#chat-send');
-      if (sendBtn) sendBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`;
-      if (sendBtn) sendBtn.disabled = false;
-      const textarea = container.querySelector('#chat-input');
-      if (textarea) textarea.disabled = false;
+      render();
     }
   };
 

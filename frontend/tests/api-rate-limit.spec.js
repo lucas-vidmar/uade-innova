@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test.use({ channel: 'chrome' });
 
-test('student sees 429 guidance when API rate limit is hit', async ({ page }) => {
+test('student sees 429 guidance and cooldown countdown when API rate limit is hit', async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('uade_use_mock', 'false');
     localStorage.setItem('onboarding-student-completed', 'true');
@@ -39,8 +39,9 @@ test('student sees 429 guidance when API rate limit is hit', async ({ page }) =>
   await page.route('**/api/rag-query', async (route) => {
     await route.fulfill({
       status: 429,
+      headers: { 'Retry-After': '5' },
       contentType: 'application/json',
-      body: JSON.stringify({ error: 'Too many requests' }),
+      body: JSON.stringify({ error: 'Too many requests', errorCategory: 'RATE_LIMIT' }),
     });
   });
 
@@ -50,10 +51,19 @@ test('student sees 429 guidance when API rate limit is hit', async ({ page }) =>
   await page.locator('.source-pill').first().click();
   await expect(page.locator('.source-pill.active')).toBeVisible();
   await page.locator('#chat-input').fill('¿Qué vimos en clase?');
-  await page.locator('#chat-send').click();
+
+  const sendBtn = page.locator('#chat-send');
+  await sendBtn.click();
 
   await expect(page.locator('.chat-msg-assistant .chat-bubble-assistant').last()).toContainText(
-    'El asistente no pudo generar una respuesta en este momento',
+    'Se alcanzó el límite de consultas',
     { timeout: 10000 }
   );
+
+  await expect(sendBtn).toBeDisabled();
+  await expect(sendBtn).toContainText('Esperá');
+  await expect(sendBtn).toHaveClass(/cooldown/);
+
+  await expect(sendBtn).toBeEnabled({ timeout: 10000 });
+  await expect(sendBtn).not.toHaveClass(/cooldown/);
 });

@@ -98,6 +98,15 @@ export const CONFIG = {
     monthlyUsd: Number(process.env.DIRECTOR_BUDGET_MONTHLY_USD) || 10000,
   },
 
+  rateLimit: {
+    windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 60000,
+    tiers: {
+      chat: Number(process.env.RATE_LIMIT_CHAT_PER_MIN) || 30,
+      ingest: Number(process.env.RATE_LIMIT_INGEST_PER_MIN) || 10,
+      general: Number(process.env.RATE_LIMIT_GENERAL_PER_MIN) || 60,
+    },
+  },
+
   timezone: process.env.DEFAULT_TIMEZONE || 'America/Argentina/Buenos_Aires',
 
   deadline: {

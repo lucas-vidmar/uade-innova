@@ -1,6 +1,10 @@
 import { test, mock } from 'node:test';
 import assert from 'node:assert';
 
+process.env.RATE_LIMIT_CHAT_PER_MIN = '100000';
+process.env.RATE_LIMIT_INGEST_PER_MIN = '100000';
+process.env.RATE_LIMIT_GENERAL_PER_MIN = '100000';
+
 // Define mocks before importing the function under test
 const openaiMocks = {
     generateEmbedding: mock.fn(async () => ({
