@@ -56,6 +56,11 @@
         "notificationEmail": {
             "value": "${notificationEmail}"
         },
+        "allowedCorsOrigins": {
+            "value": [
+                "${AZURE_STATIC_WEB_APP_URI}"
+            ]
+        },
         "webhookUri": {
             "value": "${webhookUri}"
         },

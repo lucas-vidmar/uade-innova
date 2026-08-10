@@ -132,9 +132,8 @@ var anomalousUsageActionGroupName = 'ag-token-usage-${take(resourceToken, 8)}'
 var ttftAnomalyAlertName = 'alert-ttft-anomaly-${take(resourceToken, 8)}'
 var ttftAnomalyActionGroupName = 'ag-ttft-anomaly-${take(resourceToken, 8)}'
 
-// SWA hostname is randomly generated (e.g., agreeable-beach-..., not the resource name).
-// Use "*" during development; override in main.parameters.json for production.
-var allowedCorsOrigins = ['*']
+@description('Allowed CORS origins for the Functions App. Production is restricted to the Static Web App origin, injected from the azd environment variable AZURE_STATIC_WEB_APP_URI via main.parameters.json. Default keeps local dev origins working.')
+param allowedCorsOrigins array = ['http://localhost:4280', 'http://localhost:5173']
 
 // Storage account: max 24 chars, no hyphens
 var safeStorageName = take(replace(storageAccountName, '-', ''), 24)
