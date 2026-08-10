@@ -34,6 +34,9 @@
         "@types/node": "^22.0.0",
         "azurite": "^3.35.0"
     },
+    "overrides": {
+        "web-streams-polyfill": "3.3.3"
+    },
     "engines": {
         "node": ">=20.0.0"
     }
