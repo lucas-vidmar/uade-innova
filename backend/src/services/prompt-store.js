@@ -47,6 +47,13 @@ export const PROMPT_TYPES = {
     hasUserPrompt: true,
     variables: ['subjectName', 'className', 'summaryText'],
   },
+  quiz: {
+    label: 'Autoevaluación (cuestionario)',
+    description: 'Genera preguntas de opción múltiple para autoevaluación a partir de materiales de clase',
+    hasSystemPrompt: true,
+    hasUserPrompt: true,
+    variables: ['subjectName', 'className', 'contextText', 'questionCount'],
+  },
 };
 
 const VALID_TYPES = new Set(Object.keys(PROMPT_TYPES));

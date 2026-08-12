@@ -73,6 +73,9 @@ import {
     createPromptVersion, updatePromptVersion,
     activatePromptVersion, deletePromptVersion
 } from './prompts.api.js';
+import {
+    generateQuiz, saveQuizResult, getQuizResult
+} from './quiz.api.js';
 
 export const api = {
     BASE_URL, CORRELATION_HEADER,
@@ -131,4 +134,6 @@ export const api = {
     getPromptTypes, getPromptVersions, getActivePrompt,
     createPromptVersion, updatePromptVersion,
     activatePromptVersion, deletePromptVersion,
+
+    generateQuiz, saveQuizResult, getQuizResult,
 };

@@ -27,6 +27,15 @@ function createTableClient(tableName) {
       const idx = data.findIndex((row) => row.partitionKey === partitionKey && row.rowKey === rowKey);
       if (idx !== -1) data.splice(idx, 1);
     },
+    getEntity: async (partitionKey, rowKey) => {
+      const row = data.find((r) => r.partitionKey === partitionKey && r.rowKey === rowKey);
+      if (!row) {
+        const err = new Error('Not Found');
+        err.statusCode = 404;
+        throw err;
+      }
+      return row;
+    },
     listEntities: ({ queryOptions } = {}) => {
       const filter = queryOptions?.filter;
       let result = [...data];
@@ -67,6 +76,9 @@ const {
   replaceClassesForSubject,
   listClassesBySubject,
   deleteMaterialStateById,
+  upsertQuizResult,
+  getQuizResult,
+  listQuizResultsBySubject,
 } = await import('./state-store.js');
 
 test('state-store writes and queries material entities', async () => {
@@ -119,4 +131,52 @@ test('state-store deletes material by row key lookup', async () => {
   const deleted = await deleteMaterialStateById('mat-z');
   assert.strictEqual(deleted, true);
   assert.strictEqual(tableData.materials.length, 0);
+});
+
+test('state-store upserts and reads quiz results per student per class', async () => {
+  tableData.QuizResults = [];
+
+  await upsertQuizResult({
+    subjectId: 'sub-1',
+    userId: 'alu-001',
+    classId: 'class-a',
+    quizId: 'quiz-1',
+    score: 80,
+    totalQuestions: 5,
+    correctCount: 4,
+    passed: true,
+    weakTopics: ['Arquitectura'],
+    answers: [{ questionId: 'q1', isCorrect: false }],
+    attemptCount: 1,
+  });
+
+  const result = await getQuizResult('sub-1', 'alu-001', 'class-a');
+  assert.strictEqual(result.userId, 'alu-001');
+  assert.strictEqual(result.classId, 'class-a');
+  assert.strictEqual(result.score, 80);
+  assert.strictEqual(result.passed, true);
+  assert.deepStrictEqual(result.weakTopics, ['Arquitectura']);
+  assert.deepStrictEqual(result.answers, [{ questionId: 'q1', isCorrect: false }]);
+
+  // Upsert replaces (latest attempt wins)
+  await upsertQuizResult({
+    subjectId: 'sub-1',
+    userId: 'alu-001',
+    classId: 'class-a',
+    score: 40,
+    totalQuestions: 5,
+    correctCount: 2,
+    passed: false,
+    weakTopics: ['Hexagonal', 'CQRS'],
+    answers: [],
+    attemptCount: 2,
+  });
+
+  const latest = await getQuizResult('sub-1', 'alu-001', 'class-a');
+  assert.strictEqual(latest.score, 40);
+  assert.strictEqual(latest.attemptCount, 2);
+  assert.deepStrictEqual(latest.weakTopics, ['Hexagonal', 'CQRS']);
+
+  const bySubject = await listQuizResultsBySubject('sub-1');
+  assert.strictEqual(bySubject.length, 1);
 });

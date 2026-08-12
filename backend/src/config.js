@@ -23,6 +23,7 @@ export const CONFIG = {
     interventions: process.env.AZURE_TABLE_INTERVENTIONS || 'Interventions',
     riskThresholds: process.env.AZURE_TABLE_RISK_THRESHOLDS || 'RiskThresholds',
     userEvents: process.env.AZURE_TABLE_USER_EVENTS || 'UserEvents',
+    quizResults: process.env.AZURE_TABLE_QUIZ_RESULTS || 'QuizResults',
   },
 
   containers: {
@@ -51,12 +52,14 @@ export const CONFIG = {
       summary: 0.5,
       mermaid: 0.4,
       podcast: 0.5,
+      quiz: 0.4,
     },
     maxTokens: {
       chat: 1500,
       summary: 2000,
       mermaid: 1500,
       podcast: 2000,
+      quiz: 3000,
       ttsInput: 4000,
     },
     defaultVoice: 'nova',

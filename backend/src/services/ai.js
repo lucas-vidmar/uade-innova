@@ -9,6 +9,16 @@ import { extractMermaidCode } from './extract-mermaid.js';
 import { getActivePrompt } from './prompts.js';
 import { CONFIG } from '../config.js';
 
+// ── Restore native web streams globals ─────────────────────
+// Importing `openai` pulls in `web-streams-polyfill` (via formdata-node), whose
+// polyfill entry replaces `globalThis.ReadableStream`/`WritableStream`/`TransformStream`.
+// That breaks native `fetch` response body consumption (response.text()/.json()
+// hang forever), killing every AI call. Restore the native `node:stream/web` classes.
+const nativeStreams = await import('node:stream/web');
+globalThis.ReadableStream = nativeStreams.ReadableStream;
+globalThis.WritableStream = nativeStreams.WritableStream;
+globalThis.TransformStream = nativeStreams.TransformStream;
+
 const AOAI_TOKEN_SCOPE = CONFIG.ai.tokenScope;
 
 let _embeddingClient = null;

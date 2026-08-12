@@ -1,6 +1,7 @@
 import { api } from '../../services/api.js';
 import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
+import { renderAutoevaluacion } from '../../components/Autoevaluacion.js';
 import { marked } from 'marked';
 import { extractMermaidCode } from '@shared/extract-mermaid.js';
 
@@ -135,14 +136,21 @@ export async function renderClassDetail(container) {
                 <a href="#/student/dashboard" style="color:inherit;text-decoration:none">Dashboard</a> / <span style="color:var(--color-text-primary)">${classInfo.title}</span>
             </div>
 
-            <div class="class-detail-hero" style="margin-bottom:var(--space-8)">
+            <div class="class-detail-hero" style="margin-bottom:var(--space-6)">
                 <h1 class="h2" style="margin-bottom:var(--space-2)">${classInfo.title}</h1>
                 <div class="class-meta" style="display:flex;gap:var(--space-3)">
                     <span class="badge badge-primary">${classInfo.date ? new Date(classInfo.date).toLocaleDateString('es-AR', { day: 'numeric', month: 'long' }) : 'Sin fecha'}</span>
                     <span class="badge badge-neutral">${classInfo.materials?.length || 0} materiales</span>
                 </div>
             </div>
+
+            <div class="tabs class-detail-tabs" role="tablist" style="margin-bottom:var(--space-6)">
+                <button type="button" class="tab-btn active" role="tab" aria-selected="true" data-class-tab="content" id="class-tab-content-btn">Contenido</button>
+                <button type="button" class="tab-btn" role="tab" aria-selected="false" data-class-tab="quiz" id="class-tab-quiz-btn">Autoevaluación</button>
+            </div>
         `;
+
+        html += `<div id="class-tab-panel-content" data-class-panel="content">`;
 
         if (hasValidSummary) {
             html += `
@@ -269,6 +277,8 @@ export async function renderClassDetail(container) {
                     `).join('') : '<div style="padding:32px;text-align:center;color:var(--color-text-secondary)">No hay archivos adjuntos para esta clase.</div>'}
                 </div>
             </div>
+            </div>
+            <div id="class-tab-panel-quiz" data-class-panel="quiz" hidden></div>
 
             <div class="fab-container" style="position:fixed;bottom:32px;right:32px;z-index:var(--z-fab)">
                 <a id="class-chat-fab" href="#/student/dashboard?classId=${classId}" class="btn btn-primary btn-lg fab" style="box-shadow:var(--shadow-lg);padding:16px 24px;border-radius:var(--radius-full);text-decoration:none;font-weight:bold;display:flex;align-items:center;gap:12px">
@@ -278,6 +288,40 @@ export async function renderClassDetail(container) {
         `;
 
         container.innerHTML = html;
+
+        // ── Class detail tabs (Contenido / Autoevaluación) ──
+        const contentPanel = container.querySelector('#class-tab-panel-content');
+        const quizPanel = container.querySelector('#class-tab-panel-quiz');
+        const tabButtons = container.querySelectorAll('[data-class-tab]');
+        let quizInited = false;
+
+        const selectClassTab = (tabName) => {
+            const isQuiz = tabName === 'quiz';
+            tabButtons.forEach((btn) => {
+                const active = btn.dataset.classTab === tabName;
+                btn.classList.toggle('active', active);
+                btn.setAttribute('aria-selected', active ? 'true' : 'false');
+            });
+            if (contentPanel) contentPanel.hidden = isQuiz;
+            if (quizPanel) quizPanel.hidden = !isQuiz;
+            if (isQuiz && !quizInited) {
+                quizInited = true;
+                renderAutoevaluacion(quizPanel, {
+                    classId,
+                    subjectId: activeSubjectId,
+                    className: classInfo.title,
+                });
+            }
+        };
+
+        tabButtons.forEach((btn) => {
+            btn.addEventListener('click', () => selectClassTab(btn.dataset.classTab));
+        });
+
+        // Restore quiz tab if the URL carries ?tab=quiz (deep link from dashboard)
+        if (new URLSearchParams(window.location.search).get('tab') === 'quiz') {
+            selectClassTab('quiz');
+        }
 
         if (mapCode && typeof mermaid !== 'undefined') {
             try {

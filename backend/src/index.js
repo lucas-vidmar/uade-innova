@@ -54,3 +54,4 @@ import './functions/material-download.js';
 import './functions/prompts-api.js';
 import './functions/cors-preflight.js';
 import './functions/class-views-api.js';
+import './functions/quiz-api.js';

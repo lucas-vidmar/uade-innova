@@ -10,6 +10,7 @@ const TRANSCRIPTION_CORRECTIONS_TABLE = CONFIG.tables.transcriptionCorrections;
 export const RATINGS_TABLE = CONFIG.tables.conversationRatings;
 export const CONVERSATIONS_TABLE = CONFIG.tables.conversations;
 const CLASS_VIEWS_TABLE = CONFIG.tables.classViews;
+const QUIZ_RESULTS_TABLE = CONFIG.tables.quizResults;
 
 const ensuredTables = new Set();
 
@@ -761,4 +762,82 @@ export async function deleteClassViewsBySubject(subjectId) {
   for (const entity of entities) {
     await client.deleteEntity(entity.partitionKey, entity.rowKey);
   }
+}
+
+// ─── Quiz Results Operations (Autoevaluación) ───────────────
+
+function toQuizResultEntity(result) {
+  return compactObject({
+    partitionKey: result.subjectId,
+    rowKey: `${result.userId}__${result.classId}`,
+    userId: result.userId,
+    classId: result.classId,
+    quizId: result.quizId || '',
+    score: result.score,
+    totalQuestions: result.totalQuestions,
+    correctCount: result.correctCount,
+    passed: result.passed === true,
+    weakTopics: JSON.stringify(result.weakTopics || []),
+    answers: JSON.stringify(result.answers || []),
+    attemptCount: result.attemptCount || 1,
+    createdAt: result.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+function fromQuizResultEntity(entity) {
+  let weakTopics = [];
+  let answers = [];
+  try { weakTopics = JSON.parse(entity.weakTopics || '[]'); } catch { weakTopics = []; }
+  try { answers = JSON.parse(entity.answers || '[]'); } catch { answers = []; }
+  return {
+    subjectId: entity.partitionKey,
+    userId: entity.userId,
+    classId: entity.classId,
+    quizId: entity.quizId || '',
+    score: Number(entity.score || 0),
+    totalQuestions: Number(entity.totalQuestions || 0),
+    correctCount: Number(entity.correctCount || 0),
+    passed: entity.passed === true,
+    weakTopics,
+    answers,
+    attemptCount: Number(entity.attemptCount || 1),
+    createdAt: entity.createdAt,
+    updatedAt: entity.updatedAt,
+  };
+}
+
+export async function upsertQuizResult(result) {
+  if (!result?.subjectId || !result?.userId || !result?.classId) {
+    throw new Error('upsertQuizResult requires subjectId, userId, and classId');
+  }
+  await ensureTable(QUIZ_RESULTS_TABLE);
+  const client = getTableClient(QUIZ_RESULTS_TABLE);
+  const entity = toQuizResultEntity(result);
+  await client.upsertEntity(entity, 'Replace');
+  return fromQuizResultEntity(entity);
+}
+
+export async function getQuizResult(subjectId, userId, classId) {
+  if (!subjectId || !userId || !classId) return null;
+  await ensureTable(QUIZ_RESULTS_TABLE);
+  const client = getTableClient(QUIZ_RESULTS_TABLE);
+  try {
+    const entity = await client.getEntity(subjectId, `${userId}__${classId}`);
+    return fromQuizResultEntity(entity);
+  } catch {
+    return null;
+  }
+}
+
+export async function listQuizResultsBySubject(subjectId) {
+  if (!subjectId) return [];
+  const entities = await queryByPartition(QUIZ_RESULTS_TABLE, subjectId);
+  return entities.map(fromQuizResultEntity);
+}
+
+export async function listQuizResultsByClass(subjectId, classId) {
+  if (!subjectId || !classId) return [];
+  const all = await listQuizResultsBySubject(subjectId);
+  return all.filter((r) => r.classId === classId);
 }
