@@ -250,7 +250,6 @@ test('rag-query stream should complete normally with signal present', async () =
 test('rag-query stream should rewrite follow-up question before retrieval', async () => {
     openaiMocks.generateEmbedding.mock.resetCalls();
     openaiMocks.chatCompletion.mock.resetCalls();
-
     openaiMocks.chatCompletion.mock.mockImplementation(async (messages, stream) => {
         const systemContent = messages?.[0]?.content || '';
         if (!stream && systemContent.includes('Reescribe la ultima pregunta del estudiante')) {
@@ -290,4 +289,94 @@ test('rag-query stream should rewrite follow-up question before retrieval', asyn
     const response = await capturedHandler(mockRequest, mockContext);
     assert.strictEqual(response.status, 200);
     assert.strictEqual(openaiMocks.generateEmbedding.mock.calls.at(-1).arguments[0], '¿Por que es importante la arquitectura hexagonal?');
+});
+
+test('rag-query should inject bot tone/length preferences block and cap max_tokens when concise (11-5-1)', async () => {
+    openaiMocks.generateEmbedding.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.resetCalls();
+
+    let capturedSystemContent = '';
+    let capturedOptions = null;
+    openaiMocks.chatCompletion.mock.mockImplementation(async (messages, stream, options) => {
+        const systemContent = messages?.[0]?.content || '';
+        if (!stream && systemContent.includes('Reescribe la ultima pregunta del estudiante')) {
+            return { content: 'pref test?', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } };
+        }
+        if (!stream) {
+            capturedSystemContent = systemContent;
+            capturedOptions = options;
+            return { content: 'sync', usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 } };
+        }
+        return (async function* () {
+            yield { choices: [{ delta: { content: 'Ok' } }] };
+            yield { usage: { prompt_tokens: 4, completion_tokens: 3, total_tokens: 7 } };
+        })();
+    });
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+
+    const mockRequest = {
+        json: async () => ({
+            question: 'Preferencia test?',
+            subjectId: 'materia1',
+            classIds: ['class1'],
+            stream: false,
+            botTone: 'didactic',
+            botLength: 'concise',
+            includeSources: false,
+        }),
+        user: { id: 'test-user' },
+        headers: { get: () => 'test-header' }
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    assert.ok(capturedSystemContent.includes('<preferencias_asistente>'), 'Should include preferences block');
+    assert.ok(capturedSystemContent.includes('tono didáctico y cercano'), 'Should include didactic tone instruction');
+    assert.ok(capturedSystemContent.includes('Respondé de forma concisa'), 'Should include concise length instruction');
+    assert.ok(capturedSystemContent.includes('No enumeres ni listes las fuentes'), 'Should include no-sources instruction');
+    assert.strictEqual(capturedOptions?.max_tokens, 400, 'Should cap max_tokens at 400 for concise');
+});
+
+test('rag-query should omit preferences block when no bot prefs are sent', async () => {
+    openaiMocks.generateEmbedding.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.resetCalls();
+
+    let capturedSystemContent = '';
+    let capturedOptions = null;
+    openaiMocks.chatCompletion.mock.mockImplementation(async (messages, stream, options) => {
+        const systemContent = messages?.[0]?.content || '';
+        if (!stream && systemContent.includes('Reescribe la ultima pregunta del estudiante')) {
+            return { content: 'plain test?', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } };
+        }
+        if (!stream) {
+            capturedSystemContent = systemContent;
+            capturedOptions = options;
+            return { content: 'sync', usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 } };
+        }
+        return (async function* () {
+            yield { choices: [{ delta: { content: 'Ok' } }] };
+            yield { usage: { prompt_tokens: 4, completion_tokens: 3, total_tokens: 7 } };
+        })();
+    });
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+
+    const mockRequest = {
+        json: async () => ({
+            question: 'Plain test?',
+            subjectId: 'materia1',
+            classIds: ['class1'],
+            stream: false,
+        }),
+        user: { id: 'test-user' },
+        headers: { get: () => 'test-header' }
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    assert.ok(!capturedSystemContent.includes('<preferencias_asistente>'), 'Should NOT include preferences block when absent');
+    assert.ok(capturedOptions?.max_tokens > 400, 'Should keep default max_tokens when not concise');
 });

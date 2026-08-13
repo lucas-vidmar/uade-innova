@@ -168,12 +168,13 @@ export async function renderStudentSettings(container) {
     });
 
     container.querySelector('#save-bot-prefs-btn')?.addEventListener('click', async () => {
+      if (state.savingBot) return;
+      const newTone = container.querySelector('#bot-tone-select')?.value || 'formal';
+      const newLength = container.querySelector('#bot-length-select')?.value || 'detailed';
+      const newSources = container.querySelector('#bot-sources-toggle')?.checked !== false;
       state.savingBot = true;
       render();
       try {
-        const newTone = container.querySelector('#bot-tone-select')?.value || 'formal';
-        const newLength = container.querySelector('#bot-length-select')?.value || 'detailed';
-        const newSources = container.querySelector('#bot-sources-toggle')?.checked !== false;
         state.botTone = newTone;
         state.botLength = newLength;
         state.botIncludeSources = newSources;

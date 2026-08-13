@@ -102,6 +102,15 @@ param graphApiClientSecret string
 @description('Tenant ID for Microsoft Graph API. Defaults to the subscription\'s tenant ID.')
 param graphApiTenantId string = subscription().tenantId
 
+@description('Entra ID tenant ID for OIDC token validation on Functions (#218). Placeholder until UADE provisions the app registration.')
+param entraTenantId string = 'PLACEHOLDER'
+
+@description('Entra ID client ID (audience) for OIDC token validation on Functions (#218). Placeholder until UADE provisions the app registration.')
+param entraClientId string = 'PLACEHOLDER'
+
+@description('Permits the mock auth fallback in non-Development environments (pilot continuity until #194 provisions Entra). Flip to false after SSO lands.')
+param authMockEnabled string = 'true'
+
 @secure()
 @description('Pinecone vector database API key.')
 param pineconeApiKey string
@@ -189,6 +198,8 @@ module keyVault './modules/keyvault.bicep' = {
     graphApiClientSecret: graphApiClientSecret
     graphApiTenantId: graphApiTenantId
     pineconeApiKey: pineconeApiKey
+    entraTenantId: entraTenantId
+    entraClientId: entraClientId
   }
 }
 
@@ -244,6 +255,7 @@ module functions './modules/functions.bicep' = {
     summariesContainerName: storage.outputs.summariesContainerName
     notificationQueueName: storage.outputs.notificationQueueName
     allowedCorsOrigins: allowedCorsOrigins
+    authMockEnabled: authMockEnabled
     tags: tags
   }
 }

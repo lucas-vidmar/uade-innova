@@ -8,12 +8,12 @@ const parseRetryAfter = (res, fallback = 60) => {
     return Number.isFinite(seconds) && seconds > 0 ? seconds : fallback;
 };
 
-export async function ragQuery({ question, classIds, subjectId, conversationHistory = [], historyWindowSize = 4, transcriptFocus = null, sandbox = false, simulateStudent = false }) {
+export async function ragQuery({ question, classIds, subjectId, conversationHistory = [], historyWindowSize = 4, transcriptFocus = null, sandbox = false, simulateStudent = false, botTone, botLength, includeSources }) {
     try {
         const res = await apiFetch(`${BASE_URL}/rag-query${sandbox ? '?sandbox=true' : ''}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question, classIds, subjectId, stream: false, conversationHistory, historyWindowSize, transcriptFocus, sandbox, simulateStudent }),
+            body: JSON.stringify({ question, classIds, subjectId, stream: false, conversationHistory, historyWindowSize, transcriptFocus, sandbox, simulateStudent, botTone, botLength, includeSources }),
         });
 
         if (res.status === 429) {
@@ -36,11 +36,11 @@ export async function ragQuery({ question, classIds, subjectId, conversationHist
     }
 }
 
-export async function ragQueryStream({ question, classIds, subjectId, sessionId, conversationHistory = [], historyWindowSize = 4, transcriptFocus = null, sandbox = false, simulateStudent = false }, onEvent) {
+export async function ragQueryStream({ question, classIds, subjectId, sessionId, conversationHistory = [], historyWindowSize = 4, transcriptFocus = null, sandbox = false, simulateStudent = false, botTone, botLength, includeSources }, onEvent) {
     const response = await apiFetch(`${BASE_URL}/rag-query${sandbox ? '?sandbox=true' : ''}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, classIds, subjectId, sessionId, stream: true, conversationHistory, historyWindowSize, transcriptFocus, sandbox, simulateStudent }),
+        body: JSON.stringify({ question, classIds, subjectId, sessionId, stream: true, conversationHistory, historyWindowSize, transcriptFocus, sandbox, simulateStudent, botTone, botLength, includeSources }),
     });
 
     if (response.status === 429) {

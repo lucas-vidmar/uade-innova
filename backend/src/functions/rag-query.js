@@ -12,6 +12,7 @@ import { parseClientPrincipal, validateFrontDoorId, getAuthenticatedUser } from 
 import { normalizeCategorizedError, ErrorCategory } from '../services/error-categories.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { withRateLimit } from '../middleware/with-rate-limit.js';
+import { withAuth } from '../middleware/with-auth.js';
 import { createStructuredLogger } from '../services/structured-logger.js';
 import { v4 as uuidv4 } from 'uuid';
 import { listMaterialsBySubject, listReviewedCorrections } from '../services/state-store.js';
@@ -90,6 +91,35 @@ function jsonResponse(status, payload) {
     };
 }
 
+/**
+ * Construye el bloque <preferencias_asistente> a partir de las preferencias
+ * de tono/longitud del alumno (story #223 / 11-5-1). Devuelve '' si no hay
+ * preferencias configuradas.
+ */
+function buildPreferencesBlock({ botTone, botLength, includeSources }) {
+    const instructions = [];
+
+    const TONE = {
+        formal: 'Usá un tono formal y académico, sin coloquialismos.',
+        didactic: 'Usá un tono didáctico y cercano, explicando los conceptos paso a paso.',
+        concise: 'Usá un tono directo y resumido, yendo al punto sin rodeos.',
+    };
+    const LENGTH = {
+        concise: 'Respondé de forma concisa. Usá breves párrafos y evitá desarrollos extensos.',
+        detailed: 'Respondé de forma detallada y completa, desarrollando los conceptos con profundidad.',
+    };
+
+    if (TONE[botTone]) instructions.push(TONE[botTone]);
+    if (LENGTH[botLength]) instructions.push(LENGTH[botLength]);
+    if (includeSources === false) {
+        instructions.push('No enumeres ni listes las fuentes en la respuesta.');
+    }
+
+    if (instructions.length === 0) return '';
+
+    return `\n\n<preferencias_asistente>\n${instructions.map(i => `- ${i}`).join('\n')}\n</preferencias_asistente>`;
+}
+
 function buildPineconeFilter(subjectId, classIds, disableBibliographyFallback = false) {
     if (!classIds || classIds.length === 0 || classIds.includes('all')) {
         return { subjectId: { $eq: subjectId } };
@@ -138,13 +168,15 @@ app.http('rag-query', {
     methods: ['POST'],
     authLevel: 'anonymous',
     route: 'rag-query',
-    handler: withCorrelation(withRateLimit(async (request, context) => {
+    handler: withCorrelation(withRateLimit(withAuth(async (request, context) => {
         const { correlationId, dependencyHeaders } = context;
 
         const log = createStructuredLogger('rag-query', context);
         if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
         log.info('rag-query triggered');
-        const { userId, sanitizedId } = getAuthenticatedUser(request);
+        const user = context.user || getAuthenticatedUser(request);
+        const userId = user?.userId || 'anonymous';
+        const sanitizedId = user?.sanitizedId || String(userId).replace(/[^a-zA-Z0-9]/g, '_');
         log.info('RAG query start', { correlationId, userId });
 
         // Capture start time for end-to-end latency measurement (Issue #69)
@@ -158,7 +190,7 @@ app.http('rag-query', {
             return jsonResponse(400, { error: 'Body JSON inválido' });
         }
 
-        const { question, classIds, subjectId, sessionId, stream = false, conversationHistory, historyWindowSize, transcriptFocus, sandbox = false, simulateStudent = false } = body;
+        const { question, classIds, subjectId, sessionId, stream = false, conversationHistory, historyWindowSize, transcriptFocus, sandbox = false, simulateStudent = false, botTone, botLength, includeSources } = body;
 
         if (!question || !subjectId) {
                 return jsonResponse(400, { error: 'Faltan campos requeridos: question, subjectId' });
@@ -166,7 +198,7 @@ app.http('rag-query', {
 
         const recentConversationHistory = normalizeConversationHistory(conversationHistory, historyWindowSize);
 
-        const principal = parseClientPrincipal(request);
+        const principal = context.principal || parseClientPrincipal(request);
         const userRoles = principal?.userRoles || [];
         const isTeacherOrDirector = userRoles.includes('Docente') || userRoles.includes('Director');
 
@@ -479,6 +511,12 @@ app.http('rag-query', {
             }
         }
 
+        // ── 6a. Preferencias del asistente (tono/longitud/fuentes) ──
+        const preferencesBlock = buildPreferencesBlock({ botTone, botLength, includeSources });
+
+        // Response length cap for concise preference (story #223 / 11-5-1)
+        const maxTokens = botLength === 'concise' ? Math.min(CONFIG.ai.maxTokens.chat, 400) : CONFIG.ai.maxTokens.chat;
+
         const { id: promptId, content: systemPromptBase } = getShadowPrompt();
         // Log telemetry explicit event inside standard console output for App Insights Analytics mapping
         context.log(`[A/B Test] Interaction initialized using prompt version: ${promptId}`);
@@ -513,7 +551,7 @@ app.http('rag-query', {
 
 <contexto_rag>
 ${contextText}
-</contexto_rag>${teacherFeedbackBlock}${deadlineBlock}${glossaryBlock}`,
+</contexto_rag>${teacherFeedbackBlock}${deadlineBlock}${glossaryBlock}${preferencesBlock}`,
 
             },
             {
@@ -559,7 +597,7 @@ ${contextText}
                     }
 
                     try {
-                        const stream = await chatCompletion(messages, true, { headers: dependencyHeaders, signal: request.signal });
+                        const stream = await chatCompletion(messages, true, { headers: dependencyHeaders, signal: request.signal, max_tokens: maxTokens });
                         for await (const chunk of stream) {
                             const delta = chunk.choices?.[0]?.delta?.content || '';
                             if (delta) {
@@ -694,7 +732,7 @@ ${contextText}
         let answer;
         let chatUsage;
         try {
-            const chatResult = await chatCompletion(messages, false, { headers: dependencyHeaders });
+            const chatResult = await chatCompletion(messages, false, { headers: dependencyHeaders, max_tokens: maxTokens });
             answer = chatResult.content;
             chatUsage = chatResult.usage;
         } catch (err) {
@@ -799,5 +837,5 @@ ${contextText}
         }
 
         return jsonResponse(200, { id: interactionId, answer, sources });
-    }, 'chat')),
+    }, 'chat'))),
 });

@@ -34,6 +34,12 @@ param graphApiTenantId string = subscription().tenantId
 @description('API key for Pinecone vector database. Must be a valid Pinecone API key for the configured index.')
 param pineconeApiKey string
 
+@description('Entra ID tenant ID used for OIDC token validation on Functions (#218). Placeholder until UADE provisions the app registration.')
+param entraTenantId string = 'PLACEHOLDER'
+
+@description('Entra ID client ID (audience) used for OIDC token validation on Functions (#218). Placeholder until UADE provisions the app registration.')
+param entraClientId string = 'PLACEHOLDER'
+
 // ─── Key Vault ───────────────────────────────────────────────────
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: name
@@ -119,6 +125,24 @@ resource pineconeApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   name: 'PINECONE-API-KEY'
   properties: {
     value: pineconeApiKey
+  }
+}
+
+// ─── ENTRA-TENANT-ID ──────────────────────────────────────────
+resource entraTenantIdSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'ENTRA-TENANT-ID'
+  properties: {
+    value: entraTenantId
+  }
+}
+
+// ─── ENTRA-CLIENT-ID ──────────────────────────────────────────
+resource entraClientIdSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'ENTRA-CLIENT-ID'
+  properties: {
+    value: entraClientId
   }
 }
 

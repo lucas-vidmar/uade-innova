@@ -343,10 +343,12 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
     update();
   };
 
-  const sendMessage = async () => {
+    const sendMessage = async () => {
     const input = container.querySelector('#chat-input');
     const question = input?.value?.trim();
     if (!question || isLoading || selectedClassIds.length === 0 || hasEnrollment === false) return;
+
+    const botPrefs = auth.getBotPreferences();
 
     const conversationHistory = messages
       .filter(msg => (msg.role === 'user' || msg.role === 'assistant') && typeof msg.content === 'string' && msg.content.trim().length > 0)
@@ -380,6 +382,9 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         conversationHistory,
         historyWindowSize: FOLLOW_UP_HISTORY_WINDOW_SIZE,
         transcriptFocus,
+        botTone: botPrefs?.tone,
+        botLength: botPrefs?.length,
+        includeSources: botPrefs?.includeSources,
       }, (type, data) => {
         const msgEl = getMsgEl();
         if (!msgEl) return;

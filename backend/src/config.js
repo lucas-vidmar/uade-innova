@@ -97,6 +97,16 @@ export const CONFIG = {
     directores: process.env.ENTRA_GROUP_DIRECTORES || 'Directores-Pilot',
   },
 
+  auth: {
+    oidc: {
+      tenantId: process.env.ENTRA_TENANT_ID || '',
+      clientId: process.env.ENTRA_CLIENT_ID || '',
+      issuer: process.env.ENTRA_ISSUER || '',
+      jwksTtlMs: Number(process.env.OIDC_JWKS_TTL_MS) || 3600000,
+    },
+    mockEnabled: process.env.AUTH_MOCK_ENABLED === 'true',
+  },
+
   budget: {
     monthlyUsd: Number(process.env.DIRECTOR_BUDGET_MONTHLY_USD) || 10000,
   },

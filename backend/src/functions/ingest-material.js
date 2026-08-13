@@ -10,6 +10,7 @@ import { getMaterialPriority } from '../services/material-classification.js';
 import { ErrorCategory, normalizeCategorizedError, structuredErrorResponse } from '../services/error-categories.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { withRateLimit } from '../middleware/with-rate-limit.js';
+import { withAuth } from '../middleware/with-auth.js';
 import { createStructuredLogger } from '../services/structured-logger.js';
 import { CONFIG } from '../services/config.js';
 
@@ -19,7 +20,7 @@ app.http('ingest-material', {
     methods: ['POST'],
     authLevel: 'anonymous',
     route: 'ingest-material',
-    handler: withCorrelation(withRateLimit(async (request, context) => {
+    handler: withCorrelation(withRateLimit(withAuth(async (request, context) => {
         const log = createStructuredLogger('ingest-material', context);
         if (!validateFrontDoorId(request)) {
             return structuredErrorResponse(403, 'Forbidden - Invalid Front Door ID', ErrorCategory.AUTH, 'FRONTDOOR_INVALID');
@@ -32,7 +33,7 @@ app.http('ingest-material', {
             log.info('Multipart parsed', { fileName, fileContentType, subjectId, materialType, classIds });
 
             // Security Check: Enrollment-based access control
-            const principal = parseClientPrincipal(request);
+            const principal = context.principal || parseClientPrincipal(request);
             const userId = principal?.userId || principal?.oid || 'anonymous';
             const roles = principal?.userRoles || [];
             const isDirector = roles.includes('Director');
@@ -147,7 +148,7 @@ app.http('ingest-material', {
             const categorized = normalizeCategorizedError(err, ErrorCategory.INTERNAL);
             return structuredErrorResponse(categorized.status, categorized.message || 'Error interno del servidor', categorized.errorCategory, categorized.code);
         }
-    }, 'ingest'))
+    }, { roles: ['Docente', 'Director'] }), 'ingest'))
 });
 
 function sanitizeFileName(name) {

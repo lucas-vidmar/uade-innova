@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.41.2.15936",
-      "templateHash": "9642324590651818496"
+      "templateHash": "14643417020822106447"
     }
   },
   "parameters": {
@@ -187,10 +187,41 @@
         "description": "Tenant ID for Microsoft Graph API. Defaults to the subscription's tenant ID."
       }
     },
+    "entraTenantId": {
+      "type": "string",
+      "defaultValue": "PLACEHOLDER",
+      "metadata": {
+        "description": "Entra ID tenant ID for OIDC token validation on Functions (#218). Placeholder until UADE provisions the app registration."
+      }
+    },
+    "entraClientId": {
+      "type": "string",
+      "defaultValue": "PLACEHOLDER",
+      "metadata": {
+        "description": "Entra ID client ID (audience) for OIDC token validation on Functions (#218). Placeholder until UADE provisions the app registration."
+      }
+    },
+    "authMockEnabled": {
+      "type": "string",
+      "defaultValue": "true",
+      "metadata": {
+        "description": "Permits the mock auth fallback in non-Development environments (pilot continuity until #194 provisions Entra). Flip to false after SSO lands."
+      }
+    },
     "pineconeApiKey": {
       "type": "securestring",
       "metadata": {
         "description": "Pinecone vector database API key."
+      }
+    },
+    "allowedCorsOrigins": {
+      "type": "array",
+      "defaultValue": [
+        "http://localhost:4280",
+        "http://localhost:5173"
+      ],
+      "metadata": {
+        "description": "Allowed CORS origins for the Functions App. Production is restricted to the Static Web App origin, injected from the azd environment variable AZURE_STATIC_WEB_APP_URI via main.parameters.json. Default keeps local dev origins working."
       }
     }
   },
@@ -325,9 +356,6 @@
     "anomalousUsageActionGroupName": "[format('ag-token-usage-{0}', take(variables('resourceToken'), 8))]",
     "ttftAnomalyAlertName": "[format('alert-ttft-anomaly-{0}', take(variables('resourceToken'), 8))]",
     "ttftAnomalyActionGroupName": "[format('ag-ttft-anomaly-{0}', take(variables('resourceToken'), 8))]",
-    "allowedCorsOrigins": [
-      "*"
-    ],
     "safeStorageName": "[take(replace(variables('storageAccountName'), '-', ''), 24)]"
   },
   "resources": [
@@ -1407,6 +1435,12 @@
           },
           "pineconeApiKey": {
             "value": "[parameters('pineconeApiKey')]"
+          },
+          "entraTenantId": {
+            "value": "[parameters('entraTenantId')]"
+          },
+          "entraClientId": {
+            "value": "[parameters('entraClientId')]"
           }
         },
         "template": {
@@ -1416,7 +1450,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "13561317586802559190"
+              "templateHash": "17252077297305311495"
             }
           },
           "parameters": {
@@ -1476,6 +1510,20 @@
               "type": "securestring",
               "metadata": {
                 "description": "API key for Pinecone vector database. Must be a valid Pinecone API key for the configured index."
+              }
+            },
+            "entraTenantId": {
+              "type": "string",
+              "defaultValue": "PLACEHOLDER",
+              "metadata": {
+                "description": "Entra ID tenant ID used for OIDC token validation on Functions (#218). Placeholder until UADE provisions the app registration."
+              }
+            },
+            "entraClientId": {
+              "type": "string",
+              "defaultValue": "PLACEHOLDER",
+              "metadata": {
+                "description": "Entra ID client ID (audience) used for OIDC token validation on Functions (#218). Placeholder until UADE provisions the app registration."
               }
             }
           },
@@ -1555,6 +1603,28 @@
               "name": "[format('{0}/{1}', parameters('name'), 'PINECONE-API-KEY')]",
               "properties": {
                 "value": "[parameters('pineconeApiKey')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('name'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.KeyVault/vaults/secrets",
+              "apiVersion": "2023-07-01",
+              "name": "[format('{0}/{1}', parameters('name'), 'ENTRA-TENANT-ID')]",
+              "properties": {
+                "value": "[parameters('entraTenantId')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('name'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.KeyVault/vaults/secrets",
+              "apiVersion": "2023-07-01",
+              "name": "[format('{0}/{1}', parameters('name'), 'ENTRA-CLIENT-ID')]",
+              "properties": {
+                "value": "[parameters('entraClientId')]"
               },
               "dependsOn": [
                 "[resourceId('Microsoft.KeyVault/vaults', parameters('name'))]"
@@ -1704,7 +1774,10 @@
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.notificationQueueName.value]"
           },
           "allowedCorsOrigins": {
-            "value": "[variables('allowedCorsOrigins')]"
+            "value": "[parameters('allowedCorsOrigins')]"
+          },
+          "authMockEnabled": {
+            "value": "[parameters('authMockEnabled')]"
           },
           "tags": {
             "value": "[variables('tags')]"
@@ -1717,7 +1790,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "3009242354899327952"
+              "templateHash": "12753199158280735804"
             }
           },
           "parameters": {
@@ -1849,6 +1922,13 @@
               ],
               "metadata": {
                 "description": "List of allowed CORS origins (e.g., [\"https://myapp.azurestaticapps.net\"]). Default \"*\" allows all origins during development."
+              }
+            },
+            "authMockEnabled": {
+              "type": "string",
+              "defaultValue": "true",
+              "metadata": {
+                "description": "Permits the mock auth fallback in non-Development environments (pilot continuity until #194 provisions Entra). Flip to false after SSO lands."
               }
             },
             "materialsTableName": {
@@ -2117,6 +2197,18 @@
                     {
                       "name": "NODE_ENV",
                       "value": "production"
+                    },
+                    {
+                      "name": "AUTH_MOCK_ENABLED",
+                      "value": "[parameters('authMockEnabled')]"
+                    },
+                    {
+                      "name": "ENTRA_TENANT_ID",
+                      "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/ENTRA-TENANT-ID/)', parameters('keyVaultUri'))]"
+                    },
+                    {
+                      "name": "ENTRA_CLIENT_ID",
+                      "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/ENTRA-CLIENT-ID/)', parameters('keyVaultUri'))]"
                     },
                     {
                       "name": "SWA_ROLES_SECRET",
@@ -3152,7 +3244,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "6256496882556963497"
+              "templateHash": "13369205604969593958"
             }
           },
           "parameters": {
@@ -3216,6 +3308,13 @@
               "metadata": {
                 "description": "Threshold for warning-tier token anomaly alert (tokens per user over 24h, before critical threshold)."
               }
+            },
+            "requestCountThreshold": {
+              "type": "int",
+              "defaultValue": 100,
+              "metadata": {
+                "description": "Threshold for per-user request count anomaly alert (RAG requests per user over 1h)."
+              }
             }
           },
           "variables": {
@@ -3226,7 +3325,9 @@
             "warningQueryTemplate": "AppEvents\n| where Name == \"RAGInteraction\"\n| where TimeGenerated >= ago(24h)\n| where isnotempty(tostring(Properties.userId))\n| extend userId = tostring(Properties.userId), totalTokens = todouble(Measurements.totalTokens)\n| summarize tokens24h = sum(coalesce(totalTokens, 0.0)) by userId\n| where tokens24h > {threshold}\n| project userId, tokens24h\n",
             "warningQuery": "[replace(variables('warningQueryTemplate'), '{threshold}', format('{0}', parameters('warningTokenThreshold')))]",
             "criticalQueryTemplate": "AppEvents\n| where Name == \"RAGInteraction\"\n| where TimeGenerated >= ago(24h)\n| where isnotempty(tostring(Properties.userId))\n| extend userId = tostring(Properties.userId), totalTokens = todouble(Measurements.totalTokens)\n| summarize tokens24h = sum(coalesce(totalTokens, 0.0)) by userId\n| where tokens24h > {threshold}\n| project userId, tokens24h\n",
-            "criticalQuery": "[replace(variables('criticalQueryTemplate'), '{threshold}', format('{0}', variables('tokenThreshold')))]"
+            "criticalQuery": "[replace(variables('criticalQueryTemplate'), '{threshold}', format('{0}', variables('tokenThreshold')))]",
+            "requestCountQueryTemplate": "AppEvents\n| where Name == \"RAGInteraction\"\n| where TimeGenerated >= ago(1h)\n| where isnotempty(tostring(Properties.userId))\n| where tostring(Properties.sandbox) != \"true\" and tostring(Properties.simulateStudent) != \"true\"\n| extend userId = tostring(Properties.userId)\n| summarize requestCount1h = count() by userId\n| where requestCount1h > {threshold}\n| project userId, requestCount1h\n",
+            "requestCountQuery": "[replace(variables('requestCountQueryTemplate'), '{threshold}', format('{0}', parameters('requestCountThreshold')))]"
           },
           "resources": [
             {
@@ -3404,6 +3505,56 @@
               "dependsOn": [
                 "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
               ]
+            },
+            {
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-12-01",
+              "name": "[format('{0}-req-count', parameters('scheduledQueryRuleName'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "description": "[format('Triggers when a single user exceeds {0} RAG requests over the last hour.', parameters('requestCountThreshold'))]",
+                "displayName": "[format('Anomalous request count (>{0} RAG requests / 1h per user)', parameters('requestCountThreshold'))]",
+                "severity": 2,
+                "enabled": true,
+                "scopes": [
+                  "[parameters('workspaceId')]"
+                ],
+                "evaluationFrequency": "PT5M",
+                "windowSize": "PT1H",
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "[variables('requestCountQuery')]",
+                      "timeAggregation": "Count",
+                      "operator": "GreaterThanOrEqual",
+                      "threshold": 1,
+                      "dimensions": [
+                        {
+                          "name": "userId",
+                          "operator": "Include",
+                          "values": [
+                            "*"
+                          ]
+                        }
+                      ],
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 1,
+                        "minFailingPeriodsToAlert": 1
+                      }
+                    }
+                  ]
+                },
+                "autoMitigate": true,
+                "actions": {
+                  "actionGroups": [
+                    "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+              ]
             }
           ],
           "outputs": {
@@ -3423,6 +3574,10 @@
               "type": "string",
               "value": "[resourceId('Microsoft.Insights/scheduledQueryRules', format('{0}-warning', parameters('scheduledQueryRuleName')))]"
             },
+            "requestCountScheduledQueryRuleId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Insights/scheduledQueryRules', format('{0}-req-count', parameters('scheduledQueryRuleName')))]"
+            },
             "threshold": {
               "type": "int",
               "value": "[variables('tokenThreshold')]"
@@ -3434,6 +3589,10 @@
             "warningTokenThresholdValue": {
               "type": "int",
               "value": "[parameters('warningTokenThreshold')]"
+            },
+            "requestCountThresholdValue": {
+              "type": "int",
+              "value": "[parameters('requestCountThreshold')]"
             }
           }
         }

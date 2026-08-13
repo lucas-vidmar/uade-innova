@@ -1,5 +1,6 @@
 import { app } from '@azure/functions';
 import { withCorrelation } from '../middleware/with-correlation.js';
+import { withAuth } from '../middleware/with-auth.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
 import { loadJson } from '../services/storage.js';
 import { trackNotificationInteraction } from '../services/telemetry.js';
@@ -9,10 +10,10 @@ const COMPLIANCE_CONTAINER = CONFIG.containers.compliance;
 const POLICY_BLOB = 'retention-policy.json';
 const COMPLIANCE_ROLES = ['Director', 'Admin', 'Security'];
 
-function isComplianceAuthorized(request) {
+function isComplianceAuthorized(request, context) {
   if (process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development') return true;
   if (!validateFrontDoorId(request)) return false;
-  const principal = parseClientPrincipal(request);
+  const principal = context?.principal || parseClientPrincipal(request);
   return principal?.userRoles?.some(r => COMPLIANCE_ROLES.includes(r)) === true;
 }
 
@@ -33,7 +34,7 @@ async function getPolicy() {
 }
 
 async function handleGetPolicy(request, context) {
-  if (!isComplianceAuthorized(request)) {
+  if (!isComplianceAuthorized(request, context)) {
     return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Director, Admin, or Security role required' }) };
   }
 
@@ -64,7 +65,7 @@ async function handleGetPolicy(request, context) {
 }
 
 async function handleExport(request, context) {
-  if (!isComplianceAuthorized(request)) {
+  if (!isComplianceAuthorized(request, context)) {
     return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Director, Admin, or Security role required' }) };
   }
 
@@ -126,12 +127,12 @@ app.http('get-compliance-retention-policy', {
   methods: ['GET'],
   authLevel: 'anonymous',
   route: 'compliance/retention-policy',
-  handler: withCorrelation(handleGetPolicy),
+  handler: withCorrelation(withAuth(handleGetPolicy, { roles: COMPLIANCE_ROLES })),
 });
 
 app.http('get-compliance-retention-export', {
   methods: ['GET'],
   authLevel: 'anonymous',
   route: 'compliance/retention-export',
-  handler: withCorrelation(handleExport),
+  handler: withCorrelation(withAuth(handleExport, { roles: COMPLIANCE_ROLES })),
 });

@@ -341,6 +341,14 @@ AI_FOUNDRY_DEEPSEEK_MODEL=deepseek-v4-flash
 # removes `Authorization: Bearer` and sets `api-key` header instead. This is required
 # because AIServices-kind accounts (not OpenAI-kind) reject Bearer tokens.
 
+# Entra ID OIDC (Story 10.11 / #218) — Placeholder hasta que UADE provisione el app registration.
+# Cuando están configurados, `withAuth` valida `Authorization: Bearer` via OIDC discovery + JWKS.
+# AUTH_MOCK_ENABLED=true permite el fallback mock en producción (continuidad del piloto);
+# revertir a false cuando #194 (SSO) esté activo.
+ENTRA_TENANT_ID=...
+ENTRA_CLIENT_ID=...
+AUTH_MOCK_ENABLED=true
+
 # Pinecone
 PINECONE_HOST=https://<index-name>-<environment>.svc.pinecone.io
 PINECONE_INDEX_NAME=dashboard-edu-pilot

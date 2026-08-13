@@ -7,7 +7,7 @@ Every endpoint returns structured errors containing `errorCategory` and `code` f
 | Category | Code Prefix | When |
 |---|---|---|
 | `VALIDATION` | `MISSING_FIELDS`, `INVALID_JSON`, `INVALID_FILE_TYPE` | Input validation failures |
-| `AUTH` | `FRONTDOOR_INVALID`, `ENROLLMENT_INACTIVE`, `ENROLLMENT_CHECK_FAILED` | Auth/authorization failures |
+| `AUTH` | `FRONTDOOR_INVALID`, `ENROLLMENT_INACTIVE`, `ENROLLMENT_CHECK_FAILED`, `AUTH_REQUIRED`, `INVALID_TOKEN`, `TOKEN_EXPIRED`, `FORBIDDEN` | Auth/authorization failures |
 | `STORAGE` | — | Blob/Table Storage failures |
 | `PARSING` | `PDF_PARSE_ERROR`, `PPTX_PARSE_ERROR`, `UNSUPPORTED_FILE_TYPE` | File parsing failures |
 | `RETRIEVAL_FAILURE` | — | Pinecone/vector search failures |
@@ -16,6 +16,19 @@ Every endpoint returns structured errors containing `errorCategory` and `code` f
 | `RATE_LIMIT` | — | Rate limiting |
 | `NOT_FOUND` | — | Resource not found |
 | `INTERNAL` | — | Unclassified server errors |
+
+## OIDC Token Validation (`withAuth` middleware, #218)
+
+Applied on Functions wrapped with `withAuth`. Resolution order: `Authorization: Bearer` (Entra OIDC + JWKS) → SWA `x-ms-client-principal` → mock (Development or `AUTH_MOCK_ENABLED=true`).
+
+| Status | Category | Code | Scenario |
+|---|---|---|---|
+| 401 | `AUTH` | `AUTH_REQUIRED` | Role-required route with no authenticated identity |
+| 401 | `AUTH` | `INVALID_TOKEN` | Bearer token present but malformed / bad signature / wrong issuer / wrong audience / wrong alg |
+| 401 | `AUTH` | `TOKEN_EXPIRED` | Bearer token expired or `nbf` in the future |
+| 403 | `AUTH` | `FORBIDDEN` | Authenticated but lacks the required role (e.g. Alumno on Docente-gated route) |
+
+Behavior contract: a token that **is** present but invalid is **never** silently downgraded to the SWA/mock path — it always returns a structured 401/403 above. When no token is present, the SWA principal (or guarded mock) governs.
 
 ## Error Response Shape
 

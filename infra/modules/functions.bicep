@@ -68,6 +68,9 @@ param ingestionQueueName string = 'ingestion-tasks'
 @description('List of allowed CORS origins (e.g., ["https://myapp.azurestaticapps.net"]). Default "*" allows all origins during development.')
 param allowedCorsOrigins array = ['*']
 
+@description('Permits the mock auth fallback in non-Development environments (pilot continuity until #194 provisions Entra). Flip to false after SSO lands.')
+param authMockEnabled string = 'true'
+
 @description('Comma-separated CORS origins for app-level CORS middleware. Auto-derived from allowedCorsOrigins array.')
 var corsAllowedOrigins = join(allowedCorsOrigins, ',')
 
@@ -280,6 +283,18 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         {
           name: 'NODE_ENV'
           value: 'production'
+        }
+        {
+          name: 'AUTH_MOCK_ENABLED'
+          value: authMockEnabled
+        }
+        {
+          name: 'ENTRA_TENANT_ID'
+          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/ENTRA-TENANT-ID/)'
+        }
+        {
+          name: 'ENTRA_CLIENT_ID'
+          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/ENTRA-CLIENT-ID/)'
         }
 
         {

@@ -1,5 +1,6 @@
 import { app } from '@azure/functions';
 import { withCorrelation } from '../middleware/with-correlation.js';
+import { withAuth } from '../middleware/with-auth.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import {
   listTypes,
@@ -20,9 +21,9 @@ function jsonResponse(status, payload) {
   };
 }
 
-function requireDirector(request) {
+function requireDirector(request, context) {
   if (!validateFrontDoorId(request)) return null;
-  const principal = parseClientPrincipal(request);
+  const principal = context?.principal || parseClientPrincipal(request);
   if (!principal?.userRoles?.includes('Director') && !principal?.userRoles?.includes('Admin')) {
     return null;
   }
@@ -33,8 +34,8 @@ app.http('prompts-list-types', {
   methods: ['GET'],
   authLevel: 'anonymous',
   route: 'prompts',
-  handler: withCorrelation(async (request) => {
-    const principal = requireDirector(request);
+  handler: withCorrelation(withAuth(async (request, context) => {
+    const principal = requireDirector(request, context);
     if (!principal) return jsonResponse(403, { error: 'Forbidden - Director access required' });
     try {
       const types = await listTypes();
@@ -57,15 +58,15 @@ app.http('prompts-list-types', {
     } catch (err) {
       return jsonResponse(500, { error: err.message });
     }
-  }),
+  }, { roles: ['Director', 'Admin'] })),
 });
 
 app.http('prompts-list-versions', {
   methods: ['GET'],
   authLevel: 'anonymous',
   route: 'prompts/{type}',
-  handler: withCorrelation(async (request) => {
-    const principal = requireDirector(request);
+  handler: withCorrelation(withAuth(async (request, context) => {
+    const principal = requireDirector(request, context);
     if (!principal) return jsonResponse(403, { error: 'Forbidden - Director access required' });
     const type = request.params.type;
     try {
@@ -74,15 +75,15 @@ app.http('prompts-list-versions', {
     } catch (err) {
       return jsonResponse(400, { error: err.message });
     }
-  }),
+  }, { roles: ['Director', 'Admin'] })),
 });
 
 app.http('prompts-get-active', {
   methods: ['GET'],
   authLevel: 'anonymous',
   route: 'prompts/{type}/active',
-  handler: withCorrelation(async (request) => {
-    const principal = requireDirector(request);
+  handler: withCorrelation(withAuth(async (request, context) => {
+    const principal = requireDirector(request, context);
     if (!principal) return jsonResponse(403, { error: 'Forbidden - Director access required' });
     const type = request.params.type;
     try {
@@ -92,15 +93,15 @@ app.http('prompts-get-active', {
     } catch (err) {
       return jsonResponse(400, { error: err.message });
     }
-  }),
+  }, { roles: ['Director', 'Admin'] })),
 });
 
 app.http('prompts-create', {
   methods: ['POST'],
   authLevel: 'anonymous',
   route: 'prompts',
-  handler: withCorrelation(async (request, context) => {
-    const principal = requireDirector(request);
+  handler: withCorrelation(withAuth(async (request, context) => {
+    const principal = requireDirector(request, context);
     if (!principal) return jsonResponse(403, { error: 'Forbidden - Director access required' });
     try {
       const body = await request.json();
@@ -122,15 +123,15 @@ app.http('prompts-create', {
     } catch (err) {
       return jsonResponse(400, { error: err.message });
     }
-  }),
+  }, { roles: ['Director', 'Admin'] })),
 });
 
 app.http('prompts-update', {
   methods: ['PUT'],
   authLevel: 'anonymous',
   route: 'prompts/{type}/{versionId}',
-  handler: withCorrelation(async (request) => {
-    const principal = requireDirector(request);
+  handler: withCorrelation(withAuth(async (request, context) => {
+    const principal = requireDirector(request, context);
     if (!principal) return jsonResponse(403, { error: 'Forbidden - Director access required' });
     const { type, versionId } = request.params;
     try {
@@ -146,15 +147,15 @@ app.http('prompts-update', {
     } catch (err) {
       return jsonResponse(400, { error: err.message });
     }
-  }),
+  }, { roles: ['Director', 'Admin'] })),
 });
 
 app.http('prompts-activate', {
   methods: ['POST'],
   authLevel: 'anonymous',
   route: 'prompts/{type}/activate/{versionId}',
-  handler: withCorrelation(async (request, context) => {
-    const principal = requireDirector(request);
+  handler: withCorrelation(withAuth(async (request, context) => {
+    const principal = requireDirector(request, context);
     if (!principal) return jsonResponse(403, { error: 'Forbidden - Director access required' });
     const { type, versionId } = request.params;
     try {
@@ -164,15 +165,15 @@ app.http('prompts-activate', {
     } catch (err) {
       return jsonResponse(400, { error: err.message });
     }
-  }),
+  }, { roles: ['Director', 'Admin'] })),
 });
 
 app.http('prompts-delete', {
   methods: ['DELETE'],
   authLevel: 'anonymous',
   route: 'prompts/{type}/{versionId}',
-  handler: withCorrelation(async (request) => {
-    const principal = requireDirector(request);
+  handler: withCorrelation(withAuth(async (request, context) => {
+    const principal = requireDirector(request, context);
     if (!principal) return jsonResponse(403, { error: 'Forbidden - Director access required' });
     const { type, versionId } = request.params;
     try {
@@ -181,5 +182,5 @@ app.http('prompts-delete', {
     } catch (err) {
       return jsonResponse(400, { error: err.message });
     }
-  }),
+  }, { roles: ['Director', 'Admin'] })),
 });

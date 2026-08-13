@@ -1,15 +1,10 @@
 import { app } from '@azure/functions';
 import { withCorrelation } from '../../../middleware/with-correlation.js';
-import { validateFrontDoorId, parseClientPrincipal } from '../../../services/auth-utils.js';
+import { withAuth } from '../../../middleware/with-auth.js';
+import { validateFrontDoorId } from '../../../services/auth-utils.js';
 import { getEnrollment, getCorrection, upsertCorrection, deletePendingCorrection } from '../../../services/state-store.js';
 import { generateEmbedding } from '../../../services/ai.js';
 import { upsertChunks } from '../../../services/vector-store.js';
-
-function canReadTeacherAlerts(principal) {
-  if (process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development') return true;
-  const roles = principal?.userRoles || [];
-  return roles.includes('Docente') || roles.includes('Director');
-}
 
 const MAX_EXPLANATION_LENGTH = 5000;
 
@@ -17,7 +12,7 @@ app.http('verify-answer', {
   methods: ['POST'],
   authLevel: 'anonymous',
   route: 'corrections-verify',
-  handler: withCorrelation(async (request, context) => {
+  handler: withCorrelation(withAuth(async (request, context) => {
     if (!validateFrontDoorId(request)) {
       return {
         status: 403,
@@ -29,17 +24,7 @@ app.http('verify-answer', {
       };
     }
 
-    const principal = parseClientPrincipal(request);
-    if (!canReadTeacherAlerts(principal)) {
-      return {
-        status: 403,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          success: false,
-          error: { code: 'FORBIDDEN', message: 'Acceso denegado. Se requiere rol Docente o Director.' },
-        }),
-      };
-    }
+    const principal = context.principal;
 
     let body;
     try {
@@ -262,5 +247,5 @@ app.http('verify-answer', {
         }),
       };
     }
-  }),
+  }, { roles: ['Docente', 'Director'] })),
 });

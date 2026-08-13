@@ -1,22 +1,17 @@
 import { app } from '@azure/functions';
 import { getArchiveUsage } from '../services/archive-usage.js';
-import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
+import { validateFrontDoorId } from '../services/auth-utils.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
+import { withAuth } from '../middleware/with-auth.js';
 
 app.http('archive-usage', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'archive-usage',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
         try {
             if (!validateFrontDoorId(request)) {
                 return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
-            }
-
-            const principal = parseClientPrincipal(request);
-            const roles = principal?.userRoles || [];
-            if (!roles.includes('Director')) {
-                return { status: 403, body: JSON.stringify({ error: 'Forbidden - Se requieren permisos de Director' }) };
             }
 
             const subjectId = request.query.get('subjectId') || undefined;
@@ -46,5 +41,5 @@ app.http('archive-usage', {
                 }),
             };
         }
-    })
+    }, { roles: ['Director'] }))
 });
