@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withAuth } from '../middleware/with-auth.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { getTableClient } from '../services/storage.js';
 import { downloadFile } from '../services/storage.js';
@@ -47,7 +48,7 @@ app.http('consent-get', {
     methods: ['GET'],
     route: 'consent',
     authLevel: 'anonymous',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
         const correlationId = context.correlationId;
         if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
 
@@ -85,14 +86,14 @@ app.http('consent-get', {
                 meta: { timestamp: new Date().toISOString(), requestId: correlationId },
             });
         }
-    }),
+    })),
 });
 
 app.http('consent-post', {
     methods: ['POST'],
     route: 'consent',
     authLevel: 'anonymous',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
         const correlationId = context.correlationId;
         if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
 
@@ -146,7 +147,7 @@ app.http('consent-post', {
                 meta: { timestamp: new Date().toISOString(), requestId: correlationId },
             });
         }
-    }),
+    })),
 });
 
 function loadTermsFromDisk() {
@@ -166,7 +167,7 @@ app.http('terms-get', {
     methods: ['GET'],
     route: 'terms',
     authLevel: 'anonymous',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
         const correlationId = context.correlationId;
         if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
 
@@ -204,5 +205,5 @@ app.http('terms-get', {
             error: { code: 'TERMS_NOT_FOUND', message: 'No se encontraron los términos de uso.' },
             meta: { timestamp: new Date().toISOString(), requestId: correlationId },
         });
-    }),
+    })),
 });

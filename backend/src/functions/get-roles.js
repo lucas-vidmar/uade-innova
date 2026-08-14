@@ -1,4 +1,5 @@
 import { validateFrontDoorId } from '../services/auth-utils.js';
+import { withAuth } from '../middleware/with-auth.js';
 import { app } from '@azure/functions';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { CONFIG } from '../services/config.js';
@@ -6,7 +7,7 @@ import { CONFIG } from '../services/config.js';
 app.http('get-roles', {
     methods: ['POST'],
     authLevel: 'anonymous', // SWA calls this internally, and the route must be accessible for its proxy
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
         const receivedCode = request.query.get('code');
         const expectedCode = process.env.SWA_ROLES_SECRET;
         if (!expectedCode) {
@@ -74,5 +75,5 @@ app.http('get-roles', {
                 body: "Internal Server Error"
             };
         }
-    })
+    }))
 });

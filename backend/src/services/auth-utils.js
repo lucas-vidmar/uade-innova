@@ -2,6 +2,29 @@
  * Shared authentication utilities for Azure Functions within Static Web Apps.
  */
 
+// Resolved identity stash per-request, populated by the withAuth middleware.
+// Stored in a WeakMap because Azure Functions' HttpRequest exposes `user`/`principal`
+// as read-only getters that cannot be assigned (#218).
+const resolvedIdentity = new WeakMap();
+
+/**
+ * Stores the identity resolved by withAuth for a request.
+ * @param {Request} request
+ * @param {{user: Object|null, principal: Object|null}} identity
+ */
+export function setStashedIdentity(request, identity) {
+  resolvedIdentity.set(request, identity);
+}
+
+/**
+ * Retrieves the identity stashed by withAuth for a request, or null.
+ * @param {Request} request
+ * @returns {{user: Object|null, principal: Object|null}|null}
+ */
+export function getStashedIdentity(request) {
+  return resolvedIdentity.get(request) || null;
+}
+
 /**
  * True when running in a local Development environment (func start / azurite).
  * Azure sets AZURE_FUNCTIONS_ENVIRONMENT to 'Production' (capital P); local
@@ -28,6 +51,13 @@ export function isMockAuthAllowed() {
  * @returns {Object|null} The parsed principal object or null if not found.
  */
 export function parseClientPrincipal(request) {
+    // 0. Principal already resolved by the withAuth middleware (validated OIDC
+    //    Bearer token). Functions wrapped in withAuth get this for free (#218).
+    const stashed = getStashedIdentity(request);
+    if (stashed && stashed.principal) {
+        return stashed.principal;
+    }
+
     // 1. Try to parse real SWA principal
     const clientPrincipalHeader = request?.headers?.get?.('x-ms-client-principal');
     if (clientPrincipalHeader) {
@@ -95,6 +125,13 @@ export function parseClientPrincipal(request) {
  * @param {Request} request 
  */
 export function getAuthenticatedUser(request) {
+    // 0. User already resolved by the withAuth middleware (validated OIDC
+    //    Bearer token). Functions wrapped in withAuth get this for free (#218).
+    const stashed = getStashedIdentity(request);
+    if (stashed && stashed.user) {
+        return stashed.user;
+    }
+
     const principal = parseClientPrincipal(request);
     
     // Priority: Principal fields -> x-edu-uid -> Anonymous fallback

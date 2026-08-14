@@ -20,6 +20,7 @@ const vectorMetricsMocks = {
 
 const authUtilsMocks = {
     validateFrontDoorId: mock.fn(() => true),
+    setStashedIdentity: mock.fn(() => {}),
     parseClientPrincipal: mock.fn(() => ({ userId: 'test-user', userRoles: ['Director'] })),
 };
 

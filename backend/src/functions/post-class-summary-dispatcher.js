@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withAuth } from '../middleware/with-auth.js';
 import { withCorrelation, withCorrelationTimer } from '../middleware/with-correlation.js';
 import { loadJson, listBlobs } from '../services/storage.js';
 import { dispatchClassSummaryNotification } from '../services/notification-store.js';
@@ -119,7 +120,7 @@ app.http('publish-class-summary-now', {
   methods: ['POST'],
   authLevel: 'anonymous',
   route: 'class-summary/{classId}/publish-now',
-  handler: withCorrelation(async (request, context) => {
+  handler: withCorrelation(withAuth(async (request, context) => {
     const { validateFrontDoorId, parseClientPrincipal } = await import('../services/auth-utils.js');
     if (!validateFrontDoorId(request)) {
       return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
@@ -163,5 +164,5 @@ app.http('publish-class-summary-now', {
       context.error(`[publish-class-summary-now] class=${classId} error=${err.message}`);
       return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: `Error al publicar: ${err.message}` }) };
     }
-  }),
+  })),
 });

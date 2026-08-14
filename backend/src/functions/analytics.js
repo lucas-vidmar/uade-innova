@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withAuth } from '../middleware/with-auth.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { listBlobs, loadJson } from '../services/storage.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
@@ -29,7 +30,7 @@ app.http('get-teacher-analytics', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'analytics',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) {
             return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         }
@@ -127,7 +128,7 @@ app.http('get-teacher-analytics', {
             context.error('Error procesando analitica:', err);
             return { status: 500, body: 'Error interno procesando analitica' };
         }
-    })
+    }))
 });
 
 // ── GET /api/safety-rate?subjectId={id} ─────────────────────────────
@@ -137,7 +138,7 @@ app.http('get-safety-rate', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'safety-rate',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) {
             return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         }
@@ -182,5 +183,5 @@ app.http('get-safety-rate', {
             context.error(`[SafetyRate] Error subjectId=${subjectId || 'all'}:`, err);
             return { status: 500, body: JSON.stringify({ error: 'Error interno calculando Tasa Fallo Seguro' }) };
         }
-    })
+    }))
 });

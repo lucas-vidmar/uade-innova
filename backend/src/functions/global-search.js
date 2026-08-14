@@ -3,6 +3,7 @@
  * Búsqueda completa en 4 categorías: materiales, clases, tareas y chats.
  */
 import { app } from '@azure/functions';
+import { withAuth } from '../middleware/with-auth.js';
 import { generateEmbedding } from '../services/ai.js';
 import { querySimilar } from '../services/vector-store.js';
 import { validateFrontDoorId, parseClientPrincipal, getAuthenticatedUser } from '../services/auth-utils.js';
@@ -60,7 +61,7 @@ app.http('global-search', {
     methods: ['POST'],
     authLevel: 'anonymous',
     route: 'global-search',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
         const { correlationId, dependencyHeaders } = context;
 
         if (!validateFrontDoorId(request)) {
@@ -258,5 +259,5 @@ app.http('global-search', {
                 body: JSON.stringify({ error: `Error buscando: ${categorized.message}`, errorCategory: categorized.errorCategory, code: categorized.code }),
             };
         }
-    }),
+    })),
 });

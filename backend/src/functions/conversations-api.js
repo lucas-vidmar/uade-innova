@@ -1,4 +1,5 @@
 import { withCorrelation } from '../middleware/with-correlation.js';
+import { withAuth } from '../middleware/with-auth.js';
 import { validateFrontDoorId, parseClientPrincipal, getAuthenticatedUser } from '../services/auth-utils.js';
 import { getEnrollment, saveConversation, getConversation, listConversationsByUser, deleteConversation } from '../services/state-store.js';
 import { app } from '@azure/functions';
@@ -7,7 +8,7 @@ app.http('save-conversation', {
     methods: ['PUT'],
     authLevel: 'anonymous',
     route: 'conversations/{id}',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         try {
             const { subjectId, messages } = await request.json();
@@ -59,14 +60,14 @@ app.http('save-conversation', {
             context.error('Error guardando conversación:', err);
             return { status: 500, body: JSON.stringify({ error: 'Error interno' }) };
         }
-    }),
+    })),
 });
 
 app.http('list-conversations', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'conversations',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         try {
             const subjectId = request.query.get('subjectId');
@@ -111,14 +112,14 @@ app.http('list-conversations', {
             context.error('Error listando conversaciones:', err);
             return { status: 500, body: JSON.stringify({ error: 'Error interno' }) };
         }
-    }),
+    })),
 });
 
 app.http('get-conversation', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'conversations/{id}',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         try {
             const conversationId = request.params.id;
@@ -159,14 +160,14 @@ app.http('get-conversation', {
             context.error('Error obteniendo conversación:', err);
             return { status: 500, body: JSON.stringify({ error: 'Error interno' }) };
         }
-    }),
+    })),
 });
 
 app.http('delete-conversation', {
     methods: ['DELETE'],
     authLevel: 'anonymous',
     route: 'conversations/{id}',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         try {
             const conversationId = request.params.id;
@@ -209,5 +210,5 @@ app.http('delete-conversation', {
             context.error('Error eliminando conversación:', err);
             return { status: 500, body: JSON.stringify({ error: 'Error interno' }) };
         }
-    }),
+    })),
 });

@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withAuth } from '../middleware/with-auth.js';
 import { runVectorBackup, listBackupRuns } from '../services/vector-backup.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
 import { CategorizedError } from '../services/error-categories.js';
@@ -8,7 +9,7 @@ app.http('vector-backup', {
     methods: ['GET', 'POST'],
     authLevel: 'anonymous',
     route: 'vector-backup',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) {
             return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         }
@@ -55,5 +56,5 @@ app.http('vector-backup', {
                 }),
             };
         }
-    })
+    }))
 });

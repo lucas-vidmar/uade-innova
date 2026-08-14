@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withAuth } from '../middleware/with-auth.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { checkStorageLifecycleCompliance } from '../services/storage-lifecycle.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
@@ -7,7 +8,7 @@ app.http('storage-lifecycle-compliance', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'storage-lifecycle/compliance',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
         try {
             if (!validateFrontDoorId(request)) {
                 return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
@@ -39,5 +40,5 @@ app.http('storage-lifecycle-compliance', {
                 }),
             };
         }
-    }),
+    })),
 });

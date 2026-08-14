@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withAuth } from '../middleware/with-auth.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { getEnrollment, getEnrollmentsByUser, getEnrollmentsBySubject, upsertEnrollment, deleteEnrollment } from '../services/state-store.js';
@@ -24,7 +25,7 @@ app.http('get-enrollments', {
   methods: ['GET'],
   authLevel: 'anonymous',
   route: 'enrollments',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
     if (!validateFrontDoorId(request)) return jsonResponse(403, { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } });
     
     const principal = parseClientPrincipal(request);
@@ -82,7 +83,7 @@ app.http('get-enrollments', {
       data: enrollments,
       meta: { timestamp: new Date().toISOString() },
     });
-  }),
+  })),
 });
 
 // ── GET /api/enrollments/check?userId={userId}&subjectId={subjectId} ─
@@ -90,7 +91,7 @@ app.http('check-enrollment', {
   methods: ['GET'],
   authLevel: 'anonymous',
   route: 'enrollments/check',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
     if (!validateFrontDoorId(request)) return jsonResponse(403, { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } });
 
     const principal = parseClientPrincipal(request);
@@ -118,7 +119,7 @@ app.http('check-enrollment', {
         : { enrolled: false, role: null, status: null },
       meta: { timestamp: new Date().toISOString() },
     });
-  }),
+  })),
 });
 
 // ── POST /api/enrollments (teacher/director only) ───────────────
@@ -126,7 +127,7 @@ app.http('create-enrollment', {
   methods: ['POST'],
   authLevel: 'anonymous',
   route: 'enrollments',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
     if (!validateFrontDoorId(request)) return jsonResponse(403, { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } });
 
     const principal = parseClientPrincipal(request);
@@ -168,7 +169,7 @@ app.http('create-enrollment', {
       context.error(`[Enrollment] Error creating enrollment: ${err.message}`);
       return jsonResponse(500, { success: false, error: { code: 'INTERNAL_ERROR', message: err.message } });
     }
-  }),
+  })),
 });
 
 // ── DELETE /api/enrollments?userId={userId}&subjectId={subjectId} (director only) ─
@@ -176,7 +177,7 @@ app.http('delete-enrollment', {
   methods: ['DELETE'],
   authLevel: 'anonymous',
   route: 'enrollments',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
     if (!validateFrontDoorId(request)) return jsonResponse(403, { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } });
 
     const principal = parseClientPrincipal(request);
@@ -203,5 +204,5 @@ app.http('delete-enrollment', {
       context.error(`[Enrollment] Error deleting enrollment: ${err.message}`);
       return jsonResponse(500, { success: false, error: { code: 'INTERNAL_ERROR', message: err.message } });
     }
-  }),
+  })),
 });

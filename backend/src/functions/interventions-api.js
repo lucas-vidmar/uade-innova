@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withAuth } from '../middleware/with-auth.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
 import { getTableClient } from '../services/storage.js';
@@ -449,33 +450,33 @@ app.http('get-interventions', {
   methods: ['GET'],
   authLevel: 'anonymous',
   route: 'interventions',
-  handler: withCorrelation(getInterventions),
+  handler: withCorrelation(withAuth(getInterventions)),
 });
 
 app.http('update-intervention', {
   methods: ['PUT'],
   authLevel: 'anonymous',
   route: 'interventions',
-  handler: withCorrelation(updateIntervention),
+  handler: withCorrelation(withAuth(updateIntervention)),
 });
 
 app.http('compute-interventions', {
   methods: ['POST'],
   authLevel: 'anonymous',
   route: 'interventions/compute',
-  handler: withCorrelation(computeAndStoreInterventions),
+  handler: withCorrelation(withAuth(computeAndStoreInterventions)),
 });
 
 app.http('get-risk-thresholds', {
   methods: ['GET'],
   authLevel: 'anonymous',
   route: 'risk-thresholds',
-  handler: withCorrelation(getRiskThresholds),
+  handler: withCorrelation(withAuth(getRiskThresholds)),
 });
 
 app.http('update-risk-thresholds', {
   methods: ['PUT'],
   authLevel: 'anonymous',
   route: 'risk-thresholds',
-  handler: withCorrelation(updateRiskThresholds),
+  handler: withCorrelation(withAuth(updateRiskThresholds)),
 });

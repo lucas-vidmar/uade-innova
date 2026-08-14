@@ -5,6 +5,7 @@
  * GET  /api/quiz-result   : devuelve el último resultado del alumno para una clase
  */
 import { app } from '@azure/functions';
+import { withAuth } from '../middleware/with-auth.js';
 import { v4 as uuidv4 } from 'uuid';
 import { chatCompletion, getChatModelName } from '../services/ai.js';
 import { loadJson } from '../services/storage.js';
@@ -135,7 +136,7 @@ app.http('generate-quiz', {
     methods: ['POST'],
     authLevel: 'anonymous',
     route: 'generate-quiz',
-    handler: withCorrelation(withRateLimit(async (request, context) => {
+    handler: withCorrelation(withAuth(withRateLimit(async (request, context) => {
         const log = createStructuredLogger('generate-quiz', context);
         if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
         const { userId, sanitizedId } = getAuthenticatedUser(request);
@@ -221,14 +222,14 @@ app.http('generate-quiz', {
                 errorCategory: categorized.errorCategory,
             });
         }
-    }, 'chat')),
+    }, 'chat'))),
 });
 
 app.http('save-quiz-result', {
     methods: ['POST'],
     authLevel: 'anonymous',
     route: 'quiz-result',
-    handler: withCorrelation(withRateLimit(async (request, context) => {
+    handler: withCorrelation(withAuth(withRateLimit(async (request, context) => {
         const log = createStructuredLogger('save-quiz-result', context);
         if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
         const { userId, sanitizedId } = getAuthenticatedUser(request);
@@ -265,14 +266,14 @@ app.http('save-quiz-result', {
 
         log.info('Quiz result saved', { classId, score: saved.score, attemptCount: saved.attemptCount });
         return jsonResponse(200, saved);
-    }, 'general')),
+    }, 'general'))),
 });
 
 app.http('get-quiz-result', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'quiz-result',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
         const { userId, sanitizedId } = getAuthenticatedUser(request);
         const subjectId = request.query.get('subjectId');
@@ -282,5 +283,5 @@ app.http('get-quiz-result', {
         }
         const result = await getQuizResult(subjectId, userId, classId).catch(() => null);
         return jsonResponse(200, { result });
-    }),
+    })),
 });

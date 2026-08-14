@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withAuth } from '../middleware/with-auth.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { trackUserLogin } from '../services/telemetry.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
@@ -8,7 +9,7 @@ const tableName = "UserProfiles";
 app.http('get-profile', {
     methods: ['GET'],
     authLevel: 'anonymous',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         try {
             // Use shared auth utility to parse identity
@@ -58,5 +59,5 @@ app.http('get-profile', {
                 body: "Internal Server Error"
             };
         }
-    })
+    }))
 });

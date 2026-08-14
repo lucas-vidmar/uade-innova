@@ -61,6 +61,7 @@ const promptsMocks = {
 
 const authUtilsMocks = {
     validateFrontDoorId: mock.fn(() => true),
+    setStashedIdentity: mock.fn(() => {}),
     parseClientPrincipal: mock.fn(() => ({ oid: 'user-1' })),
     getAuthenticatedUser: mock.fn(() => ({ id: 'user-1', roles: ['Alumno'] })),
 };

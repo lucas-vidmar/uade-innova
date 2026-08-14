@@ -36,6 +36,7 @@ const vectorStoreMocks = {
 
 const authUtilsMocks = {
     validateFrontDoorId: mock.fn(() => true),
+    setStashedIdentity: mock.fn(() => {}),
     parseClientPrincipal: mock.fn(() => ({ userId: 'alu-001', userRoles: ['Alumno'] })),
     getAuthenticatedUser: mock.fn(() => ({ userId: 'alu-001', sanitizedId: 'alu_001', principal: { userId: 'alu-001' }, role: 'Alumno' })),
 };

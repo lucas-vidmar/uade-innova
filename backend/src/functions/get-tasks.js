@@ -1,4 +1,5 @@
 import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
+import { withAuth } from '../middleware/with-auth.js';
 /**
  * get-tasks.js — GET /api/tasks?studentId={id}
  * Retorna las tareas priorizadas del alumno desde el SGA.
@@ -14,7 +15,7 @@ app.http('get-tasks', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'tasks',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         context.log('get-tasks triggered');
 
@@ -54,5 +55,5 @@ app.http('get-tasks', {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(tasks),
         };
-    })
+    }))
 });

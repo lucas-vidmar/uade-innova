@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withAuth } from '../middleware/with-auth.js';
 import { uploadFile, downloadFile, listBlobs, loadJson } from '../services/storage.js';
 import { generateClassAudio } from '../services/ai.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
@@ -12,7 +13,7 @@ app.http('get-class-audio', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'class-audio/{classId}',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
         const { correlationId, dependencyHeaders } = context;
 
         const classId = request.params.classId;
@@ -106,5 +107,5 @@ app.http('get-class-audio', {
                 body: 'Error interno generando audio.'
             };
         }
-    })
+    }))
 });

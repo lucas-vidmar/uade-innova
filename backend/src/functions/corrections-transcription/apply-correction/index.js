@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withAuth } from '../../../middleware/with-auth.js';
 import { withCorrelation } from '../../../middleware/with-correlation.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../../../services/auth-utils.js';
 import { getTableClient, loadJson, saveJson } from '../../../services/storage.js';
@@ -17,7 +18,7 @@ app.http('apply-transcription-correction', {
   methods: ['POST'],
   authLevel: 'anonymous',
   route: 'corrections-transcription/apply',
-  handler: withCorrelation(async (request, context) => {
+  handler: withCorrelation(withAuth(async (request, context) => {
     if (!validateFrontDoorId(request)) {
       return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } }) };
     }
@@ -121,5 +122,5 @@ app.http('apply-transcription-correction', {
       context.error(`[apply-transcription-correction] Error:`, err);
       return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: false, error: { code: 'INTERNAL_ERROR', message: err.message } }) };
     }
-  }),
+  })),
 });

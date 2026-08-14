@@ -2,7 +2,7 @@ import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 // Import the real module (no mock) to test production mock gating (#218 F1 regression).
-const { isDevelopment, isMockAuthAllowed, parseClientPrincipal } = await import('./auth-utils.js');
+const { isDevelopment, isMockAuthAllowed, parseClientPrincipal, getAuthenticatedUser, setStashedIdentity } = await import('./auth-utils.js');
 
 function mockRequest(headers = {}) {
   return {
@@ -75,4 +75,26 @@ test('SWA_PRINCIPAL — real x-ms-client-principal header is parsed regardless o
   const principal = parseClientPrincipal(mockRequest({ 'x-ms-client-principal': principalB64 }));
   assert.equal(principal.userId, 'swa-user');
   assert.ok(principal.userRoles.includes('Director'));
+});
+
+test('STASHED_PRINCIPAL — request principal stashed by withAuth wins over headers (#218)', () => {
+  const principalB64 = Buffer.from(JSON.stringify({ userId: 'swa-user', userRoles: ['Director'] })).toString('base64');
+  const req = mockRequest({ 'x-ms-client-principal': principalB64 });
+  setStashedIdentity(req, { principal: { userId: 'oidc-user', userRoles: ['Docente'], authType: 'oidc' }, user: null });
+  const principal = parseClientPrincipal(req);
+  assert.equal(principal.userId, 'oidc-user');
+  assert.ok(principal.userRoles.includes('Docente'));
+  assert.equal(principal.authType, 'oidc');
+});
+
+test('STASHED_USER — getAuthenticatedUser prefers user stashed by withAuth (#218)', () => {
+  const req = mockRequest({});
+  setStashedIdentity(req, {
+    user: { userId: 'oidc-user', sanitizedId: 'oidc_user', principal: { userRoles: ['Docente'] }, role: 'Docente' },
+    principal: null,
+  });
+  const user = getAuthenticatedUser(req);
+  assert.equal(user.userId, 'oidc-user');
+  assert.equal(user.sanitizedId, 'oidc_user');
+  assert.equal(user.role, 'Docente');
 });

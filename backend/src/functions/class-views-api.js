@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withAuth } from '../middleware/with-auth.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { createStructuredLogger } from '../services/structured-logger.js';
 import { upsertClassView, listClassViewsBySubject, listClassViewsByStudent } from '../services/state-store.js';
@@ -9,7 +10,7 @@ app.http('track-class-view', {
     methods: ['POST'],
     authLevel: 'anonymous',
     route: 'class-views',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
         const log = createStructuredLogger('track-class-view', context);
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
 
@@ -49,14 +50,14 @@ app.http('track-class-view', {
             log.error('Error tracking class view', err);
             return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Error interno al registrar la vista.' }) };
         }
-    }),
+    })),
 });
 
 app.http('get-class-views', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'class-views',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
         const log = createStructuredLogger('get-class-views', context);
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
 
@@ -98,5 +99,5 @@ app.http('get-class-views', {
             log.error('Error fetching class views', err);
             return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Error interno al obtener vistas.' }) };
         }
-    }),
+    })),
 });

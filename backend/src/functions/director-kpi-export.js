@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withAuth } from '../middleware/with-auth.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
 import { trackNotificationInteraction } from '../services/telemetry.js';
@@ -150,7 +151,7 @@ app.http('get-director-kpi-export', {
   methods: ['GET'],
   authLevel: 'anonymous',
   route: 'director/kpi-export',
-  handler: withCorrelation(async (request, context) => {
+  handler: withCorrelation(withAuth(async (request, context) => {
     const start = Date.now();
 
     if (!isAuthorized(request)) {
@@ -260,5 +261,5 @@ app.http('get-director-kpi-export', {
       }).catch(e => context.error('[KpiExport] Telemetry error:', e));
       return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Error al exportar KPIs' }) };
     }
-  }),
+  })),
 });

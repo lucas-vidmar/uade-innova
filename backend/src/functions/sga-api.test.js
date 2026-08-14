@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const authMocks = {
     validateFrontDoorId: mock.fn(() => true),
+    setStashedIdentity: mock.fn(() => {}),
     parseClientPrincipal: mock.fn(() => ({ userRoles: ['Director'] })),
 };
 

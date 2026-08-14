@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withAuth } from '../middleware/with-auth.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { listSnapshotsWithContent } from '../services/vector-health-snapshots.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
@@ -15,7 +16,7 @@ app.http('vector-health-snapshots', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'vector-health-snapshots',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) {
             return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         }
@@ -50,5 +51,5 @@ app.http('vector-health-snapshots', {
                 body: JSON.stringify({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to retrieve snapshots' } }),
             };
         }
-    }),
+    })),
 });

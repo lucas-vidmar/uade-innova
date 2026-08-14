@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withAuth } from '../middleware/with-auth.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { loadJson, saveJson } from '../services/storage.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
@@ -42,7 +43,7 @@ app.http('get-deadlines', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'deadlines',
-    handler: withCorrelation(async (request) => {
+    handler: withCorrelation(withAuth(async (request) => {
         if (!validateFrontDoorId(request)) {
             return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         }
@@ -78,14 +79,14 @@ app.http('get-deadlines', {
 
         const deadlines = await loadJson(CONTAINER_DEADLINES, `${subjectId}.json`) || [];
         return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(deadlines) };
-    }),
+    })),
 });
 
 app.http('save-deadline', {
     methods: ['POST', 'PUT'],
     authLevel: 'anonymous',
     route: 'deadlines',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) {
             return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         }
@@ -163,14 +164,14 @@ app.http('save-deadline', {
         }
 
         return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(deadline) };
-    }),
+    })),
 });
 
 app.http('delete-deadline', {
     methods: ['DELETE'],
     authLevel: 'anonymous',
     route: 'deadlines/{deadlineId}',
-    handler: withCorrelation(async (request) => {
+    handler: withCorrelation(withAuth(async (request) => {
         if (!validateFrontDoorId(request)) {
             return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         }
@@ -210,14 +211,14 @@ app.http('delete-deadline', {
         await saveJson(CONTAINER_DEADLINES, `${subjectId}.json`, next);
 
         return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: true }) };
-    }),
+    })),
 });
 
 app.http('get-deadline-reminders', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'deadline-reminders',
-    handler: withCorrelation(async (request) => {
+    handler: withCorrelation(withAuth(async (request) => {
         if (!validateFrontDoorId(request)) {
             return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         }
@@ -265,5 +266,5 @@ app.http('get-deadline-reminders', {
         });
 
         return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(reminders) };
-    }),
+    })),
 });

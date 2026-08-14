@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withAuth } from '../middleware/with-auth.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 
@@ -8,7 +9,7 @@ const storageAccountUrl = `https://${process.env.AZURE_STORAGE_ACCOUNT_NAME}.tab
 app.http('save-profile', {
     methods: ['POST', 'PUT'],
     authLevel: 'anonymous',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         try {
             const principal = parseClientPrincipal(request);
@@ -46,5 +47,5 @@ app.http('save-profile', {
                 body: "Internal Server Error"
             };
         }
-    })
+    }))
 });

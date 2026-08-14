@@ -1,4 +1,5 @@
 import { app } from '@azure/functions';
+import { withAuth } from '../middleware/with-auth.js';
 import { parseClientPrincipal, validateFrontDoorId, getAuthenticatedUser } from '../services/auth-utils.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { upsertNotificationForSubject } from '../services/notification-store.js';
@@ -8,7 +9,7 @@ app.http('grade-dispute', {
     methods: ['POST'],
     authLevel: 'anonymous',
     route: 'grade-dispute',
-    handler: withCorrelation(async (request, context) => {
+    handler: withCorrelation(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) {
             return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         }
@@ -48,5 +49,5 @@ app.http('grade-dispute', {
             context.error('Error processing grade dispute:', err);
             return { status: 500, body: JSON.stringify({ error: 'Error interno' }) };
         }
-    }),
+    })),
 });

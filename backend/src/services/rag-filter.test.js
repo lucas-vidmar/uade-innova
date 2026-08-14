@@ -51,6 +51,7 @@ const storageMocks = {
 
 const authUtilsMocks = {
     validateFrontDoorId: mock.fn(() => true),
+    setStashedIdentity: mock.fn(() => {}),
     parseClientPrincipal: mock.fn(() => ({ oid: 'test-user-oid', userRoles: ['Alumno'] })),
     getAuthenticatedUser: mock.fn(() => ({ userId: 'test-user-oid', sanitizedId: 'test-user-oid' })),
 };

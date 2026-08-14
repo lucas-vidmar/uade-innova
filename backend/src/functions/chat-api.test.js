@@ -5,6 +5,7 @@ let principalMock = { userRoles: ['Docente'], oid: 'teacher-oid' };
 
 const authMocks = {
     validateFrontDoorId: mock.fn(() => true),
+    setStashedIdentity: mock.fn(() => {}),
     parseClientPrincipal: mock.fn(() => principalMock),
     getAuthenticatedUser: mock.fn(() => ({ 
         userId: principalMock.oid, 

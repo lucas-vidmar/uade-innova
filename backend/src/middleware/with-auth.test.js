@@ -56,6 +56,7 @@ globalThis.fetch = async (url) => {
 
 const authUtilsMocks = {
   parseClientPrincipal: mock.fn(() => null),
+  setStashedIdentity: mock.fn(() => {}),
 };
 mock.module('../services/auth-utils.js', { namedExports: authUtilsMocks });
 
@@ -108,6 +109,23 @@ test('VALID_OIDC — resolves principal from Bearer token and populates context.
   const wrapped = withAuth(handler);
   const res = await wrapped(makeRequest({ token }), makeContext());
   assert.equal(res.status, 200);
+});
+
+test('STASH_ON_REQUEST — identity stashed via setStashedIdentity for parseClientPrincipal/getAuthenticatedUser (#218)', async () => {
+  const token = signToken({ oid: 'user-123', roles: ['Docente'] });
+  const before = authUtilsMocks.setStashedIdentity.mock.callCount();
+  const handler = mock.fn(async (req, ctx) => {
+    assert.equal(ctx.user.userId, 'user-123');
+    return { status: 200, body: 'ok' };
+  });
+  const wrapped = withAuth(handler);
+  const res = await wrapped(makeRequest({ token }), makeContext());
+  assert.equal(res.status, 200);
+  assert.equal(authUtilsMocks.setStashedIdentity.mock.callCount(), before + 1);
+  const [, identityArg] = authUtilsMocks.setStashedIdentity.mock.calls[before].arguments;
+  assert.equal(identityArg.user.userId, 'user-123');
+  assert.equal(identityArg.principal.userId, 'user-123');
+  assert.ok(identityArg.principal.userRoles.includes('Docente'));
 });
 
 test('INVALID_TOKEN — returns 401 INVALID_TOKEN, never downgrades to mock', async () => {

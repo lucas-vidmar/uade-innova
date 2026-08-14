@@ -13,7 +13,7 @@
  * tests mock `auth-utils.js` with a partial export surface still work.
  */
 
-import { parseClientPrincipal } from '../services/auth-utils.js';
+import { parseClientPrincipal, setStashedIdentity } from '../services/auth-utils.js';
 import { validateBearerToken } from '../services/oidc-validator.js';
 import { structuredErrorResponse, ErrorCategory } from '../services/error-categories.js';
 
@@ -69,6 +69,12 @@ export function withAuth(handler, options = {}) {
 
     context.user = user;
     context.principal = principal || null;
+    // Stash resolved identity in a WeakMap (auth-utils) so functions that resolve
+    // identity via parseClientPrincipal(request)/getAuthenticatedUser(request)
+    // honor the validated OIDC principal instead of re-deriving from SWA/mock
+    // headers (#218). HttpRequest.user/principal are read-only getters, so direct
+    // assignment fails.
+    setStashedIdentity(request, { user, principal: principal || null });
 
     if (requiredRoles.length > 0) {
       if (!principal) {
