@@ -229,6 +229,7 @@ module functions './modules/functions.bicep' = {
     openAiChatDeployment: openAi.outputs.chatDeploymentName
     openAiEmbeddingDeployment: openAi.outputs.embeddingDeploymentName
     openAiTtsDeployment: openAi.outputs.ttsDeploymentName
+    openAiApiKey: openAi.outputs.primaryKey
     classMaterialsStorageAccount: safeStorageName
     pineconeIndexName: vectorIndexName
     pineconeEnvironment: pineconeEnvironment

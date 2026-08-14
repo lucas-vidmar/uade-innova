@@ -31,6 +31,10 @@ param openAiEmbeddingDeployment string
 @description('Azure OpenAI TTS model deployment name.')
 param openAiTtsDeployment string
 
+@secure()
+@description('Primary API key of the Azure OpenAI account. Plain value (not KV reference) because the Function App identity has no Key Vault access — same pattern as PINECONE_API_KEY (AGENTS.md §4).')
+param openAiApiKey string = ''
+
 @description('Azure Storage account name for class materials.')
 param classMaterialsStorageAccount string
 
@@ -204,10 +208,14 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           name: 'LOG_LEVEL'
           value: 'info'
         }
-        // Azure OpenAI — Uses Managed Identity + RBAC (no API key needed)
+        // Azure OpenAI — API key as plain app setting (AGENTS.md §4 — no RBAC for embeddings)
         {
           name: 'AZURE_OPENAI_ENDPOINT'
           value: openAiEndpoint
+        }
+        {
+          name: 'AZURE_OPENAI_API_KEY'
+          value: openAiApiKey
         }
         {
           name: 'AZURE_OPENAI_CHAT_DEPLOYMENT'

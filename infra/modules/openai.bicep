@@ -151,6 +151,9 @@ output name string = openAiAccount.name
 @description('The resource ID of the Azure OpenAI resource.')
 output accountId string = openAiAccount.id
 
+@description('Primary API key of the OpenAI account (used via Key Vault reference, per AGENTS.md §4 — no RBAC available).')
+output primaryKey string = openAiAccount.listKeys().key1
+
 // Note: Deployment names are hardcoded to match manually-created deployments in Azure OpenAI
 output chatDeploymentName string = gptDeploymentName
 
