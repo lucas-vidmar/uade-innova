@@ -48,7 +48,7 @@ After migration, verify by querying Pinecone:
 
 ```javascript
 // Check that legacy vectors now have classId
-const vectors = await fetchVectorsByIds(sampleIds);
+const { vectors } = await fetchVectorsByIds(sampleIds);
 console.log(vectors.every(v => v.metadata.classId));
 ```
 
@@ -85,7 +85,7 @@ To roll back: create a script that re-upserts vectors with `classId` deleted fro
 
 ```javascript
 // Simplified rollback example
-const vectors = await fetchVectorsByIds(affectedIds);
+const { vectors } = await fetchVectorsByIds(affectedIds);
 const rollbackVectors = vectors.map(v => ({
   id: v.id,
   values: v.values,

@@ -129,6 +129,7 @@ export async function trackRAGInteraction({
  * @param {boolean} [params.success]     - Whether dependency call succeeded
  * @param {string|number} [params.resultCode] - Result code / status code
  * @param {string} [params.correlationId] - Trace correlation ID for joining with request telemetry in KQL
+ * @param {object} [params.properties] - Extra properties merged into trackDependency properties
  */
 export async function trackVectorSearchDependency({
     provider = 'pinecone',
@@ -140,6 +141,7 @@ export async function trackVectorSearchDependency({
     success = true,
     resultCode,
     correlationId,
+    properties,
 }) {
     const client = await getClient();
     if (!client) return;
@@ -160,6 +162,7 @@ export async function trackVectorSearchDependency({
             index: resolvedIndex,
             indexName: resolvedIndex,
             ...(correlationId && { correlationId }),
+            ...(properties && typeof properties === 'object' ? properties : {}),
         },
     });
 }

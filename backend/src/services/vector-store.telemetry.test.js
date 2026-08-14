@@ -12,7 +12,12 @@ global.fetch = fetchMock;
 
 setupTestEnv();
 
-const { querySimilarWithTelemetry } = await import('./vector-store.js');
+const {
+    querySimilarWithTelemetry,
+    listVectorIds,
+    fetchVectorsByIds,
+    listAllVectorIds,
+} = await import('./vector-store.js');
 
 test('querySimilarWithTelemetry emits success dependency telemetry including provider and index', async () => {
     fetchMock.mock.resetCalls();
@@ -65,8 +70,9 @@ test('querySimilarWithTelemetry emits success dependency telemetry including pro
     assert.ok(Number(payload.durationMs) >= 0);
 });
 
-test('querySimilarWithTelemetry emits failed dependency telemetry when Pinecone fails', async () => {
-    fetchMock.mock.mockImplementationOnce(async () => ({
+test('querySimilarWithTelemetry emits failed dependency telemetry when Pinecone fails after retry exhaustion', async () => {
+    fetchMock.mock.resetCalls();
+    fetchMock.mock.mockImplementation(async () => ({
         ok: false,
         status: 503,
         text: async () => JSON.stringify({ message: 'pinecone unavailable' }),
@@ -91,6 +97,128 @@ test('querySimilarWithTelemetry emits failed dependency telemetry when Pinecone 
     assert.strictEqual(payload.resultCode, 503);
     assert.strictEqual(payload.correlationId, 'test-corr-id-002');
     assert.ok(Number(payload.durationMs) >= 0);
+});
+
+test('listVectorIds emits success dependency telemetry with operation vector.list', async () => {
+    fetchMock.mock.resetCalls();
+    fetchMock.mock.mockImplementationOnce(async () => ({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ vectors: [{ id: 'vec-1' }], pagination: {} }),
+    }));
+
+    const trackDependency = mock.fn(async () => {});
+
+    const result = await listVectorIds({ limit: 100 }, { trackDependency, correlationId: 'corr-list-001' });
+
+    assert.strictEqual(result.vectorIds.length, 1);
+    assert.strictEqual(trackDependency.mock.callCount(), 1);
+    const payload = trackDependency.mock.calls[0].arguments[0];
+    assert.strictEqual(payload.operation, 'vector.list');
+    assert.strictEqual(payload.success, true);
+    assert.strictEqual(payload.provider, 'pinecone');
+    assert.strictEqual(payload.index, 'test-index');
+    assert.strictEqual(payload.resultCode, 200);
+    assert.strictEqual(payload.correlationId, 'corr-list-001');
+});
+
+test('listVectorIds records failed dependency telemetry after retry exhaustion', async () => {
+    fetchMock.mock.resetCalls();
+    fetchMock.mock.mockImplementation(async () => ({
+        ok: false,
+        status: 500,
+        text: async () => JSON.stringify({ message: 'Internal Server Error' }),
+    }));
+
+    const trackDependency = mock.fn(async () => {});
+
+    await assert.rejects(listVectorIds({ limit: 100 }, { trackDependency, correlationId: 'corr-list-002' }));
+
+    assert.strictEqual(trackDependency.mock.callCount(), 1);
+    const payload = trackDependency.mock.calls[0].arguments[0];
+    assert.strictEqual(payload.operation, 'vector.list');
+    assert.strictEqual(payload.success, false);
+    assert.strictEqual(payload.resultCode, 500);
+    assert.strictEqual(payload.correlationId, 'corr-list-002');
+    // Telemetria distingue falla tras reintentos agotados
+    assert.strictEqual(payload.properties.retryAttempts, 2);
+    assert.strictEqual(payload.properties.retried, true);
+});
+
+test('telemetry failure never fails the business operation', async () => {
+    fetchMock.mock.resetCalls();
+    fetchMock.mock.mockImplementationOnce(async () => ({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ vectors: [{ id: 'vec-1' }], pagination: {} }),
+    }));
+
+    const trackDependency = mock.fn(async () => { throw new Error('telemetry down'); });
+
+    const result = await listVectorIds({ limit: 100 }, { trackDependency });
+
+    // La operacion de negocio tuvo exito a pesar del fallo de telemetria.
+    assert.strictEqual(result.vectorIds.length, 1);
+});
+
+test('fetchVectorsByIds emits success dependency telemetry with operation vector.fetch', async () => {
+    fetchMock.mock.resetCalls();
+    fetchMock.mock.mockImplementationOnce(async () => ({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+            vectors: { 'vec-1': { id: 'vec-1', values: [0.1], metadata: { classId: 'c1' } } },
+        }),
+    }));
+
+    const trackDependency = mock.fn(async () => {});
+
+    const result = await fetchVectorsByIds(['vec-1', 'vec-2'], {}, { trackDependency, correlationId: 'corr-fetch-001' });
+
+    assert.strictEqual(result.vectors.length, 1);
+    assert.deepStrictEqual(result.missingIds, ['vec-2']);
+    assert.strictEqual(trackDependency.mock.callCount(), 1);
+    const payload = trackDependency.mock.calls[0].arguments[0];
+    assert.strictEqual(payload.operation, 'vector.fetch');
+    assert.strictEqual(payload.success, true);
+    assert.strictEqual(payload.resultCode, 200);
+    assert.strictEqual(payload.correlationId, 'corr-fetch-001');
+});
+
+test('listAllVectorIds emits a single dependency telemetry event with operation vector.listAll', async () => {
+    fetchMock.mock.resetCalls();
+    let callCount = 0;
+    fetchMock.mock.mockImplementation(async () => {
+        callCount += 1;
+        if (callCount === 1) {
+            return {
+                ok: true,
+                status: 200,
+                text: async () => JSON.stringify({
+                    vectors: [{ id: 'a-1' }],
+                    pagination: { next: 'page2' },
+                }),
+            };
+        }
+        return {
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify({ vectors: [{ id: 'b-1' }], pagination: {} }),
+        };
+    });
+
+    const trackDependency = mock.fn(async () => {});
+
+    const allIds = await listAllVectorIds({}, { trackDependency, correlationId: 'corr-all-001' });
+
+    assert.deepStrictEqual(allIds, ['a-1', 'b-1']);
+    assert.strictEqual(fetchMock.mock.callCount(), 2);
+    assert.strictEqual(trackDependency.mock.callCount(), 1);
+    const payload = trackDependency.mock.calls[0].arguments[0];
+    assert.strictEqual(payload.operation, 'vector.listAll');
+    assert.strictEqual(payload.success, true);
+    assert.strictEqual(payload.resultCode, 200);
+    assert.strictEqual(payload.correlationId, 'corr-all-001');
 });
 
 test('upsertChunks should map classId and lectureDate metadata fields', async () => {

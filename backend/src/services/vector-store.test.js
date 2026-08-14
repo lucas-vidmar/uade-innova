@@ -12,7 +12,67 @@ global.fetch = fetchMock;
 
 setupTestEnv();
 
-const { listVectorIds, fetchVectorsByIds, listAllVectorIds } = await import('./vector-store.js');
+const { listVectorIds, fetchVectorsByIds, listAllVectorIds, isTransientError, withRetry } = await import('./vector-store.js');
+
+test('isTransientError treats network errors, timeouts, 408, 409, 429 and 5xx as transient', () => {
+    assert.strictEqual(isTransientError(new TypeError('fetch failed')), true);
+    assert.strictEqual(isTransientError({ code: 'PINECONE_TIMEOUT', status: 504 }), true);
+    assert.strictEqual(isTransientError({ status: 408, message: 'request timeout' }), true);
+    assert.strictEqual(isTransientError({ status: 409, message: 'conflict' }), true);
+    assert.strictEqual(isTransientError({ status: 429, message: 'rate limited' }), true);
+    assert.strictEqual(isTransientError({ status: 500, message: 'server error' }), true);
+    assert.strictEqual(isTransientError({ status: 503, message: 'unavailable' }), true);
+});
+
+test('isTransientError treats 4xx validation errors as non-transient', () => {
+    assert.strictEqual(isTransientError({ status: 400, message: 'bad request' }), false);
+    assert.strictEqual(isTransientError({ status: 404, message: 'not found' }), false);
+});
+
+test('withRetry stops retrying once the total time budget is exhausted', async () => {
+    const error = new Error('transient');
+    error.status = 503;
+    let calls = 0;
+    const start = Date.now();
+
+    await assert.rejects(
+        withRetry(async () => { calls += 1; throw error; }, {
+            maxAttempts: 100,
+            baseMs: 1,
+            maxMs: 5,
+            totalBudgetMs: 30,
+        }),
+        (err) => {
+            assert.strictEqual(err.retried, true);
+            assert.ok(err.retryAttempts >= 1);
+            return true;
+        },
+    );
+
+    // Con presupuesto, se abandonan mucho antes de los 100 intentos permitidos.
+    assert.ok(calls < 20, `esperado pocos intentos, obtuve ${calls}`);
+    assert.ok(Date.now() - start < 2000, 'el retry no debe exceder el presupuesto de tiempo');
+});
+
+test('withRetry does not mutate the caller error object when attaching retry metadata', async () => {
+    const original = new Error('boom');
+    original.status = 500;
+    let calls = 0;
+
+    await assert.rejects(
+        withRetry(async () => { calls += 1; throw original; }, { maxAttempts: 3, baseMs: 1, maxMs: 5 }),
+        (err) => {
+            assert.strictEqual(err.retryAttempts, 2);
+            assert.strictEqual(err.retried, true);
+            return true;
+        },
+    );
+
+    assert.strictEqual(calls, 3);
+    // El error original del caller no debe haber sido mutado.
+    assert.strictEqual(original.retryAttempts, undefined);
+    assert.strictEqual(original.retried, undefined);
+});
 
 test('listVectorIds returns vector IDs from Pinecone /vectors/list', async () => {
     fetchMock.mock.resetCalls();
@@ -72,7 +132,7 @@ test('listVectorIds includes namespace when set', async () => {
     assert.strictEqual(body.namespace, 'test-ns');
 });
 
-test('fetchVectorsByIds returns vector data from Pinecone /vectors/fetch', async () => {
+test('fetchVectorsByIds returns vector data and empty missingIds from Pinecone /vectors/fetch', async () => {
     fetchMock.mock.resetCalls();
     fetchMock.mock.mockImplementationOnce(async () => ({
         ok: true,
@@ -87,12 +147,13 @@ test('fetchVectorsByIds returns vector data from Pinecone /vectors/fetch', async
 
     const result = await fetchVectorsByIds(['vec-1', 'vec-2']);
 
-    assert.strictEqual(result.length, 2);
-    assert.strictEqual(result[0].id, 'vec-1');
-    assert.deepStrictEqual(result[0].values, [0.1, 0.2]);
-    assert.strictEqual(result[0].metadata.classId, 'c1');
-    assert.strictEqual(result[1].id, 'vec-2');
-    assert.deepStrictEqual(result[1].metadata.classIds, ['c2']);
+    assert.strictEqual(result.vectors.length, 2);
+    assert.strictEqual(result.vectors[0].id, 'vec-1');
+    assert.deepStrictEqual(result.vectors[0].values, [0.1, 0.2]);
+    assert.strictEqual(result.vectors[0].metadata.classId, 'c1');
+    assert.strictEqual(result.vectors[1].id, 'vec-2');
+    assert.deepStrictEqual(result.vectors[1].metadata.classIds, ['c2']);
+    assert.deepStrictEqual(result.missingIds, []);
 
     // Verify it's a GET request
     const [url] = fetchMock.mock.calls[0].arguments;
@@ -102,14 +163,33 @@ test('fetchVectorsByIds returns vector data from Pinecone /vectors/fetch', async
     assert.strictEqual(url.includes('ids=vec-2'), true);
 });
 
-test('fetchVectorsByIds returns empty array for empty/no ids', async () => {
+test('fetchVectorsByIds reports missingIds for IDs absent from Pinecone', async () => {
+    fetchMock.mock.resetCalls();
+    fetchMock.mock.mockImplementationOnce(async () => ({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+            vectors: {
+                'vec-1': { id: 'vec-1', values: [0.1], metadata: { classId: 'c1' } },
+            },
+        }),
+    }));
+
+    const result = await fetchVectorsByIds(['vec-1', 'vec-2', 'vec-3']);
+
+    assert.strictEqual(result.vectors.length, 1);
+    assert.strictEqual(result.vectors[0].id, 'vec-1');
+    assert.deepStrictEqual(result.missingIds, ['vec-2', 'vec-3']);
+});
+
+test('fetchVectorsByIds returns empty vectors and missingIds for empty/no ids', async () => {
     fetchMock.mock.resetCalls();
 
     let result = await fetchVectorsByIds([]);
-    assert.deepStrictEqual(result, []);
+    assert.deepStrictEqual(result, { vectors: [], missingIds: [] });
 
     result = await fetchVectorsByIds(['', null, undefined]);
-    assert.deepStrictEqual(result, []);
+    assert.deepStrictEqual(result, { vectors: [], missingIds: [] });
 
     // No fetch calls made
     assert.strictEqual(fetchMock.mock.callCount(), 0);
@@ -162,24 +242,79 @@ test('listAllVectorIds iterates over pagination to collect all IDs', async () =>
     assert.strictEqual(fetchMock.mock.callCount(), 2);
 });
 
-test('listVectorIds throws on Pinecone error status', async () => {
+test('listVectorIds retries transient 429 then succeeds', async () => {
     fetchMock.mock.resetCalls();
-    fetchMock.mock.mockImplementationOnce(async () => ({
+    let callCount = 0;
+    fetchMock.mock.mockImplementation(async () => {
+        callCount += 1;
+        if (callCount === 1) {
+            return { ok: false, status: 429, text: async () => JSON.stringify({ message: 'rate limited' }) };
+        }
+        return { ok: true, status: 200, text: async () => JSON.stringify({ vectors: [{ id: 'v-1' }], pagination: {} }) };
+    });
+
+    const result = await listVectorIds({ limit: 100 });
+
+    assert.strictEqual(result.vectorIds.length, 1);
+    assert.strictEqual(result.vectorIds[0], 'v-1');
+    assert.strictEqual(fetchMock.mock.callCount(), 2);
+});
+
+test('listVectorIds throws CategorizedError after retry exhaustion on persistent 5xx', async () => {
+    fetchMock.mock.resetCalls();
+    fetchMock.mock.mockImplementation(async () => ({
         ok: false,
         status: 503,
         text: async () => JSON.stringify({ message: 'Service Unavailable' }),
     }));
 
-    await assert.rejects(listVectorIds({ limit: 100 }));
+    await assert.rejects(
+        listVectorIds({ limit: 100 }),
+        (err) => {
+            assert.strictEqual(err.name, 'CategorizedError');
+            assert.strictEqual(err.errorCategory, 'RETRIEVAL_FAILURE');
+            assert.strictEqual(err.retryAttempts, 2);
+            assert.strictEqual(err.retried, true);
+            return true;
+        },
+    );
+    assert.strictEqual(fetchMock.mock.callCount(), 3);
 });
 
-test('fetchVectorsByIds throws on Pinecone error status', async () => {
+test('listVectorIds fails immediately on 4xx validation error (no retry)', async () => {
     fetchMock.mock.resetCalls();
     fetchMock.mock.mockImplementationOnce(async () => ({
         ok: false,
-        status: 500,
-        text: async () => JSON.stringify({ message: 'Internal Server Error' }),
+        status: 400,
+        text: async () => JSON.stringify({ message: 'Invalid request', code: 'VALIDATION_ERROR' }),
     }));
 
-    await assert.rejects(fetchVectorsByIds(['vec-1']));
+    await assert.rejects(
+        listVectorIds({ limit: 100 }),
+        (err) => {
+            assert.strictEqual(err.status, 400);
+            assert.strictEqual(err.name, 'Error');
+            return true;
+        },
+    );
+    assert.strictEqual(fetchMock.mock.callCount(), 1);
+});
+
+test('fetchVectorsByIds fails immediately on 4xx validation error (no retry)', async () => {
+    fetchMock.mock.resetCalls();
+    fetchMock.mock.mockImplementationOnce(async () => ({
+        ok: false,
+        status: 400,
+        text: async () => JSON.stringify({ message: 'Invalid request' }),
+    }));
+
+    await assert.rejects(
+        fetchVectorsByIds(['vec-1']),
+        (err) => {
+            assert.strictEqual(err.status, 400);
+            assert.strictEqual(err.name, 'Error');
+            return true;
+        },
+    );
+    assert.strictEqual(fetchMock.mock.callCount(), 1);
 });

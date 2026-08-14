@@ -9,6 +9,11 @@ import { CONFIG } from '../config.js';
 
 const BATCH_SIZE = CONFIG.vector.batchSize;
 const REQUEST_TIMEOUT_MS = CONFIG.vector.requestTimeoutMs;
+const RETRY_MAX_ATTEMPTS = 3;
+const RETRY_BASE_MS = 500;
+const RETRY_MAX_DELAY_MS = 10000;
+// Presupuesto total de tiempo para reintentos (~2.5x el timeout de una request).
+const RETRY_TOTAL_BUDGET_MS = Math.round(2.5 * REQUEST_TIMEOUT_MS);
 
 function getIndexName() {
     return CONFIG.vector.indexName;
@@ -73,27 +78,91 @@ function parseJsonSafely(text) {
     }
 }
 
-async function pineconeRequest(path, payload = {}) {
-    const { apiKey, host } = assertConfiguration();
+/**
+ * Determina si un error debe reintentarse: errores de red (sin status),
+ * rate-limit (429), conflictos/contention (408/409) o errores de servidor
+ * (5xx) son transitorios. Los errores de validacion (resto de 4xx) no se
+ * reintentan.
+ */
+export function isTransientError(err) {
+    if (!err || typeof err !== 'object') return true;
+    if (err?.code === 'PINECONE_TIMEOUT') return true;
+    if (!err?.status) return true;
+    return err.status === 408 || err.status === 409 || err.status === 429 || err.status >= 500;
+}
+
+/**
+ * Adjunta metadatos de reintento a una copia del error (sin mutar el error
+ * original del caller) preservando su prototipo.
+ */
+function attachRetryMetadata(err, retryAttempts) {
+    const copy = Object.assign(Object.create(Object.getPrototypeOf(err)), err);
+    copy.retryAttempts = retryAttempts;
+    copy.retried = true;
+    return copy;
+}
+
+/**
+ * Retry acotado con backoff exponencial + jitter para fallas transitorias.
+ * El tiempo total de reintentos esta acotado por `totalBudgetMs` (por defecto
+ * ~2.5x REQUEST_TIMEOUT_MS): se suma el tiempo acumulado de los intentos y se
+ * deja de reintentar apenas se supera el presupuesto, de modo que la operacion
+ * no exceda los timeouts del plan Consumption de Azure Functions.
+ */
+export async function withRetry(fn, {
+    maxAttempts = RETRY_MAX_ATTEMPTS,
+    baseMs = RETRY_BASE_MS,
+    maxMs = RETRY_MAX_DELAY_MS,
+    totalBudgetMs = RETRY_TOTAL_BUDGET_MS,
+} = {}) {
+    const attempts = Math.max(1, Number.isInteger(maxAttempts) && maxAttempts > 0 ? maxAttempts : RETRY_MAX_ATTEMPTS);
+    const startedAt = Date.now();
+
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+        try {
+            return await fn();
+        } catch (err) {
+            const transient = isTransientError(err);
+            const elapsed = Date.now() - startedAt;
+            const exhausted = !transient || attempt >= attempts || elapsed >= totalBudgetMs;
+            if (exhausted) {
+                if (attempt > 1) throw attachRetryMetadata(err, attempt - 1);
+                throw err;
+            }
+            const delay = Math.min(
+                baseMs * 2 ** (attempt - 1) + Math.random() * 200,
+                maxMs,
+                Math.max(0, totalBudgetMs - elapsed),
+            );
+            console.warn(`[VectorStore] Error transitorio (${err?.status || err?.code || 'network'}), reintentando (${attempt + 1}/${attempts}) en ${Math.round(delay)}ms`);
+            await new Promise(r => setTimeout(r, delay));
+        }
+    }
+}
+
+/**
+ * Ejecuta un unico intento HTTP hacia Pinecone con timeout + abort.
+ * Consolida en un solo helper la logica previa de POST (pineconeRequest)
+ * y GET (pineconeGetRequest).
+ */
+async function performPineconeFetch(url, { apiKey, method = 'POST', payload, path }) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-    try {
-        const response = await fetch(`${host}${path}`, {
-            method: 'POST',
-            headers: {
-                'Api-Key': apiKey,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(payload),
-            signal: controller.signal,
-        });
+    const headers = { 'Api-Key': apiKey };
+    const init = { method, headers, signal: controller.signal };
+    if (method !== 'GET' && payload !== undefined) {
+        headers['Content-Type'] = 'application/json';
+        init.body = JSON.stringify(payload);
+    }
 
+    try {
+        const response = await fetch(url, init);
         const text = await response.text();
         const body = parseJsonSafely(text);
 
         if (!response.ok) {
-            const message = body?.message || body?.error || `Pinecone request failed: ${response.status}`;
+            const message = body?.message || body?.error || `Pinecone ${method} request failed: ${response.status}`;
             const err = new Error(message);
             err.status = response.status;
             err.code = body?.code || `HTTP_${response.status}`;
@@ -113,6 +182,31 @@ async function pineconeRequest(path, payload = {}) {
     } finally {
         clearTimeout(timeout);
     }
+}
+
+/**
+ * Helper HTTP compartido para Pinecone (POST/GET). Aplica retry acotado
+ * solo para fallas transitorias (network / 429 / 5xx).
+ */
+async function rawPineconeRequest(path, { method = 'POST', payload, queryParams } = {}) {
+    const { apiKey, host } = assertConfiguration();
+
+    const url = new URL(`${host}${path}`);
+    if (queryParams) {
+        for (const [key, value] of Object.entries(queryParams)) {
+            if (Array.isArray(value)) {
+                for (const item of value) {
+                    if (item !== undefined && item !== null && item !== '') {
+                        url.searchParams.append(key, item);
+                    }
+                }
+            } else if (value !== undefined && value !== null && value !== '') {
+                url.searchParams.append(key, value);
+            }
+        }
+    }
+
+    return withRetry(() => performPineconeFetch(url.toString(), { apiKey, method, payload, path }));
 }
 
 function normalizeMetadata(rawMetadata = {}) {
@@ -145,7 +239,7 @@ export async function upsertChunks(vectors) {
         if (namespace) payload.namespace = namespace;
 
         console.log(`[VectorStore] Upserting batch of ${batch.length} vectors to index ${getIndexName()}...`);
-        await pineconeRequest('/vectors/upsert', payload);
+        await rawPineconeRequest('/vectors/upsert', { method: 'POST', payload });
         console.log(`[VectorStore] Upserted batch. Index stats expected to update soon.`);
     }
 }
@@ -180,7 +274,7 @@ export async function querySimilarWithTelemetry(embedding, filter, topK = 5, dep
 
         if (namespace) payload.namespace = namespace;
 
-        const response = await pineconeRequest('/query', payload);
+        const response = await rawPineconeRequest('/query', { method: 'POST', payload });
         const matches = Array.isArray(response?.matches)
             ? response.matches.map((match) => ({
                 id: match?.id,
@@ -243,7 +337,7 @@ export async function deleteVectorsByMaterialId(materialId) {
 }
 
 export async function getIndexStats() {
-    const stats = await pineconeRequest('/describe_index_stats', {});
+    const stats = await rawPineconeRequest('/describe_index_stats', { method: 'POST', payload: {} });
     return {
         totalVectorCount: stats?.totalVectorCount ?? stats?.total_vector_count ?? 0,
         indexFullness: stats?.indexFullness ?? stats?.index_fullness ?? 0,
@@ -265,60 +359,89 @@ export async function deleteVectorsByFilter(filter) {
     if (namespace) payload.namespace = namespace;
 
     console.log(`[VectorStore] Deleting vectors with filter: ${JSON.stringify(filter)}`);
-    return await pineconeRequest('/vectors/delete', payload);
+    return await rawPineconeRequest('/vectors/delete', { method: 'POST', payload });
 }
 
-async function pineconeGetRequest(path, queryParams = {}) {
-    const { apiKey, host } = assertConfiguration();
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
-    const url = new URL(`${host}${path}`);
-    for (const [key, value] of Object.entries(queryParams)) {
-        if (Array.isArray(value)) {
-            for (const item of value) {
-                if (item !== undefined && item !== null && item !== '') {
-                    url.searchParams.append(key, item);
-                }
-            }
-        } else if (value !== undefined && value !== null && value !== '') {
-            url.searchParams.append(key, value);
-        }
+/**
+ * Invoca la telemetria de dependencia de forma aislada: si la telemetria
+ * falla, nunca debe propagarse al flujo de negocio.
+ */
+async function trackDependencySafely(dependencyTracker, payload) {
+    try {
+        await dependencyTracker(payload);
+    } catch (err) {
+        console.warn(`[VectorStore] Fallo telemetria de dependencia (${payload.operation}):`, err.message);
     }
+}
+
+/**
+ * Emite telemetria de dependencia (trackVectorSearchDependency) para las
+ * operaciones de listado/fetch de vectores y categoriza los errores de
+ * recuperacion transitorios como CategorizedError (RETRIEVAL_FAILURE).
+ * Los errores no reintentables (4xx) se propagan sin cambios.
+ */
+async function withVectorTelemetry(deps, operation, fallbackCode, fn) {
+    const dependencyTracker = typeof deps?.trackDependency === 'function'
+        ? deps.trackDependency
+        : trackVectorSearchDependency;
+
+    const startedAt = Date.now();
+    const provider = 'pinecone';
+    const indexName = getIndexName();
+    const target = getHost() || 'pinecone';
 
     try {
-        const response = await fetch(url.toString(), {
-            method: 'GET',
-            headers: {
-                'Api-Key': apiKey,
-            },
-            signal: controller.signal,
+        const result = await fn();
+        const elapsed = Date.now() - startedAt;
+
+        await trackDependencySafely(dependencyTracker, {
+            provider,
+            index: indexName,
+            indexName,
+            target,
+            operation,
+            durationMs: elapsed,
+            success: true,
+            resultCode: 200,
+            correlationId: deps?.correlationId,
         });
 
-        const text = await response.text();
-        const body = parseJsonSafely(text);
-
-        if (!response.ok) {
-            const message = body?.message || body?.error || `Pinecone GET request failed: ${response.status}`;
-            const err = new Error(message);
-            err.status = response.status;
-            err.code = body?.code || `HTTP_${response.status}`;
-            err.details = body;
-            throw err;
-        }
-
-        return body;
+        return result;
     } catch (err) {
-        if (err?.name === 'AbortError') {
-            const timeoutErr = new Error(`Timeout consultando Pinecone en ${path}`);
-            timeoutErr.status = 504;
-            timeoutErr.code = 'PINECONE_TIMEOUT';
-            throw timeoutErr;
+        const elapsed = Date.now() - startedAt;
+
+        const properties = {};
+        if (Number.isInteger(err?.retryAttempts)) properties.retryAttempts = err.retryAttempts;
+        if (err?.retried) properties.retried = true;
+
+        await trackDependencySafely(dependencyTracker, {
+            provider,
+            index: indexName,
+            indexName,
+            target,
+            operation,
+            durationMs: elapsed,
+            success: false,
+            resultCode: err?.status || err?.code || 500,
+            correlationId: deps?.correlationId,
+            properties: Object.keys(properties).length > 0 ? properties : undefined,
+        });
+
+        if (isTransientError(err)) {
+            console.error(`[Pinecone] Error en ${operation}:`, err);
+            const categorized = new CategorizedError(`Error consultando la base vectorial: ${err.message}`, {
+                errorCategory: ErrorCategory.RETRIEVAL_FAILURE,
+                code: err?.code || fallbackCode,
+                status: Number.isInteger(err?.status) ? err.status : 500,
+                details: err?.details || null,
+                cause: err,
+            });
+            if (Number.isInteger(err?.retryAttempts)) categorized.retryAttempts = err.retryAttempts;
+            if (err?.retried) categorized.retried = true;
+            throw categorized;
         }
-        console.error(`[VectorStore] Error in pineconeGetRequest (${path}):`, err.message);
+
         throw err;
-    } finally {
-        clearTimeout(timeout);
     }
 }
 
@@ -329,9 +452,14 @@ async function pineconeGetRequest(path, queryParams = {}) {
  * @param {string} [options.paginationToken] - Token for next page
  * @param {string} [options.prefix] - ID prefix filter
  * @param {string} [options.namespace] - Namespace override
+ * @param {boolean} [options._skipTelemetry] - Uso interno: omitir la emision de
+ *   telemetria. Lo setea listAllVectorIds para no duplicar eventos por pagina.
+ * @param {object} [deps]
+ * @param {Function} [deps.trackDependency] - Override para telemetria (testing)
+ * @param {string} [deps.correlationId] - Correlation ID para telemetria
  * @returns {Promise<{vectorIds: string[], pagination: { next?: string }}>}
  */
-export async function listVectorIds(options = {}) {
+export async function listVectorIds(options = {}, deps = {}) {
     const limit = options.limit != null ? Number(options.limit) : 100;
     const payload = { limit };
 
@@ -342,16 +470,22 @@ export async function listVectorIds(options = {}) {
     if (namespace) payload.namespace = namespace;
 
     console.log(`[VectorStore] Listing vector IDs (limit=${limit}, prefix=${options.prefix || 'none'})...`);
-    const response = await pineconeRequest('/vectors/list', payload);
 
-    const vectorIds = Array.isArray(response?.vectors)
-        ? response.vectors.map(v => v?.id).filter(Boolean)
-        : [];
+    const run = async () => {
+        const response = await rawPineconeRequest('/vectors/list', { method: 'POST', payload });
 
-    return {
-        vectorIds,
-        pagination: response?.pagination || {},
+        const vectorIds = Array.isArray(response?.vectors)
+            ? response.vectors.map(v => v?.id).filter(Boolean)
+            : [];
+
+        return {
+            vectorIds,
+            pagination: response?.pagination || {},
+        };
     };
+
+    if (options._skipTelemetry) return run();
+    return withVectorTelemetry(deps, 'vector.list', 'RETRIEVAL_LIST_FAILED', run);
 }
 
 /**
@@ -359,13 +493,16 @@ export async function listVectorIds(options = {}) {
  * @param {string[]} ids - Array of vector IDs to fetch
  * @param {object} [options]
  * @param {string} [options.namespace] - Namespace override
- * @returns {Promise<Array<{id: string, values: number[], metadata: object}>>}
+ * @param {object} [deps]
+ * @param {Function} [deps.trackDependency] - Override para telemetria (testing)
+ * @param {string} [deps.correlationId] - Correlation ID para telemetria
+ * @returns {Promise<{vectors: Array<{id: string, values: number[], metadata: object}>, missingIds: string[]}>}
  */
-export async function fetchVectorsByIds(ids, options = {}) {
-    if (!Array.isArray(ids) || ids.length === 0) return [];
+export async function fetchVectorsByIds(ids, options = {}, deps = {}) {
+    if (!Array.isArray(ids) || ids.length === 0) return { vectors: [], missingIds: [] };
 
     const validIds = ids.filter(id => typeof id === 'string' && id.trim());
-    if (validIds.length === 0) return [];
+    if (validIds.length === 0) return { vectors: [], missingIds: [] };
 
     if (validIds.length > 1000) {
         throw new Error(`[VectorStore] fetchVectorsByIds max 1000 IDs per call, received ${validIds.length}`);
@@ -376,14 +513,22 @@ export async function fetchVectorsByIds(ids, options = {}) {
     if (namespace) queryParams.namespace = namespace;
 
     console.log(`[VectorStore] Fetching ${validIds.length} vectors by ID...`);
-    const response = await pineconeGetRequest('/vectors/fetch', queryParams);
 
-    const vectors = response?.vectors || {};
-    return Object.entries(vectors).map(([id, data]) => ({
-        id: id || data?.id,
-        values: data?.values || [],
-        metadata: normalizeMetadata(data?.metadata),
-    }));
+    return withVectorTelemetry(deps, 'vector.fetch', 'RETRIEVAL_FETCH_FAILED', async () => {
+        const response = await rawPineconeRequest('/vectors/fetch', { method: 'GET', queryParams });
+
+        const vectorsObj = response?.vectors || {};
+        const vectors = Object.entries(vectorsObj).map(([id, data]) => ({
+            id: id || data?.id,
+            values: data?.values || [],
+            metadata: normalizeMetadata(data?.metadata),
+        }));
+
+        const foundIds = new Set(Object.keys(vectorsObj).map(id => String(id)));
+        const missingIds = validIds.map(String).filter(id => !foundIds.has(id));
+
+        return { vectors, missingIds };
+    });
 }
 
 /**
@@ -391,33 +536,39 @@ export async function fetchVectorsByIds(ids, options = {}) {
  * @param {object} [options]
  * @param {string} [options.prefix] - ID prefix filter
  * @param {string} [options.namespace] - Namespace override
+ * @param {object} [deps]
+ * @param {Function} [deps.trackDependency] - Override para telemetria (testing)
+ * @param {string} [deps.correlationId] - Correlation ID para telemetria
  * @returns {Promise<string[]>}
  */
-export async function listAllVectorIds(options = {}) {
-    const MAX_PAGES = 1000;
-    const allIds = [];
-    let paginationToken;
-    let pageCount = 0;
+export async function listAllVectorIds(options = {}, deps = {}) {
+    return withVectorTelemetry(deps, 'vector.listAll', 'RETRIEVAL_LIST_ALL_FAILED', async () => {
+        const MAX_PAGES = 1000;
+        const allIds = [];
+        let paginationToken;
+        let pageCount = 0;
 
-    do {
-        const result = await listVectorIds({
-            ...options,
-            paginationToken,
-            limit: 100,
-        });
+        do {
+            const result = await listVectorIds({
+                ...options,
+                paginationToken,
+                limit: 100,
+                _skipTelemetry: true,
+            });
 
-        allIds.push(...result.vectorIds);
-        paginationToken = result.pagination?.next;
-        pageCount += 1;
+            allIds.push(...result.vectorIds);
+            paginationToken = result.pagination?.next;
+            pageCount += 1;
 
-        console.log(`[VectorStore] Listed ${allIds.length} IDs so far...`);
+            console.log(`[VectorStore] Listed ${allIds.length} IDs so far...`);
 
-        if (pageCount >= MAX_PAGES) {
-            console.warn(`[VectorStore] Reached max pages (${MAX_PAGES}). Stopping pagination.`);
-            break;
-        }
-    } while (paginationToken);
+            if (pageCount >= MAX_PAGES) {
+                console.warn(`[VectorStore] Reached max pages (${MAX_PAGES}). Stopping pagination.`);
+                break;
+            }
+        } while (paginationToken);
 
-    console.log(`[VectorStore] Listed ${allIds.length} total vector IDs`);
-    return allIds;
+        console.log(`[VectorStore] Listed ${allIds.length} total vector IDs`);
+        return allIds;
+    });
 }

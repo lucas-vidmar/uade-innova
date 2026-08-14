@@ -5,6 +5,7 @@ import assert from 'node:assert';
 
 const mockStateStore = {
   getEnrollment: mock.fn(async () => ({ status: 'active', role: 'teacher' })),
+  listCorrections: mock.fn(async () => []),
   listPendingCorrections: mock.fn(async () => [
     {
       correctionId: 'corr-1',
@@ -27,6 +28,7 @@ const mockAuthUtils = {
     userRoles: ['Docente'],
     oid: 'teacher-1',
   })),
+  setStashedIdentity: mock.fn(() => {}),
 };
 
 mock.module('../../../services/state-store.js', {

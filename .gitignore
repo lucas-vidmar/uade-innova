@@ -86,9 +86,13 @@ test-report/**/screenshot-*.png
 .agents/victory_auditor/
 .agents/worker_qa*/
 
-# Test scripts
+# ─── Test scripts
 scripts/seed-test-profiles.js
 scripts/test-students-enrollments.csv
+
+# ─── Reindex migration checkpoints ─────────────────────────────
+reindex-classid-checkpoint.json
+*.checkpoint.json
 
 # Test subset scripts
 test-subset*.mjs

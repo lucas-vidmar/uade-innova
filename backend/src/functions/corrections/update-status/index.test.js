@@ -1,13 +1,38 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { test, mock } from 'node:test';
+import assert from 'node:assert';
 
-describe('update-correction-status module', () => {
-  let mod;
+const mockStateStore = {
+    getEnrollment: mock.fn(),
+    getCorrection: mock.fn(),
+    updateCorrectionStatus: mock.fn(),
+};
 
-  beforeAll(async () => {
-    mod = await import('./index.js');
-  });
+const mockAuthUtils = {
+    validateFrontDoorId: mock.fn(() => true),
+    parseClientPrincipal: mock.fn(() => ({
+        userId: 'teacher-1',
+        userRoles: ['Docente'],
+        oid: 'teacher-1',
+    })),
+    setStashedIdentity: mock.fn(() => {}),
+};
 
-  it('should export an app http function', () => {
-    expect(mod).toBeDefined();
-  });
+let capturedHandler;
+mock.module('@azure/functions', {
+    namedExports: {
+        app: {
+            http: (name, options) => {
+                capturedHandler = options.handler;
+            },
+        },
+    },
+});
+mock.module('../../../services/auth-utils.js', { namedExports: mockAuthUtils });
+mock.module('../../../services/state-store.js', { namedExports: mockStateStore });
+
+await import('./index.js');
+
+test('update-correction-status registers an http function via app.http', () => {
+    assert.ok(capturedHandler, 'app.http debe registrar el handler');
+    assert.strictEqual(typeof capturedHandler, 'function');
 });

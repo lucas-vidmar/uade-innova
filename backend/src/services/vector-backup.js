@@ -120,7 +120,7 @@ async function fetchAllVectorsInBatches(ids) {
     const allVectors = [];
     for (let i = 0; i < ids.length; i += 1000) {
         const batch = ids.slice(i, i + 1000);
-        const fetched = await fetchVectorsByIds(batch);
+        const { vectors: fetched } = await fetchVectorsByIds(batch);
         allVectors.push(...fetched);
     }
     return allVectors;

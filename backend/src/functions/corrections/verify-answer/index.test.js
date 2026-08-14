@@ -16,6 +16,7 @@ const mockAuthUtils = {
     userRoles: ['Docente'],
     oid: 'teacher-1',
   })),
+  setStashedIdentity: mock.fn(() => {}),
 };
 
 const mockAi = {

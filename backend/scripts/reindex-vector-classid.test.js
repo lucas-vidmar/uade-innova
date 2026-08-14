@@ -174,9 +174,9 @@ test('fetchVectorsByIds correctly handles the Pinecone fetch response format', a
     }));
 
     const result = await fetchVectorsByIds(['mat1-chunk-0']);
-    assert.strictEqual(result.length, 1);
+    assert.strictEqual(result.vectors.length, 1);
 
-    const meta = result[0].metadata;
+    const meta = result.vectors[0].metadata;
     const needsUpdate = !meta.classId;
     assert.strictEqual(needsUpdate, true);
 
