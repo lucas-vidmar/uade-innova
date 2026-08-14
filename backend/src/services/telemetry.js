@@ -409,6 +409,30 @@ export async function trackPollingEvent({
 }
 
 /**
+ * Tracks a production auth-fallback attempt that was blocked by the frontend.
+ *
+ * Emitted when `/.auth/me` fails in a production build (import.meta.env.DEV === false)
+ * and the app refuses to silently downgrade to a mock student session (Story 10.4 / #202).
+ *
+ * @param {object} params
+ * @param {string} [params.url]           - URL where the fallback was blocked
+ * @param {string} [params.correlationId] - Trace correlation ID
+ */
+export async function trackAuthFallbackBlocked({ url, correlationId }) {
+    const client = await getClient();
+    if (!client) return;
+
+    client.trackEvent({
+        name: 'AuthFallbackBlocked',
+        properties: {
+            source: 'frontend',
+            url: url ? String(url).slice(0, 500) : '',
+            ...(correlationId && { correlationId }),
+        },
+    });
+}
+
+/**
  * Tracks notification-center interactions (quick actions/read acknowledgements).
  *
  * @param {object} params

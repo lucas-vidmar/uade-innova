@@ -140,12 +140,36 @@ async function handleRoute() {
     }
 }
 
+/* ── Auth blocked (production, no mock fallback) ──────────── */
+function renderAuthBlocked() {
+    const appEl = document.getElementById('app');
+    appEl.innerHTML = `
+    <div class="app-shell">
+      <div class="main-content">
+        <main class="page-content">
+          <div class="card" style="max-width:480px;margin:var(--space-10) auto;text-align:center">
+            <div class="empty-state-icon" aria-hidden="true">🔒</div>
+            <h2 class="h3">No se pudo verificar tu identidad.</h2>
+            <p style="color:var(--color-text-secondary);margin:var(--space-3) 0">Recargá la página.</p>
+            <button class="btn btn-primary" onclick="window.location.reload()" aria-label="Recargar página">Recargar</button>
+          </div>
+        </main>
+      </div>
+    </div>
+  `;
+}
+
 /* ── Boot ────────────────────────────────────────────────── */
 window.addEventListener('hashchange', handleRoute);
 window.addEventListener('auth:roleChanged', () => handleRoute());
 
 async function bootstrap() {
-    await auth.initAuth();
+    const authenticated = await auth.initAuth();
+
+    if (!authenticated) {
+        renderAuthBlocked();
+        return;
+    }
 
     processingNotifications.init();
     inactivityMonitor.init();

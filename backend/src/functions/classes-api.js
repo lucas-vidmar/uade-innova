@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { listClassesBySubject, listMaterialsBySubject, listMaterialsByClass, replaceClassesForSubject, deleteMaterialStateById, getMaterialState, upsertMaterialState, deleteClassesBySubject, deleteMaterialsBySubject, getEnrollmentsByUser, getEnrollment, listClassViewsByStudent, deleteClassViewsBySubject } from '../services/state-store.js';
 import * as vectorStore from '../services/vector-store.js';
-import { trackPollingEvent } from '../services/telemetry.js';
+import { trackPollingEvent, trackAuthFallbackBlocked } from '../services/telemetry.js';
 import { chatCompletion, generateClassSummary, generateClassMap, generateClassAudio, generatePodcastScript } from '../services/ai.js';
 import { computeBudgetProjection as computeBudgetProjectionV2, getAzureCostForBudget } from '../services/azure-cost.js';
 
@@ -2215,6 +2215,38 @@ app.http('ingest-polling-telemetry', {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ tracked }),
+        };
+    }),
+});
+
+// ── POST /api/telemetry/auth-fallback-blocked ───────────────────
+// Frontend reports when it refuses to downgrade to a mock session in a
+// production build (Story 10.4 / #202). Fire-and-forget from the browser.
+app.http('ingest-auth-fallback-blocked', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'telemetry/auth-fallback-blocked',
+    handler: withCorrelation(async (request, context) => {
+        if (!validateFrontDoorId(request)) {
+            return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+        }
+
+        let body;
+        try {
+            body = await request.json();
+        } catch {
+            return { status: 400, body: JSON.stringify({ error: 'Invalid JSON body' }) };
+        }
+
+        await trackAuthFallbackBlocked({
+            url: body?.url,
+            correlationId: body?.correlationId || context.correlationId,
+        });
+
+        return {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ok: true }),
         };
     }),
 });

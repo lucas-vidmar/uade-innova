@@ -36,6 +36,33 @@ function correlationHeaders() {
     return headers;
 }
 
+function getApiBaseUrl() {
+    const configured = (typeof import.meta !== 'undefined' && import.meta.env)
+        ? String(import.meta.env.VITE_API_BASE_URL || '').trim()
+        : '';
+    if (configured) return configured;
+    const isLocalRuntime = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    return isLocalRuntime ? 'http://localhost:7071/api' : '/api';
+}
+
+function emitAuthFallbackBlocked() {
+    try {
+        const payload = JSON.stringify({
+            url: window.location.href,
+            correlationId: sessionStorage.getItem('x-correlation-id') || undefined,
+            timestamp: new Date().toISOString(),
+        });
+        const url = `${getApiBaseUrl()}/telemetry/auth-fallback-blocked`;
+        fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: payload,
+            credentials: 'omit',
+            keepalive: true,
+        }).catch(() => {});
+    } catch (_) {}
+}
+
 const USERS = {
     student: {
         id: 'alu-001',
@@ -363,29 +390,37 @@ export const auth = {
                 }
             }
         } catch (error) {
-            console.warn('SWA Auth no alcanzado, modo local activado.', error);
+            console.warn('SWA Auth no alcanzado.', error);
         }
         
         if (!authenticated) {
-            if (!sessionStorage.getItem('edu_role')) {
-                 sessionStorage.setItem('edu_role', 'student');
-                 sessionStorage.setItem('edu_uid', USERS.student.id);
-                 if (USERS.student.subjects.length > 0) {
-                     sessionStorage.setItem('edu_active_subject', USERS.student.subjects[0].id);
-                 }
-            } else if (!sessionStorage.getItem('edu_uid')) {
-                const role = sessionStorage.getItem('edu_role') || 'student';
-                sessionStorage.setItem('edu_uid', USERS[role]?.id || USERS.student.id);
-            }
-            if (!sessionStorage.getItem('edu_logged_in')) {
-                sessionStorage.setItem('edu_logged_in', 'true');
-            }
-            // Enable mock mode for the next load when using mock login on production
-            try {
-                if (sessionStorage.getItem('edu_logged_in') !== 'false') {
-                    localStorage.setItem('uade_use_mock', 'true');
+            if (import.meta.env.DEV) {
+                // Mock fallback is DEV ONLY — never run in production builds.
+                console.warn('DEV ONLY: usando sesión mock. No usar en producción.');
+                if (!sessionStorage.getItem('edu_role')) {
+                     sessionStorage.setItem('edu_role', 'student');
+                     sessionStorage.setItem('edu_uid', USERS.student.id);
+                     if (USERS.student.subjects.length > 0) {
+                         sessionStorage.setItem('edu_active_subject', USERS.student.subjects[0].id);
+                     }
+                } else if (!sessionStorage.getItem('edu_uid')) {
+                    const role = sessionStorage.getItem('edu_role') || 'student';
+                    sessionStorage.setItem('edu_uid', USERS[role]?.id || USERS.student.id);
                 }
-            } catch {}
+                if (!sessionStorage.getItem('edu_logged_in')) {
+                    sessionStorage.setItem('edu_logged_in', 'true');
+                }
+                try {
+                    if (sessionStorage.getItem('edu_logged_in') !== 'false') {
+                        localStorage.setItem('uade_use_mock', 'true');
+                    }
+                } catch {}
+                authenticated = true;
+            } else {
+                // Production: never silently downgrade to a mock session.
+                emitAuthFallbackBlocked();
+                return false;
+            }
         }
 
         const user = this.getUser();
