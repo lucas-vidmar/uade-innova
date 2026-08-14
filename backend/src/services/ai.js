@@ -237,7 +237,7 @@ export async function generateClassSummary(text, subjectName = "", options = {})
     const response = await chatCompletion([
         { role: "system", content: systemContent },
         { role: "user", content: userContent }
-    ], false, { temperature: CONFIG.ai.temperature.summary, max_tokens: CONFIG.ai.maxTokens.summary, headers: options.headers });
+    ], false, { temperature: options.temperature ?? CONFIG.ai.temperature.summary, max_tokens: CONFIG.ai.maxTokens.summary, headers: options.headers });
 
     return {
         content: response.content,

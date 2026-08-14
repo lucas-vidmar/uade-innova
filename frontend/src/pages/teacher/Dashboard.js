@@ -426,6 +426,12 @@ function showCreateTaskModal(subjectId, classes, container) {
       return;
     }
 
+    if (selectedClasses.length === 0) {
+      const { toast } = await import('../../components/Toast.js');
+      toast('error', 'Campos requeridos', 'Seleccioná al menos una clase vinculada.');
+      return;
+    }
+
     overlay.querySelector('#task-save-btn').disabled = true;
     overlay.querySelector('#task-save-btn').textContent = 'Creando...';
 
@@ -434,7 +440,8 @@ function showCreateTaskModal(subjectId, classes, container) {
         title,
         description,
         subjectId,
-        classId: selectedClasses[0] || 'default',
+        classIds: selectedClasses,
+        classId: selectedClasses[0],
         dueDate,
         weight,
         notifyOnDayBefore: true,
@@ -472,10 +479,15 @@ function showDeadlineEditModal(deadline, classes, subjectId, container) {
           <input class="form-input" id="edit-deadline-title" value="${escapeHtml(deadline.title)}" />
         </div>
         <div class="form-group">
-          <label class="form-label">Clase</label>
-          <select class="form-select" id="edit-deadline-class">
-            ${(classes || []).map(c => `<option value="${c.id}" ${c.id === deadline.classId ? 'selected' : ''}>${c.title}</option>`).join('')}
-          </select>
+          <label class="form-label">Clases vinculadas</label>
+          <div style="display:flex;flex-wrap:wrap;gap:var(--space-2)" id="edit-deadline-classes">
+            ${(classes || []).map(c => `
+              <label class="badge badge-neutral" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:4px;padding:6px 12px;">
+                <input type="checkbox" class="edit-deadline-class-checkbox" value="${c.id}" ${(deadline.classIds || [deadline.classId]).filter(Boolean).includes(c.id) ? 'checked' : ''} />
+                ${c.title || c.id}
+              </label>
+            `).join('')}
+          </div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4)">
           <div class="form-group">
@@ -506,11 +518,17 @@ function showDeadlineEditModal(deadline, classes, subjectId, container) {
   overlay.querySelector('#edit-deadline-save').addEventListener('click', async () => {
     const title = overlay.querySelector('#edit-deadline-title').value.trim();
     if (!title) return;
+    const selectedClasses = [...overlay.querySelectorAll('.edit-deadline-class-checkbox:checked')].map(cb => cb.value);
+    if (selectedClasses.length === 0) {
+      toast('error', 'Campos requeridos', 'Seleccioná al menos una clase vinculada.');
+      return;
+    }
     try {
       await api.saveDeadline({
         ...deadline,
         title,
-        classId: overlay.querySelector('#edit-deadline-class').value,
+        classIds: selectedClasses,
+        classId: selectedClasses[0],
         dueDate: overlay.querySelector('#edit-deadline-date').value,
         description: overlay.querySelector('#edit-deadline-description').value.trim(),
         notifyOnDayBefore: overlay.querySelector('#edit-deadline-before').checked,

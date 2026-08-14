@@ -76,6 +76,7 @@ export function createSummaryReviewModal(classId, className, subjectId, onSaved)
             <div class="modal-footer" style="justify-content:space-between; flex-wrap:wrap; gap:8px;">
                 <button class="btn btn-ghost" id="btn-regenerate" style="color:var(--color-primary)">🔄 Regenerar con IA</button>
                 <div class="row" style="gap:8px; flex-wrap:wrap;">
+                    <button class="btn btn-ghost" id="btn-not-suitable" title="Marcá este resumen como no apto y escribí el contenido manualmente" style="color:var(--color-error)">🚫 No apto — escribir manualmente</button>
                     <button class="btn btn-secondary" id="btn-save-draft">Guardar Borrador</button>
                     <button class="btn btn-primary" id="btn-approve-summary">Aprobar y Publicar</button>
                 </div>
@@ -100,6 +101,7 @@ export function createSummaryReviewModal(classId, className, subjectId, onSaved)
     const btnApprove = modal.querySelector('#btn-approve-summary');
     const btnSaveDraft = modal.querySelector('#btn-save-draft');
     const btnRegenerate = modal.querySelector('#btn-regenerate');
+    const btnNotSuitable = modal.querySelector('#btn-not-suitable');
 
     let showSource = false;
 
@@ -287,16 +289,19 @@ export function createSummaryReviewModal(classId, className, subjectId, onSaved)
     };
     modal.querySelector('.btn-close').onclick = close;
 
-    const save = async (validated) => {
+    const save = async (validated, opts = {}) => {
         try {
             btnApprove.disabled = true;
             btnSaveDraft.disabled = true;
             btnRegenerate.disabled = true;
+            if (btnNotSuitable) btnNotSuitable.disabled = true;
 
             const promises = [
                 api.saveClassSummary(classId, {
                     summary: getSummaryValue(),
-                    validated
+                    validated,
+                    summarySource: opts.summarySource,
+                    suitable: opts.suitable,
                 }),
                 api.saveClassMap ? api.saveClassMap(classId, { mapCode: mapEditor.value }) : Promise.resolve()
             ];
@@ -310,7 +315,11 @@ export function createSummaryReviewModal(classId, className, subjectId, onSaved)
             }
 
             await Promise.all(promises);
-            toast('success', validated ? 'Publicado' : 'Guardado', validated ? 'El contenido ya es visible para los alumnos.' : 'Cambios guardados como borrador.');
+            if (opts.summarySource === 'manual') {
+                toast('success', 'Resumen marcado como no apto', 'El contenido quedó marcado como escrito manualmente por el docente.');
+            } else {
+                toast('success', validated ? 'Publicado' : 'Guardado', validated ? 'El contenido ya es visible para los alumnos.' : 'Cambios guardados como borrador.');
+            }
             onSaved(validated);
             close();
         } catch (e) {
@@ -319,11 +328,19 @@ export function createSummaryReviewModal(classId, className, subjectId, onSaved)
             btnApprove.disabled = false;
             btnSaveDraft.disabled = false;
             btnRegenerate.disabled = false;
+            if (btnNotSuitable) btnNotSuitable.disabled = false;
         }
     };
 
     btnApprove.onclick = () => save(true);
     btnSaveDraft.onclick = () => save(false);
+
+    if (btnNotSuitable) {
+        btnNotSuitable.onclick = () => {
+            if (!confirm('¿Marcar este resumen como no apto? El contenido pasará a ser editado manualmente por vos y la IA quedará descartada para esta clase.')) return;
+            save(false, { summarySource: 'manual', suitable: false });
+        };
+    }
 
     btnRegenerate.onclick = async () => {
         btnRegenerate.disabled = true;
@@ -337,7 +354,7 @@ export function createSummaryReviewModal(classId, className, subjectId, onSaved)
                 }
                 toast('success', 'Regenerado', 'Guión de podcast regenerado con IA.');
             } else {
-                const result = await api.generateClassAssets(classId, subjectId);
+                const result = await api.generateClassAssets(classId, subjectId, { rejected: true });
                 if (result.summary?.summary) {
                     const md = typeof result.summary.summary === 'object' ? result.summary.summary.content : result.summary.summary;
                     setSummaryValue(md);

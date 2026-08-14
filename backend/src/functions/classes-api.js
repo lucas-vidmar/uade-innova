@@ -1494,8 +1494,14 @@ app.http('generate-class-assets', {
 
             const combinedText = texts.join('\n\n').substring(0, 50000);
 
+            // 11-4-6: cuando el docente rechaza un resumen, regeneramos con mayor
+            // temperatura para obtener una variación más creativa del contenido.
+            const summaryTemperature = body.rejected
+                ? Math.min((CONFIG.ai.temperature.summary || 0.5) + 0.2, 0.9)
+                : CONFIG.ai.temperature.summary;
+
             const [summaryResult, mapResult] = await Promise.all([
-                generateClassSummary(combinedText, ''),
+                generateClassSummary(combinedText, '', { temperature: summaryTemperature }),
                 generateClassMap(combinedText)
             ]);
 
@@ -1555,7 +1561,11 @@ app.http('save-class-summary', {
                 summary: body.summary,
                 lastModifiedAt: new Date().toISOString(),
                 lastModifiedBy: principal?.userDetails || 'docente',
-                validated: body.validated || false
+                validated: body.validated || false,
+                // 11-4-9: summarySource distinguishes AI-generated vs manual teacher-written summaries.
+                // "manual" means the teacher marked the AI summary as not suitable and wrote it by hand.
+                summarySource: body.summarySource || existingData.summarySource || (body.suitable === false ? 'manual' : undefined),
+                suitable: typeof body.suitable === 'boolean' ? body.suitable : existingData.suitable,
             };
 
             await saveJson(CONTAINER_SUMMARIES, `${classId}.json`, updatedData);

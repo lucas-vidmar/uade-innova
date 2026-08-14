@@ -327,42 +327,45 @@ export async function renderClassManager(container) {
                     const markers = Array.isArray(timeline.markers) ? [...timeline.markers] : [];
                     const sections = Array.isArray(timeline.sections) ? [...timeline.sections] : [];
 
-                    const hasMarkers = markers.length > 0;
-                    if (hasMarkers) {
-                        const shouldRemove = await showConfirmDialog({
-                            title: 'Editar timeline',
-                            message: 'Esta accion elimina el ultimo hit-point actual y crea uno nuevo con valores manuales. Queres continuar?',
-                            confirmText: 'Continuar',
-                            cancelText: 'Cancelar',
-                        });
-                        if (!shouldRemove) return;
-                        markers.pop();
-                    }
-
                     const modal = document.createElement('div');
                     modal.className = 'modal-overlay';
-                    const firstSection = sections[0] || null;
                     modal.innerHTML = `
-                        <div class="modal-content" style="max-width:560px; width:92%;">
+                        <div class="modal-content" style="max-width:640px; width:94%; max-height:85vh; display:flex; flex-direction:column;">
                             <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
-                                <h3 class="h4" style="margin:0;">Configurar hit-point</h3>
+                                <h3 class="h4" style="margin:0;">Curar hit-points — ${escapeHtml(classItem.title || classItem.id)}</h3>
                                 <button type="button" class="btn btn-ghost btn-sm btn-close-modal">✕</button>
                             </div>
-                            <div class="modal-body">
-                                <div class="form-group">
-                                    <label class="form-label">Etiqueta</label>
-                                    <input type="text" class="form-input" id="timeline-label" value="${escapeHtml(firstSection?.text?.slice(0, 40) || 'Nuevo punto')}" />
+                            <div class="modal-body" style="overflow-y:auto; flex:1;">
+                                <p style="color:var(--color-text-secondary);font-size:0.85rem;margin:0 0 var(--space-4);">
+                                    Marcá qué hit-points detectados conservar (🟢) y cuáles eliminar (🔴). Podés editar la etiqueta y el segundo de inicio de cada uno, y agregar hit-points manuales.
+                                </p>
+
+                                <div style="display:flex;flex-direction:column;gap:var(--space-2);" id="timeline-marker-list">
+                                    ${markers.length === 0 ? `<div class="empty-state" style="padding:24px;text-align:center;color:var(--color-text-muted);font-size:0.85rem;">No hay hit-points detectados todavía.</div>` : ''}
+                                    ${markers.map((m, mi) => `
+                                        <div class="timeline-marker-row" data-midx="${mi}" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--color-surface-2);border:1px solid var(--color-border);border-radius:var(--radius-md);">
+                                            <input type="checkbox" class="timeline-keep" data-midx="${mi}" checked title="Conservar hit-point" style="width:18px;height:18px;flex-shrink:0;"/>
+                                            <input type="text" class="timeline-label-input" data-midx="${mi}" value="${escapeHtml(m.label || m.text || '')}" style="flex:1;min-width:0;padding:6px 8px;border:1px solid var(--color-border);border-radius:6px;font-size:0.85rem;background:var(--color-surface);"/>
+                                            <input type="number" class="timeline-second-input" data-midx="${mi}" min="0" step="1" value="${String(m.startSecond ?? 0)}" title="Segundo de inicio" style="width:70px;padding:6px 8px;border:1px solid var(--color-border);border-radius:6px;font-size:0.85rem;background:var(--color-surface);"/>
+                                            <span title="${escapeHtml(m.source || 'detected')}" style="font-size:0.7rem;color:var(--color-text-muted);width:80px;text-align:center;flex-shrink:0;">${escapeHtml(m.source || 'detected')}</span>
+                                            <button type="button" class="btn btn-ghost btn-sm timeline-remove-marker" data-midx="${mi}" style="flex-shrink:0;color:var(--color-error);">🗑️</button>
+                                        </div>
+                                    `).join('')}
                                 </div>
-                                <div class="form-group">
-                                    <label class="form-label">Segundo de inicio</label>
-                                    <input type="number" class="form-input" id="timeline-second" min="0" step="1" value="${String(firstSection?.startSecond || 0)}" />
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label">Tipo de icono</label>
-                                    <select class="form-input" id="timeline-icon">
-                                        <option value="question">Pregunta (❓)</option>
-                                        <option value="assignment">Actividad (📌)</option>
-                                    </select>
+
+                                <div class="divider" style="margin:var(--space-4) 0;"></div>
+
+                                <div class="form-group" style="margin-bottom:var(--space-3);">
+                                    <label class="form-label">Agregar hit-point manual</label>
+                                    <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;">
+                                        <input type="text" class="form-input" id="timeline-label" placeholder="Etiqueta (ej: Ejercicio en clase)" style="flex:1;min-width:140px;" />
+                                        <input type="number" class="form-input" id="timeline-second" min="0" step="1" placeholder="Seg" style="width:90px;" />
+                                        <select class="form-input" id="timeline-icon" style="width:110px;">
+                                            <option value="question">Pregunta ❓</option>
+                                            <option value="assignment">Actividad 📌</option>
+                                        </select>
+                                        <button type="button" class="btn btn-secondary" id="timeline-add-manual">+ Agregar</button>
+                                    </div>
                                 </div>
                             </div>
                             <div class="modal-footer">
@@ -376,14 +379,44 @@ export async function renderClassManager(container) {
                     modal.querySelector('.btn-close-modal')?.addEventListener('click', closeModal);
                     modal.querySelector('.btn-cancel-modal')?.addEventListener('click', closeModal);
 
-                    modal.querySelector('.btn-save-modal')?.addEventListener('click', async () => {
+                    // Editable label / second inputs mutate markers in place
+                    const updateMarker = (mi) => {
+                        const row = modal.querySelector(`.timeline-marker-row[data-midx="${mi}"]`);
+                        if (!row) return;
+                        const label = row.querySelector('.timeline-label-input')?.value ?? '';
+                        const second = Number(row.querySelector('.timeline-second-input')?.value);
+                        if (markers[mi]) {
+                            markers[mi].label = label;
+                            markers[mi].text = label;
+                            if (!Number.isNaN(second) && second >= 0) markers[mi].startSecond = second;
+                        }
+                    };
+                    modal.querySelectorAll('.timeline-label-input').forEach(inp => {
+                        inp.addEventListener('input', () => updateMarker(Number(inp.dataset.midx)));
+                    });
+                    modal.querySelectorAll('.timeline-second-input').forEach(inp => {
+                        inp.addEventListener('input', () => updateMarker(Number(inp.dataset.midx)));
+                    });
+
+                    // Remove marker button (hard delete from curation)
+                    modal.querySelectorAll('.timeline-remove-marker').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            const mi = Number(btn.dataset.midx);
+                            const row = modal.querySelector(`.timeline-marker-row[data-midx="${mi}"]`);
+                            row?.remove();
+                            markers[mi] = null;
+                        });
+                    });
+
+                    // Add manual marker
+                    modal.querySelector('#timeline-add-manual')?.addEventListener('click', () => {
                         const label = String(modal.querySelector('#timeline-label')?.value || '').trim();
                         const secondRaw = String(modal.querySelector('#timeline-second')?.value || '').trim();
                         const iconType = String(modal.querySelector('#timeline-icon')?.value || 'question');
                         const startSecond = Number(secondRaw);
 
                         if (!label) {
-                            toast('warning', 'Dato requerido', 'La etiqueta del hit-point es obligatoria.');
+                            toast('warning', 'Dato requerido', 'La etiqueta del hit-point manual es obligatoria.');
                             return;
                         }
                         if (Number.isNaN(startSecond) || startSecond < 0) {
@@ -391,6 +424,7 @@ export async function renderClassManager(container) {
                             return;
                         }
 
+                        const firstSection = sections[0] || null;
                         const sectionId = firstSection?.id || `manual-sec-${Date.now()}`;
                         if (!firstSection) {
                             sections.push({
@@ -402,7 +436,6 @@ export async function renderClassManager(container) {
                                 sourceFilename: 'manual',
                             });
                         }
-
                         markers.push({
                             id: `manual-mk-${Date.now()}`,
                             sectionId,
@@ -412,15 +445,55 @@ export async function renderClassManager(container) {
                             label,
                             source: 'teacher',
                         });
+                        modal.querySelector('#timeline-label').value = '';
+                        modal.querySelector('#timeline-second').value = '';
+                        const list = modal.querySelector('#timeline-marker-list');
+                        const empty = list.querySelector('.empty-state');
+                        if (empty) empty.remove();
+                        list.insertAdjacentHTML('beforeend', `
+                            <div class="timeline-marker-row" data-midx="${markers.length - 1}" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--color-surface-2);border:1px solid var(--color-border);border-radius:var(--radius-md);">
+                                <input type="checkbox" class="timeline-keep" data-midx="${markers.length - 1}" checked style="width:18px;height:18px;flex-shrink:0;"/>
+                                <input type="text" class="timeline-label-input" data-midx="${markers.length - 1}" value="${escapeHtml(label)}" style="flex:1;min-width:0;padding:6px 8px;border:1px solid var(--color-border);border-radius:6px;font-size:0.85rem;background:var(--color-surface);"/>
+                                <input type="number" class="timeline-second-input" data-midx="${markers.length - 1}" min="0" step="1" value="${String(startSecond)}" style="width:70px;padding:6px 8px;border:1px solid var(--color-border);border-radius:6px;font-size:0.85rem;background:var(--color-surface);"/>
+                                <span title="teacher" style="font-size:0.7rem;color:var(--color-text-muted);width:80px;text-align:center;flex-shrink:0;">teacher</span>
+                                <button type="button" class="btn btn-ghost btn-sm timeline-remove-marker" data-midx="${markers.length - 1}" style="flex-shrink:0;color:var(--color-error);">🗑️</button>
+                            </div>
+                        `);
+                        const newRow = list.querySelector(`.timeline-marker-row[data-midx="${markers.length - 1}"]`);
+                        newRow.querySelector('.timeline-label-input').addEventListener('input', (ev) => {
+                            const mi = Number(ev.target.dataset.midx);
+                            markers[mi].label = ev.target.value;
+                            markers[mi].text = ev.target.value;
+                        });
+                        newRow.querySelector('.timeline-second-input').addEventListener('input', (ev) => {
+                            const mi = Number(ev.target.dataset.midx);
+                            const v = Number(ev.target.value);
+                            if (!Number.isNaN(v) && v >= 0) markers[mi].startSecond = v;
+                        });
+                        newRow.querySelector('.timeline-remove-marker').addEventListener('click', (ev) => {
+                            const mi = Number(ev.target.dataset.midx);
+                            newRow.remove();
+                            markers[mi] = null;
+                        });
+                    });
+
+                    modal.querySelector('.btn-save-modal')?.addEventListener('click', async () => {
+                        // Apply "keep/remove" checkbox decisions (unchecked => remove)
+                        const keptMarkers = markers.filter((m, mi) => {
+                            if (!m) return false;
+                            const row = modal.querySelector(`.timeline-marker-row[data-midx="${mi}"]`);
+                            const keep = row ? row.querySelector('.timeline-keep')?.checked !== false : true;
+                            return keep;
+                        });
 
                         await api.saveClassTimeline(classItem.id, {
                             classId: classItem.id,
                             subjectId,
                             sections,
-                            markers,
+                            markers: keptMarkers,
                         });
 
-                        toast('success', 'Timeline guardada', 'Se actualizo el hit-point de la transcripcion.');
+                        toast('success', 'Timeline curada', `Se conservaron ${keptMarkers.length} hit-point(s).`);
                         closeModal();
                     });
 

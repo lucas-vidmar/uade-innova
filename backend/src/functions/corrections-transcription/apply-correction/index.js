@@ -1,14 +1,17 @@
 import { app } from '@azure/functions';
 import { withCorrelation } from '../../../middleware/with-correlation.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../../../services/auth-utils.js';
-import { getTableClient } from '../../../services/storage.js';
+import { getTableClient, loadJson, saveJson } from '../../../services/storage.js';
 import { getEnrollment } from '../../../services/state-store.js';
 import { getGlossary } from '../../../services/glossary-store.js';
 import { generateEmbedding } from '../../../services/ai.js';
-import { upsertChunks } from '../../../services/vector-store.js';
+import { upsertChunks, deleteVectorsByFilter } from '../../../services/vector-store.js';
+import { chunkText } from '../../../services/parser.js';
+import { generateEmbeddingsBatch } from '../../../services/ai.js';
 import { CONFIG } from '../../../services/config.js';
 
 const CORRECTIONS_TABLE = CONFIG.tables.transcriptionCorrections;
+const CONTAINER_PROCESSED = 'processed';
 
 app.http('apply-transcription-correction', {
   methods: ['POST'],
@@ -48,19 +51,68 @@ app.http('apply-transcription-correction', {
         return { status: 409, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: false, error: { code: 'ALREADY_RESOLVED', message: 'Esta sugerencia ya fue resuelta.' } }) };
       }
 
+      // 1. Rewrite the transcript text and re-embed so the correction takes effect in RAG
+      let reindexed = false;
+      if (entity.materialId && entity.fragment && entity.suggestedFix) {
+        try {
+          const processed = await loadJson(CONTAINER_PROCESSED, `${entity.materialId}.json`);
+          const text = processed?.extractedText || processed?.text || '';
+          if (text) {
+            // Replace all occurrences of the fragment with the suggested fix
+            const escaped = entity.fragment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const corrected = text.replace(new RegExp(escaped, 'gi'), entity.suggestedFix);
+
+            if (corrected !== text) {
+              await deleteVectorsByFilter({ materialId: { '$eq': entity.materialId } });
+              const chunks = chunkText(corrected);
+              const chunkTexts = chunks.map(c => c.text || c);
+              const { embeddings } = await generateEmbeddingsBatch(chunkTexts);
+              const vectors = embeddings.map((embedding, i) => ({
+                id: `${entity.materialId}-chunk-${i}`,
+                values: embedding,
+                metadata: {
+                  subjectId,
+                  classId: entity.classId || processed.classId || processed.classIds?.[0] || '',
+                  classIds: JSON.stringify(processed.classIds || []),
+                  materialId: entity.materialId,
+                  materialType: processed.materialType || processed.type || 'transcript',
+                  chunkIndex: i,
+                  sourceFilename: processed.sourceFilename || processed.filename || '',
+                  lectureDate: processed.lectureDate || '',
+                  text: chunkTexts[i]?.substring(0, 1000) || '',
+                },
+              }));
+              await upsertChunks(vectors);
+
+              processed.extractedText = corrected;
+              processed.text = corrected;
+              processed.chunks = chunks;
+              processed.chunkCount = chunks.length;
+              processed.processedAt = new Date().toISOString();
+              await saveJson(CONTAINER_PROCESSED, `${entity.materialId}.json`, processed);
+              reindexed = true;
+              context.log(`[apply-transcription-correction] Re-indexed ${entity.materialId} with ${chunks.length} corrected chunks`);
+            }
+          }
+        } catch (reErr) {
+          context.error(`[apply-transcription-correction] Re-index failed for material ${entity.materialId} (non-blocking):`, reErr.message);
+        }
+      }
+
       const now = new Date().toISOString();
       entity.status = 'applied';
       entity.resolvedAt = now;
       entity.teacherId = principal?.userId || principal?.oid || '';
+      entity.reindexed = reindexed;
 
       await client.upsertEntity(entity, 'Replace');
 
-      context.log(`[apply-transcription-correction] Applied suggestion ${suggestionId} for subjectId=${subjectId}`);
+      context.log(`[apply-transcription-correction] Applied suggestion ${suggestionId} for subjectId=${subjectId} reindexed=${reindexed}`);
 
       return {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ success: true, data: { suggestionId, status: 'applied' } }),
+        body: JSON.stringify({ success: true, data: { suggestionId, status: 'applied', reindexed } }),
       };
     } catch (err) {
       if (err.statusCode === 404) {

@@ -17,12 +17,16 @@ function dayBefore(dateStr) {
 }
 
 function normalizeDeadline(deadline = {}) {
+    const classIds = Array.isArray(deadline.classIds) && deadline.classIds.length > 0
+        ? [...new Set(deadline.classIds.map(String).filter(Boolean))]
+        : (deadline.classId ? [String(deadline.classId)] : []);
     return {
         id: deadline.id,
         title: deadline.title,
         description: deadline.description || '',
         subjectId: deadline.subjectId,
-        classId: deadline.classId,
+        classId: classIds[0] || null,
+        classIds,
         dueDate: deadline.dueDate,
         timezone: deadline.timezone || null,
         notifyOnDayBefore: deadline.notifyOnDayBefore !== false,
@@ -93,8 +97,9 @@ app.http('save-deadline', {
         }
 
         const body = await request.json();
-        if (!body?.subjectId || !body?.classId || !body?.title || !body?.dueDate) {
-            return { status: 400, body: JSON.stringify({ error: 'Faltan campos requeridos: subjectId, classId, title, dueDate' }) };
+        const hasClass = body?.classIds?.length || body?.classId;
+        if (!body?.subjectId || !hasClass || !body?.title || !body?.dueDate) {
+            return { status: 400, body: JSON.stringify({ error: 'Faltan campos requeridos: subjectId, classId(s), title, dueDate' }) };
         }
 
         const subjectId = body.subjectId;

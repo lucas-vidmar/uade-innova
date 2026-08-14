@@ -380,3 +380,68 @@ test('runPipeline does not include slideTitle for non-presentation materials', a
             `Vector ${vector.id} should NOT have slideTitle for non-presentation`);
     }
 });
+
+test('runPipeline honors materialPriority override from upload (11-4-2)', async () => {
+    vectorStoreMocks.upsertChunks.mock.resetCalls();
+    parserMocks.chunkText.mock.mockImplementation(() => ['chunk 1', 'chunk 2']);
+    parserMocks.parseFile.mock.mockImplementation(async () => 'mocked text');
+
+    const mockContext = {
+        log: mock.fn(),
+        warn: mock.fn(),
+        error: mock.fn(),
+    };
+
+    // bibliography defaults to secondary, but a manual "primary" override must win
+    await runPipeline({
+        fileBuffer: Buffer.from('test'),
+        fileContentType: 'text/plain',
+        fileName: 'ref.pdf',
+        classIds: ['class-prio-01'],
+        subjectId: 'subject-prio-01',
+        materialType: 'bibliography',
+        materialPriority: 'primary',
+        materialId: 'mat-prio-01',
+        blobUrl: 'http://test',
+    }, mockContext);
+
+    const vectors = vectorStoreMocks.upsertChunks.mock.calls[0].arguments[0];
+    assert.ok(vectors.length > 0, 'Should produce vectors');
+    assert.strictEqual(vectors[0].metadata.materialPriority, 'primary',
+        'materialPriority override must win over type-derived default');
+});
+
+test('runPipeline attaches class topics to vector metadata (11-4-8)', async () => {
+    vectorStoreMocks.upsertChunks.mock.resetCalls();
+    parserMocks.chunkText.mock.mockImplementation(() => ['chunk 1', 'chunk 2']);
+    parserMocks.parseFile.mock.mockImplementation(async () => 'mocked text');
+
+    const topics = ['Arquitectura hexagonal', 'Puertos y adaptadores'];
+    storageMocks.loadJson.mock.mockImplementation(async () => [
+        { id: 'class-topics-01', topics },
+    ]);
+
+    const mockContext = {
+        log: mock.fn(),
+        warn: mock.fn(),
+        error: mock.fn(),
+    };
+
+    await runPipeline({
+        fileBuffer: Buffer.from('test'),
+        fileContentType: 'text/plain',
+        fileName: 'topics.txt',
+        classIds: ['class-topics-01'],
+        subjectId: 'subject-topics-01',
+        materialType: 'notes',
+        materialId: 'mat-topics-01',
+        blobUrl: 'http://test',
+    }, mockContext);
+
+    const vectors = vectorStoreMocks.upsertChunks.mock.calls[0].arguments[0];
+    assert.ok(vectors.length > 0, 'Should produce vectors');
+    assert.deepStrictEqual(vectors[0].metadata.topics, topics,
+        'Class topics should be persisted into vector metadata');
+
+    storageMocks.loadJson.mock.mockImplementation(async () => null);
+});

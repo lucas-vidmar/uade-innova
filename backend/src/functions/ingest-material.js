@@ -28,9 +28,9 @@ app.http('ingest-material', {
 
         try {
             log.info('Ingest request received', { url: request.url });
-            const { fileReadable, fileHeader, fileContentType, fileName, classIds, subjectId, materialType } = await parseMultipart(request, context);
+            const { fileReadable, fileHeader, fileContentType, fileName, classIds, subjectId, materialType, materialPriority } = await parseMultipart(request, context);
             
-            log.info('Multipart parsed', { fileName, fileContentType, subjectId, materialType, classIds });
+            log.info('Multipart parsed', { fileName, fileContentType, subjectId, materialType, classIds, materialPriority });
 
             // Security Check: Enrollment-based access control
             const principal = context.principal || parseClientPrincipal(request);
@@ -75,7 +75,7 @@ app.http('ingest-material', {
                 filename: fileName,
                 status: 'pending',
                 uploadedAt: new Date().toISOString(),
-                priority: getMaterialPriority(materialType),
+                priority: getMaterialPriority(materialType, materialPriority),
             };
 
             try {
@@ -96,6 +96,7 @@ app.http('ingest-material', {
                             materialId,
                             subjectId,
                             materialType,
+                            materialPriority,
                             classIds: JSON.stringify(classIds),
                             fileName
                         }
@@ -286,6 +287,7 @@ async function parseMultipart(request, context) {
                     classIds: fields.classIds || (fields.classId ? [fields.classId] : []),
                     subjectId: fields.subjectId,
                     materialType: fields.materialType,
+                    materialPriority: fields.materialPriority,
                 });
                 context.log(`[Ingest] Fields successfully extracted: subjectId=${fields.subjectId}, materialType=${fields.materialType}, classIds=${JSON.stringify(fields.classIds || fields.classId)}`);
             }

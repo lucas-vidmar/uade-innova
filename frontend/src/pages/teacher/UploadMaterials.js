@@ -205,14 +205,26 @@ export async function renderTeacherUpload(container) {
       isMasterSource = e.target.checked;
     });
 
-    document.getElementById('approve-summary')?.addEventListener('click', () => {
-      toast('success', '¡Resumen aprobado!', 'El resumen está ahora visible para los alumnos.');
+    document.getElementById('approve-summary')?.addEventListener('click', async () => {
+      if (!primaryClass) return;
+      const { createSummaryReviewModal } = await import('../../components/SummaryReviewModal.js');
+      createSummaryReviewModal(primaryClass.id, primaryClass.title, activeSubjectIdSafe, () => {
+        render();
+      });
     });
-    document.getElementById('edit-summary')?.addEventListener('click', () => {
-      toast('info', 'Edición', 'Editor de resumen — funcionalidad completa en la siguiente iteración.');
+    document.getElementById('edit-summary')?.addEventListener('click', async () => {
+      if (!primaryClass) return;
+      const { createSummaryReviewModal } = await import('../../components/SummaryReviewModal.js');
+      createSummaryReviewModal(primaryClass.id, primaryClass.title, activeSubjectIdSafe, () => {
+        render();
+      });
     });
-    document.getElementById('reject-summary')?.addEventListener('click', () => {
-      toast('warning', 'Regenerando...', 'La IA generará un nuevo resumen en unos momentos.');
+    document.getElementById('reject-summary')?.addEventListener('click', async () => {
+      if (!primaryClass) return;
+      const { createSummaryReviewModal } = await import('../../components/SummaryReviewModal.js');
+      createSummaryReviewModal(primaryClass.id, primaryClass.title, activeSubjectIdSafe, () => {
+        render();
+      });
     });
 
     document.getElementById('btn-refresh-classes')?.addEventListener('click', async () => {

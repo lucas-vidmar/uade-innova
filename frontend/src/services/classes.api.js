@@ -89,6 +89,18 @@ export async function saveClassSummary(classId, data) {
     return res.json();
 }
 
+export async function publishClassSummaryNow(classId, subjectId) {
+    const res = await apiFetch(`${BASE_URL}/class-summary/${classId}/publish-now?subjectId=${encodeURIComponent(subjectId)}`, {
+        method: 'POST',
+    });
+    if (!res.ok) {
+        let message = 'No se pudo publicar el resumen ahora';
+        try { const err = await res.json(); if (err?.error) message = err.error; } catch {}
+        throw new Error(message);
+    }
+    return res.json();
+}
+
 export function getClassAudioUrl(classId, subjectId) {
     const params = new URLSearchParams();
     if (subjectId) params.set('subjectId', subjectId);
@@ -179,11 +191,11 @@ export async function generateClassAudio(classId) {
     return res.json();
 }
 
-export async function generateClassAssets(classId, subjectId) {
+export async function generateClassAssets(classId, subjectId, opts = {}) {
     const res = await apiFetch(`${BASE_URL}/class-summary/${classId}/regenerate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subjectId }),
+        body: JSON.stringify({ subjectId, rejected: !!opts.rejected }),
     });
     if (!res.ok) {
         let message = `Error ${res.status}: No se pudieron regenerar los activos`;

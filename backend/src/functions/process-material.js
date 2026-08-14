@@ -132,6 +132,7 @@ app.storageBlob('process-material', {
             classIds = [subjectIdFromPath]; // actually this might be wrong, it used to be classId
         }
         const fileName = deriveFilename(metadata.filename, rawBlobName || context.triggerMetadata?.name);
+        const materialPriority = metadata.materialpriority || null;
 
         const traceContext = resolveTraceContext({ headers: { get: () => null } });
         const params = {
@@ -142,6 +143,7 @@ app.storageBlob('process-material', {
             subjectId,
             materialType: metadata.materialtype || 'notes',
             materialId,
+            materialPriority,
             userId: metadata.userid || 'anonymous',
             correlationId: metadata.correlationid || generateCorrelationId(),
             traceContext,

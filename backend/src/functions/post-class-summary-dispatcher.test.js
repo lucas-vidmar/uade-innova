@@ -19,11 +19,15 @@ mock.module('../services/notification-store.js', { namedExports: notificationSto
 mock.module('../services/telemetry.js', { namedExports: telemetryMock });
 
 let timerHandler;
+let httpHandler;
 mock.module('@azure/functions', {
   namedExports: {
     app: {
       timer: (name, options) => {
         if (name === 'post-class-summary-dispatcher') timerHandler = options.handler;
+      },
+      http: (name, options) => {
+        if (name === 'publish-class-summary-now') httpHandler = options.handler;
       },
     },
   },
@@ -137,4 +141,56 @@ test('timer handler should execute dispatcher without throwing', async () => {
 
   await timerHandler({}, { log: () => {}, error: () => {} });
   assert.ok(true);
+});
+
+test('publish-class-summary-now should dispatch notification for validated past class (11-4-10)', async () => {
+  const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+  process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Development';
+  notificationStoreMocks.dispatchClassSummaryNotification.mock.mockImplementation(async () => ({ success: true, retryAttempts: 0, deadLetterWrites: 0, dispatched: 1, recipientCount: 1 }));
+
+  storageMocks.loadJson.mock.mockImplementation(async (container, blobName) => {
+    if (container === 'classes-config' && blobName === 'subject-pub.json') {
+      return [{ id: 'class-pub', title: 'Clase publicable', date: new Date(Date.now() - 86400000).toISOString(), summaryReady: true }];
+    }
+    if (container === 'class-summaries' && blobName === 'class-pub.json') {
+      return { classId: 'class-pub', summary: 'resumen', validated: true };
+    }
+    return null;
+  });
+
+  const req = {
+    params: { classId: 'class-pub' },
+    query: { get: (k) => (k === 'subjectId' ? 'subject-pub' : null) },
+  };
+  const res = await httpHandler(req, { log: () => {}, error: () => {} });
+  const body = JSON.parse(res.body);
+  if (prevEnv === undefined) delete process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+  else process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(body.success, true);
+  assert.strictEqual(body.dispatched, 1);
+});
+
+test('publish-class-summary-now should reject unvalidated class', async () => {
+  const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+  process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Development';
+
+  storageMocks.loadJson.mock.mockImplementation(async (container, blobName) => {
+    if (container === 'classes-config' && blobName === 'subject-novalid.json') {
+      return [{ id: 'class-novalid', title: 'Clase sin validar', date: new Date(Date.now() - 86400000).toISOString(), summaryReady: false }];
+    }
+    if (container === 'class-summaries' && blobName === 'class-novalid.json') {
+      return { classId: 'class-novalid', summary: 'borrador', validated: false };
+    }
+    return null;
+  });
+
+  const req = {
+    params: { classId: 'class-novalid' },
+    query: { get: (k) => (k === 'subjectId' ? 'subject-novalid' : null) },
+  };
+  const res = await httpHandler(req, { log: () => {}, error: () => {} });
+  if (prevEnv === undefined) delete process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+  else process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+  assert.strictEqual(res.status, 409);
 });

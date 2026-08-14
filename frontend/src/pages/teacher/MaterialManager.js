@@ -620,8 +620,15 @@ export async function renderMaterialManager(container) {
 
                     const shouldDelete = await showConfirmDialog({
                         title: 'Eliminar material',
-                        message: `¿Seguro que querés eliminar "${mat.filename}"? Esta acción eliminará también los embeddings del índice vectorial.`,
-                        confirmText: 'Eliminar',
+                        message: `¿Seguro que querés eliminar "${mat.filename}"? Esta acción eliminará también los embeddings del índice vectorial y no puede deshacerse.`,
+                        detailsHtml: `
+                          <div style="display:flex;flex-direction:column;gap:6px;">
+                            <div><strong>Tipo:</strong> ${escapeHtml(mat.type || '—')}</div>
+                            <div><strong>Clases:</strong> ${(mat.classIds || []).map(id => escapeHtml(id)).join(', ') || '—'}</div>
+                            <div><strong>Chunks indexados:</strong> ${mat.chunkCount ?? '—'}</div>
+                            <div><strong>Estado:</strong> ${escapeHtml(mat.status || '—')}</div>
+                          </div>`,
+                        confirmText: 'Eliminar definitivamente',
                         cancelText: 'Cancelar',
                         danger: true,
                     });

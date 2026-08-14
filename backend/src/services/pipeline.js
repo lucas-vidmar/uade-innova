@@ -12,9 +12,11 @@ import { buildDependencyHeaders } from './correlation.js';
 import { getMaterialPriority } from './material-classification.js';
 import { detectGlossaryErrors } from './transcription-corrector.js';
 import { ErrorCategory, CategorizedError } from './error-categories.js';
+import { CONFIG } from './config.js';
 
 const CONTAINER_PROCESSED = 'processed';
 const CONTAINER_SUMMARIES = 'class-summaries';
+const CONTAINER_CLASSES = CONFIG.containers.classes;
 
 // Tests can override this function for deterministic token counting
 export let _estimateTokenCount = (text) => Math.ceil(text.length / 4);
@@ -23,7 +25,7 @@ const BATCH_SIZE = 100;
 /**
  * Ejecuta el pipeline completo de procesamiento de un archivo con telemetría.
  */
-export async function runPipeline({ fileBuffer, fileContentType, fileName, classIds, subjectId, materialType, materialId, userId, blobUrl, correlationId, traceContext }, context) {
+export async function runPipeline({ fileBuffer, fileContentType, fileName, classIds, subjectId, materialType, materialId, materialPriority, userId, blobUrl, correlationId, traceContext }, context) {
     const startTime = Date.now();
     let totalTokens = 0;
     const lectureDateIso = new Date().toISOString();
@@ -92,6 +94,20 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
             throw new Error('No se pudo extraer texto significativo del archivo para generar chunks.');
         }
 
+        // 2a. Cargar topics de las clases vinculadas (11-4-8) para enriquecer metadatos RAG
+        const classTopics = new Map();
+        try {
+            for (const classId of classIds || []) {
+                const classes = await loadJson(CONTAINER_CLASSES, `${subjectId}.json`);
+                const classData = (Array.isArray(classes) ? classes : []).find(c => String(c.id) === String(classId));
+                if (classData && Array.isArray(classData.topics) && classData.topics.length > 0) {
+                    classTopics.set(String(classId), classData.topics.filter(Boolean).slice(0, 20));
+                }
+            }
+        } catch (topicsErr) {
+            context.log(`[WARN][Pipeline] No se pudieron cargar topics (no bloqueante): ${topicsErr.message}`);
+        }
+
         // 3. Generar embeddings en batches y preparar vectores para Pinecone
         const vectors = [];
         let lastSlideNumber = null;
@@ -113,12 +129,16 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
                     classIds,
                     materialId,
                     materialType,
-                    materialPriority: getMaterialPriority(mt),
+                    materialPriority: getMaterialPriority(mt, materialPriority),
                     chunkIndex,
                     sourceFilename: fileName,
                     lectureDate: lectureDateIso,
                     text: currentBatch[index],
                 };
+                // 11-4-8: adjuntar topics de la clase principal para filtrado por tema
+                if (classIds?.[0] && classTopics.has(String(classIds[0]))) {
+                    metadata.topics = classTopics.get(String(classIds[0]));
+                }
                 // Adjuntar título de diapositiva si está disponible (Story 2.161)
                 const slideNumber = resolveSlideNumber(currentBatch[index]);
                 if (slideNumber !== null) lastSlideNumber = slideNumber;

@@ -209,6 +209,7 @@ export async function renderClassEditor(container) {
                     </div>
 
                     <div style="display:flex; justify-content:flex-end; align-items:center; margin-top:var(--space-8); padding-top:var(--space-6); border-top:1px solid var(--color-border); gap:12px;">
+                        <button class="btn btn-ghost" id="btn-publish-now" title="Disparar la notificación de 'resumen publicado' a los alumnos ahora (útil para clases pasadas)" style="color:var(--color-primary)">📣 Publicar ahora</button>
                         <button class="btn btn-secondary" id="btn-save-draft">Guardar Borrador</button>
                         <button class="btn btn-primary" id="btn-approve">Aprobar y Publicar</button>
                     </div>
@@ -434,8 +435,24 @@ export async function renderClassEditor(container) {
             const r = document.getElementById('btn-regenerate');
             const s = document.getElementById('btn-save-draft');
             const a = document.getElementById('btn-approve');
+            const p = document.getElementById('btn-publish-now');
             if (s) s.onclick = () => saveToDB(false);
             if (a) a.onclick = () => saveToDB(true);
+            if (p) {
+                p.onclick = async () => {
+                    p.disabled = true;
+                    p.textContent = '📣 Publicando...';
+                    try {
+                        await api.publishClassSummaryNow(classId, subjectId);
+                        toast('success', 'Publicado', 'La notificación del resumen fue enviada a los alumnos.');
+                    } catch (e) {
+                        toast('error', 'Error', e.message || 'No se pudo publicar ahora.');
+                    } finally {
+                        p.disabled = false;
+                        p.textContent = '📣 Publicar ahora';
+                    }
+                };
+            }
         }
 
         // ── Regenerate per section ──

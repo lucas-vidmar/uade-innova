@@ -1,5 +1,5 @@
 import { app } from '@azure/functions';
-import { withCorrelationTimer } from '../middleware/with-correlation.js';
+import { withCorrelation, withCorrelationTimer } from '../middleware/with-correlation.js';
 import { loadJson, listBlobs } from '../services/storage.js';
 import { dispatchClassSummaryNotification } from '../services/notification-store.js';
 import { trackDispatcherRun } from '../services/telemetry.js';
@@ -108,5 +108,60 @@ app.timer('post-class-summary-dispatcher', {
   schedule: CONFIG.cron.postClassSummary,
   handler: withCorrelationTimer(async (_timer, context) => {
     await runPostClassSummaryDispatcher(context);
+  }),
+});
+
+// ── POST /api/class-summary/{classId}/publish-now ──────────────────
+// 11-4-10: Publicación retroactiva manual. El docente puede disparar
+// la notificación de "resumen publicado" de una clase pasada sin esperar
+// el próximo tick del timer.
+app.http('publish-class-summary-now', {
+  methods: ['POST'],
+  authLevel: 'anonymous',
+  route: 'class-summary/{classId}/publish-now',
+  handler: withCorrelation(async (request, context) => {
+    const { validateFrontDoorId, parseClientPrincipal } = await import('../services/auth-utils.js');
+    if (!validateFrontDoorId(request)) {
+      return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+    }
+
+    const principal = parseClientPrincipal(request);
+    const isAuthorized = principal?.userRoles?.some(role => ['Docente', 'Director'].includes(role))
+      || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
+    if (!isAuthorized) {
+      return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Teacher access required' }) };
+    }
+
+    const classId = request.params.classId;
+    const subjectId = request.query.get('subjectId');
+    if (!classId || !subjectId) {
+      return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Faltan classId y subjectId' }) };
+    }
+
+    try {
+      const classes = await loadJson(CONTAINER_CLASSES, `${subjectId}.json`);
+      const classData = Array.isArray(classes) ? classes.find(c => String(c.id) === classId) : null;
+      if (!classData) {
+        return { status: 404, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Clase no encontrada' }) };
+      }
+
+      const summary = await loadJson(CONTAINER_SUMMARIES, `${classId}.json`);
+      const validated = classData.summaryReady === true || summary?.validated === true;
+      if (!validated) {
+        return { status: 409, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'La clase no tiene un resumen validado para publicar.' }) };
+      }
+
+      const result = await dispatchClassSummaryNotification({
+        subjectId,
+        classData,
+        origin: 'publish-now-manual',
+      });
+
+      context.log(`[publish-class-summary-now] class=${classId} subject=${subjectId} dispatched=${result.dispatched} recipients=${result.recipientCount || 0}`);
+      return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: true, ...result }) };
+    } catch (err) {
+      context.error(`[publish-class-summary-now] class=${classId} error=${err.message}`);
+      return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: `Error al publicar: ${err.message}` }) };
+    }
   }),
 });

@@ -254,8 +254,21 @@ export async function renderStudentCalendar(container) {
               <button class="cal-view-tab ${viewMode === 'week' ? 'active' : ''}" data-view="week">Semana</button>
               <button class="cal-view-tab ${viewMode === 'cuatrimestre' ? 'active' : ''}" data-view="cuatrimestre">Cuatrimestre</button>
             </div>
-            <div class="cal-header-right">
-              <button class="btn btn-ghost btn-sm" id="cal-export-ics">📅 Exportar</button>
+            <div class="cal-header-right" style="position:relative;">
+              <div class="cal-export-wrap" style="position:relative;display:inline-block;">
+                <button class="btn btn-ghost btn-sm" id="cal-export-ics">📅 Exportar ▾</button>
+                <div id="cal-export-menu" style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);box-shadow:0 8px 24px rgba(0,0,0,0.12);z-index:30;min-width:220px;overflow:hidden;">
+                  <button class="cal-export-option" data-target="google" style="display:flex;align-items:center;gap:8px;width:100%;padding:10px 14px;border:none;background:none;cursor:pointer;font-size:0.85rem;text-align:left;border-bottom:1px solid var(--color-border);">
+                    <span>🗓️</span> Google Calendar
+                  </button>
+                  <button class="cal-export-option" data-target="outlook" style="display:flex;align-items:center;gap:8px;width:100%;padding:10px 14px;border:none;background:none;cursor:pointer;font-size:0.85rem;text-align:left;border-bottom:1px solid var(--color-border);">
+                    <span>📧</span> Outlook Calendar
+                  </button>
+                  <button class="cal-export-option" data-target="ics" style="display:flex;align-items:center;gap:8px;width:100%;padding:10px 14px;border:none;background:none;cursor:pointer;font-size:0.85rem;text-align:left;">
+                    <span>💾</span> Descargar .ics
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -302,9 +315,33 @@ export async function renderStudentCalendar(container) {
         }
       });
     });
+
+    container.querySelectorAll('.cal-export-option').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const target = btn.dataset.target;
+        document.getElementById('cal-export-menu').style.display = 'none';
+        if (target === 'ics') {
+          downloadIcs();
+          return;
+        }
+        const encoded = encodeURIComponent(buildIcs());
+        if (target === 'google') {
+          window.open(`https://calendar.google.com/calendar/render?cid=${encoded}`, '_blank');
+        } else if (target === 'outlook') {
+          window.open(`https://outlook.live.com/calendar/0/import/${encoded}`, '_blank');
+        }
+      });
+    });
+
+    container.querySelector('#cal-export-ics')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const menu = document.getElementById('cal-export-menu');
+      if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    });
   };
 
-  document.getElementById('cal-export-ics')?.addEventListener('click', () => {
+  const buildIcs = () => {
     const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//UADE Innova//Dashboard//ES'];
     classes.forEach(c => {
       if (!c.date) return;
@@ -312,7 +349,7 @@ export async function renderStudentCalendar(container) {
       lines.push('BEGIN:VEVENT');
       lines.push('DTSTART;VALUE=DATE:' + d);
       lines.push('DTEND;VALUE=DATE:' + d);
-      lines.push('SUMMARY:' + c.title);
+      lines.push('SUMMARY:' + (c.title || 'Clase').replace(/[;,\n]/g, ' '));
       lines.push('DESCRIPTION:Clase de ' + (c.subjectId || '') + '. Temas: ' + (c.topics || []).join(', '));
       lines.push('END:VEVENT');
     });
@@ -322,18 +359,27 @@ export async function renderStudentCalendar(container) {
       lines.push('BEGIN:VEVENT');
       lines.push('DTSTART;VALUE=DATE:' + dd);
       lines.push('DTEND;VALUE=DATE:' + dd);
-      lines.push('SUMMARY:Entrega: ' + d.title);
-      lines.push('DESCRIPTION:' + (d.description || 'Entrega de ' + d.title));
+      lines.push('SUMMARY:Entrega: ' + (d.title || 'Tarea').replace(/[;,\n]/g, ' '));
+      lines.push('DESCRIPTION:' + (d.description || 'Entrega de ' + (d.title || '')));
       lines.push('END:VEVENT');
     });
     lines.push('END:VCALENDAR');
-    const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
+    return lines.join('\r\n');
+  };
+
+  const downloadIcs = () => {
+    const blob = new Blob([buildIcs()], { type: 'text/calendar;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = 'calendario-uade.ics';
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  document.addEventListener('click', (e) => {
+    const menu = document.getElementById('cal-export-menu');
+    if (menu && !e.target.closest('.cal-export-wrap')) menu.style.display = 'none';
   });
 
   render();

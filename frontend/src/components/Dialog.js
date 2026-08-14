@@ -1,6 +1,7 @@
 export function showConfirmDialog({
     title = 'Confirmar accion',
     message = '',
+    detailsHtml = '',
     confirmText = 'Confirmar',
     cancelText = 'Cancelar',
     danger = false,
@@ -15,7 +16,8 @@ export function showConfirmDialog({
                     <button type="button" class="btn btn-ghost btn-sm dialog-close" aria-label="Cerrar">✕</button>
                 </div>
                 <div class="modal-body">
-                    <p style="margin:0; color:var(--color-text-secondary);">${escapeHtml(message)}</p>
+                    <p style="margin:0 0 ${detailsHtml ? '12px' : '0'}; color:var(--color-text-secondary);">${escapeHtml(message)}</p>
+                    ${detailsHtml ? `<div style="background:var(--color-surface-2);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:var(--space-3);font-size:var(--font-size-xs);color:var(--color-text-secondary);">${detailsHtml}</div>` : ''}
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-ghost dialog-cancel">${escapeHtml(cancelText)}</button>

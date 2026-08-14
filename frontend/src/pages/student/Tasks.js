@@ -44,7 +44,7 @@ export async function renderStudentTasks(container) {
             weight: (d.weight || 0) * 100,
             dueDate: d.dueDate,
             status: 'pending',
-            classIds: d.classId ? [d.classId] : [],
+            classIds: Array.isArray(d.classIds) && d.classIds.length > 0 ? d.classIds : (d.classId ? [d.classId] : []),
         }));
     const allItems = [...tasks, ...deadlineItems];
     const pending = allItems
