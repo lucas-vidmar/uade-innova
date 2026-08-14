@@ -12,6 +12,7 @@ import { withCorrelation } from '../middleware/with-correlation.js';
 import { withRateLimit } from '../middleware/with-rate-limit.js';
 import { withAuth } from '../middleware/with-auth.js';
 import { createStructuredLogger } from '../services/structured-logger.js';
+import { checkUploadQuota, recordUpload } from '../services/upload-quota.js';
 import { CONFIG } from '../services/config.js';
 
 const SESSION_METRICS_TABLE = 'SessionMetrics';
@@ -28,7 +29,7 @@ app.http('ingest-material', {
 
         try {
             log.info('Ingest request received', { url: request.url });
-            const { fileReadable, fileHeader, fileContentType, fileName, classIds, subjectId, materialType, materialPriority } = await parseMultipart(request, context);
+            const { fileReadable, fileHeader, fileContentType, fileName, fileSize, classIds, subjectId, materialType, materialPriority } = await parseMultipart(request, context);
             
             log.info('Multipart parsed', { fileName, fileContentType, subjectId, materialType, classIds, materialPriority });
 
@@ -58,6 +59,20 @@ app.http('ingest-material', {
                 return structuredErrorResponse(400, 'Faltan campos requeridos: classIds, subjectId, materialType', ErrorCategory.VALIDATION, 'MISSING_FIELDS');
             }
 
+            // Per-teacher upload quota (#222): reject before consuming tokens/storage.
+            try {
+                const quota = await checkUploadQuota(userId, fileSize);
+                if (!quota.allowed) {
+                    const message = quota.reason === 'bytes'
+                        ? 'Superaste el cupo de almacenamiento asignado. Liberá espacio borrando materiales viejos o pedí aumentar el límite.'
+                        : 'Superaste el límite de materiales subidos. Liberá espacio borrando materiales viejos.';
+                    log.warn('Upload quota exceeded', { userId, reason: quota.reason, used: quota.used, limits: quota.limits });
+                    return structuredErrorResponse(429, message, ErrorCategory.RATE_LIMIT, 'UPLOAD_QUOTA_EXCEEDED');
+                }
+            } catch (quotaErr) {
+                log.warn('Upload quota check failed (non-fatal, continuing)', { error: quotaErr.message });
+            }
+
             const materialId = uuidv4();
             if (!validateFileType(fileHeader, materialType, fileName, materialId, context)) {
                 const message = materialType === 'transcript'
@@ -76,6 +91,8 @@ app.http('ingest-material', {
                 status: 'pending',
                 uploadedAt: new Date().toISOString(),
                 priority: getMaterialPriority(materialType, materialPriority),
+                uploadedBy: userId,
+                fileSize,
             };
 
             try {
@@ -131,6 +148,14 @@ app.http('ingest-material', {
                     });
                 } catch (metricsErr) {
                     log.warn('Non-fatal metrics write error', { error: metricsErr.message });
+                }
+
+                // Account upload against the teacher's quota (#222). Non-fatal on failure.
+                try {
+                    await recordUpload(userId, fileSize);
+                    log.info('Upload quota recorded', { userId, fileSize });
+                } catch (quotaErr) {
+                    log.warn('Upload quota record failed (non-fatal)', { error: quotaErr.message });
                 }
 
                 return {
@@ -223,24 +248,24 @@ function validateFileType(buffer, materialType, fileName, materialId, context) {
             if (header.startsWith('504b0304')) return true;
             // PDF fallback: some presentations are uploaded as PDF
             if (header.startsWith('25504446')) return true;
-            context.log.warn(`[Ingest] File type validation failed for presentation: expected PPTX/PDF, got header=0x${header}`);
+            logWarn(`[Ingest] File type validation failed for presentation: expected PPTX/PDF, got header=0x${header}`);
             return false;
         case 'notes':
             // DOCX — ZIP-based (PK\x03\x04)
             if (header.startsWith('504b0304')) return true;
             // PDF
             if (header.startsWith('25504446')) return true;
-            context.log.warn(`[Ingest] File type validation failed for notes: expected DOCX/PDF, got header=0x${header}`);
+            logWarn(`[Ingest] File type validation failed for notes: expected DOCX/PDF, got header=0x${header}`);
             return false;
         case 'bibliography':
             // PDF (25 50 44 46 = %PDF)
             if (header.startsWith('25504446')) return true;
             // DOCX
             if (header.startsWith('504b0304')) return true;
-            context.log.warn(`[Ingest] File type validation failed for bibliography: expected PDF/DOCX, got header=0x${header}`);
+            logWarn(`[Ingest] File type validation failed for bibliography: expected PDF/DOCX, got header=0x${header}`);
             return false;
         default:
-            context.log.warn(`[Ingest] Unknown materialType "${materialType}" — allowing file`);
+            logWarn(`[Ingest] Unknown materialType "${materialType}" — allowing file`);
             return true;
     }
 }
@@ -269,6 +294,7 @@ async function parseMultipart(request, context) {
         let fileHeader = null;
         let fileContentType = '';
         let fileName = '';
+        let fileSize = 0;
         const fields = {};
         let limitReached = false;
         let fileStreamFinished = false;
@@ -284,6 +310,7 @@ async function parseMultipart(request, context) {
                     fileHeader,
                     fileContentType,
                     fileName,
+                    fileSize,
                     classIds: fields.classIds || (fields.classId ? [fields.classId] : []),
                     subjectId: fields.subjectId,
                     materialType: fields.materialType,
@@ -302,6 +329,7 @@ async function parseMultipart(request, context) {
             fileReadable = passThrough;
 
             file.on('data', d => {
+                fileSize += d.length;
                 if (!fileHeader || fileHeader.length < 8192) {
                     fileHeader = fileHeader ? Buffer.concat([fileHeader, d]) : d;
                 }

@@ -5,9 +5,10 @@ import { createStructuredLogger } from '../services/structured-logger.js';
 import { loadJson, saveJson, listBlobs, deleteBlob, uploadFile, downloadFile, getTableClient } from '../services/storage.js';
 import { v4 as uuidv4 } from 'uuid';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
-import { listClassesBySubject, listMaterialsBySubject, listMaterialsByClass, replaceClassesForSubject, deleteMaterialStateById, getMaterialState, upsertMaterialState, deleteClassesBySubject, deleteMaterialsBySubject, getEnrollmentsByUser, getEnrollment, listClassViewsByStudent, deleteClassViewsBySubject } from '../services/state-store.js';
+import { listClassesBySubject, listMaterialsBySubject, listMaterialsByClass, replaceClassesForSubject, deleteMaterialStateById, getMaterialState, upsertMaterialState, deleteClassesBySubject, deleteMaterialsBySubject, getEnrollmentsByUser, getEnrollment, listClassViewsByStudent, deleteClassViewsBySubject, getMaterialStateById } from '../services/state-store.js';
 import * as vectorStore from '../services/vector-store.js';
 import { trackPollingEvent, trackAuthFallbackBlocked } from '../services/telemetry.js';
+import { releaseUpload } from '../services/upload-quota.js';
 import { chatCompletion, generateClassSummary, generateClassMap, generateClassAudio, generatePodcastScript } from '../services/ai.js';
 import { computeBudgetProjection as computeBudgetProjectionV2, getAzureCostForBudget } from '../services/azure-cost.js';
 
@@ -1772,6 +1773,17 @@ app.http('delete-material', {
 
         const materialId = request.params.materialId;
         try {
+            // Capture attribution before deletion so we can release the teacher quota (#222).
+            let quotaRelease = null;
+            try {
+                const material = await getMaterialStateById(materialId);
+                if (material?.uploadedBy || material?.fileSize) {
+                    quotaRelease = { uploadedBy: material.uploadedBy, fileSize: material.fileSize };
+                }
+            } catch (lookupErr) {
+                context?.log?.warn?.(`[DeleteMaterial] Could not look up ${materialId} for quota release: ${lookupErr.message}`);
+            }
+
             // Limpieza en Vector Store
             try {
                 await vectorStore.deleteVectorsByFilter({ materialId: { "$eq": materialId } });
@@ -1787,6 +1799,16 @@ app.http('delete-material', {
             }
 
             await deleteBlob(CONTAINER_PROCESSED, `${materialId}.json`);
+
+            if (quotaRelease?.uploadedBy) {
+                try {
+                    await releaseUpload(quotaRelease.uploadedBy, quotaRelease.fileSize || 0);
+                    context.log(`[DeleteMaterial] Quota released for ${quotaRelease.uploadedBy} (material ${materialId})`);
+                } catch (quotaErr) {
+                    context?.log?.warn?.(`[DeleteMaterial] Quota release failed (non-fatal): ${quotaErr.message}`);
+                }
+            }
+
             return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: true }) };
         } catch (err) {
             context.error(err);

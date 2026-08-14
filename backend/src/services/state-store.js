@@ -71,6 +71,8 @@ function toMaterialEntity(material) {
     chunkCount: typeof material.chunkCount === 'number' ? material.chunkCount : undefined,
     reviewed: material.reviewed === true,
     priority: material.priority,
+    uploadedBy: material.uploadedBy,
+    fileSize: typeof material.fileSize === 'number' ? material.fileSize : undefined,
   });
 }
 
@@ -104,6 +106,8 @@ function fromMaterialEntity(entity) {
     chunkCount: entity.chunkCount,
     reviewed: entity.reviewed === true,
     priority: entity.priority,
+    uploadedBy: entity.uploadedBy,
+    fileSize: typeof entity.fileSize === 'number' ? entity.fileSize : Number(entity.fileSize) || undefined,
   };
 }
 
@@ -193,6 +197,25 @@ export async function deleteMaterialStateById(materialId) {
   }
 
   return false;
+}
+
+/**
+ * Finds a material across subjects by its RowKey (materialId).
+ * @param {string} materialId
+ * @returns {Promise<Object|null>} The material state (with uploadedBy/fileSize) or null.
+ */
+export async function getMaterialStateById(materialId) {
+  if (!materialId) return null;
+
+  await ensureTable(MATERIALS_TABLE);
+  const client = getTableClient(MATERIALS_TABLE);
+
+  const filter = `RowKey eq '${escapeODataValue(materialId)}'`;
+  for await (const entity of client.listEntities({ queryOptions: { filter } })) {
+    return fromMaterialEntity(entity);
+  }
+
+  return null;
 }
 
 export async function replaceClassesForSubject(subjectId, classes) {

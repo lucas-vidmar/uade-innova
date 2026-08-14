@@ -120,6 +120,12 @@ export const CONFIG = {
     },
   },
 
+  uploadQuota: {
+    table: process.env.AZURE_TABLE_UPLOAD_QUOTA || 'UploadQuota',
+    maxFilesPerTeacher: Number(process.env.UPLOAD_QUOTA_MAX_FILES_PER_TEACHER) || 100,
+    maxBytesPerTeacher: Number(process.env.UPLOAD_QUOTA_MAX_BYTES_PER_TEACHER) || 5 * 1024 * 1024 * 1024,
+  },
+
   timezone: process.env.DEFAULT_TIMEZONE || 'America/Argentina/Buenos_Aires',
 
   deadline: {

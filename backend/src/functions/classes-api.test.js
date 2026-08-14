@@ -70,6 +70,7 @@ mock.module('../services/state-store.js', {
         replaceClassesForSubject: mock.fn(async () => true),
         deleteMaterialStateById: mock.fn(async () => true),
         getMaterialState: mock.fn(async () => null),
+        getMaterialStateById: mock.fn(async () => null),
         upsertMaterialState: mock.fn(async () => true),
         deleteClassesBySubject: mock.fn(async () => true),
         deleteMaterialsBySubject: mock.fn(async () => true),
@@ -78,6 +79,13 @@ mock.module('../services/state-store.js', {
         listMaterialsByClass: mock.fn(async () => []),
         listClassViewsByStudent: mock.fn(async () => []),
         deleteClassViewsBySubject: mock.fn(async () => true),
+    }
+});
+mock.module('../services/upload-quota.js', {
+    namedExports: {
+        releaseUpload: mock.fn(async () => {}),
+        checkUploadQuota: mock.fn(async () => ({ allowed: true })),
+        recordUpload: mock.fn(async () => {}),
     }
 });
 mock.module('uuid', { namedExports: { v4: () => '1234' } });

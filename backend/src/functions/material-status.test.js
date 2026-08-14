@@ -26,6 +26,7 @@ const stateStoreMocks = {
     replaceClassesForSubject: mock.fn(async () => true),
     deleteMaterialStateById: mock.fn(async () => true),
     getMaterialState: mock.fn(async () => null),
+    getMaterialStateById: mock.fn(async () => null),
     upsertMaterialState: mock.fn(async () => true),
     deleteClassesBySubject: mock.fn(async () => true),
     deleteMaterialsBySubject: mock.fn(async () => true),
