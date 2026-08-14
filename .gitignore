@@ -103,3 +103,9 @@ mobile-*.md
 desktop-*.png
 desktop-*.yml
 local-*.png
+
+# ─── BMad framework (local, not versioned) ────────────────
+_bmad/
+
+# ─── opencode local config ───────────────────────────────────
+.opencode/
