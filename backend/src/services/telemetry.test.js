@@ -12,7 +12,7 @@ import assert from 'node:assert';
 // Ensure connection string is absent so the module initializes in no-op mode
 delete process.env.APPLICATIONINSIGHTS_CONNECTION_STRING;
 
-const { trackRAGInteraction, trackUserLogin, trackPollingEvent } = await import('../services/telemetry.js');
+const { trackRAGInteraction, trackUserLogin, trackPollingEvent, trackUnansweredQuery } = await import('../services/telemetry.js');
 
 // ── No-op behavior when connection string is missing ─────────────────────────
 
@@ -57,6 +57,34 @@ test('trackUserLogin is a no-op when APPLICATIONINSIGHTS_CONNECTION_STRING is no
             roles: ['Alumno'],
         })
     );
+});
+
+test('trackUnansweredQuery is a no-op and does not throw without Azure config (#221)', async () => {
+    await assert.doesNotReject(() =>
+        trackUnansweredQuery({
+            question: '¿Qué es la arquitectura hexagonal?',
+            rewrittenQuestion: 'arquitectura hexagonal',
+            reason: 'no_context',
+            subjectId: 'arq-software-2026',
+            userId: 'alu-001',
+            classIds: ['class-01'],
+            correlationId: 'test-corr',
+            sourcesCount: 0,
+        })
+    );
+});
+
+test('trackUnansweredQuery handles all refusal reasons without throwing', async () => {
+    for (const reason of ['no_context', 'empty_answer', 'refusal_answer', 'safety_blocked']) {
+        await assert.doesNotReject(() =>
+            trackUnansweredQuery({
+                question: 'pregunta de prueba',
+                reason,
+                subjectId: 'arq-software-2026',
+                sourcesCount: 2,
+            })
+        );
+    }
 });
 
 // ── Edge cases: missing / partial arguments ───────────────────────────────────

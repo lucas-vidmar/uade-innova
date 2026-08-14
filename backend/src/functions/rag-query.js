@@ -7,7 +7,7 @@ import { generateEmbedding, chatCompletion, getChatModelName } from '../services
 import { querySimilar } from '../services/vector-store.js';
 import { saveJson, loadJson, saveMetricsToTable } from '../services/storage.js';
 import { getShadowPrompt, getActivePrompt } from '../services/prompts.js';
-import { trackRAGInteraction, trackRAGError } from '../services/telemetry.js';
+import { trackRAGInteraction, trackRAGError, trackUnansweredQuery } from '../services/telemetry.js';
 import { parseClientPrincipal, validateFrontDoorId, getAuthenticatedUser } from '../services/auth-utils.js';
 import { normalizeCategorizedError, ErrorCategory } from '../services/error-categories.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
@@ -413,6 +413,17 @@ app.http('rag-query', {
         // ── 5. Early return if no context found ───────────────────
         if (matches.length === 0) {
             context.log(`[RAG] No matches found for subjectId=${subjectId}. Sending refusal stream.`);
+            // Audit unanswered query (no context) for prompt-injection / knowledge-gap detection (#221).
+            trackUnansweredQuery({
+                question,
+                rewrittenQuestion,
+                reason: 'no_context',
+                subjectId,
+                userId,
+                classIds,
+                correlationId,
+                sourcesCount: 0,
+            }).catch(e => context.error('[Telemetry] Error emitting UnansweredQuery (no_context):', e));
             if (stream) {
                 const responseStream = new ReadableStream({
                     start(controller) {
@@ -748,6 +759,21 @@ ${contextText}
                 correlationId,
                 stackTrace: err?.stack,
             }).catch(e => context.error('[Telemetry] Error emitting RAGErrorCategorized (blocking):', e));
+
+            // Audit queries blocked by content-safety filters (#221).
+            if (categorizedError.errorCategory === 'SAFETY') {
+                trackUnansweredQuery({
+                    question,
+                    rewrittenQuestion,
+                    reason: 'safety_blocked',
+                    subjectId,
+                    userId,
+                    classIds,
+                    correlationId,
+                    sourcesCount: matches.length,
+                }).catch(e => context.error('[Telemetry] Error emitting UnansweredQuery (safety_blocked):', e));
+            }
+
             return jsonResponse(categorizedError.status, {
                 error: `Error generando respuesta (chat): ${categorizedError.message}`,
                 errorCategory: categorizedError.errorCategory,
@@ -760,6 +786,25 @@ ${contextText}
 
         // Accumulate total tokens for this interaction (embedding + chat)
         const totalInteractionTokens = (embeddingUsage?.total_tokens || 0) + (chatUsage?.total_tokens || 0);
+
+        // Audit unanswered queries (empty / refusal-like model output) (#221).
+        const trimmedAnswer = String(answer || '').trim();
+        const isRefusalLike = !trimmedAnswer
+            || trimmedAnswer.toLowerCase().includes('no encontre informacion')
+            || trimmedAnswer.toLowerCase().includes('no tengo informacion')
+            || trimmedAnswer.toLowerCase().includes('no encuentro informacion');
+        if (isRefusalLike) {
+            trackUnansweredQuery({
+                question,
+                rewrittenQuestion,
+                reason: trimmedAnswer ? 'refusal_answer' : 'empty_answer',
+                subjectId,
+                userId,
+                classIds,
+                correlationId,
+                sourcesCount: matches.length,
+            }).catch(err => context.error('[Telemetry] Error emitting UnansweredQuery (unanswered):', err));
+        }
 
         const sourceMix = resolveSourceMix(matches.map(m => ({ materialType: m.metadata?.materialType })));
 

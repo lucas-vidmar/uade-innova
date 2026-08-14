@@ -9,6 +9,7 @@
  */
 
 import { recordRAGErrorEvent } from './safety-rate.js';
+import { CONFIG } from '../config.js';
 
 let _clientPromise = null;
 
@@ -362,6 +363,76 @@ export async function trackRAGError({
     });
 
     await client.flush({ isAppCrashing: true });
+}
+
+/**
+ * Audits an unanswered RAG query — a query that produced no usable answer
+ * (refusal from no context, empty model output, or a safety-blocked response).
+ *
+ * Persisted to the UnansweredQueries table + emitted as an App Insights custom
+ * event so operators can surface prompt-injection attempts or knowledge gaps
+ * (Issue #221).
+ *
+ * @param {object} params
+ * @param {string} params.question         - The raw user question
+ * @param {string} [params.rewrittenQuestion] - Rewritten query sent to retrieval
+ * @param {string} params.reason           - One of: 'no_context' | 'empty_answer' | 'safety_blocked'
+ * @param {string} params.subjectId        - Subject identifier
+ * @param {string} [params.userId]         - User identifier
+ * @param {string|string[]} [params.classIds] - Class identifier(s)
+ * @param {string} [params.correlationId]  - Trace correlation ID
+ * @param {number} [params.sourcesCount]   - Number of retrieved chunks (0 for no-context)
+ */
+export async function trackUnansweredQuery({
+    question,
+    rewrittenQuestion,
+    reason,
+    subjectId,
+    userId,
+    classIds,
+    correlationId,
+    sourcesCount,
+}) {
+    const client = await getClient();
+    const tableName = CONFIG.tables.unansweredQueries || 'UnansweredQueries';
+    try {
+        const { getTableClient } = await import('./storage.js');
+        const tableClient = getTableClient(tableName);
+        await tableClient.createTable().catch(() => {});
+        const rowKey = `uq-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        await tableClient.upsertEntity({
+            partitionKey: subjectId || 'unknown',
+            rowKey,
+            question: question ? String(question).slice(0, 500) : '',
+            rewrittenQuestion: rewrittenQuestion ? String(rewrittenQuestion).slice(0, 500) : '',
+            reason: reason || 'unknown',
+            userId: userId || 'anonymous',
+            classIds: Array.isArray(classIds) ? classIds.join(',') : (classIds || ''),
+            correlationId: correlationId || '',
+            sourcesCount: Number(sourcesCount) || 0,
+            timestamp: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
+        }, 'Merge');
+    } catch (err) {
+        console.warn(`[Telemetry] Failed to persist unanswered query event: ${err.message}`);
+    }
+
+    if (!client) return;
+
+    client.trackEvent({
+        name: 'UnansweredQuery',
+        properties: {
+            reason: reason || 'unknown',
+            subjectId: subjectId || 'unknown',
+            userId: userId || 'anonymous',
+            classIds: Array.isArray(classIds) ? classIds.join(',') : (classIds || ''),
+            correlationId: correlationId || '',
+            question: question ? String(question).slice(0, 200) : '',
+        },
+        measurements: {
+            sourcesCount: Number(sourcesCount) || 0,
+        },
+    });
 }
 
 /**

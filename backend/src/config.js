@@ -24,6 +24,7 @@ export const CONFIG = {
     riskThresholds: process.env.AZURE_TABLE_RISK_THRESHOLDS || 'RiskThresholds',
     userEvents: process.env.AZURE_TABLE_USER_EVENTS || 'UserEvents',
     quizResults: process.env.AZURE_TABLE_QUIZ_RESULTS || 'QuizResults',
+    unansweredQueries: process.env.AZURE_TABLE_UNANSWERED_QUERIES || 'UnansweredQueries',
   },
 
   containers: {

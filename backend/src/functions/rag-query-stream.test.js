@@ -69,6 +69,7 @@ const authUtilsMocks = {
 const telemetryMocks = {
     trackRAGInteraction: mock.fn(async () => {}),
     trackRAGError: mock.fn(async () => {}),
+    trackUnansweredQuery: mock.fn(async () => {}),
 };
 
 const stateStoreMocks = {
