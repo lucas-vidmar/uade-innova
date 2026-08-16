@@ -33,8 +33,8 @@ Pinecone. Este documento cataloga dónde aparecen y cómo se enumeran.
 
 **Blob Storage**
 - `deadlines/{subjectId}.json` — leído por `backend/src/functions/deadlines.js:80`, escrito en `:126-137`.
-- `class-timelines/{classId}.json` — producido por `backend/src/services/pipeline.js:254-291`; renderiza `0s` en `frontend/src/pages/student/ClassDetail.js:216-235`.
-- `class-materials/`, `processed/` — archivos crudos y estado procesado del pipeline (nombres DASI: `DASI Cronograma dia Jueves_1C2023_ejemplo.docx`, `TRABAJO PRÁCTICO FINAL DASI2023.docx`).
+- `class-timelines/{classId}.json` — producido por `backend/src/services/pipeline.js:254-291`; renderiza `0s` en `frontend/src/pages/student/ClassDetail.js:216-235`. **Claveado solo por `classId`:** si un subject test comparte `classId` con una clase piloto (ej: `class-01` en `dasi-1c2023` y `arq-software-2026`), la limpieza NO borra el blob entero — hace strip parcial de los markers ofensivos para no eliminar el timeline de la clase piloto.
+- `class-materials/`, `processed/` — archivos crudos y estado procesado del pipeline (nombres DASI: `DASI Cronograma dia Jueves_1C2023_ejemplo.docx`, `TRABAJO PRÁCTICO FINAL DASI2023.docx`). Path del pipeline: `{subjectId}/{materialId}{ext}`; blobs legacy: `{classId}/{filename}`. La limpieza de `class-materials` exige **contexto de subject test** (subjectId/classId test o filename de un material test) — un blob piloto cuyo nombre mencione "dasi" no se borra.
 
 **Table Storage**
 - `Conversations` — `backend/src/services/state-store.js:590-719`; duplicados visibles en `frontend/src/components/SavedConversationsModal.js:49-64`.
@@ -56,8 +56,9 @@ node backend/scripts/cleanup-test-data.js --verify
 
 El script recorre: deadlines por blob, `Conversations` (tabla completa),
 timelines por blob, tablas `materials`/`classes`/`Enrollments`/`UserProfiles`,
-blobs `class-materials`/`processed` (inspección de contenido) y
-`classes-config/subjects.json`. El output reporta conteos por categoría.
+blobs `class-materials` (con guard de contexto de subject test) y `processed`
+(inspección de contenido) y `classes-config/subjects.json`. El output reporta
+conteos por categoría.
 
 ## 4. Fixtures y su etiqueta de entorno (`env`)
 

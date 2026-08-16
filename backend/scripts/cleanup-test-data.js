@@ -24,6 +24,8 @@
  *
  * ## Safety
  *   - `--live`/`--reseed` piden confirmación interactiva salvo `--yes`.
+ *   - `DRY_RUN=true` (o `--dry-run`) fuerza modo preview (fail-closed): aunque
+ *     se pase `--live`/`--reseed`, NO se ejecuta ninguna eliminación.
  *   - Se BLOQUEA `--live`/`--reseed` contra un storage piloto/producción
  *     (nombre con `stdashboard` o NODE_ENV=production) salvo
  *     `ALLOW_CLEANUP_PILOT=true` (no recomendado).
@@ -285,16 +287,19 @@ export async function main(options = {}) {
         return { status: result.ok ? 'ok' : 'artifacts-remaining', ...result };
     }
 
-    if (mode === 'reseed' && dryRun) {
+    // ── Fail-closed: DRY_RUN=true (o --dry-run) fuerza preview ──
+    // Aunque el usuario combine DRY_RUN=true con --live/--reseed, NUNCA se
+    // ejecutan eliminaciones: se imprime el reporte preview y se sale sin
+    // mutar nada. Contrato documentado: DRY_RUN=true ≡ --dry-run.
+    if (dryRun) {
         const result = await runCleanup(stores, { dryRun: true, skipPinecone: args.skipPinecone });
         printCleanupReport(result);
-        console.log('\n[Reseed] (preview) Se re-ejecutarían: seed-initial-data.js + seed-enrollments.js (solo scope piloto).');
-        return { status: 'dry-run' };
-    }
-
-    if (mode === 'dry-run') {
-        const result = await runCleanup(stores, { dryRun: true, skipPinecone: args.skipPinecone });
-        printCleanupReport(result);
+        if (mode === 'reseed') {
+            console.log('\n[Reseed] (preview) Se re-ejecutarían: seed-initial-data.js + seed-enrollments.js (solo scope piloto).');
+        }
+        if (mode === 'live' || mode === 'reseed') {
+            console.log('\n[DRY_RUN] Fuerza preview: --live/--reseed NO ejecutan mutación mientras DRY_RUN=true.');
+        }
         return { status: 'dry-run', ...result };
     }
 

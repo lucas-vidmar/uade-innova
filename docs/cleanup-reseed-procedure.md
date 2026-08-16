@@ -47,6 +47,11 @@ Revisar el output y confirmar que las materias/usuarios listados son efectivamen
 > ⚠️ Si el storage es piloto/producción, este modo (y `--verify`) solo advierte;
 > `--live`/`--reseed` se BLOQUEAN salvo `ALLOW_CLEANUP_PILOT=true`.
 
+> 🛑 **Fail-closed:** `DRY_RUN=true` (o `--dry-run`) fuerza modo preview **siempre**.
+> Aunque se pase `--live`/`--reseed`, mientras `DRY_RUN=true` el script imprime el
+> reporte preview y NO ejecuta ninguna eliminación (ni reseed). Es el equivalente
+> documentado a `--dry-run` (`backend/scripts/cleanup-test-data.js`).
+
 ### Paso 2: Limpieza live
 
 ```bash
@@ -64,6 +69,17 @@ Pide confirmación interactiva salvo `--yes`. Aplica las eliminaciones:
 - Enrollments y perfiles `test-alu-*` (tablas `Enrollments`/`UserProfiles`).
 - Blobs DASI/Econometría (`class-materials/`, `processed/`) y entradas de `subjects.json`.
 - Vectores Pinecone de materias test **solo con** `--with-pinecone` (handoff Story 10.17).
+
+> ⚠️ **Guardas de seguridad de la limpieza live:**
+> - `class-materials` solo se limpia con **contexto de subject test**: blobs cuyo
+>   path empieza con un `subjectId` test, con un `classId` de una clase test, o
+>   cuyo filename coincide con un material de test. Un blob piloto cuyo nombre
+>   mencione "dasi/econometría" por accidente **no** se borra.
+> - `class-timelines/{classId}.json` está claveado solo por `classId`. Si un
+>   subject test comparte `classId` con una clase piloto (ej: `dasi-1c2023` y
+>   `arq-software-2026` usan `class-01`), el blob **no se borra entero**: se hace
+>   strip parcial de los markers/secciones ofensivos para no eliminar el timeline
+>   de la clase piloto (el reseed no regenera timelines).
 
 ### Paso 3: Reseed (solo fixtures piloto)
 
@@ -123,6 +139,8 @@ de test: `backend/scripts/seed-test-profiles.js` y `test-upload-rag.mjs` (solo d
 | `Configuracion incompleta: PINECONE_API_KEY` | Faltan env vars de Pinecone | Solo se necesitan con `--with-pinecone` |
 | `--live`/`--reseed` se bloquean al detectar storage piloto | Guard anti-piloto (nombre `stdashboard` o `NODE_ENV=production`) | Usar un storage de desarrollo; o `ALLOW_CLEANUP_PILOT=true` SOLO si estás seguro |
 | `--live` se cancela sin `--yes` | Confirmación interactiva en TTY | Ejecutar con `--yes` en CI o aceptar el prompt |
+| `--live`/`--reseed` con `DRY_RUN=true` no muta (solo preview) | Fail-closed intencional | Quitar `DRY_RUN=true` del entorno para aplicar la limpieza |
+| El verify marca un timeline piloto con label "econometría"/"DASI" | **Fijo:** para materias piloto los patrones DASI se ignoran; solo aplican los snippets `trigger check`/`retry old doc` | Si aun así aparece, revisar si tiene markers en `0s` (QA-014) |
 | `--reseed` falla en `seed-initial-data.js` | `NODE_ENV=production` o credenciales | Ejecutar con `NODE_ENV` no-producción y credenciales correctas |
 | El verify sigue marcando artefactos | Datos nuevos reintroducidos o conteos distintos | Revisar `docs/stale-test-data-inventory.md` y el output del dry-run |
 | Pinecone sigue devolviendo fuentes test | Vectores con metadata vieja (QA-002) | Correr Story 10.17 (reindex/cleanup de vectores) |

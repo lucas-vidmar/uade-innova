@@ -123,16 +123,21 @@ export function hasTestSnippet(timeline = {}) {
   const texts = [];
   const markers = Array.isArray(timeline.markers) ? timeline.markers : [];
   const sections = Array.isArray(timeline.sections) ? timeline.sections : [];
+  const pilot = subjectIsPilot(timeline.subjectId);
   for (const marker of markers) {
     texts.push(marker?.label);
-    if (!subjectIsPilot(timeline.subjectId)) texts.push(marker?.sourceFilename);
+    if (!pilot) texts.push(marker?.sourceFilename);
   }
   for (const section of sections) {
     texts.push(section?.text);
-    if (!subjectIsPilot(timeline.subjectId)) texts.push(section?.sourceFilename);
+    if (!pilot) texts.push(section?.sourceFilename);
   }
   const joined = normalizeText(texts.filter(Boolean).join(' '));
   if (TEST_SNIPPET_PATTERNS.some((pattern) => pattern.test(joined))) return true;
+  // Guard piloto: los patrones DASI/econometría solo aplican a subjects NO
+  // piloto. Un label/section de una materia piloto que mencione "econometría"
+  // o "DASI" es contenido legítimo y NO debe marcarse ni reescribirse.
+  if (pilot) return false;
   return DASI_FILE_PATTERNS.some((pattern) => pattern.test(joined));
 }
 
@@ -180,15 +185,42 @@ export function isTestProcessedPayload(payload = {}) {
 }
 
 /**
- * Detecta blobs de `class-materials` por su nombre de blob (ruta). Los nombres
- * típicos son `{classId}/{materialId}` o `{classId}/{filename}`. Sin contexto
- * de subjectId disponible, se detecta por el nombre del archivo (último
- * segmento de la ruta) y el nombre completo con patrones DASI/econometría.
+ * Heurística pura de nombre: detecta contenido DASI/econometría en el path de
+ * un blob de `class-materials`. Por sí SOLA NO alcanza para borrar: el path
+ * puede ser `{subjectId}/{materialId}{ext}` (pipeline, ver ingest-material.js)
+ * o legacy `{classId}/{filename}`, y un blob piloto cuyo nombre mencione
+ * "dasi/econometría" por accidente no debe eliminarse. Para el borrado real
+ * usá `classMaterialBlobBelongsToTest` (guarda de contexto de subject).
  */
 export function isTestBlobName(blobName) {
   const name = normalizeText(blobName);
   const filenameSegment = name.split('/').pop() || name;
   return hasDasiText(filenameSegment) || hasDasiText(name);
+}
+
+/**
+ * Guard de contexto de subject para blobs de `class-materials`. Un blob solo
+ * se considera de test si el path lo vincula a un subject de test:
+ *   - primer segmento = subjectId de test (path del pipeline), o
+ *   - primer segmento = classId de una clase de test (blob legacy), o
+ *   - filename (último segmento) coincide con un material de test conocido.
+ * Sin ese contexto (ej: `class-01/...` de una clase piloto cuyo nombre
+ * menciona "dasi"), el blob NO se borra.
+ * @param {string} blobName
+ * @param {{testMaterialFilenames?: Set<string>, testClassIds?: Set<string>}} ctx
+ */
+export function classMaterialBlobBelongsToTest(
+  blobName,
+  { testMaterialFilenames = new Set(), testClassIds = new Set() } = {},
+) {
+  if (!isTestBlobName(blobName)) return false;
+  const name = normalizeText(blobName);
+  const segments = name.split('/').filter(Boolean);
+  const subjectSegment = segments[0] || '';
+  const filenameSegment = segments[segments.length - 1] || '';
+  if (isTestSubjectId(subjectSegment)) return true;
+  if (testClassIds.has(subjectSegment)) return true;
+  return testMaterialFilenames.has(filenameSegment);
 }
 
 /**
@@ -342,11 +374,29 @@ export async function findTestArtifacts(stores) {
     console.warn(`[Cleanup] No se pudieron enumerar perfiles: ${err.message}`);
   }
 
-  // 8. Blobs `class-materials`
+  // 8. Blobs `class-materials` — guard de contexto de subject.
+  // El path del pipeline es `{subjectId}/{materialId}{ext}`; los blobs legacy
+  // pueden ser `{classId}/{filename}`. Solo se borran blobs que pertenecen a
+  // un subject de test (o cuyo filename coincide con un material de test);
+  // un blob piloto cuyo nombre mencione "dasi/econometría" no se toca.
   try {
+    const materials = await stores.listMaterials();
+    const classes = await stores.listClasses();
+    const testMaterialFilenames = new Set(
+      (Array.isArray(materials) ? materials : [])
+        .filter((m) => isTestSubjectId(m.subjectId))
+        .map((m) => normalizeText(m.filename))
+        .filter(Boolean),
+    );
+    const testClassIds = new Set(
+      (Array.isArray(classes) ? classes : [])
+        .filter((c) => isTestSubjectId(c.subjectId))
+        .map((c) => c.id || c.classId)
+        .filter(Boolean),
+    );
     const blobNames = await stores.listBlobNames(CONTAINERS.classMaterials);
     for (const blobName of blobNames) {
-      if (isTestBlobName(blobName)) {
+      if (classMaterialBlobBelongsToTest(blobName, { testMaterialFilenames, testClassIds })) {
         plan.classMaterialBlobs.push({ blobName });
       }
     }
@@ -465,9 +515,23 @@ export async function applyCleanupPlan(stores, plan, { skipPinecone = false } = 
   // Timelines: borrado total solo para subject test / timeline completa en 0s.
   // Para un timeline de subject NO-test contaminado (snippet/marker de test),
   // se eliminan solo los markers/secciones ofensivos y se conserva el resto.
+  //
+  // Guard de classId compartido: `class-timelines/{classId}.json` está claveado
+  // solo por classId. Un subject de test (ej: dasi-1c2023) puede usar el mismo
+  // classId que una clase piloto (ej: class-01 de arq-software-2026). Borrar el
+  // blob entero eliminaría también el timeline de la clase piloto, y el reseed
+  // no lo regenera. Si el classId pertenece a una clase piloto, se hace strip
+  // parcial (no borrado total).
   try {
+    const pilotClassIds = new Set(
+      (await stores.listClasses())
+        .filter((c) => subjectIsPilot(c.subjectId))
+        .map((c) => c.id || c.classId)
+        .filter(Boolean),
+    );
     for (const timeline of plan.timelines) {
-      if (timeline.testSubject || timeline.zeroOnly) {
+      const sharedWithPilot = pilotClassIds.has(timeline.classId);
+      if ((timeline.testSubject || timeline.zeroOnly) && !sharedWithPilot) {
         await stores.deleteBlob(CONTAINERS.classTimelines, timeline.blobName);
         deleted.timelineBlobs += 1;
         continue;
@@ -489,7 +553,7 @@ export async function applyCleanupPlan(stores, plan, { skipPinecone = false } = 
         .filter((section) => !sectionIsOffending(section, timeline.subjectId));
       const removedSections = sectionsBefore - current.sections.length;
 
-      if (current.markers.length === 0 && removedMarkers > 0) {
+      if (current.markers.length === 0 && removedMarkers > 0 && !sharedWithPilot) {
         // Todos los markers se eliminaron → el timeline quedó vacío.
         await stores.deleteBlob(CONTAINERS.classTimelines, timeline.blobName);
         deleted.timelineBlobs += 1;

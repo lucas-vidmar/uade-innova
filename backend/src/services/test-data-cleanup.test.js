@@ -17,6 +17,7 @@ import {
     isTestProfile,
     isTestProcessedPayload,
     isTestBlobName,
+    classMaterialBlobBelongsToTest,
     findTestArtifacts,
     runCleanup,
     applyCleanupPlan,
@@ -65,7 +66,7 @@ const TEST_ARTIFACT_DATA = {
     blobNames: {
         [CONTAINERS.deadlines]: ['arq-software-2026.json'],
         [CONTAINERS.classTimelines]: ['class-01.json'],
-        [CONTAINERS.classMaterials]: ['class-01/DASI Cronograma dia Jueves_1C2023_ejemplo.docx'],
+        [CONTAINERS.classMaterials]: ['dasi-1c2023/TRABAJO PRÁCTICO FINAL DASI2023.docx'],
         [CONTAINERS.processed]: ['processed-test-01.json'],
     },
     deadlines: {
@@ -195,6 +196,52 @@ test('hasTestSnippet detecta archivos DASI/Econometría en sourceFilename del ti
   assert.ok(!hasTestSnippet({ markers: [{ label: 'X', sourceFilename: 'clase1_transcripcion.txt' }], sections: [] }));
 });
 
+test('hasTestSnippet: timeline piloto cuyo label/section menciona DASI/Econometría NO se marca (guard piloto)', () => {
+  const pilotTimeline = {
+    subjectId: 'arq-software-2026',
+    markers: [
+      { id: 'mk-1', startSecond: 600, label: 'Econometría aplicada al caso' },
+      { id: 'mk-2', startSecond: 1200, label: 'Análisis DASI del material' },
+    ],
+    sections: [{ text: 'Discusión sobre econometría y modelos DASI' }],
+  };
+  assert.ok(!hasTestSnippet(pilotTimeline), 'contenido DASI/econometría legítimo de materia piloto no se marca');
+
+  // Subject de test con el mismo contenido SÍ se marca por DASI.
+  assert.ok(hasTestSnippet({ ...pilotTimeline, subjectId: 'dasi-1c2023' }));
+});
+
+test('hasTestSnippet: snippet de test aplica incluso en materia piloto', () => {
+  const pilotTimeline = {
+    subjectId: 'arq-software-2026',
+    markers: [{ id: 'mk-1', startSecond: 600, label: 'trigger check' }],
+    sections: [{ text: 'Se repitió retry old doc' }],
+  };
+  assert.ok(hasTestSnippet(pilotTimeline));
+});
+
+test('verifyCleanup no falla con timeline piloto cuyo label menciona DASI/Econometría', async () => {
+  const data = {
+    blobNames: { [CONTAINERS.classTimelines]: ['class-01.json'] },
+    timelines: {
+      'class-01': {
+        classId: 'class-01',
+        subjectId: 'arq-software-2026',
+        markers: [{ id: 'mk-1', startSecond: 600, label: 'Econometría DASI' }],
+        sections: [],
+      },
+    },
+  };
+  const { stores } = createFakeStores({ data });
+
+  const plan = await findTestArtifacts(stores);
+  assert.strictEqual(plan.timelines.length, 0, 'el timeline piloto con DASI en label no debe reportarse');
+
+  const result = await verifyCleanup(stores);
+  assert.strictEqual(result.ok, true);
+  assert.ok(!result.remaining.includes('timelines'));
+});
+
 test('isTestMaterial detecta subject test; contenido piloto con filename DASI NO se borra', () => {
   assert.ok(isTestMaterial({ subjectId: 'dasi-1c2023', materialId: 'm', filename: 'x.txt' }));
   assert.ok(isTestMaterial({ subjectId: 'matematica-2026', materialId: 'm', filename: 'DASI Cronograma dia Jueves_1C2023_ejemplo.docx' }));
@@ -227,6 +274,83 @@ test('isTestProcessedPayload y isTestBlobName detectan contenido DASI/test', () 
   assert.ok(isTestBlobName('class-01/DASI Cronograma dia Jueves_1C2023_ejemplo.docx'));
   assert.ok(isTestBlobName('dasi-1c2023/algún-archivo'));
   assert.ok(!isTestBlobName('class-01/m-01'));
+});
+
+test('classMaterialBlobBelongsToTest exige contexto de subject test', () => {
+  const ctx = {
+    testMaterialFilenames: new Set(['dasi cronograma dia jueves_1c2023_ejemplo.docx']),
+    testClassIds: new Set(['class-05']),
+  };
+  // Path del pipeline: {subjectId}/{materialId}{ext} con subject test.
+  assert.ok(classMaterialBlobBelongsToTest('dasi-1c2023/abc-123-uuid.docx', ctx));
+  // Legacy: {classId}/{filename} con classId de una clase test.
+  assert.ok(classMaterialBlobBelongsToTest('class-05/DASI Cronograma dia Jueves_1C2023_ejemplo.docx', ctx));
+  // Filename de un material de test conocido.
+  assert.ok(classMaterialBlobBelongsToTest('class-01/DASI Cronograma dia Jueves_1C2023_ejemplo.docx', ctx));
+  // Sin contexto de subject (blob legacy de clase piloto) → NO se borra.
+  assert.ok(!classMaterialBlobBelongsToTest('class-01/DASI cronograma preliminar.docx', ctx));
+  // Sin patrón DASI/test → nunca.
+  assert.ok(!classMaterialBlobBelongsToTest('arq-software-2026/m-01.txt', ctx));
+});
+
+test('findTestArtifacts: blobs class-materials solo se enumeran con contexto de subject test', async () => {
+  const data = {
+    blobNames: {
+      [CONTAINERS.classMaterials]: [
+        'dasi-1c2023/abc-123-uuid.docx',                                // pipeline subject test → sí
+        'class-05/DASI Cronograma dia Jueves_1C2023_ejemplo.docx',      // legacy classId test → sí
+        'class-01/DASI cronograma preliminar.docx',                     // clase piloto, filename NO test → NO
+        'arq-software-2026/m-01.txt',                                   // piloto normal → NO
+      ],
+    },
+    materials: [
+      { subjectId: 'dasi-1c2023', materialId: 'm-dasi', filename: 'DASI Cronograma dia Jueves_1C2023_ejemplo.docx' },
+      { subjectId: 'arq-software-2026', materialId: 'm-01', filename: 'clase1_transcripcion.txt' },
+    ],
+    classes: [
+      { subjectId: 'arq-software-2026', id: 'class-01' },
+      { subjectId: 'dasi-1c2023', id: 'class-05' },
+    ],
+  };
+  const { stores } = createFakeStores({ data });
+
+  const plan = await findTestArtifacts(stores);
+
+  assert.deepStrictEqual(
+    plan.classMaterialBlobs.map((b) => b.blobName),
+    ['dasi-1c2023/abc-123-uuid.docx', 'class-05/DASI Cronograma dia Jueves_1C2023_ejemplo.docx'],
+    'solo deben enumerarse blobs con contexto de subject test',
+  );
+});
+
+test('applyCleanupPlan: timeline de subject test con classId compartido con clase piloto NO se borra entero', async () => {
+  const data = {
+    blobNames: { [CONTAINERS.classTimelines]: ['class-01.json'] },
+    timelines: {
+      'class-01': {
+        classId: 'class-01',
+        subjectId: 'dasi-1c2023',
+        markers: [
+          { id: 'mk-0', startSecond: 0, label: 'X' },
+          { id: 'mk-600', startSecond: 600, label: 'OK' },
+        ],
+        sections: [],
+      },
+    },
+    classes: [{ subjectId: 'arq-software-2026', id: 'class-01' }],
+  };
+  const { stores, calls } = createFakeStores({ data });
+
+  const result = await applyCleanupPlan(stores, await findTestArtifacts(stores), { skipPinecone: true });
+
+  assert.ok(
+    !calls.mutations.some((c) => c.name === 'deleteBlob' && c.args[0] === CONTAINERS.classTimelines),
+    'no debe borrar el blob compartido con la clase piloto',
+  );
+  const saveCalls = calls.mutations.filter((c) => c.name === 'saveTimeline');
+  assert.ok(saveCalls.length >= 1, 'debe re-guardar el timeline (strip parcial) preservando la clase piloto');
+  const saved = saveCalls[saveCalls.length - 1].args[1];
+  assert.deepStrictEqual(saved.markers.map((m) => m.id), ['mk-600'], 'solo se eliminan los markers ofensivos');
 });
 
 // ─── Enumeración / dry-run / live ─────────────────────────────────────────

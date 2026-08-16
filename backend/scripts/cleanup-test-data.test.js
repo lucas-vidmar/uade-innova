@@ -162,6 +162,32 @@ test('parseArgs: Pinecone se omite por defecto y se activa con --with-pinecone',
     assert.strictEqual(parseArgs(['--live', '--skip-pinecone']).skipPinecone, true);
 });
 
+test('main: DRY_RUN=true con --live --yes NO ejecuta mutaciones (fail-closed)', async () => {
+    const { stores, calls } = createFakeStores();
+
+    const result = await main({ stores, args: parseArgs(['--live', '--yes'], { DRY_RUN: 'true' }) });
+
+    assert.strictEqual(result.status, 'dry-run', 'DRY_RUN=true debe forzar preview, no --live');
+    assert.strictEqual(result.dryRun, true);
+    assert.strictEqual(calls.mutations.length, 0, 'DRY_RUN=true debe impedir CUALQUIER borrado live');
+});
+
+test('main: DRY_RUN=true con --reseed --yes NO ejecuta mutaciones ni reseed', async () => {
+    const { stores, calls } = createFakeStores();
+    let reseedCalls = 0;
+
+    const result = await main({
+        stores,
+        args: parseArgs(['--reseed', '--yes'], { DRY_RUN: 'true' }),
+        runReseed: () => { reseedCalls += 1; return true; },
+    });
+
+    assert.strictEqual(result.status, 'dry-run');
+    assert.strictEqual(result.dryRun, true);
+    assert.strictEqual(calls.mutations.length, 0);
+    assert.strictEqual(reseedCalls, 0, 'con DRY_RUN=true no debe re-sembrar');
+});
+
 test('main en modo dry-run reporta artefactos y NO ejecuta ninguna mutación', async () => {
     const { stores, calls } = createFakeStores();
 
