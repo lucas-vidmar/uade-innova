@@ -98,7 +98,7 @@ async function handleGetPolicy(request, context) {
         return {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(policyResponse(policy, true)),
+            body: JSON.stringify(policyResponse({ ...DEFAULT_RETENTION_POLICY, ...policy }, true)),
         };
     } catch (err) {
         context.log('[Compliance] Error reading policy:', err.message);

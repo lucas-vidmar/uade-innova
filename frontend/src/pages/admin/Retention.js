@@ -16,7 +16,17 @@ export async function renderAdminRetention(container) {
   async function loadPolicy() {
     try {
       const policy = await api.getRetentionPolicy();
-      if (policy) config = { ...config, ...policy };
+      if (policy) {
+        config = {
+          ...config,
+          archiveEnabled: policy.archiveEnabled ?? config.archiveEnabled,
+          archiveDays: policy.archiveDays ?? config.archiveDays,
+          deleteEnabled: policy.deleteEnabled ?? config.deleteEnabled,
+          deleteDays: policy.deleteDays ?? config.deleteDays,
+          notifyTeachers: policy.notifyTeachers ?? config.notifyTeachers,
+          autoDelete: policy.autoDelete ?? config.autoDelete,
+        };
+      }
     } catch (err) {
       console.warn('[Retention] No se pudo cargar la política de retención:', err);
     }

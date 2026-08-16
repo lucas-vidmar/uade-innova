@@ -101,6 +101,23 @@ test('GET retention-policy returns persisted values (readback path)', async () =
   assert.strictEqual(body.deleteDays, 1460);
 });
 
+test('GET retention-policy default-merges legacy blob shape (no undefined fields)', async () => {
+  storedPolicy = { softDeleteDays: 7, rules: [] };
+  const res = await captured['get-compliance-retention-policy'](makeRequest({}), context());
+  assert.strictEqual(res.status, 200);
+  const body = JSON.parse(res.body);
+  assert.strictEqual(body.configured, true);
+  assert.strictEqual(body.softDeleteDays, 7);
+  assert.deepStrictEqual(body.rules, []);
+  assert.strictEqual(body.archiveEnabled, true);
+  assert.strictEqual(body.archiveDays, 730);
+  assert.strictEqual(body.deleteEnabled, true);
+  assert.strictEqual(body.deleteDays, 1095);
+  assert.strictEqual(body.notifyTeachers, true);
+  assert.strictEqual(body.autoDelete, true);
+  assert.ok(!JSON.stringify(body).includes('undefined'));
+});
+
 function storedPolicyWithFilterRules() {
   return {
     ...validPolicy({ deleteDays: 1460 }),
