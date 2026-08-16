@@ -97,7 +97,12 @@ export async function getCorrection(subjectId, correctionId) {
     const params = new URLSearchParams({ subjectId });
     if (correctionId) params.append('correctionId', correctionId);
     const res = await fetchWithTimeout(`${BASE_URL}/corrections-pending?${params}`, { timeout: 4000 });
-    if (!res.ok) throw new Error('Error cargando corrección');
+    if (!res.ok) {
+        const err = new Error(`Error cargando corrección (HTTP ${res.status})`);
+        err.status = res.status;
+        err.retryable = res.status >= 500;
+        throw err;
+    }
     const json = await res.json();
     const data = json.data || [];
     return correctionId ? data.find(c => c.correctionId === correctionId) || null : data;
