@@ -225,6 +225,17 @@ async function bootstrap() {
         return;
     }
 
+    // ── Authenticated application-state marker (Story 10.20) ────────────────
+    // Positive proof that initAuth() resolved an authenticated session. Only
+    // written on this branch (after the access-denied and login returns above),
+    // so a dead-end/error release cannot produce it. It only signals "booted
+    // authenticated" — it never exposes role, email or scope (allowlist-only
+    // role model, AGENTS.md §10/§13).
+    document.documentElement.dataset.appState = 'authenticated';
+    try {
+        sessionStorage.setItem('edu_app_state', 'authenticated');
+    } catch (_) {}
+
     processingNotifications.init();
     inactivityMonitor.init();
     

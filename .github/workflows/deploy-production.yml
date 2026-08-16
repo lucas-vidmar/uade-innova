@@ -19,6 +19,7 @@ permissions:
 env:
   AZURE_FUNCTIONAPP_NAME: func-dashboard-ingest-q47bia47kk3na
   AZURE_STATIC_WEB_APP_NAME: stapp-dashboard-q47bia47kk3na
+  SMOKE_SWA_URL: ${{ secrets.SMOKE_SWA_URL }}
   AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
   AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
   AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
@@ -32,9 +33,19 @@ jobs:
       - name: Validate required secrets
         env:
           SWA_TOKEN: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          SMOKE_SWA_URL: ${{ secrets.SMOKE_SWA_URL }}
+          SMOKE_AUTH_ENABLED: ${{ secrets.SMOKE_AUTH_ENABLED }}
+          SMOKE_TEST_EMAIL: ${{ secrets.SMOKE_TEST_EMAIL }}
+          SMOKE_TEST_CLIENT_ID: ${{ secrets.SMOKE_TEST_CLIENT_ID }}
+          SMOKE_TEST_CLIENT_SECRET: ${{ secrets.SMOKE_TEST_CLIENT_SECRET }}
         run: |
           MISSING=""
           [ -z "$SWA_TOKEN" ] && MISSING="$MISSING AZURE_STATIC_WEB_APPS_API_TOKEN"
+          [ -z "$SMOKE_SWA_URL" ] && MISSING="$MISSING SMOKE_SWA_URL"
+          if [ "$SMOKE_AUTH_ENABLED" = "true" ]; then
+            [ -z "$SMOKE_TEST_EMAIL" ] && MISSING="$MISSING SMOKE_TEST_EMAIL"
+            [ -z "$SMOKE_TEST_CLIENT_ID" ] && [ -z "$SMOKE_TEST_CLIENT_SECRET" ] && MISSING="$MISSING SMOKE_TEST_CLIENT_ID/SMOKE_TEST_CLIENT_SECRET"
+          fi
           if [ -n "$MISSING" ]; then
             echo "::error::Missing required secrets:$MISSING"
             exit 1
@@ -123,17 +134,44 @@ jobs:
         run: |
           FUNC_URL="https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net/api/hello"
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$FUNC_URL" || echo "000")
-          if [ "$STATUS" != "200" ]; then
+          # Since #218, /api/hello is auth-gated (401 = host up, identity required).
+          # 200 and 401/403 both prove the Function host is reachable.
+          if [ "$STATUS" != "200" ] && [ "$STATUS" != "401" ] && [ "$STATUS" != "403" ]; then
             echo "::error::Production health check returned $STATUS"
             exit 1
           fi
           echo "Production health check passed ($STATUS)"
       - name: Smoke test Frontend endpoint
         run: |
-          SWA_URL="https://${{ env.AZURE_STATIC_WEB_APP_NAME }}.azurestaticapps.net"
+          SWA_URL="${{ env.SMOKE_SWA_URL }}"
+          if [ -z "$SWA_URL" ]; then
+            SWA_URL="https://${{ env.AZURE_STATIC_WEB_APP_NAME }}.azurestaticapps.net"
+          fi
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$SWA_URL" || echo "000")
           if [ "$STATUS" != "200" ]; then
             echo "::error::Frontend health check returned $STATUS"
             exit 1
           fi
           echo "Frontend health check passed ($STATUS)"
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js for application-state probe
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend deps (Playwright) when browser checks are enabled
+        if: ${{ secrets.SMOKE_AUTH_ENABLED == 'true' || secrets.SMOKE_BROWSER_CHECK == 'true' }}
+        working-directory: frontend
+        run: npm ci
+      - name: Run production application-state probe (Story 10.20)
+        env:
+          SMOKE_SWA_URL: ${{ env.SMOKE_SWA_URL }}
+          SMOKE_AUTH_ENABLED: ${{ secrets.SMOKE_AUTH_ENABLED }}
+          SMOKE_BROWSER_CHECK: ${{ secrets.SMOKE_BROWSER_CHECK }}
+          SMOKE_TEST_EMAIL: ${{ secrets.SMOKE_TEST_EMAIL }}
+          SMOKE_TEST_CLIENT_ID: ${{ secrets.SMOKE_TEST_CLIENT_ID }}
+          SMOKE_TEST_CLIENT_SECRET: ${{ secrets.SMOKE_TEST_CLIENT_SECRET }}
+          SMOKE_TIMEOUT_MS: ${{ secrets.SMOKE_TIMEOUT_MS }}
+        run: node backend/scripts/smoke-prod-application-state.js

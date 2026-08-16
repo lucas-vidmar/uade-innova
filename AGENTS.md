@@ -443,6 +443,33 @@ az role assignment create \
 
 Luego revertir los workflows a usar `azure/login@v2` + `azd deploy`.
 
+### **15.3. Smoke Test de Aplicación (Story 10.20 — más allá del HTTP 200)**
+
+El smoke test de producción (`deploy-production.yml` → `smoke-test`) y de staging
+(`staging.yml` → `health-check`) ejecuta `node backend/scripts/smoke-prod-application-state.js`
+**después** de los curls de HTTP 200. El probe afirma estado real de la aplicación y
+**bloquea el release** (exit ≠ 0 + anotación `::error::`) si cualquier check ejecutado falla.
+
+**Checks del probe:**
+- `identity-endpoint` — `GET {SMOKE_SWA_URL}/.auth/me` → 200 + JSON con clave `clientPrincipal`
+- `auth-redirect` — `GET {SMOKE_SWA_URL}/.auth/login/aad` → cadena 3xx que llega a `login.microsoftonline.com`
+- `app-shell` — `GET {SMOKE_SWA_URL}/` → 200 + HTML con `id="app"` y entry point JS (`/src/main.js` en dev/raw, `/assets/*.js` en build de producción)
+- `no-dead-end-browser` *(opcional)* — Playwright: la raíz debe redirigir a `login.microsoftonline.com`
+- `authenticated-marker` *(opcional)* — tras sign-in, el DOM tiene `data-app-state="authenticated"` (marker T1 en `frontend/src/main.js`)
+- `function-health` *(opcional)* — `/api/hello` con header `x-azure-fdid` cuando hay Front Door
+
+**Secrets requeridos (nunca commitear, ver §12/§13):**
+`SMOKE_SWA_URL` (obligatorio), `SMOKE_AUTH_ENABLED`, `SMOKE_TEST_EMAIL`,
+`SMOKE_TEST_CLIENT_ID`, `SMOKE_TEST_CLIENT_SECRET`, `SMOKE_BROWSER_CHECK`, `SMOKE_TIMEOUT_MS`.
+La identidad smoke debe estar en la allowlist del backend (Story 10-25 / #266). Checks
+deshabilitados imprimen `SKIP`; `SMOKE_AUTH_ENABLED=true` sin identidad → fail cerrado.
+
+**Ejecución local:**
+```bash
+SMOKE_SWA_URL=https://<swa-host>.azurestaticapps.net node backend/scripts/smoke-prod-application-state.js
+# Browser checks: cd frontend && npm ci  (o SMOKE_PLAYWRIGHT_PATH=...)
+```
+
 ## **16. Ciclo de Vida de Implementación y Verificación**
 
 Para garantizar la calidad y disponibilidad del dashboard, se establece el siguiente flujo obligatorio para cada tarea de implementación:
