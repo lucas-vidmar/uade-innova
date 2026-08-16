@@ -219,7 +219,7 @@ export function renderSidebar() {
         const itemPath = item.path.replace(/^#/, '');
         const isActive = itemPath === normalizedPath || (normalizedPath === '/student/class' && itemPath === '/student/dashboard');
         return `
-          <a href="${item.path}" class="mobile-bottom-link ${isActive ? 'active' : ''}" id="nav-${item.id}-mobile">
+          <a href="${item.path}" class="mobile-bottom-link ${isActive ? 'active' : ''}" id="nav-${item.id}-mobile" aria-label="${escapeHtml(item.label)}">
             ${getIcon(item.icon)}
             <span>${item.label}</span>
           </a>
@@ -227,7 +227,7 @@ export function renderSidebar() {
       }).join('')}
 
       ${user.role === 'teacher' || user.role === 'student' ? `
-        <button class="mobile-bottom-link mobile-bottom-link--help" id="nav-${user.role}-onboarding-mobile" type="button">
+        <button class="mobile-bottom-link mobile-bottom-link--help" id="nav-${user.role}-onboarding-mobile" type="button" aria-label="Guía de inicio">
           ${getIcon('help')}
           <span>Guía de inicio</span>
         </button>
@@ -641,5 +641,6 @@ function getIcon(icon) {
     flask: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 2v6L4 18a2 2 0 0 0 1.7 3h12.6a2 2 0 0 0 1.7-3L14 8V2"/><path d="M8 2h8"/><path d="M7 15h10"/></svg>',
   };
 
-  return icons[icon] || icons.home;
+  const svg = icons[icon] || icons.home;
+  return svg.replace(/^<svg\b/i, '<svg aria-hidden="true"');
 }
