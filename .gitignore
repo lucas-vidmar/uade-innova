@@ -73,6 +73,11 @@ main-chunk.js
 **/screenshot*.png*.png
 test-report/**/screenshot-*.png
 
+# Verification screenshots (browser verification captures, never tracked)
+**/frontend-screenshot*.png
+**/verification-*.png
+**/*-screenshot.png
+
 # Test artifacts
 *.snap
 *.d.ts
