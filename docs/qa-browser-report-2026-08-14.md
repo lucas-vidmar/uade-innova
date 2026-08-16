@@ -133,6 +133,8 @@ The Class 1 detail also exposed unrelated/test content, including DASI/Tidio mat
 
 ### QA-004 — P1 — Director dashboard `Cumplimiento` link is dead
 
+**Status:** FIXED — verified 2026-08-16 (Story 6.4, issue #262). The `/director/compliance` route is now registered in `frontend/src/main.js` pointing to the existing `renderDirectorCompliance` module. Covered by `frontend/tests/director-compliance-navigation.spec.js` (Playwright E2E) and deployed to the production Static Web App (`index-BWcpewq-.js`, compliance chunk `Compliance-CaerLNXF.js`).
+
 **Evidence:** Manual browser click and route-table inspection.
 
 **Steps**

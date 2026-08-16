@@ -27,7 +27,7 @@ test('director can review DAU, token and cost metrics for Power BI', async ({ pa
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
 
-  await page.route('**/api/subjects', async (route) => {
+  await page.route('**/api/subjects*', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ id: 'arq-software-2026', name: 'Arquitectura de Software' }]) });
   });
 
@@ -39,7 +39,7 @@ test('director can review DAU, token and cost metrics for Power BI', async ({ pa
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
 
-  await page.route('**/api/director/stats', async (route) => {
+  await page.route('**/api/director/stats*', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -107,7 +107,7 @@ test('director can review DAU, token and cost metrics for Power BI', async ({ pa
     });
   });
 
-  await page.route('**/api/vector-health', async (route) => {
+  await page.route('**/api/vector-health*', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
