@@ -55,8 +55,9 @@ import {
 import {
     getDirectorStats, getDirectorKpiExport, getDirectorPowerBiMetrics,
     getSafetyRate, getAdminUsers, getVectorHealth, getArchiveUsage,
-    getRetentionPolicy, getRetentionExport,
-    getSubjectWeights, saveSubjectWeights
+    getRetentionPolicy, getRetentionExport, saveRetentionPolicy,
+    getSubjectWeights, saveSubjectWeights,
+    getAdminConfig, saveAdminConfig, resetAdminConfig
 } from './admin.api.js';
 import {
     getTeacherAiFeedbackAlerts, getCorrectionsPending,
@@ -120,8 +121,9 @@ export const api = {
 
     getDirectorStats, getDirectorKpiExport, getDirectorPowerBiMetrics,
     getSafetyRate, getAdminUsers, getVectorHealth, getArchiveUsage,
-    getRetentionPolicy, getRetentionExport,
+    getRetentionPolicy, getRetentionExport, saveRetentionPolicy,
     getSubjectWeights, saveSubjectWeights,
+    getAdminConfig, saveAdminConfig, resetAdminConfig,
 
     getTeacherAiFeedbackAlerts, getCorrectionsPending,
     verifyAnswer, updateCorrectionStatus, reviewCorrection, getCorrection,
