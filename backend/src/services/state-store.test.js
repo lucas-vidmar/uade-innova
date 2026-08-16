@@ -79,6 +79,15 @@ const {
   upsertQuizResult,
   getQuizResult,
   listQuizResultsBySubject,
+  listAllMaterials,
+  listAllClasses,
+  listAllEnrollments,
+  listAllConversations,
+  listAllUserProfiles,
+  deleteUserProfile,
+  saveConversation,
+  upsertEnrollment,
+  getEnrollment,
 } = await import('./state-store.js');
 
 test('state-store writes and queries material entities', async () => {
@@ -179,4 +188,58 @@ test('state-store upserts and reads quiz results per student per class', async (
 
   const bySubject = await listQuizResultsBySubject('sub-1');
   assert.strictEqual(bySubject.length, 1);
+});
+
+test('state-store lists all materials and classes across subjects', async () => {
+  tableData.materials = [];
+  tableData.classes = [];
+
+  await upsertMaterialState({ subjectId: 'sub-a', materialId: 'ma-1', classIds: ['c1'], filename: 'a.txt' }, 'Replace');
+  await upsertMaterialState({ subjectId: 'sub-b', materialId: 'mb-1', classIds: ['c1'], filename: 'b.txt' }, 'Replace');
+  assert.strictEqual((await listAllMaterials()).length, 2);
+
+  await replaceClassesForSubject('sub-a', [{ id: 'class-a', title: 'A', date: '2026-03-01' }]);
+  await replaceClassesForSubject('sub-b', [{ id: 'class-b', title: 'B', date: '2026-03-02' }]);
+  assert.strictEqual((await listAllClasses()).length, 2);
+});
+
+test('state-store lists all conversations and enrollments across partitions', async () => {
+  tableData.Conversations = [];
+  tableData.Enrollments = [];
+
+  await saveConversation({
+    userId: 'u1', conversationId: 'c1', subjectId: 's1',
+    messages: [{ role: 'user', content: '¿Qué es la arquitectura hexagonal?' }],
+  });
+  await saveConversation({
+    userId: 'u2', conversationId: 'c2', subjectId: 's2',
+    messages: [{ role: 'user', content: '¿Qué es un sistema?' }],
+  });
+  const conversations = await listAllConversations();
+  assert.strictEqual(conversations.length, 2);
+  assert.ok(conversations.some((c) => c.conversationId === 'c1'));
+  assert.ok(conversations.some((c) => c.conversationId === 'c2'));
+
+  await upsertEnrollment({ subjectId: 's1', userId: 'u1', role: 'student' });
+  await upsertEnrollment({ subjectId: 's2', userId: 'u2', role: 'student' });
+  assert.strictEqual((await listAllEnrollments()).length, 2);
+  assert.ok((await getEnrollment('s1', 'u1')).role === 'student');
+});
+
+test('state-store lists and deletes user profiles by rowKey', async () => {
+  tableData.UserProfiles = [];
+
+  const client = createTableClient('UserProfiles');
+  await client.upsertEntity({ partitionKey: 'Profiles', rowKey: 'alu-001', name: 'Lucas' }, 'Replace');
+  await client.upsertEntity({ partitionKey: 'student', rowKey: 'test-alu-001', displayName: 'Ana' }, 'Replace');
+
+  const all = await listAllUserProfiles();
+  assert.strictEqual(all.length, 2);
+
+  const deleted = await deleteUserProfile('test-alu-001');
+  assert.strictEqual(deleted, true);
+  assert.strictEqual((await listAllUserProfiles()).length, 1);
+  assert.strictEqual((await listAllUserProfiles())[0].rowKey, 'alu-001');
+
+  assert.strictEqual(await deleteUserProfile('no-existe'), false);
 });

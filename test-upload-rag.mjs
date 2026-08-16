@@ -2,10 +2,44 @@ import { chromium } from 'playwright';
 import path from 'path';
 import fs from 'fs';
 import { Blob } from 'buffer';
+import { fileURLToPath } from 'url';
+
+/**
+ * ⚠️ HARNESS DE TEST (env=test) — Story 10.23 / QA-014
+ * ------------------------------------------------
+ * Este script crea fixtures de TEST: subject `dasi-1c2023`, clases
+ * `class-01`..`class-14`, enrollments `alu-001`/`doc-001`/`dir-001` y sube
+ * materiales DASI. NUNCA debe ejecutarse contra el host del piloto/producción
+ * (`func-dashboard-ingest-q47bia47kk3na.azurewebsites.net`): el guard
+ * `assertTestTarget()` lo bloquea por defecto. Para un host de desarrollo,
+ * apuntá FRONTEND_URL y API_BASE a tu entorno local.
+ */
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const FRONTEND_URL = 'http://localhost:5173';
 const API_BASE = 'https://func-dashboard-ingest-q47bia47kk3na.azurewebsites.net/api';
-const MATERIALS_DIR = '/Users/lucasvidmar/Documents/azure-educational-dashboard/materials';
+// Materiales de prueba (mismo directorio que en repo). Solo TEST.
+const MATERIALS_DIR = path.join(__dirname, 'materials');
+
+// Host del Function App del PILOTO/PRODUCCIÓN. Este harness jamás debe llegar ahí.
+// Overridable via PILOT_FUNCTION_HOST para no romper el guard si el token cambia.
+const PILOT_FUNCTION_HOST = process.env.PILOT_FUNCTION_HOST
+    || 'func-dashboard-ingest-q47bia47kk3na.azurewebsites.net';
+
+function assertTestTarget() {
+  if (API_BASE.includes(PILOT_FUNCTION_HOST)) {
+    if (process.env.ALLOW_TEST_UPLOAD_TO_PILOT === 'true') {
+      console.warn('[WARN] ALLOW_TEST_UPLOAD_TO_PILOT=true — este harness va a ESCRIBIR datos de test en el entorno PILOTO.');
+    } else {
+      console.error('[FATAL] Este harness es SOLO para TEST y apunta al host del piloto/producción:');
+      console.error(`        ${API_BASE}`);
+      console.error('  → Configurá API_BASE a un host de DESARROLLO, o');
+      console.error('    → seteá ALLOW_TEST_UPLOAD_TO_PILOT=true SOLO si sabés lo que hacés (no recomendado).');
+      process.exit(1);
+    }
+  }
+}
 
 const SUBJECT_ID = 'dasi-1c2023';
 const SUBJECT_NAME = 'DASI - Análisis de Sistemas e Información Gerencial';
@@ -91,6 +125,8 @@ function sleep(ms) {
 }
 
 async function main() {
+  assertTestTarget();
+
   fs.mkdirSync('test-report', { recursive: true });
 
   console.log('═══════════════════════════════════════════════════');

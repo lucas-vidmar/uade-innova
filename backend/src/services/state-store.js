@@ -4,6 +4,7 @@ import { CONFIG } from '../config.js';
 const MATERIALS_TABLE = CONFIG.tables.materials;
 const CLASSES_TABLE = CONFIG.tables.classes;
 const ENROLLMENTS_TABLE = CONFIG.tables.enrollments;
+const USER_PROFILES_TABLE = 'UserProfiles';
 const CORRECTIONS_TABLE = CONFIG.tables.corrections;
 const CORRECTIONS_PENDING_TABLE = CONFIG.tables.correctionsPending;
 const TRANSCRIPTION_CORRECTIONS_TABLE = CONFIG.tables.transcriptionCorrections;
@@ -135,6 +136,21 @@ async function queryByPartition(tableName, partitionKey) {
   return entities;
 }
 
+/**
+ * Lista TODAS las entidades de una tabla sin filtro de partición.
+ * Deliberadamente NO llama a ensureTable(): es solo lectura y no debe mutar el
+ * storage (crear tablas) durante un dry-run/verify. Si la tabla no existe,
+ * listEntities() lanza y el caller (cleanup-test-data) lo captura por categoría.
+ */
+async function queryAllEntities(tableName) {
+  const client = getTableClient(tableName);
+  const entities = [];
+  for await (const entity of client.listEntities()) {
+    entities.push(entity);
+  }
+  return entities;
+}
+
 export async function upsertMaterialState(material, mode = 'Merge') {
   if (!material?.subjectId || !material?.materialId) {
     throw new Error('upsertMaterialState requires subjectId and materialId');
@@ -155,6 +171,11 @@ export async function listMaterialsBySubject(subjectId) {
 export async function listMaterialsByClass(subjectId, classId) {
   const materials = await listMaterialsBySubject(subjectId);
   return materials.filter((item) => item.classIds.includes(classId));
+}
+
+export async function listAllMaterials() {
+  const entities = await queryAllEntities(MATERIALS_TABLE);
+  return entities.map(fromMaterialEntity);
 }
 
 export async function getMaterialState(subjectId, materialId) {
@@ -245,6 +266,11 @@ export async function listClassesBySubject(subjectId) {
   return entities.map(fromClassEntity);
 }
 
+export async function listAllClasses() {
+  const entities = await queryAllEntities(CLASSES_TABLE);
+  return entities.map(fromClassEntity);
+}
+
 export async function deleteClassesBySubject(subjectId) {
   if (!subjectId) return;
   await ensureTable(CLASSES_TABLE);
@@ -317,6 +343,11 @@ export async function getEnrollmentsBySubject(subjectId) {
   return entities.map(fromEnrollmentEntity);
 }
 
+export async function listAllEnrollments() {
+  const entities = await queryAllEntities(ENROLLMENTS_TABLE);
+  return entities.map(fromEnrollmentEntity);
+}
+
 export async function upsertEnrollment(enrollment) {
   if (!enrollment?.subjectId || !enrollment?.userId) {
     throw new Error('upsertEnrollment requires subjectId and userId');
@@ -351,6 +382,30 @@ export async function deleteEnrollment(subjectId, userId) {
   } catch {
     return false;
   }
+}
+
+// ─── User Profiles Operations (Story 10.23 — cleanup de perfiles de test) ─
+
+export async function listAllUserProfiles() {
+  const entities = await queryAllEntities(USER_PROFILES_TABLE);
+  return entities;
+}
+
+export async function deleteUserProfile(userId) {
+  if (!userId) return false;
+  await ensureTable(USER_PROFILES_TABLE);
+  const client = getTableClient(USER_PROFILES_TABLE);
+  const filter = `RowKey eq '${escapeODataValue(userId)}'`;
+  let deleted = false;
+  try {
+    for await (const entity of client.listEntities({ queryOptions: { filter } })) {
+      await client.deleteEntity(entity.partitionKey, entity.rowKey);
+      deleted = true;
+    }
+  } catch {
+    return false;
+  }
+  return deleted;
 }
 
 // ─── Corrections Operations ───────────────────────────────────
@@ -691,6 +746,11 @@ export async function listConversationsByUser(userId, subjectId) {
 
   all.sort((a, b) => new Date(b.lastMessageAt || 0) - new Date(a.lastMessageAt || 0));
   return all;
+}
+
+export async function listAllConversations() {
+  const entities = await queryAllEntities(CONVERSATIONS_TABLE);
+  return entities.map(fromConversationEntity);
 }
 
 export async function deleteConversation(userId, conversationId) {
