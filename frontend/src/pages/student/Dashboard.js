@@ -466,6 +466,13 @@ export async function renderStudentDashboard(container) {
     initMobileLayout();
   };
 
+  const startOnboardingIfNeeded = () => {
+    if (!isOnboardingCompleted('student') && auth.getAIConsentAccepted()) {
+      const engine = new OnboardingEngine({ role: 'student', steps: STUDENT_ONBOARDING_STEPS });
+      engine.start();
+    }
+  };
+
   const loadChatSession = async (sessionId) => {
     if (!sessionId) return;
     const [classes, history] = await Promise.all([
@@ -491,6 +498,7 @@ export async function renderStudentDashboard(container) {
       ])).flat(),
       onNewChat: handleNewChat,
       onMessageSent: handleMessageSent,
+      onConsentAccepted: startOnboardingIfNeeded,
     });
     chatMount.appendChild(chatWidget);
     updateHistorySidebar(history);
@@ -692,14 +700,10 @@ export async function renderStudentDashboard(container) {
       initialClassIds: selectedClassId ? [selectedClassId] : [],
       onNewChat: handleNewChat,
       onMessageSent: handleMessageSent,
+      onConsentAccepted: startOnboardingIfNeeded,
     });
     chatMount.appendChild(chatWidget);
-    requestAnimationFrame(() => {
-      if (!isOnboardingCompleted('student') && auth.getAIConsentAccepted()) {
-        const engine = new OnboardingEngine({ role: 'student', steps: STUDENT_ONBOARDING_STEPS });
-        engine.start();
-      }
-    });
+    requestAnimationFrame(startOnboardingIfNeeded);
     updateHistorySidebar(history);
     if (selectedSessionId) {
       window.history.replaceState(null, '', '#/student/dashboard');

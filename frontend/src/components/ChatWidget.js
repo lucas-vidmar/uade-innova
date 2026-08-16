@@ -21,7 +21,7 @@ const ERROR_MESSAGES = {
   UNKNOWN: 'Ocurrió un error inesperado. Por favor, intentá nuevamente.',
 };
 
-export function createChatWidget({ classes = [], subjectId = '', sessionId = null, initialMessages = [], highlightMessageId = null, transcriptFocus: initialTranscriptFocus = null, initialClassIds = [], onNewChat, onMessageSent }) {
+export function createChatWidget({ classes = [], subjectId = '', sessionId = null, initialMessages = [], highlightMessageId = null, transcriptFocus: initialTranscriptFocus = null, initialClassIds = [], onNewChat, onMessageSent, onConsentAccepted }) {
   const user = auth.getUser();
   const hasEnrollment = auth.isEnrolled(subjectId) !== false;
   let selectedClassIds = [...initialClassIds];
@@ -35,32 +35,6 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
   const container = document.createElement('div');
   container.className = 'chat-container-card';
   container.style.height = '100%';
-
-  // Consent gate for students: block chat rendering and show modal
-  if (auth.getRole() === 'student' && !auth.getAIConsentAccepted()) {
-    container.innerHTML = `
-      <div class="flex-1 flex items-center justify-center px-6">
-        <div class="text-center" style="max-width: 340px;">
-          <div class="mb-5 text-primary">
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="mx-auto">
-              <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
-            </svg>
-          </div>
-          <h3 class="text-lg font-bold text-text-primary mb-3">Aceptá los términos para usar el chat</h3>
-          <p class="text-sm text-text-secondary mb-6 leading-relaxed">Para poder consultar los materiales de clase, necesitás aceptar los términos de uso y consentimiento de IA.</p>
-          <button id="open-consent-modal-btn" class="btn btn-primary">Aceptar términos</button>
-        </div>
-      </div>
-    `;
-    container.querySelector('#open-consent-modal-btn')?.addEventListener('click', () => {
-      renderPrivacyModal(() => {
-        if (auth.getAIConsentAccepted()) {
-          location.reload();
-        }
-      });
-    });
-    return container;
-  }
 
   const render = () => {
     const cooldownActive = cooldownUntil > Date.now();
@@ -983,6 +957,47 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
       .replace(/<p><\/p>/g, '');
   };
 
-  render();
+  const consentBlocked = () => auth.getRole() === 'student' && !auth.getAIConsentAccepted();
+
+  const renderConsentGate = () => {
+    container.innerHTML = `
+      <div class="flex-1 flex items-center justify-center px-6">
+        <div class="text-center" style="max-width: 340px;">
+          <div class="mb-5 text-primary">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="mx-auto">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+            </svg>
+          </div>
+          <h3 class="text-lg font-bold text-text-primary mb-3">Aceptá los términos para usar el chat</h3>
+          <p class="text-sm text-text-secondary mb-6 leading-relaxed">Para poder consultar los materiales de clase, necesitás aceptar los términos de uso y consentimiento de IA.</p>
+          <button id="open-consent-modal-btn" class="btn btn-primary">Aceptar términos</button>
+        </div>
+      </div>
+    `;
+    container.querySelector('#open-consent-modal-btn')?.addEventListener('click', () => {
+      renderPrivacyModal(() => {
+        if (document.contains(container) && onConsentAccepted && typeof onConsentAccepted === 'function') {
+          onConsentAccepted();
+        }
+      });
+    });
+  };
+
+  const renderConsentAware = () => {
+    if (consentBlocked()) {
+      renderConsentGate();
+    } else {
+      render();
+    }
+  };
+
+  window.addEventListener('auth:aiConsentAccepted', () => {
+    if (document.contains(container) && !consentBlocked()) renderConsentAware();
+  });
+  window.addEventListener('auth:aiConsentRevoked', () => {
+    if (document.contains(container) && consentBlocked()) renderConsentAware();
+  });
+
+  renderConsentAware();
   return container;
 }
