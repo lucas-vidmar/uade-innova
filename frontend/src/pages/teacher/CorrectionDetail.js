@@ -5,46 +5,70 @@ import { toast } from '../../components/Toast.js';
 
 export async function renderCorrectionDetail(container) {
   renderHeader('Corregir Respuesta');
-  container.innerHTML = '<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando corrección...</div>';
+
+  container.innerHTML = `
+    <div class="page-header">
+      <a href="#/teacher/corrections" class="btn btn-ghost">← Volver</a>
+    </div>
+    <div id="correction-content">
+      <div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando corrección...</div>
+    </div>
+  `;
+
+  const contentEl = container.querySelector('#correction-content');
 
   const correctionId = window.location.hash.split('/').pop()?.split('?')[0];
   if (!correctionId) {
-    container.innerHTML = '<div class="empty-state">Corrección no encontrada.</div>';
+    contentEl.innerHTML = '<div class="empty-state"><p>Corrección no encontrada.</p></div>';
     return;
   }
 
   const user = auth.getUser();
   const activeSubjectId = auth.getActiveSubjectId();
   if (!activeSubjectId) {
-    container.innerHTML = '<div class="empty-state">No hay materias vinculadas a tu cuenta.</div>';
+    contentEl.innerHTML = '<div class="empty-state"><p>No hay materias vinculadas a tu cuenta.</p></div>';
     return;
   }
 
-  let correction;
-  try {
-    correction = await api.getCorrection(activeSubjectId, correctionId);
-  } catch (err) {
-    console.error('[CorrectionDetail] Failed to load correction:', err);
-    container.innerHTML = '<div class="empty-state">Error cargando corrección. Intentá de nuevo.</div>';
-    return;
+  async function loadCorrection() {
+    contentEl.innerHTML = '<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando corrección...</div>';
+
+    let correction;
+    try {
+      correction = await api.getCorrection(activeSubjectId, correctionId);
+    } catch (err) {
+      console.error('[CorrectionDetail] Failed to load correction:', err);
+      const isRetryable = err.retryable !== undefined ? err.retryable : true;
+      if (isRetryable) {
+        contentEl.innerHTML = `
+          <div class="empty-state">
+            <p>Error cargando corrección. Intentá de nuevo.</p>
+            <button type="button" class="btn btn-primary" id="retry-correction-btn">Reintentar</button>
+          </div>
+        `;
+        contentEl.querySelector('#retry-correction-btn')?.addEventListener('click', () => {
+          loadCorrection();
+        });
+      } else {
+        contentEl.innerHTML = '<div class="empty-state"><p>Error cargando corrección.</p></div>';
+      }
+      return;
+    }
+
+    if (!correction) {
+      contentEl.innerHTML = '<div class="empty-state"><p>Corrección no encontrada.</p></div>';
+      return;
+    }
+
+    render(correction);
   }
 
-  if (!correction) {
-    container.innerHTML = '<div class="empty-state">Corrección no encontrada. <a href="#/teacher/corrections">Volver a la bandeja</a></div>';
-    return;
-  }
-
-  function render() {
+  function render(correction) {
     const date = correction.createdAt
       ? new Date(correction.createdAt).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
       : '---';
 
-    container.innerHTML = `
-      <a href="#/teacher/corrections" style="display:inline-flex;align-items:center;gap:6px;color:var(--color-text-secondary);text-decoration:none;margin-bottom:var(--space-4);font-size:14px">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
-        Volver a la bandeja
-      </a>
-
+    contentEl.innerHTML = `
       <div class="section-title"><h2>Corregir Respuesta</h2><div class="line"></div></div>
 
       <div class="card" style="margin-bottom:var(--space-6)">
@@ -126,12 +150,12 @@ export async function renderCorrectionDetail(container) {
       </div>
     `;
 
-    const correctionInput = container.querySelector('#correction-input');
-    const explanationInput = container.querySelector('#explanation-input');
-    const submitBtn = container.querySelector('#submit-correction-btn');
-    const submitBtnText = container.querySelector('#submit-btn-text');
-    const submitBtnSpinner = container.querySelector('#submit-btn-spinner');
-    const errorEl = container.querySelector('#correction-error');
+    const correctionInput = contentEl.querySelector('#correction-input');
+    const explanationInput = contentEl.querySelector('#explanation-input');
+    const submitBtn = contentEl.querySelector('#submit-correction-btn');
+    const submitBtnText = contentEl.querySelector('#submit-btn-text');
+    const submitBtnSpinner = contentEl.querySelector('#submit-btn-spinner');
+    const errorEl = contentEl.querySelector('#correction-error');
 
     let isSubmitting = false;
 
@@ -177,7 +201,7 @@ export async function renderCorrectionDetail(container) {
     });
   }
 
-  render();
+  loadCorrection();
 }
 
 function escapeHtml(value = '') {
