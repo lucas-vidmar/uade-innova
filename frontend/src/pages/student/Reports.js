@@ -3,6 +3,7 @@ import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
 import { renderBottomNav } from '../../components/BottomNav.js';
 import { toast } from '../../components/Toast.js';
+import { apiErrorFeedback } from '../../services/error-feedback.js';
 
 const STATUS_LABELS = {
   pending: 'Pendiente',
@@ -42,6 +43,27 @@ export async function renderStudentReports(container) {
     reports = await api.getStudentReports(activeSubjectId);
   } catch (err) {
     console.error('[StudentReports] Failed to load:', err);
+    const feedback = apiErrorFeedback(err, {
+      ENROLLMENT_INACTIVE: 'Tu cuenta no figura matriculada en esta materia.',
+      ACCESS_DENIED: 'Tu cuenta no está habilitada en la plataforma. Contactá a administración.',
+      auth: 'Tu cuenta no tiene permisos para ver tus reportes.',
+    });
+    if (feedback.kind === 'auth') {
+      container.innerHTML = `
+        <div class="settings-page" style="max-width:800px;margin:0 auto;padding:var(--space-6)">
+          <h2 class="h3" style="margin-bottom:var(--space-2)">Mis Reportes de Calidad IA</h2>
+          <div class="card" style="max-width:480px;margin:var(--space-10) auto;text-align:center">
+            <div class="empty-state-icon" aria-hidden="true">⚠️</div>
+            <h2 class="h3">${escapeHtml(feedback.title)}</h2>
+            <p style="color:var(--color-text-secondary)">${escapeHtml(feedback.message || 'No se pudieron cargar tus reportes.')}</p>
+            ${feedback.hint ? `<p style="color:var(--color-warning);font-weight:600;margin-top:var(--space-2)">${escapeHtml(feedback.hint)}</p>` : ''}
+            <button class="btn btn-secondary" onclick="window.location.reload()" aria-label="Reintentar">Reintentar</button>
+          </div>
+        </div>
+      `;
+      renderBottomNav();
+      return;
+    }
     toast('error', 'Error', 'No se pudieron cargar los reportes.');
   }
 

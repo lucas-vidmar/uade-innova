@@ -4,6 +4,7 @@
 import { api } from '../../services/api.js';
 import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
+import { apiErrorFeedback } from '../../services/error-feedback.js';
 
 export async function renderTeacherAnalytics(container) {
   renderHeader('Analítica Pedagógica');
@@ -351,12 +352,23 @@ export async function renderTeacherAnalytics(container) {
     });
   } catch (err) {
     console.error('Error loading analytics:', err);
+    const feedback = apiErrorFeedback(err, {
+      ENROLLMENT_INACTIVE: 'Tu identidad no figura como docente activo de esta materia. Contactá a administración o verificá tu inscripción.',
+      FORBIDDEN: 'Tu rol no permite ver analítica de esta materia.',
+      ACCESS_DENIED: 'Tu cuenta no está habilitada en la plataforma. Contactá a administración.',
+      auth: 'Tu cuenta no tiene permisos para ver la analítica de esta materia.',
+    });
     container.innerHTML = `
       <div class="card" style="max-width:480px;margin:var(--space-10) auto;text-align:center">
         <div class="empty-state-icon" aria-hidden="true">📊</div>
-        <h2 class="h3">Analítica no disponible</h2>
-        <p style="color:var(--color-text-secondary)">No se pudieron cargar los datos de analítica. Posiblemente el endpoint del backend no está activo.</p>
-        <button class="btn btn-secondary" onclick="window.location.reload()" aria-label="Reintentar cargar la página">Reintentar</button>
+        <h2 class="h3">${escapeHtml(feedback.title)}</h2>
+        <p style="color:var(--color-text-secondary)">${escapeHtml(feedback.message || 'No se pudieron cargar los datos de analítica.')}</p>
+        ${feedback.hint ? `<p style="color:var(--color-warning);font-weight:600;margin-top:var(--space-2)">${escapeHtml(feedback.hint)}</p>` : ''}
+        ${feedback.retryable ? `<button class="btn btn-secondary" onclick="window.location.reload()" aria-label="Reintentar cargar la página">Reintentar</button>` : `
+          <div style="margin-top:var(--space-4)">
+            <button class="btn btn-secondary" onclick="window.location.reload()" aria-label="Reintentar cargar la página">Reintentar</button>
+          </div>
+        `}
       </div>
     `;
   }

@@ -74,7 +74,7 @@ app.http('get-pending-reports', {
       };
     }
 
-    const userId = principal?.userId || principal?.oid || 'anonymous';
+    const userId = context.user?.id || principal?.userId || principal?.oid || 'anonymous';
     const isDirector = principal?.userRoles?.includes('Director');
 
     if (!isDirector && process.env.AZURE_FUNCTIONS_ENVIRONMENT !== 'Development') {
@@ -86,7 +86,7 @@ app.http('get-pending-reports', {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               success: false,
-              error: { code: 'FORBIDDEN', message: 'No tienes permisos de docente para esta materia.' },
+              error: { code: 'ENROLLMENT_INACTIVE', message: 'No tienes permisos de docente para esta materia. Verificá tu inscripción o contactá a administración.' },
             }),
           };
         }

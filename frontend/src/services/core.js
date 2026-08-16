@@ -114,6 +114,33 @@ export async function apiFetch(resource, options = {}) {
 
 export function delay(ms = 600) { return new Promise(r => setTimeout(r, ms)); }
 
+/**
+ * Parses a non-ok response into a structured Error carrying `status`, `code`
+ * and `errorCategory` so pages can distinguish auth/config denials (403) from
+ * transient/5xx failures (Story 10.24). Handles both the shared contract
+ * `{ error, errorCategory, code }` and the corrections shape
+ * `{ success:false, error:{ code, message } }`.
+ * @param {Response} res
+ * @param {string} fallbackMessage
+ * @returns {Promise<Error>}
+ */
+export async function parseApiError(res, fallbackMessage = `Error ${res.status}`) {
+    let payload = null;
+    try { payload = await res.json(); } catch { /* non-JSON body */ }
+    const nested = payload?.error;
+    const hasNestedShape = nested && typeof nested === 'object';
+    const code = hasNestedShape ? nested.code : (payload?.code || 'UNKNOWN_ERROR');
+    const message = hasNestedShape ? nested.message : (nested || payload?.error || fallbackMessage);
+    const errorCategory = hasNestedShape ? nested.errorCategory : (payload?.errorCategory || null);
+
+    const err = new Error(String(message || fallbackMessage));
+    err.status = Number(res?.status) || 500;
+    err.code = code;
+    if (errorCategory) err.errorCategory = errorCategory;
+    err.retryable = err.status >= 500;
+    return err;
+}
+
 export async function fetchWithTimeout(resource, options = {}) {
     const { timeout = 5000 } = options;
 

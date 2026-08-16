@@ -345,6 +345,9 @@ async function initializeNotificationCenter({ userId, subjectId }) {
   let allNotifications = [];
   let activeFilter = 'all';
   let hasMore = true;
+  // Set when the notification backend reports a hard auth/config failure (403):
+  // the dropdown renders an actionable message instead of a silent empty state.
+  let streamError = null;
 
   const getFiltered = () => {
     if (activeFilter === 'all') return allNotifications;
@@ -364,6 +367,18 @@ async function initializeNotificationCenter({ userId, subjectId }) {
     }
 
     const filtered = getFiltered();
+
+    if (streamError) {
+      listEl.innerHTML = `
+        <div class="notification-empty" role="alert">
+          <div style="margin-bottom:6px;font-weight:600">No se pudieron cargar las notificaciones</div>
+          <div style="color:var(--color-text-secondary);font-size:var(--font-size-xs)">
+            ${escapeHtml(streamError.message || 'Tu sesión no tiene acceso al canal de notificaciones.')}
+          </div>
+          <button class="btn btn-secondary btn-sm" style="margin-top:10px" onclick="window.location.reload()">Reintentar</button>
+        </div>`;
+      return;
+    }
 
     if (allNotifications.length === 0) {
       listEl.innerHTML = '<div class="notification-empty">No hay notificaciones nuevas.</div>';
@@ -560,6 +575,12 @@ async function initializeNotificationCenter({ userId, subjectId }) {
 
   let notificationStream = null;
 
+  const onStreamError = (event) => {
+    streamError = event?.detail || { message: 'Tu sesión no tiene acceso al canal de notificaciones.' };
+    render();
+  };
+  window.addEventListener('notification-stream:error', onStreamError);
+
   renderSidebar._notificationCleanup = () => {
     bellButton.removeEventListener('click', onBellClick);
     document.removeEventListener('click', onOutsideClick);
@@ -568,14 +589,24 @@ async function initializeNotificationCenter({ userId, subjectId }) {
     markReadBtn?.removeEventListener('click', onMarkAllRead);
     simulateBtn?.removeEventListener('click', onSimulate);
     window.removeEventListener('student:trigger-notification', onExternalTrigger);
+    window.removeEventListener('notification-stream:error', onStreamError);
     if (notificationStream) {
       notificationStream.stop();
       notificationStream = null;
     }
   };
 
-  allNotifications = await api.getNotifications({ userId, subjectId, limit: DROPDOWN_PAGE_SIZE });
-  hasMore = Array.isArray(allNotifications) && allNotifications.length >= DROPDOWN_PAGE_SIZE;
+  try {
+    allNotifications = await api.getNotifications({ userId, subjectId, limit: DROPDOWN_PAGE_SIZE });
+    hasMore = Array.isArray(allNotifications) && allNotifications.length >= DROPDOWN_PAGE_SIZE;
+  } catch (err) {
+    // A hard auth/config failure is actionable, not a silent empty state.
+    if (err?.status === 401 || err?.status === 403 || err?.code === 'ACCESS_DENIED' || err?.code === 'FORBIDDEN') {
+      streamError = { status: err.status, code: err.code, message: err.message };
+    } else {
+      console.warn('[Notifications] Failed to load initial notifications:', err);
+    }
+  }
   render();
 
   notificationStream = createNotificationStream();
@@ -590,6 +621,10 @@ async function initializeNotificationCenter({ userId, subjectId }) {
       allNotifications = merged.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       render();
     }
+  };
+  notificationStream.onError = (detail) => {
+    streamError = detail;
+    render();
   };
   notificationStream.start({ userId, subjectId });
 }

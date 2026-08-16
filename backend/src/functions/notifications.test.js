@@ -32,6 +32,14 @@ mock.module('../services/notification-store.js', { namedExports: notificationSto
 mock.module('../services/storage.js', { namedExports: storageMocks });
 mock.module('../services/telemetry.js', { namedExports: telemetryMocks });
 mock.module('../services/state-store.js', { namedExports: stateStoreMocks });
+// withAuth runs identity resolution + allowlist override; in tests the caller
+// passes the resolved identity directly as `context.user` (Story 10.24), so the
+// middleware is replaced by a transparent pass-through.
+mock.module('../middleware/with-auth.js', {
+    namedExports: {
+        withAuth: (handler) => async (request, context) => handler(request, context),
+    },
+});
 
 const handlers = {};
 mock.module('@azure/functions', {
@@ -507,4 +515,86 @@ test('dispatch-class-publish-notification should reject non-teacher enrollment',
     );
 
     assert.strictEqual(response.status, 403);
+});
+
+test('stream-notifications should NOT 403 when client userId mismatches but allowlist id is resolved (Story 10.24)', async () => {
+    // Real SWA principal OID + allowlist-resolved app id; the frontend still
+    // relays `u-<email>` which never matches the OID. The allowlist id is
+    // authoritative, so the stream must connect (no 403 loop).
+    authMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: '00000000-0000-0000-0000-000000000001', userRoles: ['authenticated', 'Alumno'] }));
+    notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => ([
+        { id: 'n-self', type: 'material', title: 'A', message: 'm', createdAt: '2026-06-19T12:00:00Z', unread: true, targetHash: '#/student/dashboard', subjectId: 'arq-software-2026', recipientUserIds: ['alu-001'], readByUserIds: [] },
+    ]));
+
+    const contextUser = { id: 'alu-001', email: 'lvidmar@uade.edu.ar', role: 'Alumno' };
+    const response = await handlers['stream-notifications'](
+        { query: new URLSearchParams({ subjectId: 'arq-software-2026', userId: 'u-lvidmar_uade_edu_ar' }) },
+        { log: () => {}, error: () => {}, user: contextUser }
+    );
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(response.headers['Content-Type'], 'text/event-stream');
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    try {
+        const { value } = await reader.read();
+        const chunk = decoder.decode(value, { stream: true });
+        assert.ok(chunk.includes('event: snapshot'));
+        assert.ok(chunk.includes('"n-self"'), 'snapshot must include the allowlist-id recipient notification');
+    } finally {
+        await reader.cancel('test done');
+    }
+
+    notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => ([]));
+});
+
+test('get-notifications should NOT 403 on allowlist-resolved identity with mismatched client id (Story 10.24)', async () => {
+    authMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: '00000000-0000-0000-0000-000000000002', userRoles: ['authenticated', 'Alumno'] }));
+    notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => ([
+        { id: 'n-self', type: 'material', title: 'A', message: 'm', createdAt: '2026-06-19T12:00:00Z', unread: true, targetHash: '#/student/dashboard', subjectId: 'arq-software-2026', recipientUserIds: ['alu-001'] },
+    ]));
+
+    const response = await handlers['get-notifications'](
+        { query: new URLSearchParams({ subjectId: 'arq-software-2026', userId: 'u-lvidmar_uade_edu_ar', limit: '5' }) },
+        { log: () => {}, error: () => {}, user: { id: 'alu-001', email: 'lvidmar@uade.edu.ar', role: 'Alumno' } }
+    );
+
+    assert.strictEqual(response.status, 200);
+    const body = JSON.parse(response.body);
+    assert.ok(body.some((item) => item.id === 'n-self'));
+});
+
+test('get-notifications should return structured NOTIFICATION_SCOPE when no verified identity and client id mismatches', async () => {
+    // No allowlist id in context, principal OID differs from client-sent id:
+    // still a hard denial, but with the structured error contract.
+    authMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: '00000000-0000-0000-0000-000000000003', userRoles: ['authenticated'] }));
+
+    const response = await handlers['get-notifications'](
+        { query: new URLSearchParams({ subjectId: 'arq-software-2026', userId: 'u-ghost', limit: '5' }) },
+        { log: () => {}, error: () => {} }
+    );
+
+    assert.strictEqual(response.status, 403);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.code, 'NOTIFICATION_SCOPE');
+    assert.strictEqual(body.errorCategory, 'AUTH');
+});
+
+test('mark-notification-read should allow self via allowlist id despite mismatched body id (Story 10.24)', async () => {
+    authMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: '00000000-0000-0000-0000-000000000001', userRoles: ['authenticated', 'Alumno'] }));
+    notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => ([
+        { id: 'notif-1', subjectId: 'arq-software-2026', recipientUserIds: ['alu-001'], unread: true },
+    ]));
+    notificationStoreMocks.markNotificationReadForUser.mock.mockImplementation(async () => ({ success: true, retryAttempts: 0, deadLetterWrites: 0 }));
+
+    const response = await handlers['mark-notification-read'](
+        {
+            params: { id: 'notif-1' },
+            json: async () => ({ subjectId: 'arq-software-2026', userId: 'u-lvidmar_uade_edu_ar' }),
+        },
+        { log: () => {}, error: () => {}, user: { id: 'alu-001', email: 'lvidmar@uade.edu.ar', role: 'Alumno' } }
+    );
+
+    assert.strictEqual(response.status, 200);
 });

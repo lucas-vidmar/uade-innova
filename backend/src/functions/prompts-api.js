@@ -2,6 +2,7 @@ import { app } from '@azure/functions';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { withAuth } from '../middleware/with-auth.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
+import { structuredErrorResponse, ErrorCategory } from '../services/error-categories.js';
 import {
   listTypes,
   listVersions,
@@ -21,6 +22,15 @@ function jsonResponse(status, payload) {
   };
 }
 
+function directorDenied() {
+  return structuredErrorResponse(
+    403,
+    'Forbidden - Se requiere rol Director o Admin para gestionar prompts.',
+    ErrorCategory.AUTH,
+    'FORBIDDEN',
+  );
+}
+
 function requireDirector(request, context) {
   if (!validateFrontDoorId(request)) return null;
   const principal = context?.principal || parseClientPrincipal(request);
@@ -36,7 +46,7 @@ app.http('prompts-list-types', {
   route: 'prompts',
   handler: withCorrelation(withAuth(async (request, context) => {
     const principal = requireDirector(request, context);
-    if (!principal) return jsonResponse(403, { error: 'Forbidden - Director access required' });
+    if (!principal) return directorDenied();
     try {
       const types = await listTypes();
       const result = [];
@@ -67,7 +77,7 @@ app.http('prompts-list-versions', {
   route: 'prompts/{type}',
   handler: withCorrelation(withAuth(async (request, context) => {
     const principal = requireDirector(request, context);
-    if (!principal) return jsonResponse(403, { error: 'Forbidden - Director access required' });
+    if (!principal) return directorDenied();
     const type = request.params.type;
     try {
       const versions = await listVersions(type);
@@ -84,7 +94,7 @@ app.http('prompts-get-active', {
   route: 'prompts/{type}/active',
   handler: withCorrelation(withAuth(async (request, context) => {
     const principal = requireDirector(request, context);
-    if (!principal) return jsonResponse(403, { error: 'Forbidden - Director access required' });
+    if (!principal) return directorDenied();
     const type = request.params.type;
     try {
       const active = await getActive(type);
@@ -102,7 +112,7 @@ app.http('prompts-create', {
   route: 'prompts',
   handler: withCorrelation(withAuth(async (request, context) => {
     const principal = requireDirector(request, context);
-    if (!principal) return jsonResponse(403, { error: 'Forbidden - Director access required' });
+    if (!principal) return directorDenied();
     try {
       const body = await request.json();
       const { type, content, systemPrompt, userPromptTemplate, variables, description } = body;
@@ -132,7 +142,7 @@ app.http('prompts-update', {
   route: 'prompts/{type}/{versionId}',
   handler: withCorrelation(withAuth(async (request, context) => {
     const principal = requireDirector(request, context);
-    if (!principal) return jsonResponse(403, { error: 'Forbidden - Director access required' });
+    if (!principal) return directorDenied();
     const { type, versionId } = request.params;
     try {
       const body = await request.json();
@@ -156,7 +166,7 @@ app.http('prompts-activate', {
   route: 'prompts/{type}/activate/{versionId}',
   handler: withCorrelation(withAuth(async (request, context) => {
     const principal = requireDirector(request, context);
-    if (!principal) return jsonResponse(403, { error: 'Forbidden - Director access required' });
+    if (!principal) return directorDenied();
     const { type, versionId } = request.params;
     try {
       const result = await activateVersion(type, versionId);
@@ -174,7 +184,7 @@ app.http('prompts-delete', {
   route: 'prompts/{type}/{versionId}',
   handler: withCorrelation(withAuth(async (request, context) => {
     const principal = requireDirector(request, context);
-    if (!principal) return jsonResponse(403, { error: 'Forbidden - Director access required' });
+    if (!principal) return directorDenied();
     const { type, versionId } = request.params;
     try {
       const result = await deleteVersion(type, versionId);

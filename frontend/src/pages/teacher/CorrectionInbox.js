@@ -2,6 +2,7 @@ import { api } from '../../services/api.js';
 import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
 import { toast } from '../../components/Toast.js';
+import { apiErrorFeedback } from '../../services/error-feedback.js';
 
 function statusBadge(status) {
   const map = {
@@ -34,6 +35,7 @@ export async function renderCorrectionInbox(container) {
   let corrections = [];
   let classes = [];
   let loadError = false;
+  let hardDenial = null;
   try {
     [classes = [], corrections = []] = await Promise.all([
       api.getClasses(activeSubjectId),
@@ -41,8 +43,20 @@ export async function renderCorrectionInbox(container) {
     ]);
   } catch (err) {
     console.error('[CorrectionInbox] Failed to load corrections:', err);
-    toast('error', 'Error cargando correcciones', 'No se pudieron cargar los reportes. Intentá de nuevo.');
-    loadError = true;
+    // A hard auth/config denial is NOT a partial-data situation: surface the
+    // specific actionable message instead of a misleading "incomplete" banner.
+    const feedback = apiErrorFeedback(err, {
+      ENROLLMENT_INACTIVE: 'Tu identidad no figura como docente activo de esta materia. Contactá a administración o verificá tu inscripción.',
+      FORBIDDEN: 'Se requiere rol Docente o Director para ver estos reportes.',
+      ACCESS_DENIED: 'Tu cuenta no está habilitada en la plataforma. Contactá a administración.',
+      auth: 'Tu cuenta no tiene permisos para ver los reportes de esta materia.',
+    });
+    if (feedback.kind === 'auth') {
+      hardDenial = feedback;
+    } else {
+      toast('error', 'Error cargando correcciones', 'No se pudieron cargar los reportes. Intentá de nuevo.');
+      loadError = true;
+    }
     try {
       classes = await api.getClasses(activeSubjectId);
     } catch (classErr) {
@@ -156,6 +170,20 @@ export async function renderCorrectionInbox(container) {
   }
 
   function render() {
+    if (hardDenial) {
+      container.innerHTML = `
+        <div class="section-title"><h2>Reportes de Calidad IA</h2><div class="line"></div></div>
+        <div class="card" style="max-width:480px;margin:var(--space-10) auto;text-align:center">
+          <div class="empty-state-icon" aria-hidden="true">⚠️</div>
+          <h2 class="h3">${escapeHtml(hardDenial.title)}</h2>
+          <p style="color:var(--color-text-secondary)">${escapeHtml(hardDenial.message || 'No se pudieron cargar los reportes.')}</p>
+          ${hardDenial.hint ? `<p style="color:var(--color-warning);font-weight:600;margin-top:var(--space-2)">${escapeHtml(hardDenial.hint)}</p>` : ''}
+          <button class="btn btn-secondary" onclick="window.location.reload()" aria-label="Reintentar">Reintentar</button>
+        </div>
+      `;
+      return;
+    }
+
     const totalPending = corrections.filter(c => c.status === 'pending').length;
     const totalReviewed = corrections.filter(c => c.status === 'reviewed').length;
     const totalResolved = corrections.filter(c => c.status === 'resolved' || c.status === 'verified').length;

@@ -25,6 +25,7 @@ import {
   resolveEntryForEmail,
   resolveScopeForEmail,
   resolvePrincipalEmail,
+  resolveUserIdForEmail,
 } from '../services/allowlist.js';
 import { validateBearerToken } from '../services/oidc-validator.js';
 import { structuredErrorResponse, ErrorCategory } from '../services/error-categories.js';
@@ -77,11 +78,15 @@ function enforceAllowlist(principal, request, context) {
       };
     }
     // Role/scope come from the allowlist, never from clientPrincipal.userRoles.
+    // The application user id (pilot data key) is resolved from the allowlist
+    // entry too (Story 10.24) so enrollment/notification data keys match the
+    // verified identity.
+    const appUserId = resolveUserIdForEmail(email);
     if (!principal) {
       // No SWA/OIDC principal but a verified relayed email (pilot transport):
       // synthesize a principal so the rest of the pipeline works.
       principal = {
-        userId: email,
+        userId: appUserId || email,
         userDetails: email,
         userRoles: ['authenticated', entry.internalRole],
         claims: [],
@@ -89,7 +94,7 @@ function enforceAllowlist(principal, request, context) {
     } else {
       principal.userRoles = ['authenticated', entry.internalRole];
     }
-    return { email, principal };
+    return { email, principal, userId: appUserId || null };
   }
 
   if (!principal) {
@@ -161,6 +166,10 @@ export function withAuth(handler, options = {}) {
     const user = buildUserFromPrincipal(principal);
     if (user) {
       if (allowlistResult.email) user.email = allowlistResult.email;
+      // Application user id (pilot data key) resolved from the allowlist; used
+      // to key enrollment/notification/correction data. Falls back to the raw
+      // principal userId (OID) for identities not resolved via allowlist.
+      user.id = allowlistResult.userId || user.userId;
       user.scope = allowlistResult.email ? resolveScopeForEmail(allowlistResult.email) : undefined;
     }
 

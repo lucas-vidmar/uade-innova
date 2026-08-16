@@ -382,16 +382,20 @@ app.http('student-reports', {
         const userRoles = principal?.userRoles || [];
         const isTeacherOrDirector = userRoles.includes('Docente') || userRoles.includes('Director') || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
         if (!isTeacherOrDirector) {
-            const enrollment = await getEnrollment(subjectId, userId).catch(() => null);
+            // Application id resolved from the allowlist (Story 10.24): matches
+            // the pilot student keys (alu-001) in Enrollments and corrections.
+            const studentUserId = context.user?.id || userId;
+            const enrollment = await getEnrollment(subjectId, studentUserId).catch(() => null);
             if (!enrollment || enrollment.status !== 'active') {
-                return { status: 403, body: JSON.stringify({ error: 'No estás matriculado en esta materia.' }) };
+                return { status: 403, body: JSON.stringify({ error: 'No estás matriculado en esta materia.', errorCategory: 'AUTH', code: 'ENROLLMENT_INACTIVE' }) };
             }
         }
 
         try {
             const allCorrections = await listCorrections(subjectId);
+            const selfUserId = context.user?.id || userId;
             const myReports = allCorrections
-                .filter(c => c.studentId === userId)
+                .filter(c => c.studentId === selfUserId)
                 .map(c => ({
                     correctionId: c.correctionId,
                     question: c.question,

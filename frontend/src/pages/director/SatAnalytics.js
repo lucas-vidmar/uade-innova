@@ -1,6 +1,7 @@
 import { api } from '../../services/api.js';
 import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
+import { apiErrorFeedback } from '../../services/error-feedback.js';
 
 function esc(str) { return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
@@ -153,16 +154,30 @@ export async function renderDirectorSatAnalytics(container) {
         renderSegmentsTable(container, result.segments || [], result.total || 0, result.winner);
       } catch (err) {
         console.error('[SAT] Error filtering:', err);
-        container.querySelector('#sat-segments-card').innerHTML = `<div class="empty-state" style="padding:20px">Error al filtrar datos SAT.</div>`;
+        const feedback = apiErrorFeedback(err, {
+          FORBIDDEN: 'Se requiere rol Docente o Director para ver analítica SAT.',
+          auth: 'Tu rol no permite ver esta métrica.',
+        });
+        container.querySelector('#sat-segments-card').innerHTML = `
+          <div class="empty-state" style="padding:20px">
+            <strong>${esc(feedback.title)}</strong>
+            <div style="color:var(--color-text-secondary);font-size:var(--font-size-xs);margin-top:6px">${esc(feedback.message || 'No se pudieron filtrar los datos SAT.')}</div>
+            ${feedback.hint ? `<div style="color:var(--color-warning);font-weight:600;font-size:var(--font-size-xs);margin-top:6px">${esc(feedback.hint)}</div>` : ''}
+          </div>`;
       }
     }
   } catch (err) {
     console.error('[SAT] Error loading analytics:', err);
+    const feedback = apiErrorFeedback(err, {
+      FORBIDDEN: 'Se requiere rol Docente o Director para ver analítica SAT.',
+      auth: 'Tu rol no permite ver esta métrica.',
+    });
     container.innerHTML = `
       <div class="card" style="max-width:480px;margin:var(--space-10) auto;text-align:center">
         <div class="empty-state-icon" aria-hidden="true">📊</div>
-        <h2 class="h3">SAT Analytics no disponible</h2>
-        <p style="color:var(--color-text-secondary)">No se pudieron cargar los datos. Verificá que el endpoint del backend esté activo.</p>
+        <h2 class="h3">${esc(feedback.title)}</h2>
+        <p style="color:var(--color-text-secondary)">${esc(feedback.message || 'No se pudieron cargar los datos.')}</p>
+        ${feedback.hint ? `<p style="color:var(--color-warning);font-weight:600;margin-top:var(--space-2)">${esc(feedback.hint)}</p>` : ''}
         <button class="btn btn-secondary" onclick="window.location.reload()" aria-label="Reintentar">Reintentar</button>
       </div>
     `;

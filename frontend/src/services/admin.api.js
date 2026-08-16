@@ -1,5 +1,5 @@
 import {
-    BASE_URL, apiFetch, fetchWithTimeout, delay
+    BASE_URL, apiFetch, fetchWithTimeout, delay, parseApiError
 } from './core.js';
 
 export async function getDirectorStats() {
@@ -53,17 +53,12 @@ export async function getDirectorPowerBiMetrics(days = 14) {
 }
 
 export async function getSafetyRate(subjectId, days = 30) {
-    try {
-        const params = new URLSearchParams();
-        if (subjectId) params.set('subjectId', subjectId);
-        params.set('days', days);
-        const res = await fetchWithTimeout(`${BASE_URL}/safety-rate?${params.toString()}`, { timeout: 4000 });
-        if (!res.ok) return null;
-        return await res.json();
-    } catch (err) {
-        console.error('[API] getSafetyRate failed:', err);
-        return null;
-    }
+    const params = new URLSearchParams();
+    if (subjectId) params.set('subjectId', subjectId);
+    params.set('days', days);
+    const res = await fetchWithTimeout(`${BASE_URL}/safety-rate?${params.toString()}`, { timeout: 4000 });
+    if (!res.ok) throw await parseApiError(res, `Error ${res.status}: no se pudo calcular la Tasa Fallo Seguro.`);
+    return res.json();
 }
 
 function sessionMockingEnabled() {

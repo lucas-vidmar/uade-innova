@@ -1,5 +1,5 @@
 import {
-    BASE_URL, apiFetch, fetchWithTimeout, delay
+    BASE_URL, apiFetch, fetchWithTimeout, delay, parseApiError
 } from './core.js';
 
 function normalizeTeacherAlert(item = {}, idx = 0) {
@@ -93,6 +93,7 @@ export async function getAttendanceStats(subjectId) {
 
 export async function getTeacherAnalytics(subjectId) {
     const res = await apiFetch(`${BASE_URL}/analytics?subjectId=${subjectId}`);
+    if (!res.ok) throw await parseApiError(res, `Error ${res.status}: no se pudieron cargar los datos de analítica.`);
     return res.json();
 }
 
@@ -100,11 +101,12 @@ export async function getTeacherAlerts(subjectId) {
     if (!subjectId) return [];
     try {
         const res = await fetchWithTimeout(`${BASE_URL}/sga/teacher-alerts?subjectId=${encodeURIComponent(subjectId)}`, { timeout: 4000 });
-        if (!res.ok) return [];
+        if (!res.ok) throw await parseApiError(res, `Error ${res.status}: no se pudieron cargar las alertas docentes.`);
         const data = await res.json();
         if (!Array.isArray(data)) return [];
         return data.map((item, idx) => normalizeTeacherAlert(item, idx));
     } catch (err) {
+        if (err?.retryable === false || err?.status === 401 || err?.status === 403) throw err;
         console.error('[API] getTeacherAlerts failed:', err);
         return [];
     }

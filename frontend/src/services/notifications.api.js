@@ -1,5 +1,5 @@
 import {
-    BASE_URL, apiFetch, fetchWithTimeout
+    BASE_URL, apiFetch, fetchWithTimeout, parseApiError
 } from './core.js';
 
 function normalizeNotification(item = {}, idx = 0) {
@@ -18,30 +18,25 @@ function normalizeNotification(item = {}, idx = 0) {
 }
 
 export async function getNotifications({ userId, subjectId, limit = 10, skip = 0, type } = {}) {
-    try {
-        const params = new URLSearchParams();
-        if (userId) params.set('userId', userId);
-        if (subjectId) params.set('subjectId', subjectId);
-        if (limit) params.set('limit', String(limit));
-        if (skip > 0) params.set('skip', String(skip));
-        if (type) params.set('type', type);
+    const params = new URLSearchParams();
+    if (userId) params.set('userId', userId);
+    if (subjectId) params.set('subjectId', subjectId);
+    if (limit) params.set('limit', String(limit));
+    if (skip > 0) params.set('skip', String(skip));
+    if (type) params.set('type', type);
 
-        const query = params.toString();
-        const res = await fetchWithTimeout(`${BASE_URL}/notifications${query ? `?${query}` : ''}`, { timeout: 3500 });
+    const query = params.toString();
+    const res = await fetchWithTimeout(`${BASE_URL}/notifications${query ? `?${query}` : ''}`, { timeout: 3500 });
 
-        if (!res.ok) return [];
+    if (!res.ok) throw await parseApiError(res, `Error ${res.status}: no se pudieron cargar las notificaciones.`);
 
-        const data = await res.json();
-        if (!Array.isArray(data)) return [];
+    const data = await res.json();
+    if (!Array.isArray(data)) return [];
 
-        return data
-            .map((item, idx) => normalizeNotification(item, idx))
-            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-            .slice(0, Math.min(Math.max(Number(limit) || 10, 1), 50));
-    } catch (err) {
-        console.error('[API] getNotifications failed:', err);
-        return [];
-    }
+    return data
+        .map((item, idx) => normalizeNotification(item, idx))
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        .slice(0, Math.min(Math.max(Number(limit) || 10, 1), 50));
 }
 
 export async function markNotificationRead({ notificationId, userId, subjectId } = {}) {
@@ -56,12 +51,7 @@ export async function markNotificationRead({ notificationId, userId, subjectId }
     });
 
     if (!res.ok) {
-        let message = `Error ${res.status}: No se pudo marcar la notificación como leída`;
-        try {
-            const payload = await res.json();
-            if (payload?.error) message = payload.error;
-        } catch {}
-        throw new Error(message);
+        throw await parseApiError(res, `Error ${res.status}: No se pudo marcar la notificación como leída`);
     }
 
     return res.json();
@@ -83,12 +73,7 @@ export async function markNotificationsRead({ notificationIds = [], userId, subj
     });
 
     if (!res.ok) {
-        let message = `Error ${res.status}: No se pudieron marcar las notificaciones como leídas`;
-        try {
-            const payload = await res.json();
-            if (payload?.error) message = payload.error;
-        } catch {}
-        throw new Error(message);
+        throw await parseApiError(res, `Error ${res.status}: No se pudieron marcar las notificaciones como leídas`);
     }
 
     return res.json();
@@ -123,10 +108,12 @@ export async function subscribeNotificationStream({ userId, subjectId, signal } 
     if (subjectId) params.set('subjectId', subjectId);
 
     const query = params.toString();
-    const response = await apiFetch(`${BASE_URL}/notifications/stream${query ? `?${query}` : ''}`);
+    const response = await apiFetch(`${BASE_URL}/notifications/stream${query ? `?${query}` : ''}`, { signal });
 
     if (!response.ok) {
-        throw new Error(`Stream connection failed (${response.status})`);
+        // Structured error carrying status + server code so the stream layer
+        // can distinguish a hard 403 (stop reconnecting) from transient errors.
+        throw await parseApiError(response, `Stream connection failed (${response.status})`);
     }
 
     const reader = response.body.getReader();

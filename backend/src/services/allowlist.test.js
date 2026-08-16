@@ -8,6 +8,7 @@ const {
   resolveEntryForEmail,
   resolveRoleForEmail,
   resolveScopeForEmail,
+  resolveUserIdForEmail,
   toFrontendRole,
   getAllowlistDiagnostics,
   extractVerifiedEmail,
@@ -213,4 +214,21 @@ test('RESOLVE_EMAIL_RELAY_FALLBACK — relayed header used only when no verified
     headers: { get: (n) => (n.toLowerCase() === 'x-ms-client-principal-name' ? 'relay@uade.edu.ar' : null) },
   };
   assert.equal(resolvePrincipalEmail(principal, req), 'relay@uade.edu.ar');
+});
+
+test('RESOLVE_USER_ID — optional pilot key wins over email (Story 10.24)', () => {
+  process.env.ALLOWED_USERS_JSON = JSON.stringify([
+    { email: 'xavier@uade.edu.ar', role: 'teacher', subjects: ['arq-software-2026'], userId: 'doc-001' },
+    { email: 'lvidmar@uade.edu.ar', role: 'student', subjects: ['arq-software-2026'] },
+  ]);
+  resetAllowlistCache();
+
+  // Entry exposes the pilot data key.
+  assert.equal(resolveEntryForEmail('xavier@uade.edu.ar').userId, 'doc-001');
+  // resolveUserIdForEmail returns the pilot key when present.
+  assert.equal(resolveUserIdForEmail('xavier@uade.edu.ar'), 'doc-001');
+  // Falls back to the verified email when no userId is declared.
+  assert.equal(resolveUserIdForEmail('lvidmar@uade.edu.ar'), 'lvidmar@uade.edu.ar');
+  // Unlisted emails resolve to null.
+  assert.equal(resolveUserIdForEmail('ghost@uade.edu.ar'), null);
 });

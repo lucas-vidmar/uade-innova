@@ -7,6 +7,7 @@ import {
   resolveRoleForEmail,
   resolveScopeForEmail,
   resolvePrincipalEmail,
+  resolveUserIdForEmail,
 } from './allowlist.js';
 
 // Resolved identity stash per-request, populated by the withAuth middleware.
@@ -148,20 +149,23 @@ export function getAuthenticatedUser(request) {
     }
 
     const principal = parseClientPrincipal(request);
-    
+
     // Priority: Principal fields -> x-edu-uid -> Anonymous fallback
     let userId = principal?.userId || principal?.oid;
-    
+
     if (!userId) {
         userId = request?.headers?.get?.('x-edu-uid') || 'anonymous';
     }
-    
+
     const sanitizedId = String(userId).replace(/[^a-zA-Z0-9]/g, '_');
 
     const email = principal ? resolvePrincipalEmail(principal, request) : null;
     const allowlistConfigured = isAllowlistConfigured();
     const allowlistRole = email ? resolveRoleForEmail(email) : null;
     const scope = email ? resolveScopeForEmail(email) : null;
+    // Application user id (pilot data key) resolved from the allowlist entry
+    // (Story 10.24); falls back to the verified email, then to the raw id.
+    const appUserId = email ? resolveUserIdForEmail(email) : null;
     const mockPermitted = isMockAuthAllowed();
 
     // Fail closed: a configured allowlist with an unresolvable email yields a
@@ -172,10 +176,11 @@ export function getAuthenticatedUser(request) {
         : (allowlistRole
             || principal?.userRoles?.find(r => ['Director', 'Docente', 'Alumno', 'Admin', 'Security'].includes(r))
             || 'Anonymous');
-    
+
     return {
         userId,
         sanitizedId,
+        id: appUserId || userId,
         principal,
         role,
         email: email || undefined,

@@ -1,54 +1,39 @@
 import {
-    BASE_URL, apiFetch, fetchWithTimeout
+    BASE_URL, apiFetch, fetchWithTimeout, parseApiError
 } from './core.js';
 
 export async function getStudentReports(subjectId) {
     if (!subjectId) return [];
-    try {
-        const params = new URLSearchParams({ subjectId });
-        const res = await fetchWithTimeout(`${BASE_URL}/student-reports?${params.toString()}`, { timeout: 4000 });
-        if (!res.ok) return [];
-        const json = await res.json();
-        return json.data || [];
-    } catch (err) {
-        console.error('[API] getStudentReports failed:', err);
-        return [];
-    }
+    const params = new URLSearchParams({ subjectId });
+    const res = await fetchWithTimeout(`${BASE_URL}/student-reports?${params.toString()}`, { timeout: 4000 });
+    if (!res.ok) throw await parseApiError(res, `Error ${res.status}: no se pudieron cargar los reportes.`);
+    const json = await res.json();
+    return json.data || [];
 }
 
 export async function getTeacherAiFeedbackAlerts(subjectId, limit = 10) {
     if (!subjectId) return [];
-    try {
-        const params = new URLSearchParams({
-            subjectId,
-            limit: String(Math.min(Math.max(Number(limit) || 10, 1), 50)),
-        });
-        const res = await fetchWithTimeout(`${BASE_URL}/teacher/ai-feedback-alerts?${params.toString()}`, { timeout: 3500 });
-        if (!res.ok) return [];
-        const data = await res.json();
-        return Array.isArray(data) ? data : [];
-    } catch (err) {
-        console.error('[API] getTeacherAiFeedbackAlerts failed:', err);
-        return [];
-    }
+    const params = new URLSearchParams({
+        subjectId,
+        limit: String(Math.min(Math.max(Number(limit) || 10, 1), 50)),
+    });
+    const res = await fetchWithTimeout(`${BASE_URL}/teacher/ai-feedback-alerts?${params.toString()}`, { timeout: 3500 });
+    if (!res.ok) throw await parseApiError(res, `Error ${res.status}: no se pudieron cargar las alertas.`);
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
 }
 
 export async function getCorrectionsPending(subjectId, classId, status) {
     if (!subjectId) return [];
-    try {
-        const params = new URLSearchParams({ subjectId });
-        if (classId) params.append('classId', classId);
-        if (status) params.append('status', status);
-        const res = await fetchWithTimeout(`${BASE_URL}/corrections-pending?${params.toString()}`, { timeout: 4000 });
-        if (!res.ok) {
-            throw new Error(`Error del servidor (${res.status}) al cargar correcciones.`);
-        }
-        const json = await res.json();
-        return json.data || [];
-    } catch (err) {
-        console.error('[API] getCorrectionsPending failed:', err);
-        throw err;
+    const params = new URLSearchParams({ subjectId });
+    if (classId) params.append('classId', classId);
+    if (status) params.append('status', status);
+    const res = await fetchWithTimeout(`${BASE_URL}/corrections-pending?${params.toString()}`, { timeout: 4000 });
+    if (!res.ok) {
+        throw await parseApiError(res, `Error del servidor (${res.status}) al cargar correcciones.`);
     }
+    const json = await res.json();
+    return json.data || [];
 }
 
 export async function verifyAnswer(payload) {

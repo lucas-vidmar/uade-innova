@@ -5,7 +5,7 @@ import { listBlobs, loadJson } from '../services/storage.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { getEnrollment } from '../services/state-store.js';
 import { computeSafetyRate } from '../services/safety-rate.js';
-import { resolveSafetyStatus } from '../services/error-categories.js';
+import { resolveSafetyStatus, structuredErrorResponse, ErrorCategory } from '../services/error-categories.js';
 
 const CONTAINER_CHAT = 'chat-logs';
 
@@ -32,24 +32,26 @@ app.http('get-teacher-analytics', {
     route: 'analytics',
     handler: withCorrelation(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) {
-            return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+            return structuredErrorResponse(403, 'Forbidden - Invalid Front Door ID', ErrorCategory.AUTH, 'FRONTDOOR_INVALID');
         }
 
         const subjectId = request.query.get('subjectId');
         if (!subjectId) {
-            return { status: 400, body: 'Falta subjectId' };
+            return structuredErrorResponse(400, 'Falta subjectId', ErrorCategory.VALIDATION, 'MISSING_SUBJECT');
         }
 
         try {
             const principal = parseClientPrincipal(request);
-            const userId = principal?.userId || principal?.oid || 'anonymous';
+            // Application identity resolved from the allowlist (Story 10.24):
+            // the pilot data key (e.g. doc-001) so enrollment lookups match.
+            const userId = context.user?.id || principal?.userId || principal?.oid || 'anonymous';
             const roles = principal?.userRoles || [];
             const isDirector = roles.includes('Director');
             const isTeacher = roles.includes('Docente');
 
             if (!isDirector) {
                 if (!isTeacher && process.env.AZURE_FUNCTIONS_ENVIRONMENT !== 'Development') {
-                    return { status: 403, body: "Forbidden - Teacher access required" };
+                    return structuredErrorResponse(403, 'Forbidden - Teacher access required', ErrorCategory.AUTH, 'FORBIDDEN');
                 }
                 
                 // Enrollment check for teachers in production
@@ -57,7 +59,7 @@ app.http('get-teacher-analytics', {
                     const enrollment = await getEnrollment(subjectId, userId);
                     if (!enrollment || enrollment.role !== 'teacher' || enrollment.status !== 'active') {
                         context.warn(`[Analytics] Unauthorized access: User ${userId} is not an active teacher for ${subjectId}`);
-                        return { status: 403, body: "Forbidden - You are not assigned to this subject" };
+                        return structuredErrorResponse(403, 'No tienes permisos de docente para esta materia. Contactá a administración o verificá tu inscripción.', ErrorCategory.AUTH, 'ENROLLMENT_INACTIVE');
                     }
                 }
             }
@@ -126,7 +128,7 @@ app.http('get-teacher-analytics', {
 
         } catch (err) {
             context.error('Error procesando analitica:', err);
-            return { status: 500, body: 'Error interno procesando analitica' };
+            return structuredErrorResponse(500, 'Error interno procesando analitica', ErrorCategory.INTERNAL, 'INTERNAL_ERROR');
         }
     }))
 });
@@ -140,7 +142,7 @@ app.http('get-safety-rate', {
     route: 'safety-rate',
     handler: withCorrelation(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) {
-            return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+            return structuredErrorResponse(403, 'Forbidden - Invalid Front Door ID', ErrorCategory.AUTH, 'FRONTDOOR_INVALID');
         }
 
         const subjectId = request.query.get('subjectId');
@@ -150,21 +152,22 @@ app.http('get-safety-rate', {
 
         try {
             const principal = parseClientPrincipal(request);
-            const userId = principal?.userId || principal?.oid || 'anonymous';
+            // Application identity resolved from the allowlist (Story 10.24).
+            const userId = context.user?.id || principal?.userId || principal?.oid || 'anonymous';
             const roles = principal?.userRoles || [];
             const isDirector = roles.includes('Director');
             const isTeacher = roles.includes('Docente');
 
             if (!isDirector) {
                 if (!isTeacher && process.env.AZURE_FUNCTIONS_ENVIRONMENT !== 'Development') {
-                    return { status: 403, body: JSON.stringify({ error: 'Forbidden - Teacher access required' }) };
+                    return structuredErrorResponse(403, 'Forbidden - Teacher access required', ErrorCategory.AUTH, 'FORBIDDEN');
                 }
 
                 if (process.env.AZURE_FUNCTIONS_ENVIRONMENT !== 'Development' && subjectId) {
                     const enrollment = await getEnrollment(subjectId, userId);
                     if (!enrollment || enrollment.role !== 'teacher' || enrollment.status !== 'active') {
                         context.warn(`[SafetyRate] Unauthorized access: User ${userId} is not an active teacher for ${subjectId}`);
-                        return { status: 403, body: JSON.stringify({ error: 'Forbidden - You are not assigned to this subject' }) };
+                        return structuredErrorResponse(403, 'No tienes permisos de docente para esta materia. Contactá a administración o verificá tu inscripción.', ErrorCategory.AUTH, 'ENROLLMENT_INACTIVE');
                     }
                 }
             }
@@ -181,7 +184,7 @@ app.http('get-safety-rate', {
             };
         } catch (err) {
             context.error(`[SafetyRate] Error subjectId=${subjectId || 'all'}:`, err);
-            return { status: 500, body: JSON.stringify({ error: 'Error interno calculando Tasa Fallo Seguro' }) };
+            return structuredErrorResponse(500, 'Error interno calculando Tasa Fallo Seguro', ErrorCategory.INTERNAL, 'INTERNAL_ERROR');
         }
     }))
 });

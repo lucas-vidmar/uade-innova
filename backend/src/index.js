@@ -2,6 +2,18 @@
  * src/index.js — Entry point for Node.js V4 Functions.
  * Static imports keep startup compatible with older host builds.
  */
+
+// Enable HTTP streaming (SSE responses). Best-effort: older hosts (< v4.28)
+// reject this setting; the stream then degrades to a buffered response rather
+// than failing app startup. Required for the notifications SSE channel
+// (Story 10.24 — without it the host never flushes the endless stream body).
+import { app } from '@azure/functions';
+try {
+  app.setup({ enableHttpStream: true });
+} catch (err) {
+  console.warn(`[index] HTTP streaming disabled: ${err?.message || err}`);
+}
+
 import './functions/hello.js';
 import './functions/classes-api.js';
 import './functions/deadlines.js';

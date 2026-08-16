@@ -14,6 +14,11 @@
  * Expected env value (JSON array):
  *   [{"email":"prof@uade.edu.ar","role":"teacher","subjects":["arq-software-2026"]}]
  *
+ * Optional per-entry `userId` (pilot data key, e.g. "doc-001"): the application
+ * identity used to key operational data (Enrollments RowKey, notification
+ * recipientUserIds, correction studentId). When absent, the verified email is
+ * used. Role and subject/class scope always come from this allowlist (Story 1.1a).
+ *
  * Roles: student | teacher | director | admin
  */
 
@@ -178,6 +183,7 @@ function parseConfig() {
     const role = String(rawEntry.role || '').trim().toLowerCase();
     const subjects = Array.isArray(rawEntry.subjects) ? rawEntry.subjects.map(String) : [];
     const classes = Array.isArray(rawEntry.classes) ? rawEntry.classes.map(String) : [];
+    const userId = rawEntry.userId ? String(rawEntry.userId).trim() : null;
 
     if (!email || !email.includes('@')) {
       invalidate(email || '(vacío)', index, 'email_ausente_o_invalido');
@@ -201,6 +207,7 @@ function parseConfig() {
       internalRole: INTERNAL_ROLE_BY_ROLE[role],
       subjects,
       classes,
+      userId,
       index,
     });
   });
@@ -257,6 +264,20 @@ export function resolveScopeForEmail(email) {
   const entry = resolveEntryForEmail(email);
   if (!entry) return null;
   return { subjects: entry.subjects, classes: entry.classes };
+}
+
+/**
+ * Resolves the application user id for an email: the optional per-entry pilot
+ * data key (`userId`) when present, otherwise the verified email itself. This
+ * is the canonical id used to key operational data (Enrollments RowKey,
+ * notification recipients, correction studentId) — never a client-submitted id.
+ * @param {string} email
+ * @returns {string|null}
+ */
+export function resolveUserIdForEmail(email) {
+  const entry = resolveEntryForEmail(email);
+  if (!entry) return null;
+  return entry.userId || email;
 }
 
 /**

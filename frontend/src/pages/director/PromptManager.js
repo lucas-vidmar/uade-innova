@@ -2,6 +2,7 @@ import { api } from '../../services/api.js';
 import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
 import { toast } from '../../components/Toast.js';
+import { apiErrorFeedback } from '../../services/error-feedback.js';
 
 function esc(str) {
   return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -30,11 +31,17 @@ export async function renderDirectorPromptManager(container) {
     renderList(container);
   } catch (err) {
     console.error('[PromptManager] Error loading:', err);
+    const feedback = apiErrorFeedback(err, {
+      FORBIDDEN: 'Se requiere rol Director o Admin para gestionar prompts.',
+      ACCESS_DENIED: 'Tu cuenta no está habilitada en la plataforma. Contactá a administración.',
+      auth: 'Tu rol no permite gestionar prompts.',
+    });
     container.innerHTML = `
       <div class="card" style="max-width:480px;margin:var(--space-10) auto;text-align:center">
         <div class="empty-state-icon" aria-hidden="true">⚙️</div>
-        <h2 class="h3">Gestión de Prompts no disponible</h2>
-        <p style="color:var(--color-text-secondary)">No se pudieron cargar los tipos de prompt. Verificá que el endpoint del backend esté activo.</p>
+        <h2 class="h3">${esc(feedback.title)}</h2>
+        <p style="color:var(--color-text-secondary)">${esc(feedback.message || 'No se pudieron cargar los tipos de prompt.')}</p>
+        ${feedback.hint ? `<p style="color:var(--color-warning);font-weight:600;margin-top:var(--space-2)">${esc(feedback.hint)}</p>` : ''}
         <button class="btn btn-secondary" onclick="window.location.reload()" aria-label="Reintentar">Reintentar</button>
       </div>
     `;

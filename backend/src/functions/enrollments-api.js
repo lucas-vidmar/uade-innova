@@ -26,25 +26,27 @@ app.http('get-enrollments', {
   authLevel: 'anonymous',
   route: 'enrollments',
     handler: withCorrelation(withAuth(async (request, context) => {
-    if (!validateFrontDoorId(request)) return jsonResponse(403, { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } });
+    if (!validateFrontDoorId(request)) return jsonResponse(403, { success: false, error: { code: 'FRONTDOOR_INVALID', message: 'Forbidden' } });
     
     const principal = parseClientPrincipal(request);
-    const authenticatedUserId = principal?.userId || principal?.oid || 'anonymous';
+    // Application id resolved from the allowlist (Story 10.24): pilot data key
+    // / email. Used for self-scoped lookups so students read their own data.
+    const callerId = context.user?.id || principal?.userId || principal?.oid || null;
     const roles = principal?.userRoles || [];
     const isTeacher = roles.includes('Docente');
     const isDir = roles.includes('Director');
-    const isDev = false;
 
-    const userId = request.query.get('userId');
+    const requestedUserId = request.query.get('userId');
     const subjectId = request.query.get('subjectId');
 
-    if (subjectId && userId) {
-      // Permission check: Director/Teacher or the user themselves
-      if (!isDir && !isTeacher && authenticatedUserId !== userId) {
+    if (subjectId && requestedUserId) {
+      // Directors/teachers may inspect any user; a student only themselves.
+      const effectiveUserId = (!isDir && !isTeacher) ? callerId : requestedUserId;
+      if (!effectiveUserId) {
         return jsonResponse(403, { success: false, error: { code: 'FORBIDDEN', message: 'Solo puedes ver tus propias inscripciones.' } });
       }
 
-      const enrollment = await getEnrollment(subjectId, userId);
+      const enrollment = await getEnrollment(subjectId, effectiveUserId);
       return jsonResponse(200, {
         success: true,
         data: enrollment
@@ -68,16 +70,18 @@ app.http('get-enrollments', {
       });
     }
 
-    if (!userId) {
+    if (!requestedUserId) {
       return jsonResponse(400, { success: false, error: { code: 'MISSING_USER_ID', message: 'userId is required' } });
     }
 
-    // Permission check: Director/Teacher or the user themselves
-    if (!isDir && !isTeacher && authenticatedUserId !== userId) {
+    // Self lookup always resolves the caller's verified id; dir/teacher may
+    // query any user's enrollments.
+    const effectiveUserId = (!isDir && !isTeacher) ? callerId : requestedUserId;
+    if (!effectiveUserId) {
       return jsonResponse(403, { success: false, error: { code: 'FORBIDDEN', message: 'Solo puedes ver tus propias inscripciones.' } });
     }
 
-    const enrollments = await getEnrollmentsByUser(userId);
+    const enrollments = await getEnrollmentsByUser(effectiveUserId);
     return jsonResponse(200, {
       success: true,
       data: enrollments,
@@ -95,23 +99,24 @@ app.http('check-enrollment', {
     if (!validateFrontDoorId(request)) return jsonResponse(403, { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } });
 
     const principal = parseClientPrincipal(request);
-    const authenticatedUserId = principal?.userId || principal?.oid || 'anonymous';
+    const callerId = context.user?.id || principal?.userId || principal?.oid || null;
     const roles = principal?.userRoles || [];
     const isTeacher = roles.includes('Docente');
     const isDir = roles.includes('Director');
-    const userId = request.query.get('userId');
+    const requestedUserId = request.query.get('userId');
     const subjectId = request.query.get('subjectId');
 
-    if (!userId || !subjectId) {
+    if (!requestedUserId || !subjectId) {
       return jsonResponse(400, { success: false, error: { code: 'MISSING_PARAMS', message: 'userId and subjectId are required' } });
     }
 
     // Permission check: Director/Teacher or the user themselves
-    if (!isDir && !isTeacher && authenticatedUserId !== userId) {
+    const effectiveUserId = (!isDir && !isTeacher) ? callerId : requestedUserId;
+    if (!effectiveUserId) {
       return jsonResponse(403, { success: false, error: { code: 'FORBIDDEN', message: 'Solo puedes verificar tu propia inscripción.' } });
     }
 
-    const enrollment = await getEnrollment(subjectId, userId);
+    const enrollment = await getEnrollment(subjectId, effectiveUserId);
     return jsonResponse(200, {
       success: true,
       data: enrollment
