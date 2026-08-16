@@ -10,7 +10,7 @@ const configuredBaseUrl = (typeof import.meta !== 'undefined' && import.meta.env
 const isLocalRuntime = ['localhost', '127.0.0.1'].includes(window.location.hostname);
 const isLocalApiUrl = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(configuredBaseUrl);
 
-if (!isLocalRuntime && configuredBaseUrl && isLocalApiUrl) {
+if (import.meta.env.DEV && !isLocalRuntime && configuredBaseUrl && isLocalApiUrl) {
     console.warn('[API] Ignoring local VITE_API_BASE_URL in remote runtime:', configuredBaseUrl);
 }
 
