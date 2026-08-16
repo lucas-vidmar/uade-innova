@@ -6,6 +6,9 @@
  * seed-enrollments.js — Bulk insert enrollment records into Azure Table Storage
  * from a CSV file (scripts/pilot-enrollments.csv).
  *
+ * El CSV es pilot-only (Story 10.23): todas las filas llevan env=pilot y las
+ * líneas `#` (comentarios de cabecera) se ignoran.
+ *
  * Usage:
  *   node scripts/seed-enrollments.js
  *
@@ -52,7 +55,8 @@ function getTableClient() {
 
 function parseCsv(filePath) {
   const raw = readFileSync(filePath, 'utf-8').trim();
-  const lines = raw.split('\n');
+  // Se ignoran líneas de comentario (prefijo `#`) para permitir cabeceras documentadas.
+  const lines = raw.split('\n').filter((line) => !line.trim().startsWith('#'));
   const headers = lines[0].split(',').map(h => h.trim());
 
   return lines.slice(1).map(line => {
@@ -96,6 +100,8 @@ async function main() {
       status: record.status || 'active',
       enrolledAt: record.enrolledAt || new Date().toISOString(),
     };
+    // Etiqueta de entorno aditiva (Story 10.23): todas las filas piloto = "pilot".
+    if (record.env) entity.env = record.env;
 
     try {
       await client.upsertEntity(entity, 'Replace');
