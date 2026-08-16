@@ -11,6 +11,13 @@ import path from 'path';
 
 export const DEFAULT_CHECKPOINT_FILE = 'reindex-classid-checkpoint.json';
 
+/**
+ * Default de checkpoint del runner de cuarentena (Story 10.17). Distinto del
+ * archivo de la migracion classId para evitar que runs intercalados se
+ * sobrescriban/reanuden mutuamente (Loopback 3).
+ */
+export const DEFAULT_QUARANTINE_CHECKPOINT_FILE = 'reindex-quarantine-checkpoint.json';
+
 export const CHECKPOINT_VERSION = 1;
 
 export function parseReindexArgs(argv = process.argv.slice(2), env = process.env) {
@@ -69,6 +76,12 @@ export function writeCheckpoint(file, data) {
         return;
     }
 
+    // `extra` se guarda SIEMPRE bajo un namespace reservado para que el estado
+    // del caller (failedVectors, candidates, etc.) NUNCA clobberee los campos
+    // core (version, counts, completedBatches, totalIds). Round-trip test en
+    // reindex-checkpoint.test.js (Loopback 2).
+    const extra = data.extra && typeof data.extra === 'object' ? data.extra : undefined;
+
     const payload = {
         version: CHECKPOINT_VERSION,
         completedBatches,
@@ -85,6 +98,9 @@ export function writeCheckpoint(file, data) {
             })
             : [],
     };
+    if (extra !== undefined) {
+        payload.extra = extra;
+    }
 
     const target = checkpointPath(file);
     fs.mkdirSync(path.dirname(target), { recursive: true });

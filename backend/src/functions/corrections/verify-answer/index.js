@@ -194,6 +194,7 @@ app.http('verify-answer', {
             lectureDate: now,
             chunkIndex: 0,
             materialId: `corr-${correctionId}`,
+            quarantined: false,
           },
         }]);
       } catch (pineconeErr) {

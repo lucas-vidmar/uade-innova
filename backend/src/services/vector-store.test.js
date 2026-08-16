@@ -12,7 +12,7 @@ global.fetch = fetchMock;
 
 setupTestEnv();
 
-const { listVectorIds, fetchVectorsByIds, listAllVectorIds, isTransientError, withRetry } = await import('./vector-store.js');
+const { listVectorIds, fetchVectorsByIds, listAllVectorIds, isTransientError, withRetry, querySimilar } = await import('./vector-store.js');
 
 test('isTransientError treats network errors, timeouts, 408, 409, 429 and 5xx as transient', () => {
     assert.strictEqual(isTransientError(new TypeError('fetch failed')), true);
@@ -317,4 +317,37 @@ test('fetchVectorsByIds fails immediately on 4xx validation error (no retry)', a
         },
     );
     assert.strictEqual(fetchMock.mock.callCount(), 1);
+});
+
+test('querySimilar passes the filter (including the quarantined exclusion) through to the Pinecone payload (Task 4.5)', async () => {
+    fetchMock.mock.resetCalls();
+    fetchMock.mock.mockImplementationOnce(async () => ({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ matches: [] }),
+    }));
+
+    const filter = { subjectId: { $eq: 'arq-software-2026' }, quarantined: { $ne: true } };
+    await querySimilar([0.1, 0.2, 0.3], filter, 5);
+
+    assert.strictEqual(fetchMock.mock.callCount(), 1);
+    const [url, request] = fetchMock.mock.calls[0].arguments;
+    assert.ok(url.includes('/query'));
+    const body = JSON.parse(request.body);
+    assert.deepStrictEqual(body.filter, filter, 'el filtro (con quarantined $ne true) debe llegar al payload de Pinecone');
+    assert.strictEqual(body.topK, 5);
+});
+
+test('querySimilar omits the filter key when the filter is empty (no filter leak)', async () => {
+    fetchMock.mock.resetCalls();
+    fetchMock.mock.mockImplementationOnce(async () => ({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ matches: [] }),
+    }));
+
+    await querySimilar([0.1], null, 5);
+    const [, request] = fetchMock.mock.calls[0].arguments;
+    const body = JSON.parse(request.body);
+    assert.strictEqual(body.filter, undefined);
 });

@@ -25,6 +25,7 @@ import {
     filterMatchesByTranscriptFocus, buildHybridContext, diversifyBySourceFile,
     resolveMaterialPriority, resolveSourceMix, resolveSelectedClassCount, resolveFilterType
 } from '../services/rag-ranking.js';
+import { isQuarantined } from '../services/vector-audit.js';
 const MIN_HISTORY_TURNS = CONFIG.history.minTurns;
 const MAX_HISTORY_TURNS = CONFIG.history.maxTurns;
 const DEFAULT_HISTORY_TURNS = CONFIG.history.defaultTurns;
@@ -121,8 +122,11 @@ function buildPreferencesBlock({ botTone, botLength, includeSources }) {
 }
 
 function buildPineconeFilter(subjectId, classIds, disableBibliographyFallback = false) {
+    // Todo filtro RAG excluye vectores cuarentenados (defense-in-depth, Story 10.17).
+    // El campo `quarantined` es always-present tras una corrida de normalizacion,
+    // de modo que `{ $ne: true }` solo excluye los marcados en cuarentena.
     if (!classIds || classIds.length === 0 || classIds.includes('all')) {
-        return { subjectId: { $eq: subjectId } };
+        return { subjectId: { $eq: subjectId }, quarantined: { $ne: true } };
     }
 
     const isSingleClass = classIds.length === 1 && classIds[0] !== 'all';
@@ -140,6 +144,7 @@ function buildPineconeFilter(subjectId, classIds, disableBibliographyFallback = 
     return {
         subjectId: { $eq: subjectId },
         $or: clauses,
+        quarantined: { $ne: true },
     };
 }
 
@@ -288,6 +293,7 @@ app.http('rag-query', {
         const verifiedFilter = {
             subjectId: { $eq: subjectId },
             materialType: { $eq: 'verified-answer' },
+            quarantined: { $ne: true },
         };
 
         let verifiedMatch = null;
@@ -295,8 +301,13 @@ app.http('rag-query', {
 
         try {
             const verifiedMatches = await querySimilar(questionEmbedding, verifiedFilter, 5, { correlationId });
-            const topVerified = verifiedMatches[0];
-            if (topVerified && topVerified.score > VERIFIED_SCORE_THRESHOLD) {
+            // Pass-6 fix: buscar el primer match no-cuarentenado por encima del
+            // umbral (no solo el top-1), para que un match cuarentenado rank-1 no
+            // eclipse a un verified-answer limpio rank-2 (defense-in-depth).
+            const topVerified = verifiedMatches.find((m) => !isQuarantined(m.metadata) && m.score > VERIFIED_SCORE_THRESHOLD);
+            // Loopback 1/4.3: un verifiedMatch cuarentenado se descarta (el fast
+            // path no debe devolver contenido que pudo quedar flaggeado).
+            if (topVerified) {
                 verifiedMatch = topVerified;
                 verifiedAnswerText = topVerified.metadata?.text || topVerified.metadata?.correctedAnswer || '';
                 context.log(`[RAG] Verified answer match (score=${topVerified.score.toFixed(3)}) — bypassing LLM`);
@@ -370,6 +381,16 @@ app.http('rag-query', {
         }
 
         matches = filterMatchesByTranscriptFocus(matches, transcriptFocus);
+
+        // ── 4a. Post-filter de cuarentena (defense-in-depth) ───────
+        // Incluso si el filtro de Pinecone fallara o la propagacion de metadata
+        // estuviera incompleta, un source cuarentenado no debe llegar al LLM.
+        const preQuarantineCount = matches.length;
+        matches = matches.filter((m) => !isQuarantined(m.metadata));
+        if (matches.length !== preQuarantineCount) {
+            const dropped = preQuarantineCount - matches.length;
+            context.log(`[RAG] Quarantine post-filter: se descartaron ${dropped} matches cuarentenados (subjectId=${subjectId}, correlationId=${correlationId})`);
+        }
 
         // ── 4b. Filtrar materiales no revisados ───────────────────
         let priorityMap = {};

@@ -213,7 +213,7 @@ test('RAG Filter: cross-contamination prevention - ensure subjectId is strictly 
     const topLevelKeys = Object.keys(filter);
     assert.ok(topLevelKeys.includes('subjectId'));
     for (const key of topLevelKeys) {
-        assert.ok(['subjectId', '$or'].includes(key), `Unexpected top-level filter key: ${key}`);
+        assert.ok(['subjectId', '$or', 'quarantined'].includes(key), `Unexpected top-level filter key: ${key}`);
     }
 });
 
@@ -379,4 +379,124 @@ test('Telemetry: selectedClassCount deduplicates repeated classIds', async () =>
 
     const callArgs = telemetryMocks.trackRAGInteraction.mock.calls[0].arguments[0];
     assert.strictEqual(callArgs.selectedClassCount, 2);
+});
+
+// ============================================================================
+// Quarantine exclusion (Story 10.17 / Task 4.1-4.3)
+// ============================================================================
+
+test('RAG Filter: quarantined exclusion present in subject-only filter shape', async () => {
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+    await capturedHandler(
+        mockRequest({ question: 'test', subjectId: 'math-101', classIds: ['all'] }),
+        mockContext()
+    );
+    const filter = vectorStoreMocks.querySimilar.mock.calls[1].arguments[1];
+    assert.deepStrictEqual(filter.quarantined, { $ne: true });
+});
+
+test('RAG Filter: quarantined exclusion present in exact-classId filter shape', async () => {
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+    await capturedHandler(
+        mockRequest({ question: 'test', subjectId: 'math-101', classIds: ['class-05'] }),
+        mockContext()
+    );
+    const filter = vectorStoreMocks.querySimilar.mock.calls[1].arguments[1];
+    assert.deepStrictEqual(filter.quarantined, { $ne: true });
+    assert.ok(filter.$or);
+});
+
+test('RAG Filter: quarantined exclusion present in multi-classIds filter shape', async () => {
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+    await capturedHandler(
+        mockRequest({ question: 'test', subjectId: 'math-101', classIds: ['class-05', 'class-06'] }),
+        mockContext()
+    );
+    const filter = vectorStoreMocks.querySimilar.mock.calls[1].arguments[1];
+    assert.deepStrictEqual(filter.quarantined, { $ne: true });
+});
+
+test('RAG Filter: verified-answer pre-search filter includes the quarantined exclusion', async () => {
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+    await capturedHandler(
+        mockRequest({ question: 'test', subjectId: 'math-101', classIds: ['class-05'] }),
+        mockContext()
+    );
+    const verifiedFilter = vectorStoreMocks.querySimilar.mock.calls[0].arguments[1];
+    assert.strictEqual(verifiedFilter.materialType.$eq, 'verified-answer');
+    assert.deepStrictEqual(verifiedFilter.quarantined, { $ne: true });
+});
+
+test('RAG Filter: post-filter drops quarantined matches (defense-in-depth)', async () => {
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter) => {
+        if (filter?.materialType?.$eq === 'verified-answer') return [];
+        return [
+            {
+                score: 0.95,
+                id: 'quarantined-chunk',
+                metadata: {
+                    sourceFilename: 'leaked.txt',
+                    text: 'Contenido filtrado',
+                    materialType: 'notes',
+                    classIds: ['class1'],
+                    chunkIndex: 0,
+                    quarantined: true,
+                },
+            },
+        ];
+    });
+
+    const response = await capturedHandler(
+        mockRequest({ question: 'test', subjectId: 'math-101', classIds: ['class1'] }),
+        mockContext()
+    );
+
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.answer, 'No encontre informacion sobre eso en los materiales seleccionados.');
+    assert.deepStrictEqual(body.sources, []);
+});
+
+test('RAG Filter: verified-answer fast path discards a quarantined verifiedMatch (Loopback 1)', async () => {
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter) => {
+        if (filter?.materialType?.$eq === 'verified-answer') {
+            return [
+                {
+                    score: 0.99,
+                    id: 'verified-1',
+                    metadata: {
+                        materialType: 'verified-answer',
+                        text: 'RESPUESTA VERIFICADA SECRETA',
+                        correctedAnswer: 'RESPUESTA VERIFICADA SECRETA',
+                        teacherId: 't1',
+                        quarantined: true,
+                    },
+                },
+            ];
+        }
+        return [
+            {
+                score: 0.9,
+                id: 'test-chunk-0',
+                metadata: {
+                    sourceFilename: 'clase1.pdf',
+                    text: 'Contenido',
+                    materialType: 'notes',
+                    materialPriority: 'primary',
+                    classIds: ['class1'],
+                    chunkIndex: 0,
+                },
+            },
+        ];
+    });
+
+    const response = await capturedHandler(
+        mockRequest({ question: 'test', subjectId: 'math-101', classIds: ['class1'] }),
+        mockContext()
+    );
+
+    const body = JSON.parse(response.body);
+    assert.notStrictEqual(body.answer, 'RESPUESTA VERIFICADA SECRETA', 'el fast path no debe devolver una respuesta cuarentenada');
+    assert.strictEqual(body.answer, 'Respuesta simulada.');
 });
