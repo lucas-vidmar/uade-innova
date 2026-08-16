@@ -75,6 +75,10 @@ param allowedCorsOrigins array = ['*']
 @description('Permits the mock auth fallback in non-Development environments (pilot continuity until #194 provisions Entra). Flip to false after SSO lands.')
 param authMockEnabled string = 'true'
 
+@secure()
+@description('Server-side identity allowlist JSON (Story 1.1a). Stored in Key Vault (ALLOWED-USERS-JSON) and referenced here; never a VITE_* var nor exposed to the browser. Empty => allowlist inactive (legacy role behavior).')
+param allowedUsersJson string = ''
+
 @description('Comma-separated CORS origins for app-level CORS middleware. Auto-derived from allowedCorsOrigins array.')
 var corsAllowedOrigins = join(allowedCorsOrigins, ',')
 
@@ -295,6 +299,15 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         {
           name: 'AUTH_MOCK_ENABLED'
           value: authMockEnabled
+        }
+        // Server-side identity allowlist (Story 1.1a) — Key Vault reference.
+        // When the Function identity can resolve the secret the allowlist is
+        // active (fail closed); an unresolved/empty reference leaves it inactive.
+        {
+          name: 'ALLOWED_USERS_JSON'
+          value: !empty(allowedUsersJson)
+            ? allowedUsersJson
+            : '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/ALLOWED-USERS-JSON/)'
         }
         {
           name: 'ENTRA_TENANT_ID'

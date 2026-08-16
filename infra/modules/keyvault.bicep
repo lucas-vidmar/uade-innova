@@ -40,6 +40,10 @@ param entraTenantId string = 'PLACEHOLDER'
 @description('Entra ID client ID (audience) used for OIDC token validation on Functions (#218). Placeholder until UADE provisions the app registration.')
 param entraClientId string = 'PLACEHOLDER'
 
+@secure()
+@description('Server-side identity allowlist JSON (Story 1.1a). Maps verified emails to roles/subjects: [{"email":"prof@uade.edu.ar","role":"teacher","subjects":["arq-software-2026"]}]. Empty by default (allowlist inactive). Managed only via deployment; never exposed to the browser.')
+param allowedUsersJson string = ''
+
 // ─── Key Vault ───────────────────────────────────────────────────
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: name
@@ -143,6 +147,15 @@ resource entraClientIdSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   name: 'ENTRA-CLIENT-ID'
   properties: {
     value: entraClientId
+  }
+}
+
+// ─── ALLOWED-USERS-JSON (server-side identity allowlist — Story 1.1a) ─────
+resource allowedUsersJsonSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'ALLOWED-USERS-JSON'
+  properties: {
+    value: allowedUsersJson
   }
 }
 

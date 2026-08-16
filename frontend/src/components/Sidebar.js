@@ -1,7 +1,7 @@
 /* ============================================================
    Sidebar — Role-aware navigation shell (Desktop + Mobile)
    ============================================================ */
-import { auth } from '../services/auth.js';
+import { auth, isDevMockEnabled } from '../services/auth.js';
 import { api } from '../services/api.js';
 import { toast } from './Toast.js';
 import { OnboardingEngine, resetOnboarding } from '../services/onboarding.js';
@@ -181,6 +181,7 @@ export function renderSidebar() {
               </div>
             </div>
 
+            ${isDevMockEnabled() ? `
             <div class="profile-panel-section">
               <div class="profile-label mb-2">Cambiar Rol (Demo)</div>
               <div class="profile-role-switcher" id="profile-role-switcher-nav">
@@ -200,6 +201,7 @@ export function renderSidebar() {
                 </div>
               ` : ''}
             </div>
+            ` : ''}
 
             <div class="profile-panel-section">
               <button class="btn btn-outline profile-logout-btn" id="profile-logout-nav">
@@ -277,27 +279,28 @@ export function renderSidebar() {
   });
 
   document.getElementById('profile-logout-nav')?.addEventListener('click', () => {
-    auth.mockLogout();
-    window.location.reload();
+    auth.performLogout();
   });
 
-  document.querySelectorAll('#profile-role-switcher-nav .role-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const role = btn.dataset.role;
-      auth.mockLoginAs(role);
-      window.location.hash = `#/${role}/dashboard`;
-      window.location.reload();
+  if (isDevMockEnabled()) {
+    document.querySelectorAll('#profile-role-switcher-nav .role-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const role = btn.dataset.role;
+        auth.mockLoginAs(role);
+        window.location.hash = `#/${role}/dashboard`;
+        window.location.reload();
+      });
     });
-  });
 
-  document.querySelectorAll('#profile-student-picker-nav .role-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const studentKey = btn.dataset.studentKey;
-      auth.mockLoginAs(studentKey);
-      window.location.hash = '#/student/dashboard';
-      window.location.reload();
+    document.querySelectorAll('#profile-student-picker-nav .role-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const studentKey = btn.dataset.studentKey;
+        auth.mockLoginAs(studentKey);
+        window.location.hash = '#/student/dashboard';
+        window.location.reload();
+      });
     });
-  });
+  }
 
   /* ── Onboarding re-trigger (Guía de inicio) ──────────── */
   const role = user.role;

@@ -72,9 +72,21 @@ export function withCorrelationHeaders(headers = {}) {
 export async function apiFetch(resource, options = {}) {
     let url = resource;
 
-    // Pass mock auth as query params (not headers) to avoid CORS preflight
-    const isPreviewEnv = window.location.hostname.includes('.azurestaticapps.net');
-    if (isPreviewEnv) {
+    const headers = withCorrelationHeaders(options.headers);
+
+    // Dev/preview-only mock identity relay (Story 1.1a): in dev and preview
+    // builds where VITE_MOCK_AUTH_ENABLED=true, forward the local mock role/uid
+    // so the demo persona still reaches the backend mock path. NEVER in
+    // production: the server authorizes from the allowlist using the SWA-relayed
+    // email, never from a client-submitted role.
+    const devMock = (() => {
+        try {
+            return import.meta.env.DEV || import.meta.env.VITE_MOCK_AUTH_ENABLED === 'true';
+        } catch {
+            return false;
+        }
+    })();
+    if (devMock) {
         const params = new URLSearchParams();
         const mockRole = sessionStorage.getItem('edu_role');
         if (mockRole) params.set('_mock_role', mockRole);
@@ -84,9 +96,19 @@ export async function apiFetch(resource, options = {}) {
         if (qs) url = resource + (resource.includes('?') ? '&' : '?') + qs;
     }
 
+    // Relay the SWA-resolved identity to the backend (Story 1.1a). The backend
+    // authorizes from the server-side allowlist using this email — the browser
+    // only mirrors what `/.auth/me` reported; it never chooses a role. When the
+    // SWA `/api` proxy is enabled the trusted `x-ms-client-principal` header
+    // takes precedence server-side and this header is ignored.
+    try {
+        const email = window.sessionStorage.getItem('edu_email');
+        if (email) headers.set('x-ms-client-principal-name', email);
+    } catch (_) {}
+
     return fetch(url, {
         ...options,
-        headers: withCorrelationHeaders(options.headers),
+        headers,
     });
 }
 

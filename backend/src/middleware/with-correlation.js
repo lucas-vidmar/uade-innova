@@ -10,7 +10,7 @@ function getCorsHeaders(request) {
   return {
     'access-control-allow-origin': allowedOrigin,
     'access-control-allow-methods': 'GET, POST, PUT, DELETE, PATCH, OPTIONS',
-    'access-control-allow-headers': 'content-type,authorization,x-correlation-id,x-mock-role,x-edu-uid,traceparent,tracestate',
+    'access-control-allow-headers': 'content-type,authorization,x-correlation-id,x-mock-role,x-edu-uid,x-ms-client-principal-name,traceparent,tracestate',
     'access-control-max-age': '86400',
     'vary': 'Origin',
   };

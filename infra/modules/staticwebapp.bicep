@@ -4,6 +4,19 @@
   - No requiere VM quota (serverless CDN)
   - Tier Free: 100 GB bandwidth/mes, SSL incluido, custom domain
   - Deploy vía GitHub Actions o azd
+
+  Microsoft-account sign-in (Story 1.1a) — SWA EasyAuth:
+  El provider "Microsoft Entra ID" PRE-configurado es nativo del tier Free
+  (documentado como disponible en "all Static Web Apps plans"): usa
+  `/.auth/login/aad`, `/.auth/me` y `/.auth/logout` con cualquier cuenta
+  Microsoft. No requiere configuración ARM adicional. El path `/login` ya
+  redirige a `/.auth/login/aad` en `frontend/public/staticwebapp.config.json`.
+
+  NOTA: registrar un provider AAD personalizado (clientId propio) requeriría el
+  tier Standard ("custom authentication"); queda fuera del alcance Free-tier.
+  El backend (Functions) resuelve rol/scope contra la allowlist servidor
+  (`ALLOWED_USERS_JSON` en Key Vault) a partir del email verificado, nunca de
+  roles enviados por el cliente (ver infra/modules/functions.bicep).
 */
 
 @description('Azure region for the Static Web App.')

@@ -64,6 +64,9 @@
         "webhookUri": {
             "value": "${webhookUri}"
         },
+        "allowedUsersJson": {
+            "value": "${ALLOWED_USERS_JSON}"
+        },
         "pineconeApiKey": {
             "value": "${PINECONE_API_KEY}"
         }

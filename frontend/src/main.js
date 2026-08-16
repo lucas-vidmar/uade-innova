@@ -72,7 +72,25 @@ export const router = {
 async function handleRoute() {
     const hash = window.location.hash || '';
     const fullPath = hash.replace(/^#/, '').split('?')[0] || '/student/dashboard';
-    
+
+    // Public routes handled before the role guard.
+    if (fullPath === '/login') {
+        // Already authenticated users should not see the sign-in CTA (e.g. the
+        // AAD round-trip returned to a URL whose hash is #/login).
+        if (auth.isAuthenticated() && auth.getRole() && !auth.isAccessDenied()) {
+            window.location.hash = `#/${auth.getRole()}/dashboard`;
+            return;
+        }
+        buildShell();
+        renderLogin();
+        return;
+    }
+    if (fullPath === '/access-denied') {
+        buildShell();
+        renderAccessDenied();
+        return;
+    }
+
     // Simple dynamic route matching: /student/class/class-01 -> /student/class
     let matchedPath = fullPath;
     if (fullPath.startsWith('/student/class/')) {
@@ -140,8 +158,28 @@ async function handleRoute() {
     }
 }
 
-/* ── Auth blocked (production, no mock fallback) ──────────── */
-function renderAuthBlocked() {
+/* ── Sign-in page (public) ─────────────────────────────────── */
+function renderLogin() {
+    const appEl = document.getElementById('app');
+    const returnUrl = encodeURIComponent(window.location.href);
+    appEl.innerHTML = `
+    <div class="app-shell">
+      <div class="main-content">
+        <main class="page-content">
+          <div class="card" style="max-width:480px;margin:var(--space-10) auto;text-align:center">
+            <div class="empty-state-icon" aria-hidden="true">🔐</div>
+            <h2 class="h3">Iniciá sesión</h2>
+            <p style="color:var(--color-text-secondary);margin:var(--space-3) 0">Para ingresar al panel usá tu cuenta Microsoft (cuenta institucional UADE).</p>
+            <a class="btn btn-primary" href="/.auth/login/aad?post_login_redirect_uri=${returnUrl}" aria-label="Iniciar sesión con Microsoft">Iniciar sesión con Microsoft</a>
+          </div>
+        </main>
+      </div>
+    </div>
+  `;
+}
+
+/* ── Access denied (authenticated but unlisted / 403 semantics) ── */
+function renderAccessDenied() {
     const appEl = document.getElementById('app');
     appEl.innerHTML = `
     <div class="app-shell">
@@ -149,14 +187,20 @@ function renderAuthBlocked() {
         <main class="page-content">
           <div class="card" style="max-width:480px;margin:var(--space-10) auto;text-align:center">
             <div class="empty-state-icon" aria-hidden="true">🔒</div>
-            <h2 class="h3">No se pudo verificar tu identidad.</h2>
-            <p style="color:var(--color-text-secondary);margin:var(--space-3) 0">Recargá la página.</p>
-            <button class="btn btn-primary" onclick="window.location.reload()" aria-label="Recargar página">Recargar</button>
+            <h2 class="h3">Acceso denegado</h2>
+            <p style="color:var(--color-text-secondary);margin:var(--space-3) 0">Tu cuenta no está habilitada para acceder a esta plataforma. Si creés que esto es un error, contactá a administración.</p>
+            <div style="display:flex;gap:var(--space-3);justify-content:center;margin-top:var(--space-4)">
+              <button class="btn btn-primary" onclick="window.location.reload()" aria-label="Reintentar acceso">Reintentar</button>
+              <button class="btn btn-secondary" id="access-denied-logout" aria-label="Cerrar sesión">Cerrar sesión</button>
+            </div>
           </div>
         </main>
       </div>
     </div>
   `;
+    document.getElementById('access-denied-logout')?.addEventListener('click', () => {
+        auth.performLogout();
+    });
 }
 
 /* ── Boot ────────────────────────────────────────────────── */
@@ -166,8 +210,17 @@ window.addEventListener('auth:roleChanged', () => handleRoute());
 async function bootstrap() {
     const authenticated = await auth.initAuth();
 
+    if (auth.isAccessDenied()) {
+        window.location.hash = '#/access-denied';
+        renderAccessDenied();
+        return;
+    }
+
     if (!authenticated) {
-        renderAuthBlocked();
+        // Production already redirects to Microsoft sign-in inside initAuth().
+        // This branch only renders a login CTA when no redirect happened.
+        window.location.hash = '#/login';
+        renderLogin();
         return;
     }
 

@@ -1,5 +1,6 @@
 /* ============================================================
-   Auth Service — Mock SSO for local development
+   Auth Service — Microsoft-account sign-in (SWA EasyAuth) +
+   DEV-only mock fallback for local development (Story 1.1a)
    ============================================================ */
 import { api } from './api.js';
 import { enrollments as enrollmentService } from './enrollments.js';
@@ -10,6 +11,19 @@ const AI_CONSENT_KEY = 'edu_ai_consent_accepted';
 
 const CORRELATION_HEADER = 'x-correlation-id';
 const TRACEPARENT_HEADER = 'traceparent';
+
+/**
+ * True when client-side mock identities are allowed. The mock surface (demo
+ * role switcher, mock students, setRole) must NEVER be reachable in a production
+ * build: role/email come from the server-resolved allowlist only (Story 1.1a).
+ */
+export function isDevMockEnabled() {
+    try {
+        return import.meta.env.DEV || import.meta.env.VITE_MOCK_AUTH_ENABLED === 'true';
+    } catch {
+        return false;
+    }
+}
 
 function generateSpanId() {
     const bytes = new Uint8Array(8);
@@ -63,6 +77,8 @@ function emitAuthFallbackBlocked() {
     } catch (_) {}
 }
 
+// ── DEV-only mock identities. Never used to authorize production requests;
+//    the server derives role/scope from the allowlist, never from here. ─────
 const USERS = {
     student: {
         id: 'alu-001',
@@ -133,24 +149,50 @@ const USERS = {
 
 const STUDENT_KEYS = ['student', 'student-002', 'student-003', 'student-004', 'student-005'];
 
+// Server-synced subjects for the current session (in-memory; never a role source).
+let _subjectsCache = [];
+
+function initialsOf(name) {
+    const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return 'UI';
+    return parts.slice(0, 2).map(p => p[0].toUpperCase()).join('');
+}
+
 export const auth = {
     getUser() {
         const role = sessionStorage.getItem('edu_role') || 'student';
-        let baseUser;
-        if (role === 'student') {
-            const studentKey = sessionStorage.getItem('edu_student_key') || 'student';
-            baseUser = USERS[studentKey] || USERS.student;
-        } else {
-            baseUser = USERS[role] || USERS.student;
+        const email = sessionStorage.getItem('edu_email') || '';
+        const name = sessionStorage.getItem('edu_name') || '';
+
+        // DEV mock identity (never used for production authorization).
+        if (isDevMockEnabled()) {
+            const studentKey = role === 'student'
+                ? (sessionStorage.getItem('edu_student_key') || 'student')
+                : role;
+            const baseUser = USERS[studentKey] || USERS[role] || USERS.student;
+            return {
+                ...baseUser,
+                subjects: mergeSubjectsWithLocal(baseUser.subjects || []),
+                enrollments: enrollmentService.getCachedEnrollments(),
+            };
         }
+
+        // Production: profile resolved by the server from the allowlist.
+        const base = USERS[role];
+        const displayName = name || email || base?.name || 'Usuario';
         return {
-            ...baseUser,
-            subjects: mergeSubjectsWithLocal(baseUser.subjects || []),
+            id: `u-${String(email || role).replace(/[^a-zA-Z0-9]/g, '_').slice(0, 64) || role}`,
+            name: displayName,
+            email,
+            role,
+            avatar: initialsOf(displayName),
+            subjects: mergeSubjectsWithLocal(_subjectsCache),
             enrollments: enrollmentService.getCachedEnrollments(),
         };
     },
 
     setRole(role) {
+        if (!isDevMockEnabled()) return;
         if (USERS[role] || STUDENT_KEYS.includes(role)) {
             if (STUDENT_KEYS.includes(role)) {
                 sessionStorage.setItem('edu_role', 'student');
@@ -244,7 +286,7 @@ export const auth = {
             return true;
         } catch (err) {
             console.error('[Auth] Error saving AI consent:', err);
-            if (window.location.hostname === 'localhost') {
+            if (isDevMockEnabled()) {
                 try {
                     localStorage.setItem(AI_CONSENT_KEY, 'true');
                 } catch {
@@ -290,8 +332,8 @@ export const auth = {
             return true;
         } catch (err) {
             console.error('Error saving privacy consent to backend:', err);
-            // We return true if in localhost because we've already persisted locally
-            return window.location.hostname === 'localhost';
+            // We return true if in dev because we've already persisted locally
+            return isDevMockEnabled();
         }
     },
 
@@ -301,6 +343,10 @@ export const auth = {
         return true;
     },
 
+    isAccessDenied() {
+        return sessionStorage.getItem('edu_access_denied') === 'true';
+    },
+
     async logout() {
         console.log('[Auth] Logging out...');
         sessionStorage.clear();
@@ -308,12 +354,28 @@ export const auth = {
         window.location.href = '/.auth/logout?post_logout_redirect_uri=/';
     },
 
+    /**
+     * Signs out the current session, using the real SWA endpoint in production
+     * and the local mock path in dev.
+     */
+    performLogout() {
+        if (isDevMockEnabled()) {
+            sessionStorage.setItem('edu_logged_in', 'false');
+            window.dispatchEvent(new CustomEvent('auth:loggedOut'));
+            window.location.reload();
+            return;
+        }
+        this.logout();
+    },
+
     mockLogout() {
+        if (!isDevMockEnabled()) return;
         sessionStorage.setItem('edu_logged_in', 'false');
         window.dispatchEvent(new CustomEvent('auth:loggedOut'));
     },
 
     mockLoginAs(roleOrKey) {
+        if (!isDevMockEnabled()) return;
         const key = STUDENT_KEYS.includes(roleOrKey) ? roleOrKey : (USERS[roleOrKey] ? roleOrKey : null);
         if (!key) return;
         try {
@@ -324,6 +386,7 @@ export const auth = {
     },
 
     getMockStudents() {
+        if (!isDevMockEnabled()) return [];
         return STUDENT_KEYS.map(k => ({ ...USERS[k], _key: k })).filter(Boolean);
     },
 
@@ -366,35 +429,41 @@ export const auth = {
         return enrollmentService.getEnrollmentRole(subjectId);
     },
 
+    /**
+     * Initializes the session:
+     *  - Production: reads `/.auth/me` (SWA EasyAuth). Unauthenticated users are
+     *    redirected to Microsoft sign-in (`/.auth/login/aad`) — never a dead-end.
+     *    The role/scope are resolved from the SERVER profile (allowlist); a
+     *    denied identity is flagged for the access-denied page.
+     *  - Dev: falls back to the local mock session (never in production).
+     */
     async initAuth() {
         let authenticated = false;
+        let email = null;
+        let principal = null;
+
         try {
-            const response = await fetch('/.auth/me', { headers: correlationHeaders() });
+            const response = await fetch('/.auth/me', { headers: correlationHeaders(), credentials: 'include' });
             if (response.ok) {
                 const payload = await response.json();
                 const clientPrincipal = payload.clientPrincipal;
-                if (clientPrincipal) {
-                    const isDocente = clientPrincipal.userRoles.includes('Docente');
-                    const isDirector = clientPrincipal.userRoles.includes('Director');
-                    
-                    let role = 'student';
-                    if (isDirector) role = 'director';
-                    else if (isDocente) role = 'teacher';
-                    
-                    USERS[role].name = clientPrincipal.userDetails;
-                    USERS[role].email = clientPrincipal.userDetails;
-                    
-                    sessionStorage.setItem('edu_role', role);
-                    sessionStorage.setItem('edu_logged_in', 'true');
+                if (clientPrincipal && clientPrincipal.userId) {
+                    principal = clientPrincipal;
                     authenticated = true;
+                    email = String(clientPrincipal.userDetails || '').trim() || null;
+                    try {
+                        if (email) sessionStorage.setItem('edu_email', email);
+                        if (clientPrincipal.userDetails) sessionStorage.setItem('edu_name', clientPrincipal.userDetails);
+                    } catch (_) {}
+                    sessionStorage.setItem('edu_logged_in', 'true');
                 }
             }
         } catch (error) {
             console.warn('SWA Auth no alcanzado.', error);
         }
-        
+
         if (!authenticated) {
-            if (import.meta.env.DEV) {
+            if (isDevMockEnabled()) {
                 // Mock fallback is DEV ONLY — never run in production builds.
                 console.warn('DEV ONLY: usando sesión mock. No usar en producción.');
                 if (!sessionStorage.getItem('edu_role')) {
@@ -418,14 +487,64 @@ export const auth = {
                 authenticated = true;
             } else {
                 // Production: never silently downgrade to a mock session.
+                // Offer Microsoft-account sign-in instead of a dead-end (QA-001).
                 emitAuthFallbackBlocked();
+                const returnUrl = encodeURIComponent(window.location.href);
+                window.location.assign(`/.auth/login/aad?post_login_redirect_uri=${returnUrl}`);
                 return false;
             }
         }
 
+        // ── Resolve role/scope from the SERVER profile (allowlist) ──────────
+        // The browser never chooses its role or email; only the server's
+        // allowlist-derived profile may set them (Story 1.1a).
+        try {
+            const profile = await api.getProfile();
+            if (profile) {
+                const accepted = profile.consentAccepted ? 'true' : 'false';
+                sessionStorage.setItem('edu_consent_accepted', accepted);
+                safeSetItem('edu_consent_accepted', accepted);
+                if (profile.theme) sessionStorage.setItem('edu_theme', profile.theme);
+                if (profile.language) sessionStorage.setItem('edu_lang', profile.language);
+            }
+
+            if (profile && profile.role) {
+                sessionStorage.setItem('edu_role', profile.role);
+                sessionStorage.removeItem('edu_access_denied');
+                if (profile.email) sessionStorage.setItem('edu_email', profile.email);
+                if (profile.name) sessionStorage.setItem('edu_name', profile.name);
+                if (profile.scope && Array.isArray(profile.scope.subjects)) {
+                    sessionStorage.setItem('edu_scope_subjects', JSON.stringify(profile.scope.subjects));
+                }
+            } else if (profile && profile.code === 'ACCESS_DENIED') {
+                // Server explicitly denied this identity (403 semantics).
+                sessionStorage.setItem('edu_access_denied', 'true');
+            } else if (!isDevMockEnabled() && !profile) {
+                // Production with no server-resolved role and no explicit denial:
+                // transient error — do NOT lock the user out; keep session usable.
+                console.warn('[Auth] Sin rol del servidor (posible error transitorio), continuando con sesión.');
+            }
+        } catch (err) {
+            console.error('[Auth] Error resolving server profile:', err);
+            // Only a 403/ACCESS_DENIED is a hard denial. Network/5xx errors are
+            // transient — do not bounce a valid user to the access-denied page.
+            const denied = err?.code === 'ACCESS_DENIED' || err?.status === 403;
+            if (denied && !isDevMockEnabled()) {
+                sessionStorage.setItem('edu_access_denied', 'true');
+            }
+        }
+
+        if (auth.isAccessDenied()) {
+            sessionStorage.setItem('edu_logged_in', 'true');
+            return true;
+        }
+
         const user = this.getUser();
         const userId = user.id;
-        
+        try {
+            sessionStorage.setItem('edu_uid', userId);
+        } catch (_) {}
+
         // Load enrollment data from Enrollments table
         try {
             if (userId) {
@@ -439,9 +558,12 @@ export const auth = {
         try {
             const subjects = await api.getSubjects();
             if (Array.isArray(subjects)) {
+                _subjectsCache = subjects;
                 const currentRole = this.getRole();
-                USERS[currentRole].subjects = subjects;
-                
+                if (isDevMockEnabled()) {
+                    USERS[currentRole].subjects = subjects;
+                }
+
                 const activeId = this.getActiveSubjectId();
                 const enrolledSubjects = this.getEnrolledSubjects();
                 if (activeId && !enrolledSubjects.some(s => s.id === activeId) && enrolledSubjects.length > 0) {
@@ -450,20 +572,6 @@ export const auth = {
             }
         } catch (err) {
             console.error('Error fetching enrolled subjects:', err);
-        }
-
-        // Sync profile and consent
-        try {
-            const profile = await api.getProfile();
-            if (profile) {
-                const accepted = profile.consentAccepted ? 'true' : 'false';
-                sessionStorage.setItem('edu_consent_accepted', accepted);
-                safeSetItem('edu_consent_accepted', accepted);
-                if (profile.theme) sessionStorage.setItem('edu_theme', profile.theme);
-                if (profile.language) sessionStorage.setItem('edu_lang', profile.language);
-            }
-        } catch (err) {
-            console.error('Error fetching user profile:', err);
         }
 
         // Sync reminder preferences from backend
@@ -502,5 +610,3 @@ export const auth = {
         return authenticated;
     }
 };
-
-

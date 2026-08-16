@@ -6,6 +6,12 @@
  *   2. Trusted SWA `x-ms-client-principal` header (proxy path — future #194).
  *   3. Mock fallback — ONLY in Development or when AUTH_MOCK_ENABLED=true.
  *
+ * When the server-side allowlist (`ALLOWED_USERS_JSON`) is configured, the
+ * verified email is resolved against it (trimmed + case-insensitive, fail
+ * closed) and the principal's role + scope are OVERRIDDEN from the allowlist —
+ * never from `clientPrincipal.userRoles` or client-submitted params (Story 1.1a).
+ * An authenticated-but-unlisted identity receives 403 ACCESS_DENIED.
+ *
  * A token that IS present but invalid is NEVER silently downgraded to SWA/mock:
  * it returns a structured 401. `options.roles` enables role gating (403 FORBIDDEN).
  *
@@ -14,6 +20,12 @@
  */
 
 import { parseClientPrincipal, setStashedIdentity } from '../services/auth-utils.js';
+import {
+  isAllowlistConfigured,
+  resolveEntryForEmail,
+  resolveScopeForEmail,
+  resolvePrincipalEmail,
+} from '../services/allowlist.js';
 import { validateBearerToken } from '../services/oidc-validator.js';
 import { structuredErrorResponse, ErrorCategory } from '../services/error-categories.js';
 
@@ -23,6 +35,13 @@ function authError(status, code, message) {
   return structuredErrorResponse(status, message, ErrorCategory.AUTH, code);
 }
 
+// Mirrors auth-utils.isMockAuthAllowed() without importing it, so the mocked
+// module surface in tests (auth-utils mocked with namedExports) stays stable.
+function isMockAuthPermitted() {
+  const env = process.env.AZURE_FUNCTIONS_ENVIRONMENT || process.env.NODE_ENV;
+  return env === 'Development' || env === 'development' || process.env.AUTH_MOCK_ENABLED === 'true';
+}
+
 function buildUserFromPrincipal(principal) {
   if (!principal) return null;
   const userId = principal.userId || principal.oid || 'anonymous';
@@ -30,6 +49,69 @@ function buildUserFromPrincipal(principal) {
   const role =
     principal.userRoles?.find((r) => KNOWN_ROLES.includes(r)) || 'Anonymous';
   return { userId, sanitizedId, principal, role };
+}
+
+/**
+ * Applies server-side allowlist enforcement to a resolved principal (Story 1.1a).
+ * Mutates the principal's userRoles with the allowlist-derived role and returns
+ * the email. Returns an error response (403 ACCESS_DENIED) when enforcement
+ * fails; returns null when the request may proceed.
+ * @param {Object|null} principal
+ * @param {Request} request
+ * @param {Object} context
+ * @returns {{error: Object}|{email: string|null}}
+ */
+function enforceAllowlist(principal, request, context) {
+  if (!isAllowlistConfigured()) {
+    return { email: null };
+  }
+
+  const email = resolvePrincipalEmail(principal, request);
+
+  if (email) {
+    const entry = resolveEntryForEmail(email);
+    if (!entry) {
+      context?.log?.(`[Auth] Deny (allowlist): email=${email} — no en allowlist (fail closed).`);
+      return {
+        error: authError(403, 'ACCESS_DENIED', 'Tu cuenta no está habilitada para acceder a esta plataforma. Contactá a administración.'),
+      };
+    }
+    // Role/scope come from the allowlist, never from clientPrincipal.userRoles.
+    if (!principal) {
+      // No SWA/OIDC principal but a verified relayed email (pilot transport):
+      // synthesize a principal so the rest of the pipeline works.
+      principal = {
+        userId: email,
+        userDetails: email,
+        userRoles: ['authenticated', entry.internalRole],
+        claims: [],
+      };
+    } else {
+      principal.userRoles = ['authenticated', entry.internalRole];
+    }
+    return { email, principal };
+  }
+
+  if (!principal) {
+    // No identity and no verifiable email: unauthenticated — 401, not 403.
+    context?.log?.('[Auth] Deny (allowlist): sin identidad ni email (401).');
+    return {
+      error: authError(401, 'AUTH_REQUIRED', 'Se requiere autenticación para acceder a este recurso.'),
+    };
+  }
+
+  if (!isMockAuthPermitted()) {
+    // Authenticated principal but no verifiable email in production: fail closed.
+    context?.log?.('[Auth] Deny (allowlist): identidad sin email verificable (fail closed).');
+    return {
+      error: authError(403, 'ACCESS_DENIED', 'No se pudo verificar tu identidad. Iniciá sesión nuevamente.'),
+    };
+  }
+
+  // Development / escape-hatch mock identities carry no email: preserve mock
+  // precedence so local dev keeps working while the allowlist is configured.
+  context?.log?.('[Auth] Allowlist configurada + identidad mock sin email: precedencia mock (Development / escape hatch).');
+  return { email: null };
 }
 
 /**
@@ -65,7 +147,22 @@ export function withAuth(handler, options = {}) {
       principal = parseClientPrincipal(request);
     }
 
+    // Server-side allowlist enforcement (Story 1.1a): resolve verified email →
+    // override role/scope; deny unlisted identities (fail closed). May return a
+    // synthesized principal when identity came from the relayed email only.
+    const allowlistResult = enforceAllowlist(principal, request, context);
+    if (allowlistResult.error) {
+      return allowlistResult.error;
+    }
+    if (allowlistResult.principal) {
+      principal = allowlistResult.principal;
+    }
+
     const user = buildUserFromPrincipal(principal);
+    if (user) {
+      if (allowlistResult.email) user.email = allowlistResult.email;
+      user.scope = allowlistResult.email ? resolveScopeForEmail(allowlistResult.email) : undefined;
+    }
 
     context.user = user;
     context.principal = principal || null;

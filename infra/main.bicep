@@ -112,6 +112,10 @@ param entraClientId string = 'PLACEHOLDER'
 param authMockEnabled string = 'true'
 
 @secure()
+@description('Server-side identity allowlist JSON (Story 1.1a), base64-encoded to survive azd parameter interpolation. Maps verified emails to roles/subjects: base64 of [{"email":"prof@uade.edu.ar","role":"teacher","subjects":["arq-software-2026"]}]. Deploy-managed only; never exposed to the browser.')
+param allowedUsersJson string = ''
+
+@secure()
 @description('Pinecone vector database API key.')
 param pineconeApiKey string
 
@@ -135,6 +139,10 @@ var keyVaultName = 'kv-edu-${take(resourceToken, 17)}'
 
 var frontDoorName = 'afd-dashboard-${resourceToken}'
 var workbookName = guid(resourceGroup().id, 'cost-per-interaction-workbook')
+
+// Decode the base64-encoded allowlist (azd parameter interpolation cannot carry
+// raw JSON quotes). Empty stays empty => allowlist inactive.
+var allowedUsersJsonDecoded = empty(allowedUsersJson) ? '' : base64ToString(allowedUsersJson)
 var latencyWorkbookName = guid(resourceGroup().id, 'latency-percentiles-workbook')
 var anomalousUsageAlertName = 'alert-anomalous-token-usage-${take(resourceToken, 8)}'
 var anomalousUsageActionGroupName = 'ag-token-usage-${take(resourceToken, 8)}'
@@ -200,6 +208,7 @@ module keyVault './modules/keyvault.bicep' = {
     pineconeApiKey: pineconeApiKey
     entraTenantId: entraTenantId
     entraClientId: entraClientId
+    allowedUsersJson: allowedUsersJsonDecoded
   }
 }
 
@@ -257,6 +266,7 @@ module functions './modules/functions.bicep' = {
     notificationQueueName: storage.outputs.notificationQueueName
     allowedCorsOrigins: allowedCorsOrigins
     authMockEnabled: authMockEnabled
+    allowedUsersJson: allowedUsersJsonDecoded
     tags: tags
   }
 }

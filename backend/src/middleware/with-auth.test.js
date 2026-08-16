@@ -46,6 +46,7 @@ const discoveryDoc = {
 process.env.ENTRA_TENANT_ID = 'test-tenant';
 process.env.ENTRA_CLIENT_ID = 'test-client';
 process.env.AUTH_MOCK_ENABLED = '';
+process.env.ALLOWED_USERS_JSON = '';
 
 globalThis.fetch = async (url) => {
   if (String(url).includes('openid-configuration')) {
@@ -62,6 +63,7 @@ mock.module('../services/auth-utils.js', { namedExports: authUtilsMocks });
 
 const { withAuth } = await import('./with-auth.js');
 const { resetOidcCache } = await import('../services/oidc-validator.js');
+const { resetAllowlistCache } = await import('../services/allowlist.js');
 
 function makeRequest({ token, mockRole, swaPrincipal, method = 'POST' } = {}) {
   const headers = new Map();
@@ -84,6 +86,10 @@ function makeContext() {
 
 beforeEach(() => {
   resetOidcCache();
+  resetAllowlistCache();
+  process.env.ALLOWED_USERS_JSON = '';
+  process.env.AZURE_FUNCTIONS_ENVIRONMENT = '';
+  process.env.AUTH_MOCK_ENABLED = '';
   authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => null);
 });
 
@@ -207,4 +213,237 @@ test('OPTIONS_PREFLIGHT — bypasses auth wrapper', async () => {
   const res = await wrapped(makeRequest({ method: 'OPTIONS' }), makeContext());
   assert.equal(res.status, 204);
   assert.equal(handler.mock.callCount(), 1);
+});
+
+// ── Server-side allowlist enforcement (Story 1.1a) ────────────────────────
+
+test('ALLOWLIST_ALLOWED — role overridden from allowlist for a verified email', async () => {
+  process.env.ALLOWED_USERS_JSON = JSON.stringify([
+    { email: 'prof@uade.edu.ar', role: 'teacher', subjects: ['arq-software-2026'] },
+  ]);
+  resetAllowlistCache();
+  // parseClientPrincipal returns a principal whose userRoles claim "Alumno";
+  // the allowlist must override it to "Docente".
+  authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({
+    userId: 'swa-prof',
+    userRoles: ['authenticated', 'Alumno'],
+    email: 'prof@uade.edu.ar',
+  }));
+
+  const handler = mock.fn(async (req, ctx) => {
+    assert.equal(ctx.user.role, 'Docente');
+    assert.equal(ctx.user.email, 'prof@uade.edu.ar');
+    assert.deepEqual(ctx.user.scope, { subjects: ['arq-software-2026'], classes: [] });
+    assert.ok(ctx.principal.userRoles.includes('Docente'));
+    assert.ok(!ctx.principal.userRoles.includes('Alumno'));
+    return { status: 200 };
+  });
+  const wrapped = withAuth(handler, { roles: ['Docente'] });
+  const res = await wrapped(makeRequest(), makeContext());
+  assert.equal(res.status, 200);
+  assert.equal(handler.mock.callCount(), 1);
+});
+
+test('ALLOWLIST_UNLISTED — verified email absent from allowlist => 403 ACCESS_DENIED', async () => {
+  process.env.ALLOWED_USERS_JSON = JSON.stringify([
+    { email: 'prof@uade.edu.ar', role: 'teacher' },
+  ]);
+  resetAllowlistCache();
+  authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({
+    userId: 'swa-stranger',
+    userRoles: ['authenticated'],
+    email: 'stranger@uade.edu.ar',
+  }));
+
+  const handler = mock.fn(async () => ({ status: 200 }));
+  const wrapped = withAuth(handler, { roles: ['Docente'] });
+  const res = await wrapped(makeRequest(), makeContext());
+  assert.equal(res.status, 403);
+  const body = JSON.parse(res.body);
+  assert.equal(body.code, 'ACCESS_DENIED');
+  assert.equal(handler.mock.callCount(), 0);
+});
+
+test('ALLOWLIST_RELAY_HEADER — email from x-ms-client-principal-name header resolves allowlist', async () => {
+  process.env.ALLOWED_USERS_JSON = JSON.stringify([
+    { email: 'Prof@Uade.Edu.Ar', role: 'director' },
+  ]);
+  resetAllowlistCache();
+  authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({
+    userId: 'swa-dir',
+    userRoles: ['authenticated'],
+  }));
+  const headers = new Map();
+  headers.set('x-ms-client-principal-name', 'prof@uade.edu.ar');
+  const req = {
+    method: 'POST',
+    headers: { get: (name) => headers.get(name.toLowerCase()) || null },
+  };
+
+  const handler = mock.fn(async (r, ctx) => {
+    assert.equal(ctx.user.role, 'Director');
+    assert.equal(ctx.user.email, 'prof@uade.edu.ar');
+    return { status: 200 };
+  });
+  const wrapped = withAuth(handler, { roles: ['Director'] });
+  const res = await wrapped(req, makeContext());
+  assert.equal(res.status, 200);
+});
+
+test('ALLOWLIST_RELAY_NO_PRINCIPAL — relayed email alone (no SWA principal) resolves role (pilot transport)', async () => {
+  process.env.ALLOWED_USERS_JSON = JSON.stringify([
+    { email: 'alu@uade.edu.ar', role: 'student' },
+  ]);
+  resetAllowlistCache();
+  authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => null);
+  const headers = new Map();
+  headers.set('x-ms-client-principal-name', 'alu@uade.edu.ar');
+  const req = {
+    method: 'POST',
+    headers: { get: (name) => headers.get(name.toLowerCase()) || null },
+  };
+
+  const handler = mock.fn(async (r, ctx) => {
+    assert.equal(ctx.user.role, 'Alumno');
+    assert.equal(ctx.user.email, 'alu@uade.edu.ar');
+    assert.ok(ctx.principal.userRoles.includes('Alumno'));
+    return { status: 200 };
+  });
+  const wrapped = withAuth(handler, { roles: ['Alumno'] });
+  const res = await wrapped(req, makeContext());
+  assert.equal(res.status, 200);
+});
+
+test('ALLOWLIST_RELAY_NO_PRINCIPAL_UNLISTED — relayed email not in allowlist => 403 (no principal)', async () => {
+  process.env.ALLOWED_USERS_JSON = JSON.stringify([
+    { email: 'alu@uade.edu.ar', role: 'student' },
+  ]);
+  resetAllowlistCache();
+  authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => null);
+  const headers = new Map();
+  headers.set('x-ms-client-principal-name', 'hacker@evil.com');
+  const req = {
+    method: 'POST',
+    headers: { get: (name) => headers.get(name.toLowerCase()) || null },
+  };
+
+  const handler = mock.fn(async () => ({ status: 200 }));
+  const wrapped = withAuth(handler);
+  const res = await wrapped(req, makeContext());
+  assert.equal(res.status, 403);
+  const body = JSON.parse(res.body);
+  assert.equal(body.code, 'ACCESS_DENIED');
+  assert.equal(handler.mock.callCount(), 0);
+});
+
+test('ALLOWLIST_NO_IDENTITY — no principal and no relayed email => 401 (allowlist configured)', async () => {
+  process.env.ALLOWED_USERS_JSON = JSON.stringify([
+    { email: 'alu@uade.edu.ar', role: 'student' },
+  ]);
+  resetAllowlistCache();
+  authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => null);
+  const handler = mock.fn(async () => ({ status: 200 }));
+  const wrapped = withAuth(handler);
+  const res = await wrapped(makeRequest(), makeContext());
+  assert.equal(res.status, 401);
+  const body = JSON.parse(res.body);
+  assert.equal(body.code, 'AUTH_REQUIRED');
+  assert.equal(handler.mock.callCount(), 0);
+});
+
+test('ALLOWLIST_DUPLICATE — duplicated entry fails closed (403)', async () => {
+  process.env.ALLOWED_USERS_JSON = JSON.stringify([
+    { email: 'prof@uade.edu.ar', role: 'teacher' },
+    { email: 'prof@uade.edu.ar', role: 'admin' },
+  ]);
+  resetAllowlistCache();
+  authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({
+    userId: 'swa-prof',
+    userRoles: ['authenticated'],
+    email: 'prof@uade.edu.ar',
+  }));
+
+  const handler = mock.fn(async () => ({ status: 200 }));
+  const wrapped = withAuth(handler, { roles: ['Docente'] });
+  const res = await wrapped(makeRequest(), makeContext());
+  assert.equal(res.status, 403);
+  assert.equal(handler.mock.callCount(), 0);
+});
+
+test('ALLOWLIST_NO_EMAIL_PRODUCTION — principal without email fails closed (403)', async () => {
+  process.env.ALLOWED_USERS_JSON = JSON.stringify([
+    { email: 'prof@uade.edu.ar', role: 'teacher' },
+  ]);
+  process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+  process.env.AUTH_MOCK_ENABLED = '';
+  resetAllowlistCache();
+  authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({
+    userId: 'mock-ghost',
+    userRoles: ['authenticated', 'Docente'],
+  }));
+
+  const handler = mock.fn(async () => ({ status: 200 }));
+  const wrapped = withAuth(handler, { roles: ['Docente'] });
+  const res = await wrapped(makeRequest(), makeContext());
+  assert.equal(res.status, 403);
+  const body = JSON.parse(res.body);
+  assert.equal(body.code, 'ACCESS_DENIED');
+  assert.equal(handler.mock.callCount(), 0);
+});
+
+test('ALLOWLIST_MOCK_DEV — mock identity without email keeps mock precedence in Development', async () => {
+  process.env.ALLOWED_USERS_JSON = JSON.stringify([
+    { email: 'prof@uade.edu.ar', role: 'teacher' },
+  ]);
+  const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+  process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Development';
+  resetAllowlistCache();
+  authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({
+    userId: 'mock-teacher',
+    userRoles: ['authenticated', 'Docente'],
+  }));
+
+  try {
+    const handler = mock.fn(async (req, ctx) => {
+      assert.equal(ctx.user.role, 'Docente');
+      return { status: 200 };
+    });
+    const wrapped = withAuth(handler, { roles: ['Docente'] });
+    const res = await wrapped(makeRequest(), makeContext());
+    assert.equal(res.status, 200);
+    assert.equal(handler.mock.callCount(), 1);
+  } finally {
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+  }
+});
+
+test('ALLOWLIST_UNAUTHENTICATED — no principal keeps 401 semantics', async () => {
+  process.env.ALLOWED_USERS_JSON = JSON.stringify([
+    { email: 'prof@uade.edu.ar', role: 'teacher' },
+  ]);
+  resetAllowlistCache();
+  authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => null);
+
+  const handler = mock.fn(async () => ({ status: 200 }));
+  const wrapped = withAuth(handler, { roles: ['Docente'] });
+  const res = await wrapped(makeRequest(), makeContext());
+  assert.equal(res.status, 401);
+  const body = JSON.parse(res.body);
+  assert.equal(body.code, 'AUTH_REQUIRED');
+});
+
+test('ALLOWLIST_UNCONFIGURED — legacy behavior preserved when no allowlist deployed', async () => {
+  authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({
+    userId: 'legacy-user',
+    userRoles: ['authenticated', 'Alumno'],
+    email: 'alu@uade.edu.ar',
+  }));
+  const handler = mock.fn(async (req, ctx) => {
+    assert.equal(ctx.user.role, 'Alumno');
+    assert.equal(ctx.user.scope, undefined);
+    return { status: 200 };
+  });
+  const wrapped = withAuth(handler, { roles: ['Alumno'] });
+  const res = await wrapped(makeRequest(), makeContext());
+  assert.equal(res.status, 200);
 });
