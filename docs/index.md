@@ -49,6 +49,7 @@
 - [KQL Correlation Queries](./kql-correlation-queries.md) — App Insights KQL queries
 - [Graph API Credentials](./graph-api-credentials.md) — Microsoft Graph configuration
 - [Reindex Vector ClassId Migration](./reindex-vector-classid-migration.md) — Vector index migration plan
+- [Secrets Inventory (Key Vault / Managed Identity)](./secrets-inventory.md) — Secretos y clasificación Key Vault vs Managed Identity
 - [Project Status](./project-status.md) — Current project status
 - [Notifications API (OpenAPI)](./notifications-api.json) — Notifications API specification
 - [SGA OpenAPI](./sga-openapi.json) — SGA API specification

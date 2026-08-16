@@ -8,6 +8,11 @@ import { DefaultAzureCredential } from '@azure/identity';
 
 let _client = null;
 
+function isDevelopment() {
+    return process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development'
+        || process.env.AZURE_STORAGE_CONNECTION_STRING === 'UseDevelopmentStorage=true';
+}
+
 function getClient() {
     if (!_client) {
         const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
@@ -16,13 +21,13 @@ function getClient() {
         }
 
         const accountKey = process.env.AZURE_STORAGE_ACCESS_KEY;
-        if (accountKey) {
+        if (isDevelopment() && accountKey) {
             const sharedKeyCredential = new StorageSharedKeyCredential(accountName, accountKey);
             _client = new BlobServiceClient(
                 `https://${accountName}.blob.core.windows.net`,
                 sharedKeyCredential
             );
-            console.log('[Storage] Authenticated using Access Key');
+            console.log('[Storage] Authenticated using Access Key (local development only)');
         } else {
             _client = new BlobServiceClient(
                 `https://${accountName}.blob.core.windows.net`,
@@ -205,7 +210,7 @@ export function getTableClient(tableName) {
         throw new Error('AZURE_STORAGE_ACCOUNT_NAME is not defined in environment variables.');
     }
 
-    if (accountKey) {
+    if (isDevelopment() && accountKey) {
         return new TableClient(
             `https://${accountName}.table.core.windows.net`,
             tableName,

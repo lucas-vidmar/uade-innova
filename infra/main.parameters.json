@@ -69,6 +69,18 @@
         },
         "pineconeApiKey": {
             "value": "${PINECONE_API_KEY}"
+        },
+        "azureOpenAiApiKey": {
+            "value": "${AZURE_OPENAI_API_KEY}"
+        },
+        "aiFoundryDeepSeekKey": {
+            "value": "${AI_FOUNDRY_DEEPSEEK_KEY}"
+        },
+        "aiFoundryDeepSeekEndpoint": {
+            "value": "${AI_FOUNDRY_DEEPSEEK_ENDPOINT}"
+        },
+        "aiFoundryDeepSeekModel": {
+            "value": "${AI_FOUNDRY_DEEPSEEK_MODEL}"
         }
     }
 }

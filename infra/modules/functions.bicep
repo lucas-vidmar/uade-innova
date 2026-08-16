@@ -31,9 +31,11 @@ param openAiEmbeddingDeployment string
 @description('Azure OpenAI TTS model deployment name.')
 param openAiTtsDeployment string
 
-@secure()
-@description('Primary API key of the Azure OpenAI account. Plain value (not KV reference) because the Function App identity has no Key Vault access — same pattern as PINECONE_API_KEY (AGENTS.md §4).')
-param openAiApiKey string = ''
+@description('DeepSeek V4 Flash endpoint via Azure AI Foundry (non-secret). Injected as AI_FOUNDRY_DEEPSEEK_ENDPOINT.')
+param aiFoundryDeepSeekEndpoint string = ''
+
+@description('DeepSeek V4 Flash model name (non-secret). Injected as AI_FOUNDRY_DEEPSEEK_MODEL.')
+param aiFoundryDeepSeekModel string = 'deepseek-v4-flash'
 
 @description('Azure Storage account name for class materials.')
 param classMaterialsStorageAccount string
@@ -49,10 +51,6 @@ param pineconeHost string = ''
 
 @description('Key Vault secret name that stores the Pinecone API key.')
 param pineconeApiKeySecretName string = 'PINECONE-API-KEY'
-
-@secure()
-@description('Pinecone vector database API key.')
-param pineconeApiKey string
 
 @description('Key Vault URI.')
 param keyVaultUri string
@@ -212,14 +210,15 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           name: 'LOG_LEVEL'
           value: 'info'
         }
-        // Azure OpenAI — API key as plain app setting (AGENTS.md §4 — no RBAC for embeddings)
+        // Azure OpenAI — API key via Key Vault reference (story 10.13).
+        // The Function identity needs 'Key Vault Secrets User' on the vault (RBAC, UADE).
         {
           name: 'AZURE_OPENAI_ENDPOINT'
           value: openAiEndpoint
         }
         {
           name: 'AZURE_OPENAI_API_KEY'
-          value: openAiApiKey
+          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/AZURE-OPENAI-API-KEY/)'
         }
         {
           name: 'AZURE_OPENAI_CHAT_DEPLOYMENT'
@@ -242,10 +241,12 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           name: 'AZURE_RESOURCE_GROUP_NAME'
           value: resourceGroup().name
         }
-        // Storage — Uses Connection String for data-plane operations
+        // Storage — Connection string via Key Vault reference (story 10.13).
+        // Storage access switches to Managed Identity (DefaultAzureCredential) once
+        // 'Storage Blob Data Contributor' + 'Storage Table Data Contributor' are granted (RBAC, UADE).
         {
           name: 'AZURE_STORAGE_CONNECTION_STRING'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${listKeys(storageAccountId, '2023-01-01').keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
+          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/AZURE-STORAGE-CONNECTION-STRING/)'
         }
         {
           name: 'AZURE_STORAGE_ACCOUNT_NAME'
@@ -286,11 +287,25 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         }
         {
           name: 'PINECONE_API_KEY'
-          value: pineconeApiKey
+          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/${pineconeApiKeySecretName}/)'
         }
         {
           name: 'AZURE_STORAGE_ACCESS_KEY'
-          value: listKeys(storageAccountId, '2023-01-01').keys[0].value
+          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/AZURE-STORAGE-ACCESS-KEY/)'
+        }
+        // DeepSeek V4 Flash via Azure AI Foundry (AIServices-kind). Key via Key Vault (AC #6);
+        // AIServices-kind accounts reject Bearer tokens so MI is not an option here.
+        {
+          name: 'AI_FOUNDRY_DEEPSEEK_ENDPOINT'
+          value: aiFoundryDeepSeekEndpoint
+        }
+        {
+          name: 'AI_FOUNDRY_DEEPSEEK_MODEL'
+          value: aiFoundryDeepSeekModel
+        }
+        {
+          name: 'AI_FOUNDRY_DEEPSEEK_KEY'
+          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/AI-FOUNDRY-DEEPSEEK-KEY/)'
         }
         {
           name: 'NODE_ENV'
@@ -321,10 +336,6 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         {
           name: 'SWA_ROLES_SECRET'
           value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/SWA-ROLES-SECRET/)'
-        }
-        {
-          name: 'FRONT_DOOR_ID'
-          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/FRONT-DOOR-ID/)'
         }
         // Vector backup scheduler
         {

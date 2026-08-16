@@ -28,7 +28,17 @@ let _tokenProvider = null;
 function getTokenProvider() {
     if (!_tokenProvider) {
         const credential = new DefaultAzureCredential();
-        _tokenProvider = getBearerTokenProvider(credential, AOAI_TOKEN_SCOPE);
+        const rawProvider = getBearerTokenProvider(credential, AOAI_TOKEN_SCOPE);
+        _tokenProvider = async (options) => {
+            try {
+                return await rawProvider(options);
+            } catch (err) {
+                console.error('[AI] Failed to acquire Azure AD token for Azure OpenAI (Managed Identity). '
+                    + 'Verify the Function App identity has the "Cognitive Services OpenAI User" role on the OpenAI account. '
+                    + `Details: ${err?.message}`);
+                throw err;
+            }
+        };
     }
     return _tokenProvider;
 }
@@ -72,7 +82,7 @@ function getEmbeddingClient() {
  */
 function getChatClient() {
     if (!_chatClient) {
-        const dsEndpoint = process.env.AI_FOUNDRY_DEEPSEEK_ENDPOINT;
+        const dsEndpoint = CONFIG.ai.deepSeekEndpoint || process.env.AI_FOUNDRY_DEEPSEEK_ENDPOINT;
         const dsKey = process.env.AI_FOUNDRY_DEEPSEEK_KEY;
 
         if (dsEndpoint && dsKey) {
@@ -164,7 +174,7 @@ export async function generateEmbedding(text, options = {}) {
 }
 
 export function isChatUsingDeepSeek() {
-    return !!(process.env.AI_FOUNDRY_DEEPSEEK_ENDPOINT && process.env.AI_FOUNDRY_DEEPSEEK_KEY);
+    return !!((CONFIG.ai.deepSeekEndpoint || process.env.AI_FOUNDRY_DEEPSEEK_ENDPOINT) && process.env.AI_FOUNDRY_DEEPSEEK_KEY);
 }
 
 export function getChatModelName() {

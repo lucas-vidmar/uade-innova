@@ -119,6 +119,20 @@ param allowedUsersJson string = ''
 @description('Pinecone vector database API key.')
 param pineconeApiKey string
 
+@secure()
+@description('API key for DeepSeek V4 Flash via Azure AI Foundry (AIServices-kind account). Stored in Key Vault as AI-FOUNDRY-DEEPSEEK-KEY.')
+param aiFoundryDeepSeekKey string = ''
+
+@secure()
+@description('Primary API key of the Azure OpenAI account. Optional: when empty, the deploy-time key from the OpenAI module (listKeys) is used. Stored in Key Vault as AZURE-OPENAI-API-KEY.')
+param azureOpenAiApiKey string = ''
+
+@description('DeepSeek V4 Flash endpoint via Azure AI Foundry (non-secret). Injected as AI_FOUNDRY_DEEPSEEK_ENDPOINT app setting.')
+param aiFoundryDeepSeekEndpoint string = ''
+
+@description('DeepSeek V4 Flash model name (non-secret). Injected as AI_FOUNDRY_DEEPSEEK_MODEL app setting.')
+param aiFoundryDeepSeekModel string = 'deepseek-v4-flash'
+
 // ─── Variables & naming ──────────────────────────────────────────
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
@@ -206,6 +220,8 @@ module keyVault './modules/keyvault.bicep' = {
     graphApiClientSecret: graphApiClientSecret
     graphApiTenantId: graphApiTenantId
     pineconeApiKey: pineconeApiKey
+    openAiApiKey: !empty(azureOpenAiApiKey) ? azureOpenAiApiKey : openAi.outputs.primaryKey
+    aiFoundryDeepSeekKey: aiFoundryDeepSeekKey
     entraTenantId: entraTenantId
     entraClientId: entraClientId
     allowedUsersJson: allowedUsersJsonDecoded
@@ -224,6 +240,13 @@ resource storageConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2023-0
   }
 }
 
+resource storageAccessKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  name: '${keyVaultName}/AZURE-STORAGE-ACCESS-KEY'
+  properties: {
+    value: existingStorageAccount.listKeys().keys[0].value
+  }
+}
+
 // ─── Module: Azure Functions (Consumption Plan — sin VM quota) ────
 // Plan Y1/Dynamic: pago por ejecución, escala a 0, sin reserva de VM.
 module functions './modules/functions.bicep' = {
@@ -238,13 +261,13 @@ module functions './modules/functions.bicep' = {
     openAiChatDeployment: openAi.outputs.chatDeploymentName
     openAiEmbeddingDeployment: openAi.outputs.embeddingDeploymentName
     openAiTtsDeployment: openAi.outputs.ttsDeploymentName
-    openAiApiKey: openAi.outputs.primaryKey
+    aiFoundryDeepSeekEndpoint: aiFoundryDeepSeekEndpoint
+    aiFoundryDeepSeekModel: aiFoundryDeepSeekModel
     classMaterialsStorageAccount: safeStorageName
     pineconeIndexName: vectorIndexName
     pineconeEnvironment: pineconeEnvironment
     pineconeHost: pineconeHost
     pineconeApiKeySecretName: pineconeApiKeySecretName
-    pineconeApiKey: pineconeApiKey
     keyVaultUri: keyVault.outputs.keyVaultUri
     classMaterialsContainerName: classMaterialsContainerName
     materialsTableName: storage.outputs.materialsTableName

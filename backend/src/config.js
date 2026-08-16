@@ -48,6 +48,7 @@ export const CONFIG = {
     embeddingModel: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT || 'text-embedding-3-small',
     chatModel: process.env.AZURE_OPENAI_CHAT_DEPLOYMENT,
     deepSeekModel: process.env.AI_FOUNDRY_DEEPSEEK_MODEL || 'deepseek-v4-flash',
+    deepSeekEndpoint: process.env.AI_FOUNDRY_DEEPSEEK_ENDPOINT || '',
     ttsModel: process.env.AZURE_OPENAI_TTS_DEPLOYMENT || 'tts-1',
     temperature: {
       chat: 0.3,

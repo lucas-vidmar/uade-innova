@@ -91,13 +91,20 @@ el shell de la app y (cuando hay identidad smoke) el marker de estado autenticad
 |---|---|
 | `AZURE_OPENAI_ENDPOINT` | azd output |
 | `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` | text-embedding-3-small |
-| `AI_FOUNDRY_DEEPSEEK_ENDPOINT` | Azure AI Foundry |
-| `AI_FOUNDRY_DEEPSEEK_KEY` | Key Vault reference |
+| `AZURE_OPENAI_API_KEY` | Key Vault reference (`AZURE-OPENAI-API-KEY`) |
+| `AI_FOUNDRY_DEEPSEEK_ENDPOINT` | Azure AI Foundry (no-secreto) |
+| `AI_FOUNDRY_DEEPSEEK_MODEL` | deepseek-v4-flash (no-secreto) |
+| `AI_FOUNDRY_DEEPSEEK_KEY` | Key Vault reference (`AI-FOUNDRY-DEEPSEEK-KEY`) |
 | `PINECONE_HOST` | Pinecone console |
-| `PINECONE_API_KEY` | Key Vault reference |
-| `AZURE_STORAGE_CONNECTION_STRING` | azd output |
+| `PINECONE_API_KEY` | Key Vault reference (`PINECONE-API-KEY`) |
+| `AZURE_STORAGE_CONNECTION_STRING` | Key Vault reference (`AZURE-STORAGE-CONNECTION-STRING`) |
+| `AZURE_STORAGE_ACCESS_KEY` | Key Vault reference (`AZURE-STORAGE-ACCESS-KEY`); Managed Identity en producción |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | azd output |
-| `FRONT_DOOR_ID` | Azure Front Door (si aplica) |
+| `FRONT_DOOR_ID` | Eliminado (Front Door disabled — referencia latente limpiada en story 10.13) |
+
+> **⚠️ RBAC (story 10.13):** las Key Vault references se resuelven con la identidad de la Function App.
+> Requiere `Key Vault Secrets User`, `Storage Blob Data Contributor`, `Storage Table Data Contributor`,
+> `Cognitive Services OpenAI User` (UADE, Owner en el RG). Ver `docs/secrets-inventory.md`.
 
 ### Frontend (Static Web Apps App Settings)
 | Variable | Fuente |

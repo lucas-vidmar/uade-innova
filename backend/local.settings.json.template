@@ -1,0 +1,27 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "FUNCTIONS_EXTENSION_VERSION": "~4",
+    "AZURE_STORAGE_ACCOUNT_NAME": "<devstoreaccount1 o cuenta real>",
+    "AZURE_STORAGE_ACCESS_KEY": "<az keyvault secret show --vault-name kv-edu-* --name AZURE-STORAGE-ACCESS-KEY --query value -o tsv>",
+    "AZURE_STORAGE_CONNECTION_STRING": "UseDevelopmentStorage=true",
+    "AZURE_STORAGE_CONTAINER_MATERIALS": "class-materials",
+    "AZURE_TABLE_MATERIALS": "materials",
+    "AZURE_TABLE_CLASSES": "classes",
+    "AZURE_TABLE_ENROLLMENTS": "Enrollments",
+    "AZURE_OPENAI_ENDPOINT": "<endpoint del recurso RS-OPENAI-LLM>",
+    "AZURE_OPENAI_API_KEY": "<az keyvault secret show --vault-name kv-edu-* --name AZURE-OPENAI-API-KEY --query value -o tsv>",
+    "AZURE_OPENAI_CHAT_DEPLOYMENT": "gpt-4o-mini",
+    "AZURE_OPENAI_EMBEDDING_DEPLOYMENT": "text-embedding-3-small",
+    "AI_FOUNDRY_DEEPSEEK_ENDPOINT": "<endpoint AIServices-kind>",
+    "AI_FOUNDRY_DEEPSEEK_MODEL": "deepseek-v4-flash",
+    "AI_FOUNDRY_DEEPSEEK_KEY": "<az keyvault secret show --vault-name kv-edu-* --name AI-FOUNDRY-DEEPSEEK-KEY --query value -o tsv>",
+    "PINECONE_HOST": "<host del índice Pinecone>",
+    "PINECONE_INDEX_NAME": "dashboard-edu-pilot",
+    "PINECONE_API_KEY": "<az keyvault secret show --vault-name kv-edu-* --name PINECONE-API-KEY --query value -o tsv>",
+    "AUTH_MOCK_ENABLED": "true",
+    "NODE_ENV": "development"
+  }
+}

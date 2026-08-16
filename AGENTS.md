@@ -38,7 +38,7 @@ Para maximizar el FinOps y minimizar el CapEx, se utiliza una arquitectura **100
 
 ## **4\. Restricciones Técnicas y Seguridad**
 
-* **Seguridad:** Por falta de permisos para roles RBAC en el Resource Group, la autenticación entre servicios se realiza utilizando **API Keys y Connection Strings** a través de variables de entorno, evitando Managed Identities por el momento.  
+* **Seguridad:** Los secretos (Pinecone, Azure OpenAI, DeepSeek/AI Foundry, Storage) viven en Azure Key Vault y se inyectan en Functions vía `@Microsoft.KeyVault(SecretUri=...)` references. El acceso a Storage y Azure OpenAI usa **Managed Identity** (`DefaultAzureCredential`) una vez que UADE otorgue los roles RBAC (ver §12 y `docs/secrets-inventory.md`). Mientras el rol `Key Vault Secrets User` no esté asignado, las references se resuelven vacías y el código cae a credenciales locales/placeholders.  
 * **Region:** East US o Brazil South (priorizar disponibilidad de GPT-4o mini).  
 * **FinOps:** El costo objetivo por alumno debe ser \< $1.50 USD/mes.  
 * **RAG Tuning:** Implementar filtrado por metadatos (subject\_id, lecture\_date) para evitar filtraciones de contexto entre materias.
@@ -323,18 +323,24 @@ The `model` field in metadata carries the active chat model name (deepseek-v4-fl
 
 ## **12\. Variables de Entorno Requeridas**
 
-Estas variables son generadas por `azd provision` y deben estar presentes en `.env.local` (local) y en la configuración de Static Web App / Functions (producción). El agente nunca debe hardcodear estos valores.
+Estas variables son generadas por `azd provision`. En **producción** los secretos viven en Azure Key Vault
+(`kv-edu-{token}`) y se inyectan en Functions vía `@Microsoft.KeyVault(SecretUri=...)` references — NUNCA
+como valores planos en App Settings. El acceso a Storage y Azure OpenAI pasa por **Managed Identity**
+(`DefaultAzureCredential`) una vez que UADE otorgue los role assignments RBAC (ver §4 y
+`docs/secrets-inventory.md`). Localmente se cargan desde `backend/local.settings.json` / `.env.local`
+(gitignored) generados con `scripts/bootstrap-local-secrets.sh` — el agente nunca debe hardcodear estos valores.
 
 ```bash
-# Azure OpenAI (Embeddings & TTS)
+# Azure OpenAI (Embeddings & TTS) — KEY EN KEY VAULT (secret AZURE-OPENAI-API-KEY)
 AZURE_OPENAI_ENDPOINT=https://<rs-openai-llm>.openai.azure.com/
 AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-3-small
 AZURE_OPENAI_TTS_DEPLOYMENT=tts-1
-AZURE_OPENAI_API_KEY=...                    # Key del recurso RS-OPENAI-LLM
+AZURE_OPENAI_API_KEY=@Microsoft.KeyVault(SecretUri=https://<kv-edu-*>.vault.azure.net/secrets/AZURE-OPENAI-API-KEY/)
 
-# DeepSeek V4 Flash (via Azure AI Services — AIServices kind)
+# DeepSeek V4 Flash (via Azure AI Services — AIServices kind) — KEY EN KEY VAULT (secret AI-FOUNDRY-DEEPSEEK-KEY)
+# AIServices-kind NO soporta Managed Identity (rechaza Bearer): la clave vive en Key Vault.
 AI_FOUNDRY_DEEPSEEK_ENDPOINT=https://aiservices-dashboard.cognitiveservices.azure.com/openai/deployments/deepseek-v4-flash
-AI_FOUNDRY_DEEPSEEK_KEY=...                 # Key del recurso aiservices-dashboard (key1 o key2)
+AI_FOUNDRY_DEEPSEEK_KEY=@Microsoft.KeyVault(SecretUri=https://<kv-edu-*>.vault.azure.net/secrets/AI-FOUNDRY-DEEPSEEK-KEY/)
 AI_FOUNDRY_DEEPSEEK_MODEL=deepseek-v4-flash
 
 # Auth Note: DeepSeek uses base `OpenAI` SDK class + custom `fetch` override that
@@ -345,16 +351,17 @@ AI_FOUNDRY_DEEPSEEK_MODEL=deepseek-v4-flash
 # Cuando están configurados, `withAuth` valida `Authorization: Bearer` via OIDC discovery + JWKS.
 # AUTH_MOCK_ENABLED=true permite el fallback mock en producción (continuidad del piloto);
 # revertir a false cuando #194 (SSO) esté activo.
-ENTRA_TENANT_ID=...
-ENTRA_CLIENT_ID=...
+ENTRA_TENANT_ID=@Microsoft.KeyVault(SecretUri=...secrets/ENTRA-TENANT-ID/)
+ENTRA_CLIENT_ID=@Microsoft.KeyVault(SecretUri=...secrets/ENTRA-CLIENT-ID/)
 AUTH_MOCK_ENABLED=true
 
-# Pinecone
+# Pinecone — KEY EN KEY VAULT (secret PINECONE-API-KEY)
 PINECONE_HOST=https://<index-name>-<environment>.svc.pinecone.io
 PINECONE_INDEX_NAME=dashboard-edu-pilot
-PINECONE_API_KEY=...
+PINECONE_API_KEY=@Microsoft.KeyVault(SecretUri=...secrets/PINECONE-API-KEY/)
 
-# Azure Storage
+# Azure Storage — acceso vía Managed Identity (DefaultAzureCredential) en producción;
+# connection string en Key Vault (secret AZURE-STORAGE-CONNECTION-STRING) como respaldo.
 AZURE_STORAGE_ACCOUNT_NAME=stdashboard{token}
 AZURE_STORAGE_CONTAINER_MATERIALS=class-materials
 
@@ -362,6 +369,12 @@ AZURE_STORAGE_CONTAINER_MATERIALS=class-materials
 VITE_API_BASE_URL=https://func-dashboard-ingest-{token}.azurewebsites.net/api
 AZURE_STATIC_WEB_APP_URI=https://<nombre>.azurestaticapps.net
 ```
+
+> **⚠️ RBAC requirement (story 10.13 / #220):** Las references de Key Vault se resuelven con la identidad
+> de la Function App. Requieren que UADE otorgue (permisos Owner en el RG):
+> `Key Vault Secrets User`, `Storage Blob Data Contributor`, `Storage Table Data Contributor`,
+> `Cognitive Services OpenAI User`. Hasta que eso ocurra, los secrets se resuelven vacíos (fallback a
+> placeholders/API keys locales). Ver `docs/secrets-inventory.md` para el inventario completo.
 
 ---
 
@@ -373,7 +386,7 @@ AZURE_STATIC_WEB_APP_URI=https://<nombre>.azurestaticapps.net
 * **Naming de funciones:** camelCase. Naming de archivos: kebab-case.
 * **Logging:** Usar `context.log()` en Functions. Todos los errores deben loguearse con el `materialId` o `classId` como contexto para facilitar el debugging en App Insights.
 * **Chunking:** Tamaño de chunk: 512 tokens. Solapamiento: 50 tokens. Usar `tiktoken` para contar tokens.
-* **Autenticación:** Tanto local como en producción se utilizarán **API Keys y Connection Strings** en `.env.local` y App Settings de Azure, dado que no hay permisos para Managed Identities/RBAC. Nunca commitear keys al repositorio.
+* **Autenticación:** En **producción** los secretos se resuelven desde Key Vault vía references de Functions y el acceso a Storage/OpenAI usa Managed Identity (`DefaultAzureCredential`) cuando los roles RBAC están otorgados (ver §12 y `docs/secrets-inventory.md`). En **local** se usan valores de `backend/local.settings.json` / `.env.local` (gitignored) generados con `scripts/bootstrap-local-secrets.sh`. Nunca commitear keys al repositorio.
 * **Sin mocks en producción:** Los mocks de SGA (notas/asistencia) son únicamente para el prototipo de frontend. El backend debe dejar los endpoints preparados para conectar una API real.
 
 ---

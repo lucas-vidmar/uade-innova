@@ -24,6 +24,9 @@ cd frontend && npm install
 cd ../backend && npm install
 
 # 4. Variables de entorno (backend)
+# Generar desde Key Vault (story 10.13 — nunca commitear keys):
+./scripts/bootstrap-local-secrets.sh --vault <kv-edu-*>
+# o, si ya existe backend/local.settings.json, copiarlo desde el template:
 cp local.settings.json.template local.settings.json
 # Editar con valores locales o de azd
 

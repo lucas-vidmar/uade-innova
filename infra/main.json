@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.41.2.15936",
-      "templateHash": "14643417020822106447"
+      "templateHash": "5840164531747796087"
     }
   },
   "parameters": {
@@ -208,10 +208,45 @@
         "description": "Permits the mock auth fallback in non-Development environments (pilot continuity until #194 provisions Entra). Flip to false after SSO lands."
       }
     },
+    "allowedUsersJson": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Server-side identity allowlist JSON (Story 1.1a), base64-encoded to survive azd parameter interpolation. Maps verified emails to roles/subjects: base64 of [{\"email\":\"prof@uade.edu.ar\",\"role\":\"teacher\",\"subjects\":[\"arq-software-2026\"]}]. Deploy-managed only; never exposed to the browser."
+      }
+    },
     "pineconeApiKey": {
       "type": "securestring",
       "metadata": {
         "description": "Pinecone vector database API key."
+      }
+    },
+    "aiFoundryDeepSeekKey": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "API key for DeepSeek V4 Flash via Azure AI Foundry (AIServices-kind account). Stored in Key Vault as AI-FOUNDRY-DEEPSEEK-KEY."
+      }
+    },
+    "azureOpenAiApiKey": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Primary API key of the Azure OpenAI account. Optional: when empty, the deploy-time key from the OpenAI module (listKeys) is used. Stored in Key Vault as AZURE-OPENAI-API-KEY."
+      }
+    },
+    "aiFoundryDeepSeekEndpoint": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "DeepSeek V4 Flash endpoint via Azure AI Foundry (non-secret). Injected as AI_FOUNDRY_DEEPSEEK_ENDPOINT app setting."
+      }
+    },
+    "aiFoundryDeepSeekModel": {
+      "type": "string",
+      "defaultValue": "deepseek-v4-flash",
+      "metadata": {
+        "description": "DeepSeek V4 Flash model name (non-secret). Injected as AI_FOUNDRY_DEEPSEEK_MODEL app setting."
       }
     },
     "allowedCorsOrigins": {
@@ -351,6 +386,7 @@
     "keyVaultName": "[format('kv-edu-{0}', take(variables('resourceToken'), 17))]",
     "frontDoorName": "[format('afd-dashboard-{0}', variables('resourceToken'))]",
     "workbookName": "[guid(resourceGroup().id, 'cost-per-interaction-workbook')]",
+    "allowedUsersJsonDecoded": "[if(empty(parameters('allowedUsersJson')), '', base64ToString(parameters('allowedUsersJson')))]",
     "latencyWorkbookName": "[guid(resourceGroup().id, 'latency-percentiles-workbook')]",
     "anomalousUsageAlertName": "[format('alert-anomalous-token-usage-{0}', take(variables('resourceToken'), 8))]",
     "anomalousUsageActionGroupName": "[format('ag-token-usage-{0}', take(variables('resourceToken'), 8))]",
@@ -365,6 +401,14 @@
       "name": "[format('{0}/AZURE-STORAGE-CONNECTION-STRING', variables('keyVaultName'))]",
       "properties": {
         "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', variables('safeStorageName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('safeStorageName')), '2023-01-01').keys[0].value, environment().suffixes.storage)]"
+      }
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults/secrets",
+      "apiVersion": "2023-07-01",
+      "name": "[format('{0}/AZURE-STORAGE-ACCESS-KEY', variables('keyVaultName'))]",
+      "properties": {
+        "value": "[listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('safeStorageName')), '2023-01-01').keys[0].value]"
       }
     },
     {
@@ -555,7 +599,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "13045060094401290057"
+              "templateHash": "1173347002337504493"
             }
           },
           "parameters": {
@@ -747,6 +791,13 @@
                 "description": "The resource ID of the Azure OpenAI resource."
               },
               "value": "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]"
+            },
+            "primaryKey": {
+              "type": "string",
+              "metadata": {
+                "description": "Primary API key of the OpenAI account (used via Key Vault reference, per AGENTS.md §4 — no RBAC available)."
+              },
+              "value": "[listKeys(resourceId('Microsoft.CognitiveServices/accounts', parameters('name')), '2024-10-01').key1]"
             },
             "chatDeploymentName": {
               "type": "string",
@@ -1436,11 +1487,18 @@
           "pineconeApiKey": {
             "value": "[parameters('pineconeApiKey')]"
           },
+          "openAiApiKey": "[if(not(empty(parameters('azureOpenAiApiKey'))), createObject('value', parameters('azureOpenAiApiKey')), createObject('value', reference(resourceId('Microsoft.Resources/deployments', 'openAi'), '2025-04-01').outputs.primaryKey.value))]",
+          "aiFoundryDeepSeekKey": {
+            "value": "[parameters('aiFoundryDeepSeekKey')]"
+          },
           "entraTenantId": {
             "value": "[parameters('entraTenantId')]"
           },
           "entraClientId": {
             "value": "[parameters('entraClientId')]"
+          },
+          "allowedUsersJson": {
+            "value": "[variables('allowedUsersJsonDecoded')]"
           }
         },
         "template": {
@@ -1450,7 +1508,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "17252077297305311495"
+              "templateHash": "3219966680711270516"
             }
           },
           "parameters": {
@@ -1512,6 +1570,20 @@
                 "description": "API key for Pinecone vector database. Must be a valid Pinecone API key for the configured index."
               }
             },
+            "openAiApiKey": {
+              "type": "securestring",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Primary API key of the Azure OpenAI account (embeddings/TTS). Stored as AZURE-OPENAI-API-KEY secret."
+              }
+            },
+            "aiFoundryDeepSeekKey": {
+              "type": "securestring",
+              "defaultValue": "",
+              "metadata": {
+                "description": "API key for DeepSeek V4 Flash via Azure AI Foundry (AIServices-kind account). Stored as AI-FOUNDRY-DEEPSEEK-KEY secret."
+              }
+            },
             "entraTenantId": {
               "type": "string",
               "defaultValue": "PLACEHOLDER",
@@ -1524,6 +1596,13 @@
               "defaultValue": "PLACEHOLDER",
               "metadata": {
                 "description": "Entra ID client ID (audience) used for OIDC token validation on Functions (#218). Placeholder until UADE provisions the app registration."
+              }
+            },
+            "allowedUsersJson": {
+              "type": "securestring",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Server-side identity allowlist JSON (Story 1.1a). Maps verified emails to roles/subjects: [{\"email\":\"prof@uade.edu.ar\",\"role\":\"teacher\",\"subjects\":[\"arq-software-2026\"]}]. Empty by default (allowlist inactive). Managed only via deployment; never exposed to the browser."
               }
             }
           },
@@ -1611,6 +1690,28 @@
             {
               "type": "Microsoft.KeyVault/vaults/secrets",
               "apiVersion": "2023-07-01",
+              "name": "[format('{0}/{1}', parameters('name'), 'AZURE-OPENAI-API-KEY')]",
+              "properties": {
+                "value": "[parameters('openAiApiKey')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('name'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.KeyVault/vaults/secrets",
+              "apiVersion": "2023-07-01",
+              "name": "[format('{0}/{1}', parameters('name'), 'AI-FOUNDRY-DEEPSEEK-KEY')]",
+              "properties": {
+                "value": "[parameters('aiFoundryDeepSeekKey')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('name'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.KeyVault/vaults/secrets",
+              "apiVersion": "2023-07-01",
               "name": "[format('{0}/{1}', parameters('name'), 'ENTRA-TENANT-ID')]",
               "properties": {
                 "value": "[parameters('entraTenantId')]"
@@ -1625,6 +1726,17 @@
               "name": "[format('{0}/{1}', parameters('name'), 'ENTRA-CLIENT-ID')]",
               "properties": {
                 "value": "[parameters('entraClientId')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('name'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.KeyVault/vaults/secrets",
+              "apiVersion": "2023-07-01",
+              "name": "[format('{0}/{1}', parameters('name'), 'ALLOWED-USERS-JSON')]",
+              "properties": {
+                "value": "[parameters('allowedUsersJson')]"
               },
               "dependsOn": [
                 "[resourceId('Microsoft.KeyVault/vaults', parameters('name'))]"
@@ -1662,7 +1774,10 @@
             }
           }
         }
-      }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'openAi')]"
+      ]
     },
     {
       "type": "Microsoft.Resources/deployments",
@@ -1698,6 +1813,12 @@
           "openAiTtsDeployment": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'openAi'), '2025-04-01').outputs.ttsDeploymentName.value]"
           },
+          "aiFoundryDeepSeekEndpoint": {
+            "value": "[parameters('aiFoundryDeepSeekEndpoint')]"
+          },
+          "aiFoundryDeepSeekModel": {
+            "value": "[parameters('aiFoundryDeepSeekModel')]"
+          },
           "classMaterialsStorageAccount": {
             "value": "[variables('safeStorageName')]"
           },
@@ -1712,9 +1833,6 @@
           },
           "pineconeApiKeySecretName": {
             "value": "[parameters('pineconeApiKeySecretName')]"
-          },
-          "pineconeApiKey": {
-            "value": "[parameters('pineconeApiKey')]"
           },
           "keyVaultUri": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'keyVault'), '2025-04-01').outputs.keyVaultUri.value]"
@@ -1779,6 +1897,9 @@
           "authMockEnabled": {
             "value": "[parameters('authMockEnabled')]"
           },
+          "allowedUsersJson": {
+            "value": "[variables('allowedUsersJsonDecoded')]"
+          },
           "tags": {
             "value": "[variables('tags')]"
           }
@@ -1790,7 +1911,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "12753199158280735804"
+              "templateHash": "11192694630188852539"
             }
           },
           "parameters": {
@@ -1842,6 +1963,20 @@
                 "description": "Azure OpenAI TTS model deployment name."
               }
             },
+            "aiFoundryDeepSeekEndpoint": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "DeepSeek V4 Flash endpoint via Azure AI Foundry (non-secret). Injected as AI_FOUNDRY_DEEPSEEK_ENDPOINT."
+              }
+            },
+            "aiFoundryDeepSeekModel": {
+              "type": "string",
+              "defaultValue": "deepseek-v4-flash",
+              "metadata": {
+                "description": "DeepSeek V4 Flash model name (non-secret). Injected as AI_FOUNDRY_DEEPSEEK_MODEL."
+              }
+            },
             "classMaterialsStorageAccount": {
               "type": "string",
               "metadata": {
@@ -1874,12 +2009,6 @@
               "defaultValue": "PINECONE-API-KEY",
               "metadata": {
                 "description": "Key Vault secret name that stores the Pinecone API key."
-              }
-            },
-            "pineconeApiKey": {
-              "type": "securestring",
-              "metadata": {
-                "description": "Pinecone vector database API key."
               }
             },
             "keyVaultUri": {
@@ -1929,6 +2058,13 @@
               "defaultValue": "true",
               "metadata": {
                 "description": "Permits the mock auth fallback in non-Development environments (pilot continuity until #194 provisions Entra). Flip to false after SSO lands."
+              }
+            },
+            "allowedUsersJson": {
+              "type": "securestring",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Server-side identity allowlist JSON (Story 1.1a). Stored in Key Vault (ALLOWED-USERS-JSON) and referenced here; never a VITE_* var nor exposed to the browser. Empty => allowlist inactive (legacy role behavior)."
               }
             },
             "materialsTableName": {
@@ -2127,6 +2263,10 @@
                       "value": "[parameters('openAiEndpoint')]"
                     },
                     {
+                      "name": "AZURE_OPENAI_API_KEY",
+                      "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/AZURE-OPENAI-API-KEY/)', parameters('keyVaultUri'))]"
+                    },
+                    {
                       "name": "AZURE_OPENAI_CHAT_DEPLOYMENT",
                       "value": "[parameters('openAiChatDeployment')]"
                     },
@@ -2148,7 +2288,7 @@
                     },
                     {
                       "name": "AZURE_STORAGE_CONNECTION_STRING",
-                      "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(parameters('storageAccountId'), '2023-01-01').keys[0].value, environment().suffixes.storage)]"
+                      "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/AZURE-STORAGE-CONNECTION-STRING/)', parameters('keyVaultUri'))]"
                     },
                     {
                       "name": "AZURE_STORAGE_ACCOUNT_NAME",
@@ -2188,11 +2328,23 @@
                     },
                     {
                       "name": "PINECONE_API_KEY",
-                      "value": "[parameters('pineconeApiKey')]"
+                      "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/{1}/)', parameters('keyVaultUri'), parameters('pineconeApiKeySecretName'))]"
                     },
                     {
                       "name": "AZURE_STORAGE_ACCESS_KEY",
-                      "value": "[listKeys(parameters('storageAccountId'), '2023-01-01').keys[0].value]"
+                      "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/AZURE-STORAGE-ACCESS-KEY/)', parameters('keyVaultUri'))]"
+                    },
+                    {
+                      "name": "AI_FOUNDRY_DEEPSEEK_ENDPOINT",
+                      "value": "[parameters('aiFoundryDeepSeekEndpoint')]"
+                    },
+                    {
+                      "name": "AI_FOUNDRY_DEEPSEEK_MODEL",
+                      "value": "[parameters('aiFoundryDeepSeekModel')]"
+                    },
+                    {
+                      "name": "AI_FOUNDRY_DEEPSEEK_KEY",
+                      "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/AI-FOUNDRY-DEEPSEEK-KEY/)', parameters('keyVaultUri'))]"
                     },
                     {
                       "name": "NODE_ENV",
@@ -2201,6 +2353,10 @@
                     {
                       "name": "AUTH_MOCK_ENABLED",
                       "value": "[parameters('authMockEnabled')]"
+                    },
+                    {
+                      "name": "ALLOWED_USERS_JSON",
+                      "value": "[if(not(empty(parameters('allowedUsersJson'))), parameters('allowedUsersJson'), format('@Microsoft.KeyVault(SecretUri={0}secrets/ALLOWED-USERS-JSON/)', parameters('keyVaultUri')))]"
                     },
                     {
                       "name": "ENTRA_TENANT_ID",
@@ -2213,10 +2369,6 @@
                     {
                       "name": "SWA_ROLES_SECRET",
                       "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/SWA-ROLES-SECRET/)', parameters('keyVaultUri'))]"
-                    },
-                    {
-                      "name": "FRONT_DOOR_ID",
-                      "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/FRONT-DOOR-ID/)', parameters('keyVaultUri'))]"
                     },
                     {
                       "name": "VECTOR_BACKUP_WINDOW_CRON",

@@ -34,6 +34,14 @@ param graphApiTenantId string = subscription().tenantId
 @description('API key for Pinecone vector database. Must be a valid Pinecone API key for the configured index.')
 param pineconeApiKey string
 
+@secure()
+@description('Primary API key of the Azure OpenAI account (embeddings/TTS). Stored as AZURE-OPENAI-API-KEY secret.')
+param openAiApiKey string = ''
+
+@secure()
+@description('API key for DeepSeek V4 Flash via Azure AI Foundry (AIServices-kind account). Stored as AI-FOUNDRY-DEEPSEEK-KEY secret.')
+param aiFoundryDeepSeekKey string = ''
+
 @description('Entra ID tenant ID used for OIDC token validation on Functions (#218). Placeholder until UADE provisions the app registration.')
 param entraTenantId string = 'PLACEHOLDER'
 
@@ -129,6 +137,24 @@ resource pineconeApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   name: 'PINECONE-API-KEY'
   properties: {
     value: pineconeApiKey
+  }
+}
+
+// ─── AZURE-OPENAI-API-KEY ────────────────────────────────────
+resource openAiApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'AZURE-OPENAI-API-KEY'
+  properties: {
+    value: openAiApiKey
+  }
+}
+
+// ─── AI-FOUNDRY-DEEPSEEK-KEY ─────────────────────────────────
+resource aiFoundryDeepSeekKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'AI-FOUNDRY-DEEPSEEK-KEY'
+  properties: {
+    value: aiFoundryDeepSeekKey
   }
 }
 
