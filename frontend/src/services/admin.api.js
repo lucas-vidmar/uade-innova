@@ -139,6 +139,20 @@ export async function getRetentionPolicy() {
     return res.json();
 }
 
+export async function saveRetentionPolicy(policy) {
+    const res = await apiFetch(`${BASE_URL}/compliance/retention-policy`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(policy),
+    });
+    if (!res.ok) {
+        let message = 'Error al guardar la política de retención';
+        try { const err = await res.json(); if (err?.error) message = err.error; } catch {}
+        throw new Error(message);
+    }
+    return res.json();
+}
+
 export async function getRetentionExport(format) {
     const qs = `?format=${encodeURIComponent(format)}`;
     const url = `${BASE_URL}/compliance/retention-export${qs}`;
@@ -170,6 +184,38 @@ export async function saveSubjectWeights(subjectId, weights) {
     });
     if (!res.ok) {
         let message = 'Error al guardar la ponderación de fuentes';
+        try { const err = await res.json(); if (err?.error) message = err.error; } catch {}
+        throw new Error(message);
+    }
+    return res.json();
+}
+
+export async function getAdminConfig(scope) {
+    const res = await fetchWithTimeout(`${BASE_URL}/admin/config/${encodeURIComponent(scope)}`, { timeout: 4000 });
+    if (!res.ok) return null;
+    return res.json();
+}
+
+export async function saveAdminConfig(scope, values) {
+    const res = await apiFetch(`${BASE_URL}/admin/config/${encodeURIComponent(scope)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(values),
+    });
+    if (!res.ok) {
+        let message = 'Error al guardar la configuración';
+        try { const err = await res.json(); if (err?.error) message = err.error; } catch {}
+        throw new Error(message);
+    }
+    return res.json();
+}
+
+export async function resetAdminConfig(scope) {
+    const res = await apiFetch(`${BASE_URL}/admin/config/${encodeURIComponent(scope)}`, {
+        method: 'DELETE',
+    });
+    if (!res.ok) {
+        let message = 'Error al restablecer la configuración';
         try { const err = await res.json(); if (err?.error) message = err.error; } catch {}
         throw new Error(message);
     }
