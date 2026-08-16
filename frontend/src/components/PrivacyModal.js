@@ -64,7 +64,7 @@ export async function renderPrivacyModal(onAccepted) {
             setTimeout(() => {
                 modalOverlay.remove();
                 document.body.style.overflow = '';
-                if (onAccepted && typeof onAccepted === 'function' && document.body.contains(modalOverlay)) {
+                if (onAccepted && typeof onAccepted === 'function') {
                     onAccepted();
                 }
             }, 300);

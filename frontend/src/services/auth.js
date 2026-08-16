@@ -292,6 +292,7 @@ export const auth = {
                 } catch {
                     sessionStorage.setItem(AI_CONSENT_KEY, 'true');
                 }
+                window.dispatchEvent(new CustomEvent('auth:aiConsentAccepted'));
                 return true;
             }
             return false;
