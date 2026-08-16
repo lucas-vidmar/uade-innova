@@ -628,3 +628,75 @@ export async function trackVectorBackupRun({
         },
     });
 }
+
+/**
+ * Tracks a quarantine/reindex run of mislabeled RAG vectors (Story 10.17 / #263).
+ *
+ * Modelado sobre `trackVectorBackupRun`. Los contadores son los finales
+ * reconciliados (post-ensureVectorValues), de modo que el telemetry, el summary
+ * y el reporte de auditoria coinciden.
+ *
+ * @param {object} params
+ * @param {string} params.runId - Unique run identifier (UUID)
+ * @param {string} params.mode - 'quarantine' | 'quarantine-dry-run' | 'reindex'
+ * @param {number} [params.scanned] - Vectores escaneados (fetched)
+ * @param {number} [params.clean] - Vectores sin conflicto normalizados con quarantined:false
+ * @param {number} [params.quarantined] - Vectores marcados en cuarentena (mismatch/metadata-incomplete)
+ * @param {number} [params.unresolvable] - Vectores sin registro autoritativo (no-authoritative-material)
+ * @param {number} [params.failed] - Lookup errors, missingIds y vectores sin values (retryable)
+ * @param {Object} [params.quarantineReasons] - Breakdown por reason (subjectId-mismatch, classId-mismatch, ...)
+ * @param {string} [params.materialId] - Material scope (mode reindex)
+ * @param {number} [params.chunkCount] - Nuevo chunk count (mode reindex)
+ * @param {number} [params.durationMs] - Wall-clock execution time
+ * @param {boolean} [params.success] - Whether the run completed successfully
+ * @param {string} [params.errorCategory] - Normalized error category on failure
+ * @param {string} [params.errorMessage] - Error details on failure (truncated to 500)
+ */
+export async function trackVectorQuarantineRun({
+    runId,
+    mode = 'quarantine',
+    scanned = 0,
+    clean = 0,
+    quarantined = 0,
+    unresolvable = 0,
+    failed = 0,
+    quarantineReasons,
+    materialId,
+    chunkCount,
+    durationMs = 0,
+    success = true,
+    errorCategory,
+    errorMessage,
+}) {
+    const client = await getClient();
+    if (!client) return;
+
+    const reasonProperties = {};
+    if (quarantineReasons && typeof quarantineReasons === 'object') {
+        for (const [reason, count] of Object.entries(quarantineReasons)) {
+            reasonProperties[`reason_${String(reason).replace(/[^a-zA-Z0-9_-]/g, '_')}`] = count;
+        }
+    }
+
+    client.trackEvent({
+        name: 'VectorQuarantineRun',
+        properties: {
+            runId,
+            mode,
+            success: String(success),
+            ...(materialId && { materialId }),
+            ...(errorCategory && { errorCategory }),
+            ...(errorMessage && { errorMessage: String(errorMessage).slice(0, 500) }),
+            ...reasonProperties,
+        },
+        measurements: {
+            scanned: Math.max(0, Number(scanned) || 0),
+            clean: Math.max(0, Number(clean) || 0),
+            quarantined: Math.max(0, Number(quarantined) || 0),
+            unresolvable: Math.max(0, Number(unresolvable) || 0),
+            failed: Math.max(0, Number(failed) || 0),
+            durationMs: Math.max(0, Number(durationMs) || 0),
+            chunkCount: Math.max(0, Number(chunkCount) || 0),
+        },
+    });
+}

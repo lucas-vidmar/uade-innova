@@ -172,3 +172,48 @@ test('global-search should propagate correlation header to embedding call and re
     assert.strictEqual(response.headers['x-correlation-id'], 'corr-gs-123');
     assert.strictEqual(openaiMocks.generateEmbedding.mock.calls[0].arguments[1].headers['x-correlation-id'], 'corr-gs-123');
 });
+
+test('global-search material filter includes quarantined exclusion and drops quarantined matches (Task 4.6)', async () => {
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async () => [
+        {
+            score: 0.81,
+            metadata: {
+                materialId: 'm-1',
+                classIds: ['class-01'],
+                materialType: 'transcript',
+                materialPriority: 'primary',
+                sourceFilename: 'clean-transcript.txt',
+                chunkIndex: 0,
+                text: 'Architecture decisions are tied to quality attributes.',
+                quarantined: false,
+            },
+        },
+        {
+            score: 0.99,
+            metadata: {
+                materialId: 'm-2',
+                classIds: ['class-99'],
+                materialType: 'bibliography',
+                materialPriority: 'secondary',
+                sourceFilename: 'leaked-cross-subject.pdf',
+                chunkIndex: 4,
+                text: 'Cross subject leaked content.',
+                quarantined: true,
+            },
+        },
+    ]);
+
+    const response = await capturedHandler(
+        mockRequest({ query: 'Architecture', subjectId: 'arq-software-2026' }),
+        { error: mock.fn() }
+    );
+
+    const filter = vectorStoreMocks.querySimilar.mock.calls[0].arguments[1];
+    assert.deepStrictEqual(filter.quarantined, { $ne: true }, 'materialFilter debe excluir vectores cuarentenados');
+
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.results.length, 1, 'el match cuarentenado no debe aparecer en results');
+    assert.ok(!body.results.some((r) => r.sourceFilename === 'leaked-cross-subject.pdf'));
+    assert.strictEqual(body.results[0].sourceFilename, 'clean-transcript.txt');
+});

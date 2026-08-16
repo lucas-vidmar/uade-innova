@@ -12,6 +12,7 @@ import { withCorrelation } from '../middleware/with-correlation.js';
 import { ErrorCategory, normalizeCategorizedError, structuredErrorResponse } from '../services/error-categories.js';
 import { loadJson, listBlobs } from '../services/storage.js';
 import { CONFIG } from '../services/config.js';
+import { isQuarantined } from '../services/vector-audit.js';
 
 const MAX_GLOBAL_RESULTS = 12;
 const MAX_CHAT_RESULTS = 5;
@@ -128,9 +129,16 @@ app.http('global-search', {
                 const materialFilter = {
                     subjectId: { $eq: subjectId },
                     materialType: { $in: ['transcript', 'bibliography', 'presentation', 'notes'] },
+                    quarantined: { $ne: true },
                 };
 
-                const matches = await querySimilar(embedding, materialFilter, MAX_GLOBAL_RESULTS, { correlationId });
+                const rawMatches = await querySimilar(embedding, materialFilter, MAX_GLOBAL_RESULTS, { correlationId });
+                // Post-filter de cuarentena: incluso si el filtro de Pinecone fallara,
+                // un source cuarentenado no debe aparecer en los resultados.
+                const matches = rawMatches.filter((match) => !isQuarantined(match.metadata));
+                if (matches.length !== rawMatches.length) {
+                    context?.log?.(`[global-search] Quarantine post-filter descarto ${rawMatches.length - matches.length} matches cuarentenados (subjectId=${subjectId}, correlationId=${correlationId})`);
+                }
                 for (const match of matches) {
                     const text = match.metadata?.text || '';
                     const filename = match.metadata?.sourceFilename || '';

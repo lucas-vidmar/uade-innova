@@ -134,6 +134,10 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
                     sourceFilename: fileName,
                     lectureDate: lectureDateIso,
                     text: currentBatch[index],
+                    // Always-present field (Story 10.17 / Loopback 1): cada vector
+                    // del pipeline nace con `quarantined: false` para que el filtro
+                    // { quarantined: { $ne: true } } sea deterministico.
+                    quarantined: false,
                 };
                 // 11-4-8: adjuntar topics de la clase principal para filtrado por tema
                 if (classIds?.[0] && classTopics.has(String(classIds[0]))) {

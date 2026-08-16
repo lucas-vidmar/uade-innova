@@ -56,6 +56,11 @@ const FETCH_BATCH_SIZE = 500;
 const parsedArgs = parseReindexArgs();
 const isDryRun = parsedArgs.isDryRun;
 
+// Import-safe guard: `--help` solo debe hacer exit cuando el script corre como
+// main (no cuando otro modulo lo importa, ej: ensureVectorValues desde
+// quarantine-reindex-vectors.js).
+const isMainModule = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+
 function printUsage() {
     console.log(`Uso: node scripts/reindex-vector-classid.js [opciones]
 
@@ -70,7 +75,7 @@ Variables de entorno:
 `);
 }
 
-if (parsedArgs.showHelp) {
+if (isMainModule && parsedArgs.showHelp) {
     printUsage();
     process.exit(0);
 }
@@ -345,7 +350,6 @@ export async function main(options = {}) {
     }
 }
 
-const isMainModule = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMainModule) {
     main().then(() => process.exit(0)).catch((err) => {
         console.error('[Reindex] Migration failed:', err);

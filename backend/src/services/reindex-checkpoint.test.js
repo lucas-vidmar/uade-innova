@@ -82,6 +82,59 @@ test('writeCheckpoint and loadCheckpoint round-trip completedBatches and counts'
     fs.rmdirSync(dir);
 });
 
+test('writeCheckpoint stores caller extra under a reserved namespace without clobbering core fields (Loopback 2)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'reindex-cp-extra-'));
+    const file = path.join(dir, 'cp.json');
+
+    writeCheckpoint(file, {
+        completedBatches: 2,
+        totalIds: 1000,
+        counts: { scanned: 1000, clean: 900, quarantined: 90, unresolvable: 5, failed: 5 },
+        // El estado del caller intenta "colisionar" con campos core
+        extra: {
+            counts: { hacked: true },
+            completedBatches: 999,
+            version: 'overwrite',
+            failedVectors: [{ id: 'v1', metadata: { subjectId: 's1' } }],
+            quarantineCandidates: [{ id: 'q1', metadata: { subjectId: 's1' } }],
+            incompleteBatchSeen: true,
+        },
+    });
+
+    const loaded = loadCheckpoint(file);
+    assert.ok(loaded);
+
+    // Core fields NO fueron clobbereados por extra
+    assert.strictEqual(loaded.version, 1);
+    assert.strictEqual(loaded.completedBatches, 2);
+    assert.strictEqual(loaded.totalIds, 1000);
+    assert.deepStrictEqual(loaded.counts, { scanned: 1000, clean: 900, quarantined: 90, unresolvable: 5, failed: 5 });
+
+    // El estado del caller sobrevive bajo el namespace `extra`
+    assert.ok(loaded.extra, 'extra namespace debe existir');
+    assert.strictEqual(loaded.extra.counts.hacked, true);
+    assert.strictEqual(loaded.extra.completedBatches, 999);
+    assert.strictEqual(loaded.extra.version, 'overwrite');
+    assert.deepStrictEqual(loaded.extra.failedVectors, [{ id: 'v1', metadata: { subjectId: 's1' } }]);
+    assert.strictEqual(loaded.extra.incompleteBatchSeen, true);
+
+    removeCheckpoint(file);
+    fs.rmdirSync(dir);
+});
+
+test('writeCheckpoint omits extra when not provided', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'reindex-cp-noextra-'));
+    const file = path.join(dir, 'cp.json');
+
+    writeCheckpoint(file, { completedBatches: 1, totalIds: 500 });
+    const loaded = loadCheckpoint(file);
+    assert.ok(loaded);
+    assert.strictEqual(loaded.extra, undefined);
+
+    removeCheckpoint(file);
+    fs.rmdirSync(dir);
+});
+
 test('loadCheckpoint returns null when file does not exist', () => {
     const loaded = loadCheckpoint(path.join(os.tmpdir(), 'does-not-exist-cp.json'));
     assert.strictEqual(loaded, null);

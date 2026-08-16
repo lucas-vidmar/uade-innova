@@ -2035,7 +2035,7 @@ app.http('update-material-text', {
 
             // 2. Delete old vectors
             try {
-                await vectorStore.deleteVectorsByFilter({ materialId: { '$eq': materialId } });
+                await vectorStore.deleteVectorsByMaterialId(materialId);
                 context.log(`[UpdateMaterialText] Deleted old vectors for ${materialId}`);
             } catch (vErr) {
                 context.error(`[UpdateMaterialText] Error deleting vectors:`, vErr);
@@ -2057,16 +2057,20 @@ app.http('update-material-text', {
                 metadata: {
                     subjectId,
                     classId: classIds[0] || '',
+                    // Se mantiene el formato string JSON por compatibilidad con
+                    // lectores existentes (vector-audit.normalizeClassIds y
+                    // vector-store.normalizeMetadata manejan ambas formas).
                     classIds: JSON.stringify(classIds),
                     materialId,
                     materialType: materialState?.type || processed.materialType || 'notes',
                     chunkIndex: i,
                     sourceFilename: materialState?.filename || processed.filename || '',
                     text: chunkTexts[i]?.substring(0, 1000) || '',
+                    quarantined: false,
                 }
             }));
 
-            await vectorStore.upsertVectors(vectors);
+            await vectorStore.upsertChunks(vectors);
 
             // 5. Update processed blob
             processed.extractedText = text;

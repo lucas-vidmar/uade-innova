@@ -14,6 +14,40 @@ delete process.env.APPLICATIONINSIGHTS_CONNECTION_STRING;
 
 const { trackRAGInteraction, trackUserLogin, trackPollingEvent, trackUnansweredQuery } = await import('../services/telemetry.js');
 
+test('trackVectorQuarantineRun is a no-op when APPLICATIONINSIGHTS_CONNECTION_STRING is not set', async () => {
+    const { trackVectorQuarantineRun } = await import('../services/telemetry.js');
+    await assert.doesNotReject(() =>
+        trackVectorQuarantineRun({
+            runId: 'run-1',
+            mode: 'quarantine',
+            scanned: 100,
+            clean: 90,
+            quarantined: 8,
+            unresolvable: 1,
+            failed: 1,
+            quarantineReasons: { 'subjectId-mismatch': 5, 'classId-mismatch': 4 },
+            durationMs: 1200,
+            success: false,
+        })
+    );
+});
+
+test('trackVectorQuarantineRun handles reindex mode and abort categories without throwing', async () => {
+    const { trackVectorQuarantineRun } = await import('../services/telemetry.js');
+    await assert.doesNotReject(() =>
+        trackVectorQuarantineRun({
+            runId: 'run-2',
+            mode: 'reindex',
+            materialId: 'mat-1',
+            chunkCount: 42,
+            durationMs: 500,
+            success: false,
+            errorCategory: 'REINDEX_VERIFY_FAILED',
+            errorMessage: 'verify mismatch',
+        })
+    );
+});
+
 // ── No-op behavior when connection string is missing ─────────────────────────
 
 test('trackRAGInteraction is a no-op when APPLICATIONINSIGHTS_CONNECTION_STRING is not set', async () => {

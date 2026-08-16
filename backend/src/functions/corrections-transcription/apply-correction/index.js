@@ -81,6 +81,7 @@ app.http('apply-transcription-correction', {
                   sourceFilename: processed.sourceFilename || processed.filename || '',
                   lectureDate: processed.lectureDate || '',
                   text: chunkTexts[i]?.substring(0, 1000) || '',
+                  quarantined: false,
                 },
               }));
               await upsertChunks(vectors);

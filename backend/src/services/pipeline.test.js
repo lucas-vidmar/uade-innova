@@ -445,3 +445,33 @@ test('runPipeline attaches class topics to vector metadata (11-4-8)', async () =
 
     storageMocks.loadJson.mock.mockImplementation(async () => null);
 });
+
+test('runPipeline writes quarantined:false on every vector (always-present field, Story 10.17)', async () => {
+    vectorStoreMocks.upsertChunks.mock.resetCalls();
+    parserMocks.chunkText.mock.mockImplementation(() => ['chunk 1', 'chunk 2', 'chunk 3']);
+    parserMocks.parseFile.mock.mockImplementation(async () => 'mocked text');
+
+    const mockContext = {
+        log: mock.fn(),
+        warn: mock.fn(),
+        error: mock.fn(),
+    };
+
+    await runPipeline({
+        fileBuffer: Buffer.from('test'),
+        fileContentType: 'text/plain',
+        fileName: 'quarantine-field.txt',
+        classIds: ['class-q'],
+        subjectId: 'subject-q',
+        materialType: 'notes',
+        materialId: 'mat-q',
+        blobUrl: 'http://test',
+    }, mockContext);
+
+    const vectors = vectorStoreMocks.upsertChunks.mock.calls[0].arguments[0];
+    assert.ok(vectors.length > 0, 'Should produce vectors');
+    for (const vector of vectors) {
+        assert.strictEqual(vector.metadata.quarantined, false,
+            `Vector ${vector.id} debe nacer con quarantined:false`);
+    }
+});
