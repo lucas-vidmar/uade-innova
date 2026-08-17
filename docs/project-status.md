@@ -1,5 +1,18 @@
 # Estado del Proyecto - UADE Innova Dashboard Educativo
 
+## 17 de Agosto, 2026
+
+* **Feature/Story Name**: Verificación de Calidad y Cierre de Defectos Críticos del MVP (Issues #291–#296)
+* **Status**: Completed
+* **Business Impact**: Se garantizaron los flujos centrales de consulta de alumnos y carga de docentes ante caídas de red o arranques lentos del servidor, se habilitó el reproductor de podcast con control de velocidad para estudio en movilidad, se integró el acceso directo a consultas pedagógicas sobre calificaciones y se completó la auditoría de usuarios y glosario técnico.
+* **Key Milestones**:
+  - Verificación interactiva en navegador Orca de los 6 fixes y cierre formal de issues en GitHub (#291, #292, #293, #294, #295, #296).
+  - Resuelto bloqueo de materia activa por defecto: los paneles de estudiante y docente permanecen 100% operativos aún si los servicios backend demoran en responder.
+  - Directorio administrativo de usuarios muestra las cuentas del piloto de la universidad de forma inmediata y resiliente.
+  - Incorporado reproductor de audio resumen de clases con velocidades seleccionables (1x, 1.25x, 1.5x) y restablecimiento automático.
+  - Implementado botón de consulta directa con IA en entregas calificadas con contexto precargado para facilitar la retroalimentación académica.
+  - Botón de carga de términos técnicos disponible y accesible en todas las vistas del glosario docente.
+
 ## 16 de Agosto, 2026
 
 * **Feature/Story Name**: Production Allowlist Smoke Identities (Story 10.25 / #271)
