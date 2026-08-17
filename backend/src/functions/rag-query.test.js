@@ -621,6 +621,97 @@ test('rag-query should not break when slideTitle is missing in metadata', async 
     assert.strictEqual(body.sources[0].slideTitle, undefined);
 });
 
+test('rag-query should expose subjectId and classId in blocking sources (Story 3.7)', async (t) => {
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter, topK) => {
+        if (filter?.materialType?.$eq === 'verified-answer') return [];
+        return [
+            {
+                id: 'legacy-classid',
+                score: 0.92,
+                metadata: {
+                    sourceFilename: 'legacy.txt',
+                    text: 'Vector con classId legacy',
+                    materialType: 'transcript',
+                    subjectId: 'materia1',
+                    classId: 'class1',
+                    chunkIndex: 0,
+                },
+            },
+            {
+                id: 'array-classids',
+                score: 0.91,
+                metadata: {
+                    sourceFilename: 'modern.txt',
+                    text: 'Vector con classIds array',
+                    materialType: 'transcript',
+                    subjectId: 'materia1',
+                    classIds: ['class1', 'class2'],
+                    chunkIndex: 1,
+                },
+            },
+        ];
+    });
+
+    t.after(() => {
+        vectorStoreMocks.querySimilar.mock.mockImplementation(defaultQuerySimilarImpl);
+    });
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = {
+        json: async () => ({ question: 'Que cubre la clase 1?', subjectId: 'materia1', classIds: ['class1'] }),
+        user: { id: 'test-user' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    const body = JSON.parse(response.body);
+    // subjectId must always be present (canary asserts it over HTTP).
+    assert.strictEqual(body.sources[0].subjectId, 'materia1');
+    // classId canonical: legacy classId metadata → classId, classIds[0] fallback.
+    assert.strictEqual(body.sources[0].classId, 'class1');
+    assert.deepStrictEqual(body.sources[1].classIds, ['class1', 'class2']);
+    assert.strictEqual(body.sources[1].classId, 'class1', 'classId falls back to classIds[0]');
+    assert.strictEqual(body.sources[1].subjectId, 'materia1');
+});
+
+test('rag-query verified-answer source should carry subjectId (Story 3.7)', async (t) => {
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter, topK) => {
+        if (filter?.materialType?.$eq === 'verified-answer') {
+            return [{
+                id: 'corr-1',
+                score: 0.95,
+                metadata: {
+                    materialType: 'verified-answer',
+                    subjectId: 'materia1',
+                    classId: 'class3',
+                    text: 'Respuesta verificada.',
+                    teacherId: 'docente-01',
+                    sourceFilename: 'correction-1',
+                    chunkIndex: 0,
+                },
+            }];
+        }
+        return [];
+    });
+
+    t.after(() => {
+        vectorStoreMocks.querySimilar.mock.mockImplementation(defaultQuerySimilarImpl);
+    });
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = {
+        json: async () => ({ question: 'Que dice la correccion?', subjectId: 'materia1', classIds: ['class1'] }),
+        user: { id: 'test-user' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.verified, true);
+    assert.strictEqual(body.sources[0].subjectId, 'materia1');
+    assert.strictEqual(body.sources[0].classId, 'class3');
+});
+
 test('rag-query should return verified answer directly when score > 0.85, bypassing LLM', async () => {
     openaiMocks.generateEmbedding.mock.resetCalls();
     openaiMocks.chatCompletion.mock.resetCalls();

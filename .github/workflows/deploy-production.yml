@@ -38,6 +38,13 @@ jobs:
           SMOKE_TEST_EMAIL: ${{ secrets.SMOKE_TEST_EMAIL }}
           SMOKE_TEST_CLIENT_ID: ${{ secrets.SMOKE_TEST_CLIENT_ID }}
           SMOKE_TEST_CLIENT_SECRET: ${{ secrets.SMOKE_TEST_CLIENT_SECRET }}
+          RAG_CANARY_ENABLED: ${{ secrets.RAG_CANARY_ENABLED }}
+          RAG_CANARY_FUNCTION_URL: ${{ secrets.RAG_CANARY_FUNCTION_URL }}
+          RAG_CANARY_FRONT_DOOR_ID: ${{ secrets.RAG_CANARY_FRONT_DOOR_ID }}
+          RAG_CANARY_STUDENT_EMAIL: ${{ secrets.RAG_CANARY_STUDENT_EMAIL }}
+          RAG_CANARY_TEACHER_EMAIL: ${{ secrets.RAG_CANARY_TEACHER_EMAIL }}
+          RAG_CANARY_DIRECTOR_EMAIL: ${{ secrets.RAG_CANARY_DIRECTOR_EMAIL }}
+          RAG_CANARY_ADMIN_EMAIL: ${{ secrets.RAG_CANARY_ADMIN_EMAIL }}
         run: |
           MISSING=""
           [ -z "$SWA_TOKEN" ] && MISSING="$MISSING AZURE_STATIC_WEB_APPS_API_TOKEN"
@@ -45,6 +52,16 @@ jobs:
           if [ "$SMOKE_AUTH_ENABLED" = "true" ]; then
             [ -z "$SMOKE_TEST_EMAIL" ] && MISSING="$MISSING SMOKE_TEST_EMAIL"
             [ -z "$SMOKE_TEST_CLIENT_ID" ] && [ -z "$SMOKE_TEST_CLIENT_SECRET" ] && MISSING="$MISSING SMOKE_TEST_CLIENT_ID/SMOKE_TEST_CLIENT_SECRET"
+          fi
+          # RAG source-isolation canary (Story 3.7 / #261): fail closed when
+          # enabled but identity/secrets are missing (AC #3).
+          if [ "$RAG_CANARY_ENABLED" = "true" ]; then
+            [ -z "$RAG_CANARY_FUNCTION_URL" ] && MISSING="$MISSING RAG_CANARY_FUNCTION_URL"
+            [ -z "$RAG_CANARY_FRONT_DOOR_ID" ] && MISSING="$MISSING RAG_CANARY_FRONT_DOOR_ID"
+            [ -z "$RAG_CANARY_STUDENT_EMAIL" ] && MISSING="$MISSING RAG_CANARY_STUDENT_EMAIL"
+            [ -z "$RAG_CANARY_TEACHER_EMAIL" ] && MISSING="$MISSING RAG_CANARY_TEACHER_EMAIL"
+            [ -z "$RAG_CANARY_DIRECTOR_EMAIL" ] && MISSING="$MISSING RAG_CANARY_DIRECTOR_EMAIL"
+            [ -z "$RAG_CANARY_ADMIN_EMAIL" ] && MISSING="$MISSING RAG_CANARY_ADMIN_EMAIL"
           fi
           if [ -n "$MISSING" ]; then
             echo "::error::Missing required secrets:$MISSING"
@@ -175,3 +192,29 @@ jobs:
           SMOKE_TEST_CLIENT_SECRET: ${{ secrets.SMOKE_TEST_CLIENT_SECRET }}
           SMOKE_TIMEOUT_MS: ${{ secrets.SMOKE_TIMEOUT_MS }}
         run: node backend/scripts/smoke-prod-application-state.js
+      - name: Run RAG source-isolation canary (Story 3.7)
+        env:
+          RAG_CANARY_ENABLED: ${{ secrets.RAG_CANARY_ENABLED }}
+          RAG_CANARY_FUNCTION_URL: ${{ secrets.RAG_CANARY_FUNCTION_URL }}
+          RAG_CANARY_FRONT_DOOR_ID: ${{ secrets.RAG_CANARY_FRONT_DOOR_ID }}
+          RAG_CANARY_SUBJECT_ID: ${{ secrets.RAG_CANARY_SUBJECT_ID }}
+          RAG_CANARY_CLASS_IDS: ${{ secrets.RAG_CANARY_CLASS_IDS }}
+          RAG_CANARY_QUESTION: ${{ secrets.RAG_CANARY_QUESTION }}
+          RAG_CANARY_TIMEOUT_MS: ${{ secrets.RAG_CANARY_TIMEOUT_MS }}
+          RAG_CANARY_STUDENT_EMAIL: ${{ secrets.RAG_CANARY_STUDENT_EMAIL }}
+          RAG_CANARY_TEACHER_EMAIL: ${{ secrets.RAG_CANARY_TEACHER_EMAIL }}
+          RAG_CANARY_DIRECTOR_EMAIL: ${{ secrets.RAG_CANARY_DIRECTOR_EMAIL }}
+          RAG_CANARY_ADMIN_EMAIL: ${{ secrets.RAG_CANARY_ADMIN_EMAIL }}
+          RAG_CANARY_STUDENT_SUBJECT_ID: ${{ secrets.RAG_CANARY_STUDENT_SUBJECT_ID }}
+          RAG_CANARY_STUDENT_CLASS_IDS: ${{ secrets.RAG_CANARY_STUDENT_CLASS_IDS }}
+          RAG_CANARY_STUDENT_QUESTION: ${{ secrets.RAG_CANARY_STUDENT_QUESTION }}
+          RAG_CANARY_TEACHER_SUBJECT_ID: ${{ secrets.RAG_CANARY_TEACHER_SUBJECT_ID }}
+          RAG_CANARY_TEACHER_CLASS_IDS: ${{ secrets.RAG_CANARY_TEACHER_CLASS_IDS }}
+          RAG_CANARY_TEACHER_QUESTION: ${{ secrets.RAG_CANARY_TEACHER_QUESTION }}
+          RAG_CANARY_DIRECTOR_SUBJECT_ID: ${{ secrets.RAG_CANARY_DIRECTOR_SUBJECT_ID }}
+          RAG_CANARY_DIRECTOR_CLASS_IDS: ${{ secrets.RAG_CANARY_DIRECTOR_CLASS_IDS }}
+          RAG_CANARY_DIRECTOR_QUESTION: ${{ secrets.RAG_CANARY_DIRECTOR_QUESTION }}
+          RAG_CANARY_ADMIN_SUBJECT_ID: ${{ secrets.RAG_CANARY_ADMIN_SUBJECT_ID }}
+          RAG_CANARY_ADMIN_CLASS_IDS: ${{ secrets.RAG_CANARY_ADMIN_CLASS_IDS }}
+          RAG_CANARY_ADMIN_QUESTION: ${{ secrets.RAG_CANARY_ADMIN_QUESTION }}
+        run: node backend/scripts/canary-rag-source-isolation.js

@@ -31,14 +31,14 @@ Esto ejecuta:
 ```
 [Push to main] → Secrets Check → Backend Tests → Frontend E2E →
 → Deploy Frontend (SWA token) → Deploy Backend (publish profile) →
-→ Smoke Test (curl /api/hello + SWA URL + application-state probe)
+→ Smoke Test (curl /api/hello + SWA URL + application-state probe + RAG source-isolation canary)
 ```
 
 ### Pipeline de Staging (branch `staging`)
 ```
 [Push to staging] → Secrets Check → Backend Tests → Frontend E2E →
 → Deploy Frontend (SWA token) → Deploy Backend (azd + OIDC) →
-→ Health Check (curl /api/hello + application-state probe) → Auto PR staging → main
+→ Health Check (curl /api/hello + application-state probe + RAG canary) → Auto PR staging → main
 ```
 
 ### Smoke Test de Aplicación (Story 10.20 — más allá del HTTP 200)
@@ -74,6 +74,62 @@ bloquea el release. Checks no habilitados imprimen `SKIP` (no bloquean).
 SMOKE_SWA_URL=https://<swa-host>.azurestaticapps.net node backend/scripts/smoke-prod-application-state.js
 ```
 Para los checks de browser, instalar deps de frontend (`cd frontend && npm ci`) o setear `SMOKE_PLAYWRIGHT_PATH`.
+
+### Canary de Aislamiento de Fuentes RAG (Story 3.7 / #261)
+
+Cierra **QA-002** (`docs/qa-browser-report-2026-08-14.md:90-115`): una query RAG scoped a
+`subjectId=arq-software-2026` / `classId=class-01` devolvió fuentes de otra materia. El canary es un
+**probe HTTPS standalone** (`backend/scripts/canary-rag-source-isolation.js`) que consulta el
+`POST /api/rag-query` desplegado y **afirma que cada source devuelto pertenece al subjectId y a las
+clases solicitadas**. Un mismatch (o un `sources[]` vacío = "aislamiento no verificable") termina con
+exit ≠ 0 → el smoke gate **bloquea el release** (AC #1/#2).
+
+**Cobertura por rol (AC #3):** cada rol configurado (`student`, `teacher`, `director`, `admin`) envía
+su propio email allowlisted vía header `x-ms-client-principal-name` + `x-azure-fdid` (Front Door), con
+query en modo blocking (`stream:false`). Se exige **exactamente un scope por rol**; si un rol no tiene
+email configurado, el canary falla (fail closed). Los sources `bibliography` quedan exentos del match
+de clase (el filtro Pinecone tiene fallback de bibliografía entre clases del mismo subject), pero
+`subjectId` **siempre** se verifica.
+
+**Variables de entorno (GitHub secrets — nunca commitear emails/credenciales):**
+| Variable | Descripción |
+|---|---|
+| `RAG_CANARY_ENABLED` | `true` ejecuta las queries RAG del canary; default `false` (off hasta provisionar identidades) |
+| `RAG_CANARY_FUNCTION_URL` | URL de la Function App (ej `https://func-dashboard-ingest-<token>.azurewebsites.net`); requerida si enabled |
+| `RAG_CANARY_FRONT_DOOR_ID` | ID de Front Door (header `x-azure-fdid`); requerida si enabled |
+| `RAG_CANARY_SUBJECT_ID` | Default `arq-software-2026` |
+| `RAG_CANARY_CLASS_IDS` | Default `class-01` (comma-separated) |
+| `RAG_CANARY_QUESTION` | Pregunta por scope (default: `¿Qué es la arquitectura de software?`) |
+| `RAG_CANARY_TIMEOUT_MS` | Timeout por request (default `30000`) |
+| `RAG_CANARY_STUDENT_EMAIL` / `RAG_CANARY_TEACHER_EMAIL` / `RAG_CANARY_DIRECTOR_EMAIL` / `RAG_CANARY_ADMIN_EMAIL` | Identidades allowlisted por rol |
+| `RAG_CANARY_<ROLE>_SUBJECT_ID` / `_CLASS_IDS` / `_QUESTION` | Overrides opcionales por rol (default al valor compartido) |
+
+**Ejecución local:**
+```bash
+RAG_CANARY_ENABLED=true \
+RAG_CANARY_FUNCTION_URL=https://func-dashboard-ingest-<token>.azurewebsites.net \
+RAG_CANARY_FRONT_DOOR_ID=<fd-id> \
+RAG_CANARY_STUDENT_EMAIL=<email> RAG_CANARY_TEACHER_EMAIL=<email> \
+RAG_CANARY_DIRECTOR_EMAIL=<email> RAG_CANARY_ADMIN_EMAIL=<email> \
+node backend/scripts/canary-rag-source-isolation.js
+```
+
+**Provisioning requerido (bloqueado hasta que UADE admin lo aplique):** el canary depende de que las
+identidades estén en `ALLOWED_USERS_JSON` (app setting de la Function App, Key Vault-referenced; nunca
+commitear) y de que los scopes pasen las gates de `rag-query.js`:
+- **Allowlist:** agregar 4 entradas `[{"email":"<canary-student>","role":"student","subjects":["arq-software-2026"]}, ...]`
+  con un email por rol (student/teacher/director/admin).
+- **Enrollment:** cada identidad no-docente/director (student/admin) debe tener enrollment `active` en
+  `Enrollments` (Tabla) para `arq-software-2026` (`rag-query.js` → `ENROLLMENT_REQUIRED`).
+- **Consent:** cada identidad student/admin debe tener `consentAccepted=true` en `UserProfiles`
+  (`rag-query.js` → `CONSENT_REQUIRED`).
+- **Materiales revisados:** los materiales del scope (ej `m-01`/`m-02` de `class-01`) deben estar
+  marcados `reviewed=true` en la tabla `materials` para que la retrieval devuelva sources
+  (`rag-query.js` → filtro de revisión).
+
+Hasta que eso se provisione, el workflow corre el canary con `RAG_CANARY_ENABLED=false` → imprime
+`SKIP` y no bloquea el deploy. Al setear `true`, los secrets faltantes hacen **fail closed** (el paso
+de secrets-check y el propio script fallan).
 
 ### Relación con QA-009 / QA-001
 

@@ -320,7 +320,8 @@ app.http('rag-query', {
             context.log('[RAG] Returning verified answer — skipping standard search and LLM');
             const verifiedSources = [{
                 materialType: 'verified-answer',
-                classId: verifiedMatch.metadata?.classId,
+                subjectId: verifiedMatch.metadata?.subjectId,
+                classId: verifiedMatch.metadata?.classId ?? verifiedMatch.metadata?.classIds?.[0],
                 chunkIndex: 0,
                 sourceFilename: verifiedMatch.metadata?.sourceFilename || '',
                 score: Math.round(verifiedMatch.score * 100) / 100,
@@ -599,6 +600,8 @@ ${contextText}
             const sources = matches.map(m => ({
                 materialType: m.metadata?.materialType,
                 materialPriority: resolveMaterialPriority(m.metadata, priorityMap),
+                subjectId: m.metadata?.subjectId,
+                classId: m.metadata?.classId ?? m.metadata?.classIds?.[0],
                 classIds: m.metadata?.classIds,
                 chunkIndex: m.metadata?.chunkIndex,
                 sourceFilename: m.metadata?.sourceFilename,
@@ -851,6 +854,8 @@ ${contextText}
         const sources = matches.map(m => ({
             materialType: m.metadata?.materialType,
             materialPriority: resolveMaterialPriority(m.metadata, priorityMap),
+            subjectId: m.metadata?.subjectId,
+            classId: m.metadata?.classId ?? m.metadata?.classIds?.[0],
             classIds: m.metadata?.classIds,
             chunkIndex: m.metadata?.chunkIndex,
             sourceFilename: m.metadata?.sourceFilename,

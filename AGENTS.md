@@ -483,6 +483,32 @@ SMOKE_SWA_URL=https://<swa-host>.azurestaticapps.net node backend/scripts/smoke-
 # Browser checks: cd frontend && npm ci  (o SMOKE_PLAYWRIGHT_PATH=...)
 ```
 
+### **15.4. Canary de Aislamiento de Fuentes RAG (Story 3.7 / #261 — cierra QA-002)**
+
+El smoke gate de producción (`deploy-production.yml` → `smoke-test`) y de staging
+(`staging.yml` → `health-check`) ejecuta `node backend/scripts/canary-rag-source-isolation.js`
+**después** del probe 15.3. Es un probe HTTPS standalone que consulta el `POST /api/rag-query`
+desplegado con un scope por rol (student/teacher/director/admin) y **afirma que cada source
+devuelto tiene el `subjectId` solicitado y que `classId`/`classIds` intersecta el scope pedido**.
+`subjectId` se verifica siempre; `classId` solo en fuentes no-`bibliography` (el filtro Pinecone
+tiene fallback de bibliografía entre clases del mismo subject). Un mismatch, un `sources[]` vacío
+("aislamiento no verificable") o un HTTP 401/403/429 → exit ≠ 0 + `::error::` → **bloquea el release**.
+
+**Gating / fail closed:** las queries RAG solo corren con `RAG_CANARY_ENABLED=true`. Una vez habilitado,
+los 4 emails por rol son obligatorios (`RAG_CANARY_STUDENT_EMAIL`, `RAG_CANARY_TEACHER_EMAIL`,
+`RAG_CANARY_DIRECTOR_EMAIL`, `RAG_CANARY_ADMIN_EMAIL`) y faltantes → fail cerrado. Requiere además que
+esas identidades estén en `ALLOWED_USERS_JSON` (Key Vault-referenced; **nunca commitear emails/keys**)
+y que pasen las gates de `rag-query.js`: enrollment activo + consent aceptado (student/admin) y
+materiales `reviewed=true` en el scope. Ese provisioning depende de UADE admin y está **bloqueado**;
+hasta entonces el workflow corre el canary con `RAG_CANARY_ENABLED=false` (imprime `SKIP`).
+
+**Secrets (nunca commitear, ver §12/§13):**
+`RAG_CANARY_ENABLED`, `RAG_CANARY_FUNCTION_URL`, `RAG_CANARY_FRONT_DOOR_ID`,
+`RAG_CANARY_SUBJECT_ID` (default `arq-software-2026`), `RAG_CANARY_CLASS_IDS` (default `class-01`),
+`RAG_CANARY_QUESTION`, `RAG_CANARY_TIMEOUT_MS`, `RAG_CANARY_{STUDENT,TEACHER,DIRECTOR,ADMIN}_EMAIL`
+(y opcionalmente `RAG_CANARY_<ROLE>_{SUBJECT_ID,CLASS_IDS,QUESTION}`). Documentación completa y
+ejecución local en `docs/deployment-guide.md` §CI/CD.
+
 ## **16. Ciclo de Vida de Implementación y Verificación**
 
 Para garantizar la calidad y disponibilidad del dashboard, se establece el siguiente flujo obligatorio para cada tarea de implementación:
