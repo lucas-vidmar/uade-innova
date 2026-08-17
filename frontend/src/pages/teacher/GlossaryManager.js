@@ -33,8 +33,10 @@ export async function renderGlossaryManager(container) {
           <div class="empty-state-icon">📖</div>
           <h3>Sin términos aún</h3>
           <p style="font-size:var(--font-size-sm)">Agregá términos técnicos para que el sistema detecte errores en las transcripciones automáticamente.</p>
+          <button class="btn btn-primary" id="glossary-add-term-empty-btn" style="margin-top:var(--space-4)">+ Agregar Término</button>
         </div>
       `;
+      editor.querySelector('#glossary-add-term-empty-btn').addEventListener('click', addTerm);
       return;
     }
 
@@ -106,12 +108,14 @@ export async function renderGlossaryManager(container) {
     }
   }
 
-  container.querySelector('#glossary-add-term-btn').addEventListener('click', () => {
+  function addTerm() {
     glossary.terms.push({ term: '', aliases: [] });
     renderTerms();
     const lastInput = editor.querySelector('.glossary-term-row:last-child [data-field="term"]');
     if (lastInput) setTimeout(() => lastInput.focus(), 50);
-  });
+  }
+
+  container.querySelector('#glossary-add-term-btn').addEventListener('click', addTerm);
 
   try {
     glossary = await api.getGlossary(subjectId);
