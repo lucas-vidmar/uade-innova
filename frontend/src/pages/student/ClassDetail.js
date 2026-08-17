@@ -201,10 +201,24 @@ export async function renderClassDetail(container) {
                             <h4 style="margin:0;font-size:var(--text-lg);font-weight:700;">Resumen Audio-Guía</h4>
                             <p style="margin:var(--space-1) 0 0 0;font-size:var(--text-xs);color:var(--color-text-secondary);">Generado automáticamente con voz Nova</p>
                         </div>
-                        <audio controls style="width:100%;max-width:480px;height:40px;border-radius:var(--radius-full);">
-                            <source src="${audioUrl}" type="audio/mpeg">
-                            Tu navegador no soporta el elemento de audio.
-                        </audio>
+                        <div style="width:100%;max-width:480px;display:flex;flex-direction:column;gap:var(--space-3);">
+                            <audio id="class-podcast-audio" controls preload="metadata" style="width:100%;height:40px;border-radius:var(--radius-full);">
+                                <source src="${audioUrl}" type="audio/mpeg">
+                                Tu navegador no soporta el elemento de audio.
+                            </audio>
+                            <div class="podcast-speed-controls" style="display:flex;align-items:center;justify-content:center;gap:var(--space-2);">
+                                <span style="font-size:var(--text-xs);color:var(--color-text-secondary);font-weight:600;">Velocidad:</span>
+                                ${[1, 1.25, 1.5].map(speed => `
+                                    <button
+                                        type="button"
+                                        class="btn btn-ghost btn-sm podcast-speed-btn${speed === 1 ? ' active' : ''}"
+                                        data-playback-rate="${speed}"
+                                        aria-pressed="${speed === 1 ? 'true' : 'false'}"
+                                        style="min-width:44px;font-weight:600;${speed === 1 ? 'background:var(--color-primary);color:#fff;border-color:transparent;' : ''}"
+                                    >${speed}x</button>
+                                `).join('')}
+                            </div>
+                        </div>
                         <div style="font-size:var(--text-xs);color:var(--color-text-secondary);font-style:italic;">
                             Escuchá los conceptos clave mientras te trasladás.
                         </div>
@@ -317,6 +331,40 @@ export async function renderClassDetail(container) {
         tabButtons.forEach((btn) => {
             btn.addEventListener('click', () => selectClassTab(btn.dataset.classTab));
         });
+
+        // ── Podcast audio player: playback speed controls ──
+        const podcastAudio = container.querySelector('#class-podcast-audio');
+        const speedBtns = container.querySelectorAll('.podcast-speed-btn');
+
+        const setPodcastSpeed = (rate) => {
+            if (podcastAudio) podcastAudio.playbackRate = rate;
+            speedBtns.forEach((btn) => {
+                const active = Number(btn.dataset.playbackRate) === rate;
+                btn.classList.toggle('active', active);
+                btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+                if (active) {
+                    btn.style.background = 'var(--color-primary)';
+                    btn.style.color = '#fff';
+                    btn.style.borderColor = 'transparent';
+                } else {
+                    btn.style.background = '';
+                    btn.style.color = '';
+                    btn.style.borderColor = '';
+                }
+            });
+        };
+
+        speedBtns.forEach((btn) => {
+            btn.addEventListener('click', () => setPodcastSpeed(Number(btn.dataset.playbackRate)));
+        });
+
+        if (podcastAudio) {
+            // Reset to 1x when a new track loads or playback restarts from zero
+            podcastAudio.addEventListener('loadedmetadata', () => {
+                podcastAudio.playbackRate = 1;
+                setPodcastSpeed(1);
+            });
+        }
 
         // Restore quiz tab if the URL carries ?tab=quiz (deep link from dashboard)
         if (new URLSearchParams(window.location.search).get('tab') === 'quiz') {
