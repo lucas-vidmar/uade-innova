@@ -14,6 +14,26 @@ test('student sees 429 guidance and cooldown countdown when API rate limit is hi
     sessionStorage.setItem('edu_ai_consent_accepted', 'true');
   });
 
+  await page.route('**/api/subjects*', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ id: 'arq-software-2026', name: 'Arquitectura de Software 2026' }]) });
+  });
+
+  await page.route('**/api/enrollments**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) });
+  });
+
+  await page.route('**/api/tasks**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+
+  await page.route('**/api/deadlines?**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+
+  await page.route('**/api/notifications?**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+
   await page.route('**/api/classes?**', async (route) => {
     await route.fulfill({
       status: 200,
@@ -36,7 +56,7 @@ test('student sees 429 guidance and cooldown countdown when API rate limit is hi
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
 
-  await page.route('**/api/rag-query', async (route) => {
+  await page.route('**/api/rag-query*', async (route) => {
     await route.fulfill({
       status: 429,
       headers: {

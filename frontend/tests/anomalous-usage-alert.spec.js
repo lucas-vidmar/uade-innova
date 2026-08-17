@@ -9,7 +9,7 @@ test('director can see anomalous usage alert policy in admin panel', async ({ pa
     sessionStorage.setItem('edu_consent_accepted', 'true');
   });
 
-  await page.route('**/api/manage/users', async (route) => {
+  await page.route('**/api/manage/users*', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',

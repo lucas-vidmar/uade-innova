@@ -61,14 +61,14 @@ test('notification read state persists across reloads', async ({ page }) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(payload) });
   });
 
-  await page.route('**/api/notifications/read', async (route) => {
+  await page.route('**/api/notifications/read*', async (route) => {
     const payload = route.request().postDataJSON();
     const ids = Array.isArray(payload?.notificationIds) ? payload.notificationIds : [];
     readIds = Array.from(new Set([...readIds, ...ids]));
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ updated: ids.length }) });
   });
 
-  await page.route('**/api/notifications/*/read', async (route) => {
+  await page.route('**/api/notifications/*/read*', async (route) => {
     const payload = route.request().postDataJSON();
     const match = route.request().url().match(/notifications\/(.+)\/read/);
     const id = match ? decodeURIComponent(match[1]) : null;

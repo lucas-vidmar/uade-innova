@@ -4,9 +4,11 @@ test.use({ channel: 'chrome' });
 
 test('teacher sees engagement and material alerts in analytics view', async ({ page }) => {
   await page.addInitScript(() => {
+    localStorage.setItem('uade_use_mock', 'false');
     sessionStorage.setItem('edu_role', 'teacher');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');
+    sessionStorage.setItem('edu_logged_in', 'true');
   });
 
   await page.route('**/api/analytics?**', async (route) => {
@@ -93,9 +95,11 @@ test('teacher sees engagement and material alerts in analytics view', async ({ p
 
 test('teacher sees thematic gaps card with severity colors and expandable details', async ({ page }) => {
   await page.addInitScript(() => {
+    localStorage.setItem('uade_use_mock', 'false');
     sessionStorage.setItem('edu_role', 'teacher');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');
+    sessionStorage.setItem('edu_logged_in', 'true');
   });
 
   await page.route('**/api/analytics?**', async (route) => {

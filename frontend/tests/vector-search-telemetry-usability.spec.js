@@ -41,7 +41,7 @@ test('student chat remains usable while vector retrieval telemetry is active', a
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
 
-  await page.route('**/api/rag-query', async (route) => {
+  await page.route('**/api/rag-query*', async (route) => {
     await route.fulfill({
       status: 200,
       headers: { 'Content-Type': 'text/event-stream' },

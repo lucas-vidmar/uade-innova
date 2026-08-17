@@ -30,7 +30,7 @@ test('student can ask follow-up question and keep logical flow', async ({ page }
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
 
-  await page.route('**/api/rag-query', async route => {
+  await page.route('**/api/rag-query*', async route => {
     const requestBody = route.request().postDataJSON();
     capturedRequests.push(requestBody);
     const responseChunks = requestBody.question.toLowerCase().includes('why is that important')

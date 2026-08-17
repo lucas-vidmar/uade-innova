@@ -33,7 +33,7 @@ test('teacher upload sends required metadata fields in multipart request', async
   });
 
   let capturedPostBody = '';
-  await page.route('**/api/ingest-material', async (route) => {
+  await page.route('**/api/ingest-material*', async (route) => {
     capturedPostBody = route.request().postData() || '';
     await route.fulfill({
       status: 202,

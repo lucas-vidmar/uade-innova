@@ -813,6 +813,12 @@
     background: rgba(6, 27, 44, 0.85);
     backdrop-filter: blur(4px);
     animation: fadeIn 0.25s ease;
+    /* The tour is guidance, not a hard modal: the backdrop must never swallow
+       the primary class interaction (QA-008). Pointer events pass through to
+       the underlying page; the tooltip and highlighted target (z-index 10000 /
+       10001) remain interactive and the tour stays dismissible via Escape,
+       ✕ and the step buttons. */
+    pointer-events: none;
 }
 
 /* ── Tooltip card ──────────────────────────────────────── */

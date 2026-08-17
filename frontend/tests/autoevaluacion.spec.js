@@ -74,7 +74,7 @@ test('student generates quiz, answers questions and sees results with weak topic
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ script: null }) });
   });
 
-  await page.route('**/api/subjects', async (route) => {
+  await page.route('**/api/subjects*', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ id: 'arq-software-2026', name: 'Arquitectura de Software 2026' }]) });
   });
 
@@ -121,7 +121,7 @@ test('student generates quiz, answers questions and sees results with weak topic
     }
   });
 
-  await page.route('**/api/generate-quiz', async route => {
+  await page.route('**/api/generate-quiz*', async route => {
     const body = route.request().postDataJSON();
     capturedRequests.push(body);
     await route.fulfill({
@@ -241,7 +241,7 @@ test('student sees prior saved quiz score on autoevaluación tab', async ({ page
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ script: null }) });
   });
 
-  await page.route('**/api/subjects', async (route) => {
+  await page.route('**/api/subjects*', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ id: 'arq-software-2026', name: 'Arquitectura de Software 2026' }]) });
   });
 

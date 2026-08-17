@@ -29,7 +29,7 @@ test('student chat request sends x-correlation-id header', async ({ page, browse
   });
 
   let seenCorrelation = null;
-  await page.route('**/api/rag-query', async route => {
+  await page.route('**/api/rag-query*', async route => {
     seenCorrelation = route.request().headers()['x-correlation-id'] || null;
     await route.fulfill({
       status: 200,

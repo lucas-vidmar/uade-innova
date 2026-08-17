@@ -10,6 +10,7 @@ test.describe('Class View Tracking', () => {
       sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
       sessionStorage.setItem('edu_logged_in', 'true');
       sessionStorage.setItem('edu_consent_accepted', 'true');
+      sessionStorage.setItem('edu_ai_consent_accepted', 'true');
     });
 
     await page.route('**/api/subjects', async route => {
@@ -58,6 +59,7 @@ test.describe('Class View Tracking', () => {
       sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
       sessionStorage.setItem('edu_logged_in', 'true');
       sessionStorage.setItem('edu_consent_accepted', 'true');
+      sessionStorage.setItem('edu_ai_consent_accepted', 'true');
     });
 
     await page.route('**/api/subjects', async route => {
@@ -103,7 +105,14 @@ test.describe('Class View Tracking', () => {
     await page.goto('http://localhost:3000/#/student/dashboard', { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#section-classes', { timeout: 10000 });
 
-    const nuevoItem = page.locator('text=Nuevo').first();
+    // Regression (QA-008 / AC #2): the first-run onboarding overlay auto-starts
+    // for the student (AI consent seeded). It must NOT swallow the primary class
+    // interaction — the class stays clickable without dismissing the tour first.
+    await expect(page.locator('.onboarding-overlay')).toBeAttached({ timeout: 5000 });
+
+    // Scope to the classes sidebar: the chat widget also renders a "Nuevo chat"
+    // button, so a bare `text=Nuevo` match is ambiguous.
+    const nuevoItem = page.locator('#section-classes').locator('text=Nuevo').first();
     const exists = await nuevoItem.count();
 
     if (exists > 0) {

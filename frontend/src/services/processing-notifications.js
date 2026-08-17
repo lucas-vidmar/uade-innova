@@ -16,7 +16,7 @@ const POLL_INTERVAL_MS = Number(globalThis?.__UADE_PROCESSING_POLL_MS) > 0
 const JOB_TTL_MS = 30 * 60 * 1000;
 const MAX_POLL_RETRIES = 225;
 
-let trackedJobs = loadTrackedJobs();
+let trackedJobs = normalizeTrackedJobs(loadTrackedJobs());
 let timerId = null;
 let isPolling = false;
 const listeners = new Set();
@@ -391,6 +391,18 @@ async function pollStatuses() {
     isPolling = true;
 
     try {
+        // Defensive: never let a malformed persisted entry (missing materialId /
+        // subjectId) reach the batch grouping or stall the valid jobs (QA-008).
+        const cleanJobs = trackedJobs.filter((job) => !!job && !!job.materialId && !!job.subjectId);
+        if (cleanJobs.length !== trackedJobs.length) {
+            trackedJobs = cleanJobs;
+            persistTrackedJobs();
+        }
+        if (trackedJobs.length === 0) {
+            stopPollingIfIdle();
+            return;
+        }
+
         const pending = [];
 
         const jobIndexesBySubject = new Map();

@@ -86,7 +86,7 @@ test('student can search and see categorized results', async ({ page }) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
 
-  await page.route('**/api/global-search', async (route) => {
+  await page.route('**/api/global-search*', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_RESULTS) });
   });
 
@@ -117,8 +117,8 @@ test('student can search and see categorized results', async ({ page }) => {
   await expect(classSection.locator('.sr-card-title')).toContainText('Arquitectura Hexagonal');
 
   // ── Test 3: Empty state ──
-  await page.unroute('**/api/global-search');
-  await page.route('**/api/global-search', async (route) => {
+  await page.unroute('**/api/global-search*');
+  await page.route('**/api/global-search*', async (route) => {
     const body = JSON.parse(route.request().postData() || '{}');
     if (body.query === 'zzz') {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ query: 'zzz', subjectId: 'arq-software-2026', total: 0, results: [] }) });

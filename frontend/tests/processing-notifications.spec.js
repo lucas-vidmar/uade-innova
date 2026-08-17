@@ -68,7 +68,7 @@ test('teacher sees global toast when processing finishes after navigation', asyn
     });
   });
 
-  await page.route('**/api/ingest-material', async route => {
+  await page.route('**/api/ingest-material*', async route => {
     await route.fulfill({
       status: 202,
       contentType: 'application/json',
@@ -164,7 +164,7 @@ test('upload status badge transitions from Procesando to Listo without refresh',
     });
   });
 
-  await page.route('**/api/ingest-material', async route => {
+  await page.route('**/api/ingest-material*', async route => {
     await route.fulfill({
       status: 202,
       contentType: 'application/json',
@@ -234,7 +234,7 @@ test('grouped success toast when multiple materials finish within 3s window', as
     });
   });
 
-  await page.route('**/api/ingest-material', async route => {
+  await page.route('**/api/ingest-material*', async route => {
     await route.fulfill({
       status: 202,
       contentType: 'application/json',

@@ -25,19 +25,19 @@ test('student can report issue and teacher sees alert', async ({ page }) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) });
   });
 
-  await page.route('**/api/subjects', async (route) => {
+  await page.route('**/api/subjects*', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ id: 'arq-software-2026', name: 'Arquitectura de Software 2026' }]) });
   });
 
-  await page.route('**/api/get-profile', async (route) => {
+  await page.route('**/api/get-profile*', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ consentAccepted: true }) });
   });
 
-  await page.route('**/api/reminder-preferences', async (route) => {
+  await page.route('**/api/reminder-preferences*', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ enabled: true, cadence: 'both' }) });
   });
 
-  await page.route('**/api/consent', async (route) => {
+  await page.route('**/api/consent*', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ accepted: true }) });
   });
 
@@ -98,7 +98,7 @@ test('student can report issue and teacher sees alert', async ({ page }) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
 
-  await page.route('**/api/chat-report-issue', async (route) => {
+  await page.route('**/api/chat-report-issue*', async (route) => {
     const payload = route.request().postDataJSON() || {};
     teacherAlerts.unshift({
       id: `ai-issue-${payload.messageId}`,

@@ -127,7 +127,7 @@ test('teacher publish triggers immediate notification dispatch and student sees 
     });
   });
 
-  await page.route('**/api/class-summary/class-03', async (route) => {
+  await page.route('**/api/class-summary/class-03*', async (route) => {
     if (route.request().method() === 'POST') {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true }) });
       return;
@@ -139,7 +139,7 @@ test('teacher publish triggers immediate notification dispatch and student sees 
     });
   });
 
-  await page.route('**/api/class-map/class-03', async (route) => {
+  await page.route('**/api/class-map/class-03*', async (route) => {
     if (route.request().method() === 'POST') {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true }) });
       return;
@@ -147,7 +147,7 @@ test('teacher publish triggers immediate notification dispatch and student sees 
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ mapCode: 'graph TD' }) });
   });
 
-  await page.route('**/api/class-audio-script/class-03', async (route) => {
+  await page.route('**/api/class-audio-script/class-03*', async (route) => {
     if (route.request().method() === 'POST') {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true }) });
       return;
@@ -155,7 +155,7 @@ test('teacher publish triggers immediate notification dispatch and student sees 
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ script: 'Guión de podcast' }) });
   });
 
-  await page.route('**/api/notifications', async (route) => {
+  await page.route('**/api/notifications*', async (route) => {
     if (route.request().method() === 'POST') {
       dispatchRequest = route.request().postDataJSON();
       await route.fulfill({

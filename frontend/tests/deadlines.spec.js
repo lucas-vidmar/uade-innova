@@ -25,7 +25,7 @@ test('teacher can create a deadline and student sees it on dashboard and calenda
     { id: 'deadline-001', title: 'Final Project', description: 'Entrega final del proyecto integrador.', subjectId: 'arq-software-2026', classId: 'class-14', dueDate: targetDate, notifyOnDayBefore: true, notifyOnDayOf: true },
   ];
 
-  await page.route('**/api/subjects', async route => {
+  await page.route('**/api/subjects*', async route => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ id: 'arq-software-2026', name: 'Arquitectura de Software 2026' }]) });
   });
   await page.route('**/api/enrollments**', async route => {
@@ -72,7 +72,7 @@ test('teacher can create a deadline and student sees it on dashboard and calenda
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(DEADLINE_DATA) });
   });
 
-  await page.route('**/api/deadline-reminders', async route => {
+  await page.route('**/api/deadline-reminders*', async route => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
 
