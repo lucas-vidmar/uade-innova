@@ -21,7 +21,7 @@ const ERROR_MESSAGES = {
   UNKNOWN: 'Ocurrió un error inesperado. Por favor, intentá nuevamente.',
 };
 
-export function createChatWidget({ classes = [], subjectId = '', sessionId = null, initialMessages = [], highlightMessageId = null, transcriptFocus: initialTranscriptFocus = null, initialClassIds = [], onNewChat, onMessageSent, onConsentAccepted }) {
+export function createChatWidget({ classes = [], subjectId = '', sessionId = null, initialMessages = [], highlightMessageId = null, transcriptFocus: initialTranscriptFocus = null, initialClassIds = [], preset = null, onNewChat, onMessageSent, onConsentAccepted }) {
   const user = auth.getUser();
   const hasEnrollment = auth.isEnrolled(subjectId) !== false;
   let selectedClassIds = [...initialClassIds];
@@ -105,6 +105,14 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
       `;
     bindChatEvents();
     scrollToBottom();
+    if (preset) {
+      const input = container.querySelector('#chat-input');
+      if (input && input.value === '') {
+        input.value = preset;
+        input.focus();
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
   };
 
   const renderWelcome = () => `

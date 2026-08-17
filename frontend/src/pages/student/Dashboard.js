@@ -683,6 +683,7 @@ export async function renderStudentDashboard(container) {
     const hashQuery = parseHashQuery();
     const selectedSessionId = hashQuery.get('sessionId');
     const selectedClassId = hashQuery.get('classId');
+    const chatPreset = hashQuery.get('preset');
 
     const seedSessionId = selectedSessionId || null;
     const seedMessages = seedSessionId
@@ -698,6 +699,7 @@ export async function renderStudentDashboard(container) {
         { role: 'assistant', content: c.answer || '', sources: c.sources || [], id: c.id }
       ])).flat(),
       initialClassIds: selectedClassId ? [selectedClassId] : [],
+      preset: chatPreset,
       onNewChat: handleNewChat,
       onMessageSent: handleMessageSent,
       onConsentAccepted: startOnboardingIfNeeded,
@@ -705,7 +707,7 @@ export async function renderStudentDashboard(container) {
     chatMount.appendChild(chatWidget);
     requestAnimationFrame(startOnboardingIfNeeded);
     updateHistorySidebar(history);
-    if (selectedSessionId) {
+    if (selectedSessionId || chatPreset) {
       window.history.replaceState(null, '', '#/student/dashboard');
     }
   });
