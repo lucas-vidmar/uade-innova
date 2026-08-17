@@ -1,5 +1,22 @@
 # Estado del Proyecto - UADE Innova Dashboard Educativo
 
+## 16 de Agosto, 2026
+
+* **Feature/Story Name**: Production Allowlist Smoke Identities (Story 10.25 / #271)
+* **Status**: In Progress — código e IaC completos; provisioning de identidades requiere admin de UADE
+* **Business Impact**: Cierra QA-001/QA-009: el gate de release ahora afirma que una identidad smoke por rol (student, teacher, director, admin) resuelve a través de la allowlist server-side y alcanza su dashboard mapeado, y que una identidad no listada recibe 403 `ACCESS_DENIED` (fail closed, con página de acceso denegado + sign-out/retry). Cualquier regresión de auth o de roles no puede pasar el gate.
+* **Key Milestones**:
+  - `backend/scripts/smoke-allowlist-identities.js` + tests unitarios (gate HTTP por rol + denial de identidad no listada; checks de browser opcionales por rol).
+  - Tests de allowlist per-role fixture (AC1) y de identidad no listada (AC3); deny-path en `with-auth`/`auth-utils`.
+  - Wiring en `deploy-production.yml` (`smoke-test`) y `staging.yml` (`health-check`) + `secrets-check` fail-closed con `SMOKE_*`.
+  - Seed de administrador `adm-001` en `seed-initial-data.js` para que la identidad admin pase endpoints role-gated.
+  - Docs en `docs/deployment-guide.md` §CI/CD y `AGENTS.md` §15/§16.
+
+* **Deferred Work / Blockers**:
+  - **Provisioning de identidades smoke (requiere UADE)**: las cuatro identidades por rol (emails/passwords) viven como GitHub secrets (`SMOKE_*`) y sus entradas se provisionan en el app setting `ALLOWED_USERS_JSON` (Key Vault-referenced). Requiere una cuenta UADE por rol + rol `Key Vault Secrets User` para resolver la reference. El gate queda `SMOKE_ALLOWLIST_ENABLED=false` hasta que eso ocurra (SKIP no bloquea; fail-closed una vez activado).
+  - **Verificación en browser de las dashboards por rol**: los checks `dashboard-{role}`/`access-denied-browser` requieren las credenciales reales de las identidades smoke; sin ellas solo se verifica la capa HTTP (resolución de allowlist + 403).
+  - **RBAC (story 10.13)**: las references de Key Vault se resuelven con la identidad de la Function App; hasta que UADE otorgue los roles, `ALLOWED_USERS_JSON` se resuelve vacío (allowlist no configurada, comportamiento legacy).
+
 ## 01 de Julio, 2026
 
 * **Feature/Story Name**: Verificación y Aseguramiento de Calidad (QA) de los 25 Flujos de Usuario del MVP

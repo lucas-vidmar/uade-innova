@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 // Import the real module (no mock) to test production mock gating (#218 F1 regression).
 const { isDevelopment, isMockAuthAllowed, parseClientPrincipal, getAuthenticatedUser, setStashedIdentity } = await import('./auth-utils.js');
+const { resetAllowlistCache, isAllowlistConfigured } = await import('./allowlist.js');
 
 function mockRequest(headers = {}) {
   return {
@@ -21,6 +22,8 @@ beforeEach(() => {
   process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
   process.env.NODE_ENV = 'production';
   process.env.AUTH_MOCK_ENABLED = '';
+  process.env.ALLOWED_USERS_JSON = '';
+  resetAllowlistCache();
 });
 
 afterEach(() => {
@@ -97,4 +100,40 @@ test('STASHED_USER — getAuthenticatedUser prefers user stashed by withAuth (#2
   assert.equal(user.userId, 'oidc-user');
   assert.equal(user.sanitizedId, 'oidc_user');
   assert.equal(user.role, 'Docente');
+});
+
+test('ALLOWLIST_UNRESOLVABLE_EMAIL — configured allowlist + authenticated principal without a listed email yields role Denied (fail closed, Story 1.1a/10.25)', () => {
+  process.env.ALLOWED_USERS_JSON = JSON.stringify([
+    { email: 'prof@uade.edu.ar', role: 'teacher' },
+  ]);
+  resetAllowlistCache();
+  assert.equal(isAllowlistConfigured(), true);
+
+  const principalB64 = Buffer.from(JSON.stringify({
+    userId: 'swa-stranger',
+    userRoles: ['authenticated', 'Alumno'],
+    email: 'stranger@uade.edu.ar',
+  })).toString('base64');
+  const req = mockRequest({ 'x-ms-client-principal': principalB64 });
+  const user = getAuthenticatedUser(req);
+  assert.equal(user.role, 'Denied');
+  assert.equal(user.email, 'stranger@uade.edu.ar');
+  assert.equal(user.scope, undefined);
+});
+
+test('ALLOWLIST_ALLOWED_EMAIL — configured allowlist + listed email resolves the allowlist role (Story 1.1a)', () => {
+  process.env.ALLOWED_USERS_JSON = JSON.stringify([
+    { email: 'prof@uade.edu.ar', role: 'teacher', subjects: ['arq-software-2026'] },
+  ]);
+  resetAllowlistCache();
+
+  const principalB64 = Buffer.from(JSON.stringify({
+    userId: 'swa-prof',
+    userRoles: ['authenticated', 'Alumno'],
+    email: 'prof@uade.edu.ar',
+  })).toString('base64');
+  const req = mockRequest({ 'x-ms-client-principal': principalB64 });
+  const user = getAuthenticatedUser(req);
+  assert.equal(user.role, 'Docente');
+  assert.deepEqual(user.scope, { subjects: ['arq-software-2026'], classes: [] });
 });

@@ -216,6 +216,48 @@ test('RESOLVE_EMAIL_RELAY_FALLBACK — relayed header used only when no verified
   assert.equal(resolvePrincipalEmail(principal, req), 'relay@uade.edu.ar');
 });
 
+test('PER_ROLE_FIXTURE — one allowlisted smoke identity per role resolves to its mapped frontend role + scope (Story 10.25 AC1)', () => {
+  process.env.ALLOWED_USERS_JSON = JSON.stringify([
+    { email: 'smoke-student@uade.edu.ar', role: 'student', subjects: ['arq-software-2026'], userId: 'alu-smoke' },
+    { email: 'smoke-teacher@uade.edu.ar', role: 'teacher', subjects: ['arq-software-2026'], userId: 'doc-smoke' },
+    { email: 'smoke-director@uade.edu.ar', role: 'director', subjects: ['arq-software-2026'], userId: 'dir-smoke' },
+    { email: 'smoke-admin@uade.edu.ar', role: 'admin', subjects: ['arq-software-2026'], userId: 'adm-smoke' },
+  ]);
+  resetAllowlistCache();
+
+  const expectations = [
+    { email: 'smoke-student@uade.edu.ar', internal: 'Alumno', frontend: 'student', dashboard: '#/student/dashboard', userIdFixture: 'alu-smoke' },
+    { email: 'smoke-teacher@uade.edu.ar', internal: 'Docente', frontend: 'teacher', dashboard: '#/teacher/dashboard', userIdFixture: 'doc-smoke' },
+    { email: 'smoke-director@uade.edu.ar', internal: 'Director', frontend: 'director', dashboard: '#/director/dashboard', userIdFixture: 'dir-smoke' },
+    { email: 'smoke-admin@uade.edu.ar', internal: 'Admin', frontend: 'admin', dashboard: '#/admin/dashboard', userIdFixture: 'adm-smoke' },
+  ];
+
+  for (const { email, internal, frontend, dashboard, userIdFixture } of expectations) {
+    const entry = resolveEntryForEmail(email);
+    assert.ok(entry, `entry resolved for ${email}`);
+    assert.equal(entry.internalRole, internal, `${email} internal role`);
+    assert.equal(resolveRoleForEmail(email), internal, `${email} resolveRoleForEmail`);
+    assert.equal(toFrontendRole(entry.internalRole), frontend, `${email} toFrontendRole`);
+    assert.deepEqual(resolveScopeForEmail(email), { subjects: ['arq-software-2026'], classes: [] }, `${email} scope`);
+    assert.equal(entry.userId, userIdFixture, `${email} pilot data key`);
+    assert.equal(dashboard, `#/${frontend}/dashboard`, `${email} mapped dashboard`);
+  }
+});
+
+test('UNLISTED_SMOKE_IDENTITY — authenticated-but-unlisted email resolves deny (Story 10.25 AC3)', () => {
+  process.env.ALLOWED_USERS_JSON = JSON.stringify([
+    { email: 'smoke-student@uade.edu.ar', role: 'student', subjects: ['arq-software-2026'] },
+  ]);
+  resetAllowlistCache();
+
+  assert.equal(resolveEntryForEmail('unlisted@outside.example.com'), null);
+  assert.equal(resolveRoleForEmail('unlisted@outside.example.com'), null);
+  assert.equal(resolveScopeForEmail('unlisted@outside.example.com'), null);
+  assert.equal(resolveUserIdForEmail('unlisted@outside.example.com'), null);
+  // Case-insensitivity does not rescue an unlisted identity.
+  assert.equal(resolveRoleForEmail('UNLISTED@OUTSIDE.EXAMPLE.COM'), null);
+});
+
 test('RESOLVE_USER_ID — optional pilot key wins over email (Story 10.24)', () => {
   process.env.ALLOWED_USERS_JSON = JSON.stringify([
     { email: 'xavier@uade.edu.ar', role: 'teacher', subjects: ['arq-software-2026'], userId: 'doc-001' },

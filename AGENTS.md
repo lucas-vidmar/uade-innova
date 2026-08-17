@@ -509,6 +509,47 @@ hasta entonces el workflow corre el canary con `RAG_CANARY_ENABLED=false` (impri
 (y opcionalmente `RAG_CANARY_<ROLE>_{SUBJECT_ID,CLASS_IDS,QUESTION}`). Documentación completa y
 ejecución local en `docs/deployment-guide.md` §CI/CD.
 
+### **15.5. Smoke de Identidades Allowlist por Rol (Story 10.25 — QA-001/QA-009, #271)**
+
+El smoke test de producción (`deploy-production.yml` → `smoke-test`) y de staging
+(`staging.yml` → `health-check`) ejecuta `backend/scripts/smoke-allowlist-identities.js`
+**después** del probe de 10.20. Afirma que **una identidad smoke por rol** (student, teacher,
+director, admin) resuelve a través de la allowlist server-side y alcanza su dashboard mapeado
+(`#/student/dashboard`, `#/teacher/dashboard`, `#/director/dashboard`, `#/admin/dashboard`), y
+que una **identidad no listada** recibe 403 `ACCESS_DENIED` (fail closed, sin dashboard).
+
+- `allowlist-{role}` — `GET {SMOKE_FUNCTION_URL}/api/get-profile` con header
+  `x-ms-client-principal-name: <email>` (transporte piloto, `allowlist.js:106-115`) →
+  200 + `role` = rol frontend esperado + `scope` de allowlist → dashboard `#/{role}/dashboard`.
+- `allowlist-unlisted-denied` — mismo endpoint con email no listado → 403 + `code: ACCESS_DENIED`.
+- `dashboard-{role}` / `access-denied-browser` *(opcionales, `SMOKE_BROWSER_CHECK=true`)* —
+  Playwright: sign-in con la identidad del rol → `data-app-state="authenticated"` + hash
+  `#/{role}/dashboard` + marker DOM de la página; identidad no listada → página
+  `Acceso denegado` con `Reintentar` + `Cerrar sesión`.
+
+Falla cerrado: `SMOKE_ALLOWLIST_ENABLED=true` sin secrets por rol → exit ≠ 0 (bloquea el
+release); deshabilitado → `SKIP`. **Las identidades viven fuera del repo**: emails/passwords
+son GitHub secrets (`SMOKE_*`), y las entradas de la allowlist se provisionan vía el app
+setting `ALLOWED_USERS_JSON` (Key Vault-referenced, ver `docs/deployment-guide.md` §CI/CD).
+Nunca commitear emails/passwords de identidades smoke.
+
+**Secrets (`SMOKE_ALLOWLIST_ENABLED`, `SMOKE_STUDENT_EMAIL`/`_PASSWORD`,
+`SMOKE_TEACHER_EMAIL`/`_PASSWORD`, `SMOKE_DIRECTOR_EMAIL`/`_PASSWORD`,
+`SMOKE_ADMIN_EMAIL`/`_PASSWORD`, `SMOKE_UNLISTED_EMAIL`/`_PASSWORD`, `SMOKE_BROWSER_CHECK`,
+`SMOKE_FRONT_DOOR_ID`, `SMOKE_TIMEOUT_MS`)** — validados en `secrets-check` de ambos
+pipelines cuando el gate está habilitado.
+
+**Seed de administrador:** `seed-initial-data.js` incluye perfil + inscripciones de `adm-001`
+(rol admin) para que la identidad admin pase los endpoints role-gated; las demás identidades
+reusan los seeds piloto existentes.
+
+**Ejecución local:**
+```bash
+SMOKE_ALLOWLIST_ENABLED=true SMOKE_FUNCTION_URL=https://func-...azurewebsites.net \
+  SMOKE_STUDENT_EMAIL=<email> node backend/scripts/smoke-allowlist-identities.js
+# Browser checks: SMOKE_BROWSER_CHECK=true + passwords + SMOKE_SWA_URL + frontend deps (npm ci)
+```
+
 ## **16. Ciclo de Vida de Implementación y Verificación**
 
 Para garantizar la calidad y disponibilidad del dashboard, se establece el siguiente flujo obligatorio para cada tarea de implementación:

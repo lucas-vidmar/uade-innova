@@ -140,6 +140,75 @@ endpoint de identidad EasyAuth (`/.auth/me`), el redirect a Microsoft (`/.auth/l
 el shell de la app y (cuando hay identidad smoke) el marker de estado autenticado
 `data-app-state="authenticated"` — un dead-end no produce ninguna de esas señales.
 
+### Smoke de Identidades Allowlist por Rol (Story 10.25 — QA-001/QA-009)
+
+El gate de producción (`deploy-production.yml` → `smoke-test`) y de staging
+(`staging.yml` → `health-check`) también ejecuta `backend/scripts/smoke-allowlist-identities.js`
+**después** del probe de 10.20. Afirma que **una identidad smoke por rol** (student, teacher,
+director, admin) resuelve a través de la allowlist server-side y alcanza su dashboard mapeado,
+y que una **identidad no listada** recibe 403 `ACCESS_DENIED` (fail closed, sin dashboard).
+
+| Check | Assert |
+|---|---|
+| `allowlist-{role}` | `GET {SMOKE_FUNCTION_URL}/api/get-profile` con header `x-ms-client-principal-name: <email>` → 200 + `role` = rol frontend esperado + `scope` resuelto por allowlist → dashboard `#/{role}/dashboard` |
+| `allowlist-unlisted-denied` | Mismo endpoint con email no listado → 403 + `code: ACCESS_DENIED` (fail closed) |
+| `dashboard-{role}` *(opcional)* | Browser (Playwright): sign-in con la identidad del rol → marker `data-app-state="authenticated"` + hash `#/{role}/dashboard` + marker DOM de la página |
+| `access-denied-browser` *(opcional)* | Browser: sign-in con identidad no listada → página `Acceso denegado` con controles `Reintentar` + `Cerrar sesión` |
+
+El gate **falla cerrado**: `SMOKE_ALLOWLIST_ENABLED=true` sin los secrets por rol → exit ≠ 0
+(bloquea el release). Deshabilitado → imprime `SKIP` y no bloquea. Una identidad no listada
+que NO recibe 403 falla el gate.
+
+**Secrets requeridos (nunca commitear — GitHub secrets):**
+| Secret | Descripción |
+|---|---|
+| `SMOKE_ALLOWLIST_ENABLED` | `true` habilita el gate (requiere los secrets por rol; default off) |
+| `SMOKE_FUNCTION_URL` | Derivado en CI desde `AZURE_FUNCTIONAPP_NAME`; no es secret |
+| `SMOKE_FRONT_DOOR_ID` | Opcional — id de Front Door para el header `x-azure-fdid` |
+| `SMOKE_STUDENT_EMAIL` / `SMOKE_STUDENT_PASSWORD` | Identidad smoke del rol student |
+| `SMOKE_TEACHER_EMAIL` / `SMOKE_TEACHER_PASSWORD` | Identidad smoke del rol teacher |
+| `SMOKE_DIRECTOR_EMAIL` / `SMOKE_DIRECTOR_PASSWORD` | Identidad smoke del rol director |
+| `SMOKE_ADMIN_EMAIL` / `SMOKE_ADMIN_PASSWORD` | Identidad smoke del rol admin |
+| `SMOKE_UNLISTED_EMAIL` / `SMOKE_UNLISTED_PASSWORD` | Identidad no listada (denial) |
+| `SMOKE_BROWSER_CHECK` | `true` habilita los checks de browser por rol (requiere passwords) |
+
+**Provisioning de las identidades (AC2 — credenciales fuera del repo):**
+Las identidades se provisionan en dos lugares, ambos fuera del repositorio:
+
+1. **Allowlist server-side** — app setting `ALLOWED_USERS_JSON` de la Function App
+   (Key Vault-referenced, nunca en el repo). Forma de cada entrada (shape en
+   `backend/src/services/allowlist.js:14-18`, roles válidos en `:20`):
+   ```json
+   [
+     {"email":"<student-smoke-email>","role":"student","subjects":["arq-software-2026"],"userId":"alu-smoke"},
+     {"email":"<teacher-smoke-email>","role":"teacher","subjects":["arq-software-2026"],"userId":"doc-smoke"},
+     {"email":"<director-smoke-email>","role":"director","subjects":["arq-software-2026"],"userId":"dir-smoke"},
+     {"email":"<admin-smoke-email>","role":"admin","subjects":["arq-software-2026"],"userId":"adm-smoke"}
+   ]
+   ```
+   Comando de referencia (el valor del secret vive en Key Vault):
+   ```bash
+   az functionapp config appsettings set \
+     --name func-dashboard-ingest-{token} --resource-group RG_UADE_INNOVA_DEV \
+     --settings "ALLOWED_USERS_JSON=@Microsoft.KeyVault(SecretUri=https://<kv-edu-{token}>.vault.azure.net/secrets/ALLOWED-USERS-JSON/)"
+   ```
+   ⚠️ Mientras el rol `Key Vault Secrets User` no esté asignado (ver §4/§12), la reference se
+   resuelve vacía y la allowlist queda "no configurada" (comportamiento legacy, `allowlist.js:128-134`).
+
+2. **GitHub secrets** — emails/passwords de las identidades como `SMOKE_*` (nunca commitear).
+
+**Seed de administrador (Story 10.25 / #271):** `backend/scripts/seed-initial-data.js` ahora
+incluye el perfil y las inscripciones de `adm-001` (rol admin, ambas materias piloto) — sin
+ellas, una identidad admin no pasa los endpoints role-gated. El resto de las identidades smoke
+reusan los seeds existentes (`dir-001`, `doc-001`, `alu-001..alu-005`).
+
+**Ejecución local:**
+```bash
+SMOKE_ALLOWLIST_ENABLED=true SMOKE_FUNCTION_URL=https://func-...azurewebsites.net \
+  SMOKE_STUDENT_EMAIL=<email> node backend/scripts/smoke-allowlist-identities.js
+# Browser checks: SMOKE_BROWSER_CHECK=true + passwords + SMOKE_SWA_URL + frontend deps (npm ci)
+```
+
 ## Variables de Entorno Requeridas
 
 ### Backend (App Settings en Azure Functions)

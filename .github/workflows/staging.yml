@@ -39,6 +39,18 @@ jobs:
           RAG_CANARY_TEACHER_EMAIL: ${{ secrets.RAG_CANARY_TEACHER_EMAIL }}
           RAG_CANARY_DIRECTOR_EMAIL: ${{ secrets.RAG_CANARY_DIRECTOR_EMAIL }}
           RAG_CANARY_ADMIN_EMAIL: ${{ secrets.RAG_CANARY_ADMIN_EMAIL }}
+          SMOKE_ALLOWLIST_ENABLED: ${{ secrets.SMOKE_ALLOWLIST_ENABLED }}
+          SMOKE_BROWSER_CHECK: ${{ secrets.SMOKE_BROWSER_CHECK }}
+          SMOKE_STUDENT_EMAIL: ${{ secrets.SMOKE_STUDENT_EMAIL }}
+          SMOKE_STUDENT_PASSWORD: ${{ secrets.SMOKE_STUDENT_PASSWORD }}
+          SMOKE_TEACHER_EMAIL: ${{ secrets.SMOKE_TEACHER_EMAIL }}
+          SMOKE_TEACHER_PASSWORD: ${{ secrets.SMOKE_TEACHER_PASSWORD }}
+          SMOKE_DIRECTOR_EMAIL: ${{ secrets.SMOKE_DIRECTOR_EMAIL }}
+          SMOKE_DIRECTOR_PASSWORD: ${{ secrets.SMOKE_DIRECTOR_PASSWORD }}
+          SMOKE_ADMIN_EMAIL: ${{ secrets.SMOKE_ADMIN_EMAIL }}
+          SMOKE_ADMIN_PASSWORD: ${{ secrets.SMOKE_ADMIN_PASSWORD }}
+          SMOKE_UNLISTED_EMAIL: ${{ secrets.SMOKE_UNLISTED_EMAIL }}
+          SMOKE_UNLISTED_PASSWORD: ${{ secrets.SMOKE_UNLISTED_PASSWORD }}
         run: |
           MISSING=""
           [ -z "$SWA_TOKEN" ] && MISSING="$MISSING AZURE_STATIC_WEB_APPS_API_TOKEN"
@@ -56,6 +68,19 @@ jobs:
             [ -z "$RAG_CANARY_TEACHER_EMAIL" ] && MISSING="$MISSING RAG_CANARY_TEACHER_EMAIL"
             [ -z "$RAG_CANARY_DIRECTOR_EMAIL" ] && MISSING="$MISSING RAG_CANARY_DIRECTOR_EMAIL"
             [ -z "$RAG_CANARY_ADMIN_EMAIL" ] && MISSING="$MISSING RAG_CANARY_ADMIN_EMAIL"
+          fi
+          # Story 10.25 per-role allowlist smoke identities — fail closed once enabled.
+          if [ "$SMOKE_ALLOWLIST_ENABLED" = "true" ]; then
+            for ROLE in STUDENT TEACHER DIRECTOR ADMIN; do
+              [ -z "$(eval echo \${SMOKE_${ROLE}_EMAIL})" ] && MISSING="$MISSING SMOKE_${ROLE}_EMAIL"
+            done
+            [ -z "$SMOKE_UNLISTED_EMAIL" ] && MISSING="$MISSING SMOKE_UNLISTED_EMAIL"
+            if [ "$SMOKE_BROWSER_CHECK" = "true" ]; then
+              for ROLE in STUDENT TEACHER DIRECTOR ADMIN; do
+                [ -z "$(eval echo \${SMOKE_${ROLE}_PASSWORD})" ] && MISSING="$MISSING SMOKE_${ROLE}_PASSWORD"
+              done
+              [ -z "$SMOKE_UNLISTED_PASSWORD" ] && MISSING="$MISSING SMOKE_UNLISTED_PASSWORD"
+            fi
           fi
           if [ -n "$MISSING" ]; then
             echo "::error::Missing required secrets:$MISSING"
@@ -186,6 +211,25 @@ jobs:
           RAG_CANARY_ADMIN_CLASS_IDS: ${{ secrets.RAG_CANARY_ADMIN_CLASS_IDS }}
           RAG_CANARY_ADMIN_QUESTION: ${{ secrets.RAG_CANARY_ADMIN_QUESTION }}
         run: node backend/scripts/canary-rag-source-isolation.js
+      - name: Run per-role allowlist smoke identities probe (Story 10.25)
+        env:
+          SMOKE_ALLOWLIST_ENABLED: ${{ secrets.SMOKE_ALLOWLIST_ENABLED }}
+          SMOKE_FUNCTION_URL: https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net
+          SMOKE_SWA_URL: ${{ env.SMOKE_SWA_URL }}
+          SMOKE_FRONT_DOOR_ID: ${{ secrets.SMOKE_FRONT_DOOR_ID }}
+          SMOKE_BROWSER_CHECK: ${{ secrets.SMOKE_BROWSER_CHECK }}
+          SMOKE_STUDENT_EMAIL: ${{ secrets.SMOKE_STUDENT_EMAIL }}
+          SMOKE_STUDENT_PASSWORD: ${{ secrets.SMOKE_STUDENT_PASSWORD }}
+          SMOKE_TEACHER_EMAIL: ${{ secrets.SMOKE_TEACHER_EMAIL }}
+          SMOKE_TEACHER_PASSWORD: ${{ secrets.SMOKE_TEACHER_PASSWORD }}
+          SMOKE_DIRECTOR_EMAIL: ${{ secrets.SMOKE_DIRECTOR_EMAIL }}
+          SMOKE_DIRECTOR_PASSWORD: ${{ secrets.SMOKE_DIRECTOR_PASSWORD }}
+          SMOKE_ADMIN_EMAIL: ${{ secrets.SMOKE_ADMIN_EMAIL }}
+          SMOKE_ADMIN_PASSWORD: ${{ secrets.SMOKE_ADMIN_PASSWORD }}
+          SMOKE_UNLISTED_EMAIL: ${{ secrets.SMOKE_UNLISTED_EMAIL }}
+          SMOKE_UNLISTED_PASSWORD: ${{ secrets.SMOKE_UNLISTED_PASSWORD }}
+          SMOKE_TIMEOUT_MS: ${{ secrets.SMOKE_TIMEOUT_MS }}
+        run: node backend/scripts/smoke-allowlist-identities.js
 
   create-pr:
     needs: health-check

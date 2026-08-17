@@ -96,6 +96,10 @@ async function seedUserProfiles() {
     { id: 'doc-001', name: 'Prof. Martín Ferreiro', email: 'mferreiro@uade.edu.ar', role: 'teacher' },
     { id: 'doc-002', name: 'Prof. Laura Medina', email: 'lmedina@uade.edu.ar', role: 'teacher' },
     { id: 'dir-001', name: 'Joaquín García', email: 'jgarciag@uade.edu.ar', role: 'director' },
+    // Admin enrollment seed (Story 10.25 / #271): the admin smoke identity needs a
+    // seeded enrollment to pass role-gated endpoints. Pilot data key adm-001 matches
+    // the ALLOWED_USERS_JSON entry's userId for the admin smoke identity.
+    { id: 'adm-001', name: 'Admin Piloto', email: 'adm-smoke@uade.edu.ar', role: 'admin' },
   ];
 
   for (const user of users) {
@@ -125,6 +129,11 @@ async function seedEnrollments() {
     // Teachers
     { subjectId: 'arq-software-2026', userId: 'doc-001', role: 'teacher', enrolledAt: now },
     { subjectId: 'diseno-sistemas-2026', userId: 'doc-002', role: 'teacher', enrolledAt: now },
+
+    // Admin (Story 10.25 / #271): seed so the admin smoke identity passes
+    // role-gated endpoints (admin is not teacher/director).
+    { subjectId: 'arq-software-2026', userId: 'adm-001', role: 'admin', enrolledAt: now },
+    { subjectId: 'diseno-sistemas-2026', userId: 'adm-001', role: 'admin', enrolledAt: now },
 
     // Students in Arquitectura de Software
     { subjectId: 'arq-software-2026', userId: 'alu-001', role: 'student', enrolledAt: now },
