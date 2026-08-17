@@ -62,6 +62,7 @@ export async function renderStudentTasks(container) {
     container.innerHTML = `
     <style>
       .task-row-hover:hover .dispute-btn { display: inline-flex !important; }
+      .task-row-hover:hover .consult-ai-btn { opacity: 1 !important; }
     </style>
     <!-- KPIs -->
     <div class="grid-3" style="margin-bottom:var(--space-8)">
@@ -123,6 +124,7 @@ export async function renderStudentTasks(container) {
   `;
 
   bindDisputeEvents(container);
+  bindConsultAIEvents(container);
 }
 
 function buildRelatedClassesHtml(t, classes) {
@@ -147,13 +149,16 @@ function buildPendingRow(t, classes) {
 function buildCompletedRow(t, classes) {
   const relatedHtml = buildRelatedClassesHtml(t, classes);
   const gradeColor = (t.grade || 0) >= 6 ? 'var(--color-success)' : 'var(--color-error)';
+  const consultAiBtn = t.grade !== null
+    ? '<button class="btn btn-ghost btn-sm consult-ai-btn" data-ai-task-title="' + escapeHtml(t.title) + '" style="margin-left:8px;font-size:12px;color:var(--color-primary-light);" title="Consultar con IA">🤖 Consultar con IA</button>'
+    : '';
   const disputeBtn = t.grade !== null
     ? '<button class="btn btn-ghost btn-sm dispute-btn" data-task-id="' + t.id + '" data-task-title="' + escapeHtml(t.title) + '" data-grade="' + t.grade + '" style="margin-left:8px;font-size:12px;color:var(--color-warning);display:none;" title="Disputar nota">Disputar nota</button>'
     : '';
   const statusBadge = t.status === 'disputed'
     ? '<span class="badge badge-warning">🟡 En disputa</span>'
     : '<span class="badge badge-success">✅ Aprobado</span>';
-  return '<tr class="task-row-hover"><td>' + t.title + relatedHtml + '</td><td><span class="badge badge-neutral">' + t.weight + '%</span></td><td><strong style="color:' + gradeColor + '">' + (t.grade !== null ? t.grade.toFixed(1) : '—') + '</strong>' + disputeBtn + '</td><td>' + statusBadge + '</td></tr>';
+  return '<tr class="task-row-hover"><td>' + t.title + relatedHtml + '</td><td><span class="badge badge-neutral">' + t.weight + '%</span></td><td><strong style="color:' + gradeColor + '">' + (t.grade !== null ? t.grade.toFixed(1) : '—') + '</strong>' + consultAiBtn + disputeBtn + '</td><td>' + statusBadge + '</td></tr>';
 }
 
 function bindDisputeEvents(container) {
@@ -236,6 +241,16 @@ function bindDisputeEvents(container) {
 
       document.body.appendChild(overlay);
       setTimeout(() => textarea.focus(), 100);
+    });
+  });
+}
+
+function bindConsultAIEvents(container) {
+  container.querySelectorAll('.consult-ai-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const taskTitle = btn.dataset.aiTaskTitle;
+      const preset = `Hola, tengo una consulta sobre la correccion y criterios de evaluacion de ${taskTitle}`;
+      window.location.hash = `#/student/dashboard?preset=${encodeURIComponent(preset)}`;
     });
   });
 }
