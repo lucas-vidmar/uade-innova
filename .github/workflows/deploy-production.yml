@@ -78,12 +78,14 @@ jobs:
           # Story 10.25 per-role allowlist smoke identities — fail closed once enabled.
           if [ "$SMOKE_ALLOWLIST_ENABLED" = "true" ]; then
             for ROLE in STUDENT TEACHER DIRECTOR ADMIN; do
-              [ -z "$(eval echo \${SMOKE_${ROLE}_EMAIL})" ] && MISSING="$MISSING SMOKE_${ROLE}_EMAIL"
+              VAR="SMOKE_${ROLE}_EMAIL"
+              [ -z "${!VAR}" ] && MISSING="$MISSING SMOKE_${ROLE}_EMAIL"
             done
             [ -z "$SMOKE_UNLISTED_EMAIL" ] && MISSING="$MISSING SMOKE_UNLISTED_EMAIL"
             if [ "$SMOKE_BROWSER_CHECK" = "true" ]; then
               for ROLE in STUDENT TEACHER DIRECTOR ADMIN; do
-                [ -z "$(eval echo \${SMOKE_${ROLE}_PASSWORD})" ] && MISSING="$MISSING SMOKE_${ROLE}_PASSWORD"
+                VAR="SMOKE_${ROLE}_PASSWORD"
+                [ -z "${!VAR}" ] && MISSING="$MISSING SMOKE_${ROLE}_PASSWORD"
               done
               [ -z "$SMOKE_UNLISTED_PASSWORD" ] && MISSING="$MISSING SMOKE_UNLISTED_PASSWORD"
             fi
@@ -204,7 +206,10 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
       - name: Install frontend deps (Playwright) when browser checks are enabled
-        if: ${{ secrets.SMOKE_AUTH_ENABLED == 'true' || secrets.SMOKE_BROWSER_CHECK == 'true' }}
+        if: env.SMOKE_AUTH_ENABLED == 'true' || env.SMOKE_BROWSER_CHECK == 'true'
+        env:
+          SMOKE_AUTH_ENABLED: ${{ secrets.SMOKE_AUTH_ENABLED }}
+          SMOKE_BROWSER_CHECK: ${{ secrets.SMOKE_BROWSER_CHECK }}
         working-directory: frontend
         run: npm ci
       - name: Run production application-state probe (Story 10.20)
