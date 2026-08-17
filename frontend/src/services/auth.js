@@ -79,7 +79,9 @@ function emitAuthFallbackBlocked() {
 
 // ── DEV-only mock identities. Never used to authorize production requests;
 //    the server derives role/scope from the allowlist, never from here. ─────
-const USERS = {
+// Exported so admin surfaces can render the static pilot allowlist when the
+// remote `/api/manage/users` list is empty/unreachable.
+export const USERS = {
     student: {
         id: 'alu-001',
         name: 'Lucas Vidmar',

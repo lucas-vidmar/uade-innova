@@ -2,7 +2,65 @@
    UserManagement.js — Admin View for managing users
    ============================================================ */
 import { api } from '../../services/api.js';
+import { USERS } from '../../services/auth.js';
 import { toast } from '../../components/Toast.js';
+
+// Static fallback allowlist — authorized pilot university accounts. Shown when
+// the remote `/api/manage/users` list is empty or the fetch fails.
+const FALLBACK_SCOPE = 'Arquitectura de Software (2026-1)';
+
+const ROLE_BADGE = {
+    student: 'badge-info',
+    teacher: 'badge-primary',
+    director: 'badge-warning',
+    admin: 'badge-error',
+};
+
+function roleBadge(role) {
+    const label = String(role || 'student').toLowerCase();
+    const cls = ROLE_BADGE[label] || 'badge-neutral';
+    return `<span class="badge ${cls}">${label}</span>`;
+}
+
+function fallbackUsers() {
+    return Object.values(USERS);
+}
+
+function renderFallbackUsers(tableContainer) {
+    tableContainer.innerHTML = `
+        <p class="text-secondary" style="margin-bottom: var(--space-3); font-size: 0.85rem;">
+            La API remota no devolvió usuarios. Mostrando la allowlist estática de
+            cuentas autorizadas del piloto.
+        </p>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Usuario</th>
+                    <th>Email</th>
+                    <th>Rol</th>
+                    <th>Materia / Alcance</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${fallbackUsers().map(user => `
+                    <tr>
+                        <td>
+                            <div style="display: flex; align-items: center; gap: var(--space-2);">
+                                <div class="avatar-sm" style="background: var(--color-primary); color: white; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: bold; border-radius: 4px; width: 24px; height: 24px;">
+                                    ${user.avatar || user.name.substring(0, 2).toUpperCase()}
+                                </div>
+                                <strong>${user.name}</strong>
+                            </div>
+                        </td>
+                        <td>${user.email}</td>
+                        <td>${roleBadge(user.role)}</td>
+                        <td><span class="badge badge-neutral">${FALLBACK_SCOPE}</span></td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+}
 
 export async function renderUserManagement(container) {
     container.innerHTML = `
@@ -36,12 +94,7 @@ export async function renderUserManagement(container) {
         const tableContainer = document.getElementById('users-table-container');
 
         if (users.length === 0) {
-            tableContainer.innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-state-icon">👥</div>
-                    <p>No hay usuarios registrados todavía.</p>
-                </div>
-            `;
+            renderFallbackUsers(tableContainer);
             return;
         }
 
@@ -95,10 +148,9 @@ export async function renderUserManagement(container) {
 
     } catch (err) {
         console.error('Error rendering User Management:', err);
-        document.getElementById('users-table-container').innerHTML = `
-            <div class="alert alert-error">
-                <p>Error al cargar la lista de usuarios: ${err.message}</p>
-            </div>
-        `;
+        const tableContainer = document.getElementById('users-table-container');
+        if (tableContainer) {
+            renderFallbackUsers(tableContainer);
+        }
     }
 }
