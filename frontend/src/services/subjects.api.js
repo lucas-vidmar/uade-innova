@@ -3,6 +3,17 @@ import {
     LOCAL_SUBJECTS_KEY, LOCAL_CLASSES_KEY
 } from './core.js';
 
+export const DEFAULT_SUBJECT = {
+    id: 'arq-software-2026',
+    name: 'Arquitectura de Software (2026-1)',
+};
+
+function withDefaultSubjectFallback(subjects) {
+    const list = Array.isArray(subjects) ? subjects : [];
+    if (list.length > 0) return list;
+    return [DEFAULT_SUBJECT];
+}
+
 function getLocalSubjects() {
     const subjects = readLocalJson(LOCAL_SUBJECTS_KEY, []);
     return Array.isArray(subjects) ? subjects : [];
@@ -47,7 +58,7 @@ function mergeSubjectsWithLocal(defaultSubjects) {
         if (subject?.id) map.set(subject.id, { ...(map.get(subject.id) || {}), ...subject });
     });
 
-    return Array.from(map.values());
+    return withDefaultSubjectFallback(Array.from(map.values()));
 }
 
 export { mergeSubjectsWithLocal };

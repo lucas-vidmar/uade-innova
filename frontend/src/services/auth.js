@@ -5,7 +5,7 @@
 import { api } from './api.js';
 import { enrollments as enrollmentService } from './enrollments.js';
 import { safeSetItem, safeGetItem } from './local-storage.js';
-import { mergeSubjectsWithLocal } from './subjects.api.js';
+import { mergeSubjectsWithLocal, DEFAULT_SUBJECT } from './subjects.api.js';
 
 const AI_CONSENT_KEY = 'edu_ai_consent_accepted';
 
@@ -217,7 +217,7 @@ export const auth = {
         const storedSubjectId = sessionStorage.getItem('edu_active_subject');
         if (storedSubjectId) return storedSubjectId;
         const user = this.getUser();
-        if (!user.subjects || user.subjects.length === 0) return null;
+        if (!user.subjects || user.subjects.length === 0) return DEFAULT_SUBJECT.id;
         return user.subjects[0].id;
     },
 
