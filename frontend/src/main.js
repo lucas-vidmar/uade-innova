@@ -76,9 +76,12 @@ async function handleRoute() {
 
     // Public routes handled before the role guard.
     if (fullPath === '/login') {
-        // Already authenticated users should not see the sign-in CTA (e.g. the
-        // AAD round-trip returned to a URL whose hash is #/login).
-        if (auth.isAuthenticated() && auth.getRole() && !auth.isAccessDenied()) {
+        // Only a genuinely authenticated session bounces to its role dashboard
+        // (e.g. the AAD round-trip returning to a URL whose hash is #/login).
+        // A logged-out (`edu_logged_in === 'false'`) or sessionless user asked
+        // for login explicitly — keep the sign-in card instead of auto-bouncing.
+        const sessionLoggedIn = sessionStorage.getItem('edu_logged_in');
+        if (sessionLoggedIn === 'true' && auth.isAuthenticated() && auth.getRole() && !auth.isAccessDenied()) {
             window.location.hash = `#/${auth.getRole()}/dashboard`;
             return;
         }
@@ -247,6 +250,15 @@ async function bootstrap() {
         const hashPath = window.location.hash.replace(/^#/, '').split('?')[0];
         const hashRole = hashPath.split('/')[1];
         const actualRole = auth.getRole();
+
+        // Explicit #/login: defer to handleRoute(), which renders the sign-in
+        // card for logged-out/sessionless users and bounces only genuinely
+        // authenticated sessions to their role dashboard. Never let the role
+        // check below auto-redirect a logged-out user away from login.
+        if (hashPath === '/login') {
+            handleRoute();
+            return;
+        }
 
         const rolePrefixMap = {
             student: ['student'],
