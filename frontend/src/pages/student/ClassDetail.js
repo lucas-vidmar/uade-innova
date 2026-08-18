@@ -2,6 +2,7 @@ import { api } from '../../services/api.js';
 import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
 import { renderAutoevaluacion } from '../../components/Autoevaluacion.js';
+import { renderAudioPlayer } from '../../components/AudioPlayer.js';
 import { marked } from 'marked';
 import { extractMermaidCode } from '@shared/extract-mermaid.js';
 
@@ -189,42 +190,43 @@ export async function renderClassDetail(container) {
             `;
         }
 
-        if (audioAvailable) {
-            html += `
-                ${SECTION_TITLE('🎧', 'Podcast de Estudio (IA)')}
-                <div class="card premium-vibe" style="margin-bottom:var(--space-6);background:linear-gradient(135deg, var(--color-surface) 0%, var(--color-bg-alt) 100%);">
-                    <div style="padding:var(--space-6);display:flex;flex-direction:column;align-items:center;gap:var(--space-4);">
-                        <div style="width:56px;height:56px;border-radius:50%;background:var(--color-primary);display:flex;align-items:center;justify-content:center;box-shadow:0 0 16px var(--color-primary-alpha);">
-                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-                        </div>
-                        <div style="text-align:center">
-                            <h4 style="margin:0;font-size:var(--text-lg);font-weight:700;">Resumen Audio-Guía</h4>
-                            <p style="margin:var(--space-1) 0 0 0;font-size:var(--text-xs);color:var(--color-text-secondary);">Generado automáticamente con voz Nova</p>
-                        </div>
-                        <div style="width:100%;max-width:480px;display:flex;flex-direction:column;gap:var(--space-3);">
-                            <audio id="class-podcast-audio" controls preload="metadata" style="width:100%;height:40px;border-radius:var(--radius-full);">
-                                <source src="${audioUrl}" type="audio/mpeg">
-                                Tu navegador no soporta el elemento de audio.
-                            </audio>
-                            <div class="podcast-speed-controls" style="display:flex;align-items:center;justify-content:center;gap:var(--space-2);">
-                                <span style="font-size:var(--text-xs);color:var(--color-text-secondary);font-weight:600;">Velocidad:</span>
-                                ${[1, 1.25, 1.5].map(speed => `
-                                    <button
-                                        type="button"
-                                        class="btn btn-ghost btn-sm podcast-speed-btn${speed === 1 ? ' active' : ''}"
-                                        data-playback-rate="${speed}"
-                                        aria-pressed="${speed === 1 ? 'true' : 'false'}"
-                                        style="min-width:44px;font-weight:600;${speed === 1 ? 'background:var(--color-primary);color:#fff;border-color:transparent;' : ''}"
-                                    >${speed}x</button>
-                                `).join('')}
+        if (sec.podcast !== false) {
+            if (audioAvailable) {
+                html += `
+                    ${SECTION_TITLE('🎧', 'Podcast de Estudio (IA)')}
+                    <div class="card premium-vibe" style="margin-bottom:var(--space-6);background:linear-gradient(135deg, var(--color-surface) 0%, var(--color-bg-alt) 100%);">
+                        <div style="padding:var(--space-6);display:flex;flex-direction:column;align-items:center;gap:var(--space-4);">
+                            <div style="width:56px;height:56px;border-radius:50%;background:var(--color-primary);display:flex;align-items:center;justify-content:center;box-shadow:0 0 16px var(--color-primary-alpha);">
+                                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                            </div>
+                            <div id="class-audio-player-mount" style="width:100%;display:flex;justify-content:center;"></div>
+                            <div style="font-size:var(--text-xs);color:var(--color-text-secondary);font-style:italic;">
+                                Escuchá los conceptos clave mientras te trasladás.
                             </div>
                         </div>
-                        <div style="font-size:var(--text-xs);color:var(--color-text-secondary);font-style:italic;">
-                            Escuchá los conceptos clave mientras te trasladás.
+                    </div>
+                `;
+            } else {
+                html += `
+                    ${SECTION_TITLE('🎧', 'Podcast de Estudio (IA)')}
+                    <div class="card premium-vibe" id="podcast-generate-card" style="margin-bottom:var(--space-6);background:linear-gradient(135deg, var(--color-surface) 0%, var(--color-bg-alt) 100%);">
+                        <div style="padding:var(--space-6);display:flex;flex-direction:column;align-items:center;gap:var(--space-4);">
+                            <div style="width:56px;height:56px;border-radius:50%;background:var(--color-surface-2);display:flex;align-items:center;justify-content:center;">
+                                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                            </div>
+                            <div style="text-align:center">
+                                <h4 style="margin:0;font-size:var(--text-lg);font-weight:700;">Podcast de la clase — ${escapeHtml(classInfo.title)}</h4>
+                                <p style="margin:var(--space-1) 0 0 0;font-size:var(--text-xs);color:var(--color-text-secondary);">Aún no hay audio generado para esta clase.</p>
+                            </div>
+                            <button type="button" class="btn btn-primary" id="btn-generate-audio" data-testid="btn-generate-audio">Generar audio</button>
+                            <div id="audio-generation-progress" style="display:none;align-items:center;gap:var(--space-2);font-size:var(--text-xs);color:var(--color-text-secondary);">
+                                <span class="audio-player-spinner" aria-hidden="true"></span>
+                                <span>Generando audio... esto puede tomar unos segundos.</span>
+                            </div>
                         </div>
                     </div>
-                </div>
-            `;
+                `;
+            }
         }
 
         if (markers.length > 0) {
@@ -332,39 +334,36 @@ export async function renderClassDetail(container) {
             btn.addEventListener('click', () => selectClassTab(btn.dataset.classTab));
         });
 
-        // ── Podcast audio player: playback speed controls ──
-        const podcastAudio = container.querySelector('#class-podcast-audio');
-        const speedBtns = container.querySelectorAll('.podcast-speed-btn');
-
-        const setPodcastSpeed = (rate) => {
-            if (podcastAudio) podcastAudio.playbackRate = rate;
-            speedBtns.forEach((btn) => {
-                const active = Number(btn.dataset.playbackRate) === rate;
-                btn.classList.toggle('active', active);
-                btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-                if (active) {
-                    btn.style.background = 'var(--color-primary)';
-                    btn.style.color = '#fff';
-                    btn.style.borderColor = 'transparent';
-                } else {
-                    btn.style.background = '';
-                    btn.style.color = '';
-                    btn.style.borderColor = '';
-                }
-            });
-        };
-
-        speedBtns.forEach((btn) => {
-            btn.addEventListener('click', () => setPodcastSpeed(Number(btn.dataset.playbackRate)));
-        });
-
-        if (podcastAudio) {
-            // Reset to 1x when a new track loads or playback restarts from zero
-            podcastAudio.addEventListener('loadedmetadata', () => {
-                podcastAudio.playbackRate = 1;
-                setPodcastSpeed(1);
+        // ── Podcast audio player: custom TTS player component (Story 11.3.1) ──
+        const playerMount = container.querySelector('#class-audio-player-mount');
+        if (playerMount && audioAvailable) {
+            renderAudioPlayer(playerMount, {
+                src: audioUrl,
+                className: classInfo.title,
+                downloadName: `podcast-${classId}.mp3`,
             });
         }
+
+        // ── 'Generar audio' (Story 11.3.1): trigger on-demand TTS generation ──
+        const generateAudioBtn = container.querySelector('#btn-generate-audio');
+        const generateProgress = container.querySelector('#audio-generation-progress');
+
+        generateAudioBtn?.addEventListener('click', async () => {
+            if (generateAudioBtn) generateAudioBtn.disabled = true;
+            if (generateProgress) generateProgress.style.display = 'flex';
+            try {
+                await api.generateClassAudio(classId);
+                renderClassDetail(container);
+            } catch (err) {
+                if (generateProgress) {
+                    generateProgress.style.display = 'none';
+                    generateProgress.textContent = '';
+                }
+                if (generateAudioBtn) generateAudioBtn.disabled = false;
+                const { toast } = await import('../../components/Toast.js');
+                toast('error', 'Error', err?.message || 'No se pudo generar el audio. Reintentá más tarde.');
+            }
+        });
 
         // Restore quiz tab if the URL carries ?tab=quiz (deep link from dashboard)
         if (new URLSearchParams(window.location.search).get('tab') === 'quiz') {
