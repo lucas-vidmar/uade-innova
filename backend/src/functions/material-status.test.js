@@ -11,6 +11,7 @@ const storageMocks = {
     loadJson: mock.fn(async () => null),
     saveJson: mock.fn(async () => true),
     deleteBlob: mock.fn(async () => true),
+    moveBlob: mock.fn(async () => true),
     listBlobs: mock.fn(async () => []),
     getTableClient: mock.fn(() => ({
         listEntities: async function* () { }

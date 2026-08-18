@@ -5,6 +5,7 @@ export function showConfirmDialog({
     confirmText = 'Confirmar',
     cancelText = 'Cancelar',
     danger = false,
+    confirmCheckbox = '',
 }) {
     return new Promise((resolve) => {
         const overlay = document.createElement('div');
@@ -18,10 +19,16 @@ export function showConfirmDialog({
                 <div class="modal-body">
                     <p style="margin:0 0 ${detailsHtml ? '12px' : '0'}; color:var(--color-text-secondary);">${escapeHtml(message)}</p>
                     ${detailsHtml ? `<div style="background:var(--color-surface-2);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:var(--space-3);font-size:var(--font-size-xs);color:var(--color-text-secondary);">${detailsHtml}</div>` : ''}
+                    ${confirmCheckbox ? `
+                        <label class="dialog-checkbox-row">
+                            <input type="checkbox" class="dialog-confirm-checkbox" />
+                            <span class="dialog-checkbox-label">${escapeHtml(confirmCheckbox)}</span>
+                        </label>
+                    ` : ''}
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-ghost dialog-cancel">${escapeHtml(cancelText)}</button>
-                    <button type="button" class="btn ${danger ? 'btn-danger' : 'btn-primary'} dialog-confirm">${escapeHtml(confirmText)}</button>
+                    <button type="button" class="btn ${danger ? 'btn-danger' : 'btn-primary'} dialog-confirm" ${confirmCheckbox ? 'disabled' : ''}>${escapeHtml(confirmText)}</button>
                 </div>
             </div>
         `;
@@ -31,9 +38,22 @@ export function showConfirmDialog({
             resolve(result);
         };
 
+        const confirmBtn = overlay.querySelector('.dialog-confirm');
+        const checkbox = overlay.querySelector('.dialog-confirm-checkbox');
+        if (confirmBtn && checkbox) {
+            const syncDisabled = () => {
+                confirmBtn.disabled = !checkbox.checked;
+            };
+            checkbox.addEventListener('change', syncDisabled);
+            syncDisabled();
+        }
+
         overlay.querySelector('.dialog-close')?.addEventListener('click', () => cleanup(false));
         overlay.querySelector('.dialog-cancel')?.addEventListener('click', () => cleanup(false));
-        overlay.querySelector('.dialog-confirm')?.addEventListener('click', () => cleanup(true));
+        overlay.querySelector('.dialog-confirm')?.addEventListener('click', () => {
+            if (confirmBtn?.disabled) return;
+            cleanup(true);
+        });
         overlay.addEventListener('click', (event) => {
             if (event.target === overlay) cleanup(false);
         });

@@ -618,19 +618,49 @@ export async function renderMaterialManager(container) {
                     const mat = materials[idx];
                     if (!mat) return;
 
+                    const materialId = mat.materialId || mat.id;
+
+                    // Chunk count: prefer fresh status, fallback to the class list payload.
+                    let chunkCount = Number(mat.chunkCount) || 0;
+                    try {
+                        const fresh = await api.getMaterialStatus(subjectId, materialId);
+                        if (fresh && Number.isFinite(Number(fresh.chunkCount))) {
+                            chunkCount = Number(fresh.chunkCount);
+                        }
+                    } catch (e) {
+                        // keep local chunkCount
+                    }
+
+                    const classLabels = (mat.classIds || [])
+                        .map(cid => {
+                            const cls = classes.find(c => c.id === cid);
+                            return cls ? (cls.title || cid) : cid;
+                        })
+                        .join(', ') || '—';
+
+                    const chunkWarning = chunkCount > 0
+                        ? `Se eliminarán <strong>${chunkCount}</strong> chunks del índice vectorial. Los alumnos perderán acceso a este contenido.`
+                        : 'Se eliminarán los chunks del índice vectorial asociados a este material. Los alumnos perderán acceso a este contenido.';
+
                     const shouldDelete = await showConfirmDialog({
                         title: 'Eliminar material',
-                        message: `¿Seguro que querés eliminar "${mat.filename}"? Esta acción eliminará también los embeddings del índice vectorial y no puede deshacerse.`,
+                        message: `¿Querés eliminar "${mat.filename}"?`,
                         detailsHtml: `
                           <div style="display:flex;flex-direction:column;gap:6px;">
-                            <div><strong>Tipo:</strong> ${escapeHtml(mat.type || '—')}</div>
-                            <div><strong>Clases:</strong> ${(mat.classIds || []).map(id => escapeHtml(id)).join(', ') || '—'}</div>
-                            <div><strong>Chunks indexados:</strong> ${mat.chunkCount ?? '—'}</div>
+                            <div><strong>Tipo:</strong> ${escapeHtml(typeLabel(mat.type))}</div>
+                            <div><strong>Clases asociadas:</strong> ${escapeHtml(classLabels)}</div>
                             <div><strong>Estado:</strong> ${escapeHtml(mat.status || '—')}</div>
+                            <div style="margin-top:6px;padding:8px 10px;background:rgba(180,120,0,0.10);border:1px solid rgba(180,120,0,0.35);border-radius:var(--radius-md);">
+                              ⚠️ ${chunkWarning}
+                            </div>
+                            <div style="font-size:0.75rem;color:var(--color-text-muted);">
+                              El archivo se moverá a una zona de retención de 30 días (soft-delete) y podrá recuperarse dentro de ese período.
+                            </div>
                           </div>`,
                         confirmText: 'Eliminar definitivamente',
                         cancelText: 'Cancelar',
                         danger: true,
+                        confirmCheckbox: 'Entiendo que los alumnos perderán acceso a este contenido al confirmar la eliminación.',
                     });
 
                     if (!shouldDelete) return;
@@ -638,9 +668,9 @@ export async function renderMaterialManager(container) {
                     try {
                         container.style.opacity = '0.6';
                         container.style.pointerEvents = 'none';
-                        await api.deleteMaterial(mat.materialId || mat.id);
+                        const result = await api.deleteMaterial(materialId);
                         materials.splice(idx, 1);
-                        toast('success', 'Eliminado', 'El material fue eliminado correctamente.');
+                        toast('success', 'Eliminado', `El material fue eliminado. Se quitaron ${result?.chunkCount ?? (chunkCount || 'los')} chunks del índice vectorial.`);
                     } catch (e) {
                         toast('error', 'Error', 'No se pudo eliminar el material.');
                     } finally {

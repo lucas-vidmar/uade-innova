@@ -52,6 +52,7 @@ const storageMocks = {
     loadJson: mock.fn(async () => ({})),
     saveJson: mock.fn(async () => true),
     deleteBlob: mock.fn(async () => true),
+    moveBlob: mock.fn(async () => true),
     listBlobs: mock.fn(async () => []),
     getTableClient: mock.fn(() => ({
         listEntities: defaultListEntities
@@ -60,26 +61,28 @@ const storageMocks = {
     downloadFile: mock.fn(async () => null),
 };
 
+const stateStoreMocks = {
+    listClassesBySubject: mock.fn(async () => []),
+    listMaterialsBySubject: mock.fn(async () => []),
+    replaceClassesForSubject: mock.fn(async () => true),
+    deleteMaterialStateById: mock.fn(async () => true),
+    getMaterialState: mock.fn(async () => null),
+    getMaterialStateById: mock.fn(async () => null),
+    upsertMaterialState: mock.fn(async () => true),
+    deleteClassesBySubject: mock.fn(async () => true),
+    deleteMaterialsBySubject: mock.fn(async () => true),
+    getEnrollmentsByUser: mock.fn(async () => []),
+    getEnrollment: mock.fn(async () => null),
+    listMaterialsByClass: mock.fn(async () => []),
+    listClassViewsByStudent: mock.fn(async () => []),
+    deleteClassViewsBySubject: mock.fn(async () => true),
+};
+
 // Mock dependencies
 mock.module('../services/auth-utils.js', { namedExports: authUtilsMocks });
 mock.module('../services/storage.js', { namedExports: storageMocks });
 mock.module('../services/state-store.js', {
-    namedExports: {
-        listClassesBySubject: mock.fn(async () => []),
-        listMaterialsBySubject: mock.fn(async () => []),
-        replaceClassesForSubject: mock.fn(async () => true),
-        deleteMaterialStateById: mock.fn(async () => true),
-        getMaterialState: mock.fn(async () => null),
-        getMaterialStateById: mock.fn(async () => null),
-        upsertMaterialState: mock.fn(async () => true),
-        deleteClassesBySubject: mock.fn(async () => true),
-        deleteMaterialsBySubject: mock.fn(async () => true),
-        getEnrollmentsByUser: mock.fn(async () => []),
-        getEnrollment: mock.fn(async () => null),
-        listMaterialsByClass: mock.fn(async () => []),
-        listClassViewsByStudent: mock.fn(async () => []),
-        deleteClassViewsBySubject: mock.fn(async () => true),
-    }
+    namedExports: stateStoreMocks
 });
 mock.module('../services/upload-quota.js', {
     namedExports: {
@@ -181,6 +184,89 @@ test('classes-api delete-material should require authorization', async (t) => {
 
     const response = await handlers['delete-material'](mockRequest, mockContext);
     assert.strictEqual(response.status, 403);
+
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+});
+
+test('classes-api delete-material soft-deletes blobs to deleted/ container and reports chunkCount', async (t) => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+
+    stateStoreMocks.getMaterialStateById.mock.mockImplementation(async () => ({
+        materialId: 'mat-soft',
+        subjectId: 'arq-software-2026',
+        filename: 'clase3.pdf',
+        blobUrl: 'https://stacc.blob.core.windows.net/class-materials/arq-software-2026/mat-soft.pdf',
+        chunkCount: 12,
+        uploadedBy: 'doc-1',
+        fileSize: 4096,
+    }));
+
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
+    const mockRequest = { params: { materialId: 'mat-soft' } };
+
+    const response = await handlers['delete-material'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.success, true);
+    assert.strictEqual(body.chunkCount, 12);
+    assert.ok(Array.isArray(body.softDeleted), 'softDeleted should be a list of moved blob paths');
+    assert.ok(body.softDeleted.some((name) => name.startsWith('deleted/')), 'blobs must be moved under deleted/');
+
+    const moveCalls = storageMocks.moveBlob.mock.calls;
+    assert.ok(
+        moveCalls.some((call) => {
+            const [src, name, dest] = call.arguments;
+            return src === 'class-materials' && dest === 'deleted' && name === 'arq-software-2026/mat-soft.pdf';
+        }),
+        'original file blob should move from class-materials to deleted'
+    );
+    assert.ok(
+        moveCalls.some((call) => {
+            const [src, name, dest] = call.arguments;
+            return src === 'processed' && dest === 'deleted' && name === 'mat-soft.json';
+        }),
+        'processed JSON should move from processed to deleted'
+    );
+
+    // Material state must be removed and quota released.
+    assert.ok(stateStoreMocks.deleteMaterialStateById.mock.callCount() >= 1, 'material state should be deleted');
+
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+});
+
+test('classes-api delete-material falls back to pipeline blob pattern when blobUrl is missing', async (t) => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+
+    stateStoreMocks.getMaterialStateById.mock.mockImplementation(async () => ({
+        materialId: 'mat-legacy',
+        subjectId: 'arq-software-2026',
+        filename: 'clase3.txt',
+        chunkCount: 3,
+    }));
+
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
+    const mockRequest = { params: { materialId: 'mat-legacy' } };
+
+    const response = await handlers['delete-material'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.success, true);
+    assert.strictEqual(body.chunkCount, 3);
+
+    const moveCalls = storageMocks.moveBlob.mock.calls;
+    assert.ok(
+        moveCalls.some((call) => {
+            const [src, name, dest] = call.arguments;
+            return src === 'class-materials' && dest === 'deleted' && name === 'arq-software-2026/mat-legacy.txt';
+        }),
+        'legacy blob name should derive from subjectId/materialId + extension'
+    );
 
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
 });

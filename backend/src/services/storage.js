@@ -190,6 +190,46 @@ export async function deleteBlob(containerName, blobName) {
     await blockBlobClient.deleteIfExists();
 }
 
+/**
+ * Mueve (copia + elimina) un blob entre contenedores del mismo storage account.
+ * Se usa para el soft-delete de materiales: en vez de destruir el archivo,
+ * se copia al contenedor `deleted/` (retención de 30 días vía lifecycle policy)
+ * y se elimina el original. Devuelve `false` si el blob de origen no existe.
+ * @param {string} sourceContainer - Contenedor de origen (ej: 'class-materials')
+ * @param {string} sourceBlobName - Nombre del blob de origen
+ * @param {string} destContainer - Contenedor destino (ej: 'deleted')
+ * @param {string} destBlobName - Nombre del blob destino
+ * @returns {Promise<boolean>}
+ */
+export async function moveBlob(sourceContainer, sourceBlobName, destContainer, destBlobName) {
+    const client = getClient();
+    const sourceContainerClient = client.getContainerClient(sourceContainer);
+    const destContainerClient = client.getContainerClient(destContainer);
+
+    const sourceBlob = sourceContainerClient.getBlockBlobClient(sourceBlobName);
+    const exists = await sourceBlob.exists();
+    if (!exists) return false;
+
+    const downloadResponse = await sourceBlob.download(0);
+    const chunks = [];
+    for await (const chunk of downloadResponse.readableStreamBody) {
+        chunks.push(chunk);
+    }
+    const buffer = Buffer.concat(chunks);
+
+    const props = await sourceBlob.getProperties();
+
+    await destContainerClient.createIfNotExists();
+    const destBlob = destContainerClient.getBlockBlobClient(destBlobName);
+    await destBlob.uploadData(buffer, {
+        blobHTTPHeaders: { blobContentType: props.contentType || 'application/octet-stream' },
+        metadata: props.metadata || {},
+    });
+
+    await sourceBlob.deleteIfExists();
+    return true;
+}
+
 // ─── Table Storage Client ──────────────────────────────────────────
 
 export function getTableClient(tableName) {

@@ -2,7 +2,7 @@ import { app } from '@azure/functions';
 import { withAuth } from '../middleware/with-auth.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { createStructuredLogger } from '../services/structured-logger.js';
-import { loadJson, saveJson, listBlobs, deleteBlob, uploadFile, downloadFile, getTableClient } from '../services/storage.js';
+import { loadJson, saveJson, listBlobs, deleteBlob, moveBlob, uploadFile, downloadFile, getTableClient } from '../services/storage.js';
 import { v4 as uuidv4 } from 'uuid';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { listClassesBySubject, listMaterialsBySubject, listMaterialsByClass, replaceClassesForSubject, deleteMaterialStateById, getMaterialState, upsertMaterialState, deleteClassesBySubject, deleteMaterialsBySubject, getEnrollmentsByUser, getEnrollment, listClassViewsByStudent, deleteClassViewsBySubject, getMaterialStateById } from '../services/state-store.js';
@@ -1754,7 +1754,10 @@ app.http('get-director-powerbi-metrics', {
 });
 
 // ── DELETE /api/materials/{id} ────────────────────────────────────
-// Borra un material (del JSON. Dejar pendiente limpieza en vector store)
+// Borra un material con cascada: elimina los vectores de Pinecone, mueve
+// el archivo original y el JSON procesado al contenedor `deleted/`
+// (soft-delete, retención de 30 días vía lifecycle policy) y libera la
+// cuota del docente.
 app.http('delete-material', {
     methods: ['DELETE'],
     authLevel: 'anonymous',
@@ -1773,15 +1776,43 @@ app.http('delete-material', {
 
         const materialId = request.params.materialId;
         try {
-            // Capture attribution before deletion so we can release the teacher quota (#222).
+            // Look up material state for attribution, chunk count and blob location.
+            let material = null;
+            let chunkCount = 0;
             let quotaRelease = null;
             try {
-                const material = await getMaterialStateById(materialId);
-                if (material?.uploadedBy || material?.fileSize) {
-                    quotaRelease = { uploadedBy: material.uploadedBy, fileSize: material.fileSize };
+                material = await getMaterialStateById(materialId);
+                if (material) {
+                    chunkCount = Number(material.chunkCount) || 0;
+                    if (material.uploadedBy || material.fileSize) {
+                        quotaRelease = { uploadedBy: material.uploadedBy, fileSize: material.fileSize };
+                    }
                 }
             } catch (lookupErr) {
                 context?.log?.warn?.(`[DeleteMaterial] Could not look up ${materialId} for quota release: ${lookupErr.message}`);
+            }
+
+            // Soft-delete: mover archivo original a `deleted/` (retención 30 días).
+            const containerDeleted = 'deleted';
+            const containerMaterials = CONFIG.containers.materials;
+            const deletedNames = [];
+            try {
+                const blobName = deriveMaterialBlobName(material, materialId);
+                if (blobName) {
+                    const moved = await moveBlob(containerMaterials, blobName, containerDeleted, blobName);
+                    if (moved) deletedNames.push(`deleted/${blobName}`);
+                }
+            } catch (bErr) {
+                context.error(`[DeleteMaterial] Error moviendo blob original de ${materialId} a deleted/:`, bErr);
+            }
+
+            // Soft-delete: mover JSON procesado a `deleted/`.
+            try {
+                const processedBlob = `${materialId}.json`;
+                const moved = await moveBlob(CONTAINER_PROCESSED, processedBlob, containerDeleted, processedBlob);
+                if (moved) deletedNames.push(`deleted/${processedBlob}`);
+            } catch (pErr) {
+                context.error(`[DeleteMaterial] Error moviendo JSON procesado de ${materialId} a deleted/:`, pErr);
             }
 
             // Limpieza en Vector Store
@@ -1798,8 +1829,6 @@ app.http('delete-material', {
                 context.error(`[StateStore] Error eliminando material ${materialId} de tablas:`, tableErr);
             }
 
-            await deleteBlob(CONTAINER_PROCESSED, `${materialId}.json`);
-
             if (quotaRelease?.uploadedBy) {
                 try {
                     await releaseUpload(quotaRelease.uploadedBy, quotaRelease.fileSize || 0);
@@ -1809,13 +1838,40 @@ app.http('delete-material', {
                 }
             }
 
-            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: true }) };
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: true, softDeleted: deletedNames, chunkCount }) };
         } catch (err) {
             context.error(err);
             return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: `No se pudo borrar el material: ${err.message}` }) };
         }
     }))
 });
+
+/**
+ * Deriva el nombre del blob original de un material en `class-materials`.
+ * Prioriza el blobUrl del estado; si no existe, cae al patrón del pipeline
+ * `{subjectId}/{materialId}{ext}`.
+ * @param {object|null} material - Estado del material (state-store)
+ * @param {string} materialId
+ * @returns {string|null}
+ */
+function deriveMaterialBlobName(material, materialId) {
+    if (material?.blobUrl) {
+        try {
+            const pathname = new URL(material.blobUrl).pathname;
+            const parts = pathname.split('/').filter(Boolean);
+            if (parts.length >= 2) {
+                return parts.slice(1).join('/');
+            }
+        } catch {
+            // fall through to the pipeline pattern
+        }
+    }
+    if (material?.subjectId && material?.filename) {
+        const ext = path.extname(material.filename || '');
+        return `${material.subjectId}/${materialId}${ext}`;
+    }
+    return null;
+}
 
 // ── POST /api/materials/{materialId}/reprocess ─────────────────────────
 // Re-intenta procesar un material que falló

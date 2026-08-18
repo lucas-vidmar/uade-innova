@@ -121,6 +121,18 @@ resource monitorStateContainer 'Microsoft.Storage/storageAccounts/blobServices/c
   }
 }
 
+// ─── Container: deleted (soft-deleted materials, 30-day retention) ──
+resource deletedContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
+  parent: blobService
+  name: 'deleted'
+  properties: {
+    publicAccess: 'None'
+    metadata: {
+      purpose: 'Soft-deleted material files and processed JSON, purged after 30 days'
+    }
+  }
+}
+
 // ─── Container: vector-snapshots (periodic vector health snapshots) ─────
 resource vectorSnapshotsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
   parent: blobService
@@ -227,6 +239,28 @@ resource blobLifecyclePolicy 'Microsoft.Storage/storageAccounts/managementPolici
               prefixMatch: [
                 'chat-logs/'
                 'vector-backups/'
+              ]
+            }
+          }
+        }
+        {
+          enabled: true
+          name: 'DeleteDeletedMaterialsAfter30Days'
+          type: 'Lifecycle'
+          definition: {
+            actions: {
+              baseBlob: {
+                delete: {
+                  daysAfterModificationGreaterThan: 30
+                }
+              }
+            }
+            filters: {
+              blobTypes: [
+                'blockBlob'
+              ]
+              prefixMatch: [
+                'deleted/'
               ]
             }
           }
@@ -439,6 +473,9 @@ output riskThresholdsTableName string = riskThresholdsTable.name
 
 @description('The name of the vector-snapshots container.')
 output vectorSnapshotsContainerName string = vectorSnapshotsContainer.name
+
+@description('The name of the deleted container.')
+output deletedContainerName string = deletedContainer.name
 
 @description('The name of the ingestion tasks queue.')
 output ingestionQueueName string = ingestionQueue.name
