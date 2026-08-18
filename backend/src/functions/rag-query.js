@@ -92,6 +92,51 @@ function jsonResponse(status, payload) {
     };
 }
 
+const GLOSSARY_NOT_FOUND_MSG = 'No encontré ese término en el glosario de la materia. ¿Querés preguntarle al docente que lo agregue?';
+
+/**
+ * Construye la respuesta del fast-path de glosario (Story 11.1.6).
+ * Determinística: devuelve la definición del término (o el mensaje de
+ * "no encontrado" del AC) sin embedding ni LLM, marcando el badge
+ * `glossary` en la metadata SSE / payload JSON para que la UI renderice
+ * "📖 Glosario".
+ */
+function buildGlossaryResponse({ answer, glossaryMeta, stream }) {
+    if (stream) {
+        const encoder = new TextEncoder();
+        const interactionId = uuidv4();
+        const responseStream = new ReadableStream({
+            start(controller) {
+                controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ interactionId, sources: [], glossary: glossaryMeta, model: getChatModelName() })}\n\n`));
+                controller.enqueue(encoder.encode(`event: delta\ndata: ${JSON.stringify({ content: answer })}\n\n`));
+                controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ answer })}\n\n`));
+                controller.close();
+            }
+        });
+        return {
+            status: 200,
+            headers: {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+            },
+            body: responseStream,
+        };
+    }
+    return jsonResponse(200, { id: uuidv4(), answer, sources: [], glossary: glossaryMeta });
+}
+
+/**
+ * Detecta una consulta de definición de término ("¿qué significa X?") y
+ * extrae el término buscado. Devuelve el término o null si no aplica.
+ */
+function extractGlossaryTerm(question) {
+    const glossaryPattern = /(?:qu[eé]\s*significa|qu[eé]\s*es|definici[oó]n\s*de|definime|explic[aá]|significado\s*de)\s+[""]?([\w\sáéíóúñüÁÉÍÓÚÑÜ]+)[""]?\??/i;
+    const match = question.match(glossaryPattern);
+    const term = match?.[1]?.trim();
+    return term || null;
+}
+
 /**
  * Construye el bloque <preferencias_asistente> a partir de las preferencias
  * de tono/longitud del alumno (story #223 / 11-5-1). Devuelve '' si no hay
@@ -260,6 +305,51 @@ app.http('rag-query', {
         const rewrittenQuestion = await rewriteQuestionWithHistory(question, recentConversationHistory, context);
 
         context.log(`Pregunta: "${question}" | Reescrita: "${rewrittenQuestion}" | Materia: ${subjectId} | Clases: ${classIds?.join(',') || 'todas'} | Session: ${sessionId || 'auto'}`);
+
+        // ── 1e. Glossary fast-path (Story 11.1.6) ──────────────────
+        // Si la pregunta pide la definición de un término ("¿qué significa X?")
+        // y la materia tiene glosario, se responde determinísticamente desde el
+        // glosario: definición con badge 📖 Glosario, o el mensaje de "no
+        // encontrado" del AC. Si no hay glosario configurado se cae al pipeline
+        // RAG normal.
+        const glossaryLookupTerm = extractGlossaryTerm(rewrittenQuestion || question);
+        if (glossaryLookupTerm) {
+            try {
+                const glossary = await getGlossary(subjectId);
+                if (glossary && Array.isArray(glossary.terms) && glossary.terms.length > 0) {
+                    const found = glossary.terms.find((t) => {
+                        const termNorm = (s) => String(s || '').trim().toLowerCase();
+                        const search = termNorm(glossaryLookupTerm);
+                        const aliases = Array.isArray(t.aliases) ? t.aliases : [];
+                        return (
+                            termNorm(t.term) === search ||
+                            termNorm(t.term).includes(search) ||
+                            aliases.some((a) => termNorm(a) === search || termNorm(a).includes(search))
+                        );
+                    });
+                    if (found) {
+                        const definition = String(found.definition || '').trim();
+                        const answer = definition
+                            ? `**${found.term}**: ${definition}`
+                            : `**${found.term}** está en el glosario de la materia, pero el docente aún no cargó su definición.`;
+                        context.log(`[RAG] Glossary fast-path HIT: term="${found.term}" subjectId=${subjectId}`);
+                        return buildGlossaryResponse({
+                            answer,
+                            glossaryMeta: { found: true, term: found.term, definition },
+                            stream,
+                        });
+                    }
+                    context.log(`[RAG] Glossary fast-path MISS: term="${glossaryLookupTerm}" subjectId=${subjectId}`);
+                    return buildGlossaryResponse({
+                        answer: GLOSSARY_NOT_FOUND_MSG,
+                        glossaryMeta: { found: false, term: glossaryLookupTerm },
+                        stream,
+                    });
+                }
+            } catch (glossaryErr) {
+                context.warn('[RAG] Error loading glossary (non-blocking):', glossaryErr.message);
+            }
+        }
 
         // ── 2. Embedding de la pregunta ───────────────────────────
         let questionEmbedding;
@@ -575,30 +665,6 @@ app.http('rag-query', {
             }
         }
 
-        let glossaryBlock = '';
-        const glossaryPattern = /(?:qu[eé]\s*significa|qu[eé]\s*es|definici[oó]n\s*de|definime|explic[aá]|significado\s*de)\s+[""]?([\w\sáéíóúñüÁÉÍÓÚÑÜ]+)[""]?\??/i;
-        const glossaryMatch = question.match(glossaryPattern);
-        if (glossaryMatch) {
-            const searchTerm = glossaryMatch[1].trim().toLowerCase();
-            try {
-                const glossary = await getGlossary(subjectId);
-                if (glossary && Array.isArray(glossary.terms)) {
-                    const found = glossary.terms.find(t =>
-                        t.term.toLowerCase() === searchTerm ||
-                        t.term.toLowerCase().includes(searchTerm) ||
-                        (t.aliases || []).some(a => a.toLowerCase() === searchTerm || a.toLowerCase().includes(searchTerm))
-                    );
-                    if (found) {
-                        glossaryBlock = `\n\n<glosario>\n"${found.term}" está definido en el glosario de la materia.\n</glosario>`;
-                    } else {
-                        glossaryBlock = `\n\n<glosario>\nEl término no está en el glosario de la materia. Informá al usuario que no se encontró y sugerile preguntar al docente.\n</glosario>`;
-                    }
-                }
-            } catch (glossaryErr) {
-                context.warn('[RAG] Error loading glossary (non-blocking):', glossaryErr.message);
-            }
-        }
-
         // ── 6a. Preferencias del asistente (tono/longitud/fuentes) ──
         const preferencesBlock = buildPreferencesBlock({ botTone, botLength, includeSources });
 
@@ -639,7 +705,7 @@ app.http('rag-query', {
 
 <contexto_rag>
 ${contextText}
-</contexto_rag>${teacherFeedbackBlock}${deadlineBlock}${glossaryBlock}${preferencesBlock}`,
+</contexto_rag>${teacherFeedbackBlock}${deadlineBlock}${preferencesBlock}`,
 
             },
             {

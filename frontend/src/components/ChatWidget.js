@@ -162,6 +162,12 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
             ✅ Respuesta verificada por el docente
           </div>
           ` : ''}
+
+          ${msg.glossary?.found ? `
+          <div class="glossary-badge" style="display:flex;align-items:center;gap:4px;padding:4px 10px;margin-bottom:8px;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.2);border-radius:var(--radius-md);color:var(--color-primary,#2563eb);font-size:12px;font-weight:600;">
+            📖 Glosario
+          </div>
+          ` : ''}
           
           ${msg.model ? `<div class="model-name-indicator" style="font-size:11px;color:var(--color-text-muted,#9ca3af);margin-top:6px;padding:0 2px;margin-bottom:8px;">Powered by ${msg.model}</div>` : ''}
 
@@ -379,6 +385,7 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
           assistantMsg.sources = data.sources || [];
           assistantMsg.verified = data.verified || false;
           assistantMsg.model = data.model || '';
+          assistantMsg.glossary = data.glossary || null;
           const footerEl = msgEl.querySelector('.chat-msg-footer');
           if (footerEl) {
             footerEl.innerHTML = `
@@ -416,6 +423,16 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
             const bubbleEl = msgEl.querySelector('.chat-bubble-assistant');
             if (bubbleEl) {
               bubbleEl.parentElement.insertBefore(badgeEl, bubbleEl);
+            }
+          }
+          if (data.glossary?.found) {
+            const glossaryBadgeEl = document.createElement('div');
+            glossaryBadgeEl.className = 'glossary-badge';
+            glossaryBadgeEl.style.cssText = 'display:flex;align-items:center;gap:4px;padding:4px 10px;margin-bottom:8px;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.2);border-radius:var(--radius-md);color:var(--color-primary,#2563eb);font-size:12px;font-weight:600;';
+            glossaryBadgeEl.innerHTML = '📖 Glosario';
+            const bubbleEl = msgEl.querySelector('.chat-bubble-assistant');
+            if (bubbleEl && !msgEl.querySelector('.glossary-badge')) {
+              bubbleEl.parentElement.insertBefore(glossaryBadgeEl, bubbleEl);
             }
           }
         } else if (type === 'error') {

@@ -152,8 +152,8 @@ El backend expone ~55 endpoints HTTP, 6 funciones timer-triggered y 1 blob-trigg
 | GET | `/api/corrections-transcription` | Teacher/Director | Sugerencias de transcripción |
 | POST | `/api/corrections-transcription/apply` | Teacher/Director | Aplica corrección |
 | POST | `/api/corrections-transcription/reject` | Teacher/Director | Rechaza sugerencia |
-| GET | `/api/glossary` | Teacher/Director | Glosario de términos |
-| POST | `/api/glossary` | Teacher/Director | Actualiza glosario |
+| GET | `/api/glossary` | Teacher/Director | Glosario de términos. Soporta `?subjectId={id}` (glosario completo) y `?subjectId={id}&term={term}` (lookup de un término — Story 11.1.6) |
+| POST | `/api/glossary` | Teacher/Director | Actualiza glosario (términos con `term`, `aliases[]` y `definition`) |
 
 ### Utilidades
 

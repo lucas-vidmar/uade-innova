@@ -109,6 +109,12 @@ const subjectWeightsMocks = {
     DEFAULT_WEIGHTS: { notes: 1.35, bibliography: 1.1, transcript: 1.0, presentation: 0.95 },
 };
 
+const defaultGetGlossaryImpl = async () => null;
+const glossaryStoreMocks = {
+    getGlossary: mock.fn(defaultGetGlossaryImpl),
+    findGlossaryTerm: mock.fn(async () => null),
+};
+
 // Mock dependencies
 mock.module('../services/ai.js', { namedExports: openaiMocks });
 mock.module('../services/vector-store.js', { namedExports: vectorStoreMocks });
@@ -118,6 +124,7 @@ mock.module('../services/auth-utils.js', { namedExports: authUtilsMocks });
 mock.module('../services/telemetry.js', { namedExports: telemetryMocks });
 mock.module('../services/state-store.js', { namedExports: stateStoreMocks });
 mock.module('../services/subject-weights.js', { namedExports: subjectWeightsMocks });
+mock.module('../services/glossary-store.js', { namedExports: glossaryStoreMocks });
 
 // Mock @azure/functions to capture the handler
 let capturedHandler;
@@ -1286,6 +1293,7 @@ test('rag-query sandbox mode should keep subjectId scope in Pinecone filter', as
     });
 });
 
+<<<<<<< HEAD
 test('rag-query augments prompt with student weekly tasks (Story 11.1.5 happy path)', async (t) => {
     openaiMocks.chatCompletion.mock.resetCalls();
     for (let i = 0; i < 3; i++) { try { await openaiMocks.chatCompletion('drain'); } catch {} }
@@ -1375,4 +1383,100 @@ test('rag-query returns no-weekly-tasks fallback when student has no tasks this 
         storageMocks.loadJson.mock.mockImplementation(saved || (async () => null));
         authUtilsMocks.getAuthenticatedUser.mock.mockImplementation(() => ({ id: 'test-user-oid', roles: ['Alumno'] }));
     });
+=======
+test('rag-query glossary fast-path returns definition with badge metadata (11.1.6)', async (t) => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.generateEmbedding.mock.resetCalls();
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+
+    const glossary = {
+        subjectId: 'materia1',
+        terms: [
+            { term: 'DDD', aliases: ['domain-driven design'], definition: 'Diseño dirigido por el dominio: modela software alrededor del negocio.' },
+        ],
+    };
+    glossaryStoreMocks.getGlossary.mock.mockImplementation(async () => glossary);
+
+    t.after(() => {
+        glossaryStoreMocks.getGlossary.mock.mockImplementation(defaultGetGlossaryImpl);
+        vectorStoreMocks.querySimilar.mock.mockImplementation(defaultQuerySimilarImpl);
+    });
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = {
+        json: async () => ({ question: '¿Qué significa DDD?', subjectId: 'materia1', classIds: ['class1'] }),
+        user: { id: 'test-user' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    const body = JSON.parse(response.body);
+
+    assert.strictEqual(response.status, 200);
+    assert.ok(body.answer.includes('DDD'), 'Answer should mention the term');
+    assert.ok(body.answer.includes('Diseño dirigido por el dominio'), 'Answer should include the definition');
+    assert.deepStrictEqual(body.glossary, { found: true, term: 'DDD', definition: 'Diseño dirigido por el dominio: modela software alrededor del negocio.' });
+    assert.strictEqual(openaiMocks.chatCompletion.mock.callCount(), 0, 'Glossary fast-path must skip the LLM');
+    assert.strictEqual(openaiMocks.generateEmbedding.mock.callCount(), 0, 'Glossary fast-path must skip embedding');
+    assert.strictEqual(vectorStoreMocks.querySimilar.mock.callCount(), 0, 'Glossary fast-path must skip vector search');
+});
+
+test('rag-query glossary fast-path returns not-found message when term missing (11.1.6)', async (t) => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.generateEmbedding.mock.resetCalls();
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+
+    const glossary = {
+        subjectId: 'materia1',
+        terms: [{ term: 'DDD', aliases: [], definition: 'Diseño dirigido por el dominio.' }],
+    };
+    glossaryStoreMocks.getGlossary.mock.mockImplementation(async () => glossary);
+
+    t.after(() => {
+        glossaryStoreMocks.getGlossary.mock.mockImplementation(defaultGetGlossaryImpl);
+        vectorStoreMocks.querySimilar.mock.mockImplementation(defaultQuerySimilarImpl);
+    });
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = {
+        json: async () => ({ question: '¿Qué significa ERP?', subjectId: 'materia1', classIds: ['class1'] }),
+        user: { id: 'test-user' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    const body = JSON.parse(response.body);
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(body.answer, 'No encontré ese término en el glosario de la materia. ¿Querés preguntarle al docente que lo agregue?');
+    assert.deepStrictEqual(body.glossary, { found: false, term: 'ERP' });
+    assert.strictEqual(openaiMocks.chatCompletion.mock.callCount(), 0, 'Not-found glossary path must skip the LLM');
+    assert.strictEqual(openaiMocks.generateEmbedding.mock.callCount(), 0, 'Not-found glossary path must skip embedding');
+    assert.strictEqual(vectorStoreMocks.querySimilar.mock.callCount(), 0, 'Not-found glossary path must skip vector search');
+});
+
+test('rag-query glossary fast-path falls back to RAG when no glossary configured', async (t) => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.generateEmbedding.mock.resetCalls();
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+    glossaryStoreMocks.getGlossary.mock.mockImplementation(async () => null);
+
+    t.after(() => {
+        glossaryStoreMocks.getGlossary.mock.mockImplementation(defaultGetGlossaryImpl);
+        vectorStoreMocks.querySimilar.mock.mockImplementation(defaultQuerySimilarImpl);
+    });
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = {
+        json: async () => ({ question: '¿Qué significa DDD?', subjectId: 'materia1', classIds: ['class1'] }),
+        user: { id: 'test-user' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    const body = JSON.parse(response.body);
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(openaiMocks.generateEmbedding.mock.callCount(), 1, 'Should run normal RAG pipeline');
+    assert.strictEqual(openaiMocks.chatCompletion.mock.callCount(), 1, 'Should call the LLM');
+    assert.ok(body.answer);
+    assert.ok(body.glossary === undefined, 'No glossary metadata when no glossary configured');
+>>>>>>> origin/lucas-vidmar/w11-1-6-glossary-lookup
 });

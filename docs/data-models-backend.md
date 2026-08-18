@@ -275,6 +275,29 @@ Deadlines por materia (JSON array).
 | `compliance` | `retention-policy.json` | Política de retención |
 | `vector-snapshots` | `{timestamp}.json` | Snapshots de Pinecone |
 | `glossary-files` | `{subjectId}.json` | Glosario de términos |
+
+### Contenedor: `glossary-files`
+
+```
+glossary-files/{subjectId}.json
+```
+Glosario de términos técnicos por materia (Story 11.1.6). Cada término
+incluye `term`, `aliases[]` y `definition` (la definición que el chat
+devuelve con el badge 📖 Glosario).
+
+```json
+{
+  "subjectId": "arq-software-2026",
+  "updatedAt": "ISO 8601",
+  "terms": [
+    {
+      "term": "DDD",
+      "aliases": ["domain-driven design"],
+      "definition": "Diseño dirigido por el dominio: modela software alrededor del negocio."
+    }
+  ]
+}
+```
 | `summaries` | `{classId}.json` | Resúmenes (alternativo) |
 | `monitor-state` | `vector-health.json` | Estado del monitor |
 

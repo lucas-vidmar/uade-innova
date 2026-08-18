@@ -45,8 +45,9 @@ export async function renderGlossaryManager(container) {
         <table style="width:100%;border-collapse:collapse;font-size:var(--font-size-sm)">
           <thead>
             <tr style="border-bottom:1px solid var(--color-border)">
-              <th style="padding:var(--space-3) var(--space-4);text-align:left;font-size:var(--font-size-xs);font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--color-text-muted);width:40%">Término</th>
-              <th style="padding:var(--space-3) var(--space-4);text-align:left;font-size:var(--font-size-xs);font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--color-text-muted);width:50%">Aliases</th>
+              <th style="padding:var(--space-3) var(--space-4);text-align:left;font-size:var(--font-size-xs);font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--color-text-muted);width:28%">Término</th>
+              <th style="padding:var(--space-3) var(--space-4);text-align:left;font-size:var(--font-size-xs);font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--color-text-muted);width:32%">Aliases</th>
+              <th style="padding:var(--space-3) var(--space-4);text-align:left;font-size:var(--font-size-xs);font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--color-text-muted);width:30%">Definición</th>
               <th style="padding:var(--space-3) var(--space-4);width:10%;min-width:50px"></th>
             </tr>
           </thead>
@@ -58,6 +59,9 @@ export async function renderGlossaryManager(container) {
                 </td>
                 <td style="padding:var(--space-2) var(--space-4)">
                   <input type="text" class="form-input" value="${escapeHtml((t.aliases || []).join(', '))}" data-field="aliases" style="height:34px;font-size:var(--font-size-sm)" placeholder="alias1, alias2" />
+                </td>
+                <td style="padding:var(--space-2) var(--space-4)">
+                  <input type="text" class="form-input" value="${escapeHtml(t.definition || '')}" data-field="definition" style="height:34px;font-size:var(--font-size-sm)" placeholder="Definición del término" />
                 </td>
                 <td style="padding:var(--space-2) var(--space-4);text-align:right">
                   <button class="btn btn-ghost btn-sm glossary-term-remove" data-index="${i}" title="Eliminar término" style="color:var(--color-error);padding:4px 8px">✕</button>
@@ -89,8 +93,9 @@ export async function renderGlossaryManager(container) {
     return Array.from(rows).map((row) => {
       const term = row.querySelector('[data-field="term"]').value.trim();
       const aliasesRaw = row.querySelector('[data-field="aliases"]').value.trim();
+      const definition = row.querySelector('[data-field="definition"]').value.trim();
       const aliases = aliasesRaw ? aliasesRaw.split(',').map((a) => a.trim()).filter(Boolean) : [];
-      return { term, aliases };
+      return { term, aliases, definition };
     }).filter((t) => t.term);
   }
 
@@ -109,7 +114,7 @@ export async function renderGlossaryManager(container) {
   }
 
   function addTerm() {
-    glossary.terms.push({ term: '', aliases: [] });
+    glossary.terms.push({ term: '', aliases: [], definition: '' });
     renderTerms();
     const lastInput = editor.querySelector('.glossary-term-row:last-child [data-field="term"]');
     if (lastInput) setTimeout(() => lastInput.focus(), 50);

@@ -135,6 +135,19 @@ export async function getGlossary(subjectId) {
     }
 }
 
+export async function getGlossaryTerm(subjectId, term) {
+    if (!subjectId || !term) return null;
+    try {
+        const res = await fetchWithTimeout(`${BASE_URL}/glossary?subjectId=${encodeURIComponent(subjectId)}&term=${encodeURIComponent(term)}`, { timeout: 4000 });
+        if (!res.ok) return null;
+        const json = await res.json();
+        return json?.data || null;
+    } catch (err) {
+        console.error('[API] getGlossaryTerm failed:', err);
+        return null;
+    }
+}
+
 export async function updateGlossary(subjectId, terms) {
     if (!subjectId) throw new Error('subjectId is required');
     const res = await apiFetch(`${BASE_URL}/glossary`, {
