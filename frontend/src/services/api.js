@@ -63,7 +63,7 @@ import {
     getTeacherAiFeedbackAlerts, getCorrectionsPending,
     verifyAnswer, updateCorrectionStatus, reviewCorrection, getCorrection,
     getCorrectionChatContext,
-    getGlossary, updateGlossary,
+    getGlossary, getGlossaryTerm, updateGlossary,
     getTranscriptionSuggestions, applyTranscriptionCorrection,
     rejectTranscriptionSuggestion,
     getStudentReports,
@@ -127,7 +127,7 @@ export const api = {
     getSubjectWeights, saveSubjectWeights,
     getAdminConfig, saveAdminConfig, resetAdminConfig,
 
-getTeacherAiFeedbackAlerts, getCorrectionsPending,
+    getTeacherAiFeedbackAlerts, getCorrectionsPending,
     verifyAnswer, updateCorrectionStatus, reviewCorrection, getCorrection,
     getCorrectionChatContext,
     getGlossary, getGlossaryTerm, updateGlossary,

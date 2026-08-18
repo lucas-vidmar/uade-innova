@@ -171,15 +171,25 @@ test('student task detail shows "Materiales relacionados" with links to linked c
   test.skip(browserName !== 'chromium', 'This usability check must run on Chrome/Chromium.');
 
   await page.addInitScript(() => {
+    localStorage.setItem('uade_use_mock', 'false');
     sessionStorage.setItem('edu_role', 'student');
     sessionStorage.setItem('edu_uid', 'alu-001');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');
+    sessionStorage.setItem('edu_ai_consent_accepted', 'true');
     sessionStorage.setItem('edu_logged_in', 'true');
+  });
+
+  await page.route('**/api/subjects', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ id: 'arq-software-2026', name: 'Arquitectura de Software 2026' }]) });
   });
 
   await page.route('**/api/get-profile?**', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ consentAccepted: true, role: 'student' }) });
+  });
+
+  await page.route('**/api/enrollments?**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) });
   });
 
   await page.route('**/api/classes?**', async (route) => {
