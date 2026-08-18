@@ -12,8 +12,8 @@ const USER_EVENTS_TABLE = CONFIG.tables.userEvents;
 const VALID_STATES = ['assigned', 'contacted', 'resolved'];
 const VALID_RISK_LEVELS = ['low', 'medium', 'high'];
 
-const DEFAULT_THRESHOLDS = {
-  attendanceWarning: 70,
+export const DEFAULT_THRESHOLDS = {
+  attendanceWarning: 60,
   attendanceCritical: 50,
   engagementWarning: 60,
   engagementCritical: 40,
@@ -33,7 +33,8 @@ function riskLevel(score) {
   return 'low';
 }
 
-function computeRisk(row) {
+export function computeRisk(row, thresholds = {}) {
+  const t = { ...DEFAULT_THRESHOLDS, ...thresholds };
   const today = new Date();
   const lastLogin = row.lastLogin ? new Date(row.lastLogin) : null;
   const queryCount7d = row.queryCount7d || 0;
@@ -47,29 +48,59 @@ function computeRisk(row) {
     reasons.push('Sin actividad registrada');
   } else {
     const daysSinceLogin = Math.floor((today - lastLogin) / 86400000);
-    if (daysSinceLogin >= 21) {
+    if (daysSinceLogin >= t.noLoginDaysHigh) {
       score += 8;
       reasons.push(`Sin login en ${daysSinceLogin} días`);
-    } else if (daysSinceLogin >= 14) {
+    } else if (daysSinceLogin >= t.noLoginDaysMedium) {
       score += 5;
       reasons.push(`Sin login en ${daysSinceLogin} días`);
-    } else if (daysSinceLogin >= 7) {
+    } else if (daysSinceLogin >= t.noLoginDaysLow) {
       score += 2;
       reasons.push(`Sin login en ${daysSinceLogin} días`);
     }
   }
 
-  if (queryCount14d < 5 && queryCount14d >= 0) {
-    if (queryCount7d < 2) {
+  if (queryCount14d < t.minQueriesHigh && queryCount14d >= 0) {
+    if (queryCount7d < t.minQueriesMedium) {
       score += 4;
-      reasons.push('Menos de 2 consultas en 7 días');
+      reasons.push(`Menos de ${t.minQueriesMedium} consultas en 7 días`);
     } else {
       score += 1;
-      reasons.push('Menos de 5 consultas en 14 días');
+      reasons.push(`Menos de ${t.minQueriesHigh} consultas en 14 días`);
     }
   }
 
+  const attendance = Number.isFinite(Number(row.attendance)) ? Math.min(100, Math.max(0, Number(row.attendance))) : NaN;
+  if (Number.isFinite(attendance) && attendance < t.attendanceWarning) {
+    score += 3;
+    reasons.push(`Asistencia ${attendance}% menor al umbral de ${t.attendanceWarning}%`);
+  }
+
   return { risk: riskLevel(score), score, reason: reasons.join('; ') || 'Actividad normal' };
+}
+
+async function loadThresholdsMap(context) {
+  const map = {};
+  let tableClient;
+  try {
+    tableClient = getTableClient(RISK_THRESHOLDS_TABLE);
+    await tableClient.createTable();
+  } catch (err) {
+    context.log('[Interventions] Error accessing risk thresholds table:', err.message);
+    return map;
+  }
+  try {
+    for await (const entity of tableClient.listEntities()) {
+      try {
+        map[entity.partitionKey] = { ...DEFAULT_THRESHOLDS, ...JSON.parse(entity.config) };
+      } catch (parseErr) {
+        context.log(`[Interventions] Skipping corrupt threshold config for ${entity.partitionKey}: ${parseErr.message}`);
+      }
+    }
+  } catch (err) {
+    context.log('[Interventions] Error loading thresholds:', err.message);
+  }
+  return map;
 }
 
 function escapeODataValue(value) {
@@ -281,11 +312,14 @@ export async function computeAndStoreInterventions(request, context) {
     const interventionsClient = getTableClient(INTERVENTIONS_TABLE);
     await interventionsClient.createTable();
 
+    const thresholdsBySubject = await loadThresholdsMap(context);
+
     const results = [];
     for (const user of Object.values(userMap)) {
       if (!user.subjectId) continue;
 
-      const { risk, score, reason } = computeRisk(user);
+      const thresholds = thresholdsBySubject[user.subjectId] || thresholdsBySubject.default || DEFAULT_THRESHOLDS;
+      const { risk, score, reason } = computeRisk(user, thresholds);
       if (risk === 'low') continue;
 
       const rowKey = `${user.userId}_${user.subjectId}`.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -403,18 +437,42 @@ export async function updateRiskThresholds(request, context) {
       return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Missing required fields: subjectId, thresholds' }) };
     }
 
-    const merged = { ...DEFAULT_THRESHOLDS, ...thresholds };
+    if (typeof thresholds !== 'object' || Array.isArray(thresholds)) {
+      return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Invalid thresholds. Must be an object with numeric values.' }) };
+    }
+
+    const PERCENT_KEYS = new Set(['attendanceWarning', 'attendanceCritical', 'engagementWarning', 'engagementCritical']);
+    const validated = {};
+    for (const key of Object.keys(thresholds)) {
+      if (!(key in DEFAULT_THRESHOLDS)) {
+        return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: `Unknown threshold '${key}'` }) };
+      }
+      const value = Number(thresholds[key]);
+      if (!Number.isFinite(value) || value < 0 || (PERCENT_KEYS.has(key) && value > 100)) {
+        return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: `Invalid threshold value for '${key}'. Must be a non-negative number${PERCENT_KEYS.has(key) ? ' between 0 and 100' : ''}.` }) };
+      }
+      validated[key] = value;
+    }
+
+    if (validated.noLoginDaysLow > validated.noLoginDaysMedium || validated.noLoginDaysMedium > validated.noLoginDaysHigh) {
+      return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Invalid threshold ordering: noLoginDaysLow <= noLoginDaysMedium <= noLoginDaysHigh is required' }) };
+    }
 
     const tableClient = getTableClient(RISK_THRESHOLDS_TABLE);
     await tableClient.createTable();
 
+    const existingConfig = {};
     let existingNotes = [];
     try {
       const existing = await tableClient.getEntity(subjectId, 'config');
+      const parsed = JSON.parse(existing.config);
+      if (parsed && typeof parsed === 'object') Object.assign(existingConfig, parsed);
       existingNotes = existing.auditNotes ? JSON.parse(existing.auditNotes) : [];
     } catch {
       // new entry
     }
+
+    const merged = { ...DEFAULT_THRESHOLDS, ...existingConfig, ...validated };
 
     existingNotes.push({
       action: 'thresholds_updated',
@@ -475,7 +533,7 @@ app.http('get-risk-thresholds', {
 });
 
 app.http('update-risk-thresholds', {
-  methods: ['PUT'],
+  methods: ['PUT', 'POST'],
   authLevel: 'anonymous',
   route: 'risk-thresholds',
   handler: withCorrelation(withAuth(updateRiskThresholds)),

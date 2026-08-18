@@ -239,7 +239,7 @@ export async function getRiskThresholds(subjectId) {
 
 export async function updateRiskThresholds(subjectId, thresholds) {
     const res = await apiFetch(`${BASE_URL}/risk-thresholds`, {
-        method: 'PUT',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subjectId, thresholds }),
     });

@@ -241,7 +241,7 @@ async function main() {
       if (path.includes('compute')) return respondSuccess();
       return respond({ success: true, data: [] });
     }
-    if (path.includes('/api/risk-thresholds')) return respond({ success: true, data: { thresholds: { noLoginDaysLow: 7, noLoginDaysMedium: 14, noLoginDaysHigh: 21, minQueriesMedium: 2, minQueriesHigh: 5, attendanceWarning: 70, attendanceCritical: 50 } } });
+    if (path.includes('/api/risk-thresholds')) return respond({ success: true, data: { thresholds: { noLoginDaysLow: 7, noLoginDaysMedium: 14, noLoginDaysHigh: 21, minQueriesMedium: 2, minQueriesHigh: 5, attendanceWarning: 60, attendanceCritical: 50 } } });
 
     // Materials
     if (path.includes('/api/material-status')) return respond([]);

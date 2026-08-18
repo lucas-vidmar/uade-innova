@@ -1,5 +1,6 @@
 import { api } from '../../services/api.js';
 import { renderHeader } from '../../components/Header.js';
+import { toast } from '../../components/Toast.js';
 
 export async function renderDirectorInterventions(container) {
   renderHeader('Intervenciones');
@@ -7,7 +8,7 @@ export async function renderDirectorInterventions(container) {
 
   const [interventions = [], thresholdsData = null] = await Promise.all([
     api.getInterventions({}),
-    api.getRiskThresholds(),
+    api.getRiskThresholds('default'),
   ]);
 
   const thresholds = thresholdsData?.success ? thresholdsData.data : null;
@@ -29,7 +30,7 @@ export async function renderDirectorInterventions(container) {
             <span>&#x2139;</span> ¿Cómo se calcula?
           </button>
           <button class="btn btn-secondary" id="btn-thresholds-config" style="display:inline-flex;align-items:center;gap:var(--space-2)">
-            <span>&#x2699;</span> Umbrales
+            <span>&#x2699;</span> Configurar umbrales
           </button>
         </div>
       </div>
@@ -356,22 +357,31 @@ export async function renderDirectorInterventions(container) {
     const body = document.getElementById('thresholds-body');
     const config = data?.thresholds || {};
 
+    const fields = [
+      { key: 'noLoginDaysLow', label: 'D&iacute;as de inactividad para riesgo bajo', defaultValue: 7, min: 1, max: 60, step: 1 },
+      { key: 'noLoginDaysMedium', label: 'D&iacute;as de inactividad para riesgo medio', defaultValue: 14, min: 1, max: 90, step: 1 },
+      { key: 'noLoginDaysHigh', label: 'D&iacute;as de inactividad para riesgo alto', defaultValue: 21, min: 1, max: 120, step: 1 },
+      { key: 'minQueriesMedium', label: 'M&iacute;nimo de consultas semanales', defaultValue: 2, min: 1, max: 20, step: 1 },
+      { key: 'attendanceWarning', label: '% asistencia m&iacute;nima', defaultValue: 60, min: 0, max: 100, step: 1 },
+    ];
+
+    const valueOf = (key, defaultValue) => {
+      const raw = String(config[key] ?? '');
+      if (raw.trim() === '') return defaultValue;
+      const value = Number(raw);
+      return Number.isFinite(value) ? value : defaultValue;
+    };
+
     body.innerHTML = `
       <p style="color:var(--color-text-secondary);margin-bottom:var(--space-4);font-size:0.875rem">
         Configurar los umbrales que determinan los niveles de riesgo. Los cambios se aplican inmediatamente al pr&oacute;ximo c&aacute;lculo.
       </p>
       ${data?.source === 'override' ? '<p style="color:var(--color-warning);font-size:0.8rem;margin-bottom:var(--space-3)">Esta materia tiene configuraci&oacute;n personalizada.</p>' : ''}
       <div style="display:grid;gap:var(--space-3)">
-        <label style="font-size:0.875rem;color:var(--color-text-secondary)">D&iacute;as sin login - Riesgo Bajo
-          <input id="th-no-login-low" class="input" type="number" value="${config.noLoginDaysLow || 7}" style="width:100%;margin-top:var(--space-1);padding:var(--space-2);border-radius:var(--radius-md);background:var(--color-surface-1);color:var(--color-text-primary);border:1px solid var(--color-border)"></label>
-        <label style="font-size:0.875rem;color:var(--color-text-secondary)">D&iacute;as sin login - Riesgo Medio
-          <input id="th-no-login-medium" class="input" type="number" value="${config.noLoginDaysMedium || 14}" style="width:100%;margin-top:var(--space-1);padding:var(--space-2);border-radius:var(--radius-md);background:var(--color-surface-1);color:var(--color-text-primary);border:1px solid var(--color-border)"></label>
-        <label style="font-size:0.875rem;color:var(--color-text-secondary)">D&iacute;as sin login - Riesgo Alto
-          <input id="th-no-login-high" class="input" type="number" value="${config.noLoginDaysHigh || 21}" style="width:100%;margin-top:var(--space-1);padding:var(--space-2);border-radius:var(--radius-md);background:var(--color-surface-1);color:var(--color-text-primary);border:1px solid var(--color-border)"></label>
-        <label style="font-size:0.875rem;color:var(--color-text-secondary)">M&iacute;n. consultas en 7d (Riesgo Medio)
-          <input id="th-min-queries-medium" class="input" type="number" value="${config.minQueriesMedium || 2}" style="width:100%;margin-top:var(--space-1);padding:var(--space-2);border-radius:var(--radius-md);background:var(--color-surface-1);color:var(--color-text-primary);border:1px solid var(--color-border)"></label>
-        <label style="font-size:0.875rem;color:var(--color-text-secondary)">M&iacute;n. consultas en 14d (Riesgo Alto)
-          <input id="th-min-queries-high" class="input" type="number" value="${config.minQueriesHigh || 5}" style="width:100%;margin-top:var(--space-1);padding:var(--space-2);border-radius:var(--radius-md);background:var(--color-surface-1);color:var(--color-text-primary);border:1px solid var(--color-border)"></label>
+        ${fields.map(f => `
+          <label style="font-size:0.875rem;color:var(--color-text-secondary)">${f.label}
+            <input id="th-${f.key}" class="input" type="number" value="${valueOf(f.key, f.defaultValue)}" min="${f.min}" max="${f.max}" step="${f.step}" style="width:100%;margin-top:var(--space-1);padding:var(--space-2);border-radius:var(--radius-md);background:var(--color-surface-1);color:var(--color-text-primary);border:1px solid var(--color-border)"></label>
+        `).join('')}
       </div>
     `;
 
@@ -381,16 +391,36 @@ export async function renderDirectorInterventions(container) {
     modal.onclick = (e) => { if (e.target === modal) modal.style.display = 'none'; };
 
     document.getElementById('thresholds-save').onclick = async () => {
-      const newConfig = {
-        noLoginDaysLow: parseInt(document.getElementById('th-no-login-low').value, 10) || 7,
-        noLoginDaysMedium: parseInt(document.getElementById('th-no-login-medium').value, 10) || 14,
-        noLoginDaysHigh: parseInt(document.getElementById('th-no-login-high').value, 10) || 21,
-        minQueriesMedium: parseInt(document.getElementById('th-min-queries-medium').value, 10) || 2,
-        minQueriesHigh: parseInt(document.getElementById('th-min-queries-high').value, 10) || 5,
-      };
-      const result = await api.updateRiskThresholds('default', newConfig);
-      if (result?.success) {
-        modal.style.display = 'none';
+      const newConfig = {};
+      for (const f of fields) {
+        const raw = document.getElementById(`th-${f.key}`).value;
+        if (String(raw).trim() === '') {
+          newConfig[f.key] = f.defaultValue;
+          continue;
+        }
+        let value = Number(raw);
+        if (!Number.isFinite(value)) {
+          newConfig[f.key] = f.defaultValue;
+          continue;
+        }
+        if (value < f.min) value = f.min;
+        if (value > f.max) value = f.max;
+        newConfig[f.key] = value;
+      }
+      try {
+        const result = await api.updateRiskThresholds('default', newConfig);
+        if (result?.success) {
+          modal.style.display = 'none';
+          if (thresholds) {
+            thresholds.thresholds = { ...thresholds.thresholds, ...(result.data?.thresholds || newConfig) };
+            thresholds.source = 'override';
+          }
+          toast('success', 'Umbrales guardados', 'Los nuevos umbrales se aplicarán al próximo cálculo de riesgo.');
+        } else {
+          toast('error', 'Error al guardar', result?.error || 'No se pudieron guardar los umbrales.');
+        }
+      } catch (err) {
+        toast('error', 'Error al guardar', err.message || 'No se pudieron guardar los umbrales.');
       }
     };
   }
