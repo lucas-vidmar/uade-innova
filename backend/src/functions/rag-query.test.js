@@ -1293,7 +1293,6 @@ test('rag-query sandbox mode should keep subjectId scope in Pinecone filter', as
     });
 });
 
-<<<<<<< HEAD
 test('rag-query augments prompt with student weekly tasks (Story 11.1.5 happy path)', async (t) => {
     openaiMocks.chatCompletion.mock.resetCalls();
     for (let i = 0; i < 3; i++) { try { await openaiMocks.chatCompletion('drain'); } catch {} }
@@ -1383,7 +1382,8 @@ test('rag-query returns no-weekly-tasks fallback when student has no tasks this 
         storageMocks.loadJson.mock.mockImplementation(saved || (async () => null));
         authUtilsMocks.getAuthenticatedUser.mock.mockImplementation(() => ({ id: 'test-user-oid', roles: ['Alumno'] }));
     });
-=======
+});
+
 test('rag-query glossary fast-path returns definition with badge metadata (11.1.6)', async (t) => {
     openaiMocks.chatCompletion.mock.resetCalls();
     openaiMocks.generateEmbedding.mock.resetCalls();
@@ -1478,5 +1478,4 @@ test('rag-query glossary fast-path falls back to RAG when no glossary configured
     assert.strictEqual(openaiMocks.chatCompletion.mock.callCount(), 1, 'Should call the LLM');
     assert.ok(body.answer);
     assert.ok(body.glossary === undefined, 'No glossary metadata when no glossary configured');
->>>>>>> origin/lucas-vidmar/w11-1-6-glossary-lookup
 });
