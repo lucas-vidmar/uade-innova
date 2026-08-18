@@ -34,7 +34,22 @@ app.http('get-profile', {
             const profileDefaults = {
                 theme: "light",
                 language: "es",
-                consentAccepted: false
+                consentAccepted: false,
+                botTone: "formal",
+                botLength: "detailed",
+                includeSources: true
+            };
+
+            const VALID_TONES = ['formal', 'didactic', 'concise'];
+            const VALID_LENGTHS = ['concise', 'detailed'];
+
+            // Table Storage may return booleans as native booleans or as the
+            // strings "true"/"false" depending on writer; normalize defensively.
+            const asBool = (value, fallback) => {
+                if (typeof value === 'boolean') return value;
+                if (value === 'true') return true;
+                if (value === 'false') return false;
+                return fallback;
             };
 
             let profile;
@@ -44,7 +59,10 @@ app.http('get-profile', {
                 profile = {
                     theme: entity.theme || "light",
                     language: entity.language || "es",
-                    consentAccepted: entity.consentAccepted || false
+                    consentAccepted: asBool(entity.consentAccepted, false),
+                    botTone: VALID_TONES.includes(entity.botTone) ? entity.botTone : "formal",
+                    botLength: VALID_LENGTHS.includes(entity.botLength) ? entity.botLength : "detailed",
+                    includeSources: asBool(entity.includeSources, true)
                 };
             } catch (err) {
                 if (err.statusCode === 404) {

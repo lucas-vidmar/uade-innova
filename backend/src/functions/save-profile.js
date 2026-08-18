@@ -6,6 +6,19 @@ import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-util
 const tableName = "UserProfiles";
 const storageAccountUrl = `https://${process.env.AZURE_STORAGE_ACCOUNT_NAME}.table.core.windows.net`;
 
+// Bot preferences (story 11-5-1): valid values. Invalid payload values are
+// dropped so the stored (existing) value is preserved.
+const BOT_TONES = ['formal', 'didactic', 'concise'];
+const BOT_LENGTHS = ['concise', 'detailed'];
+
+function normalizeBotPrefs(value) {
+    const normalized = {};
+    if (BOT_TONES.includes(value.botTone)) normalized.botTone = value.botTone;
+    if (BOT_LENGTHS.includes(value.botLength)) normalized.botLength = value.botLength;
+    if (typeof value.includeSources === 'boolean') normalized.includeSources = value.includeSources;
+    return normalized;
+}
+
 app.http('save-profile', {
     methods: ['POST', 'PUT'],
     authLevel: 'anonymous',
@@ -17,23 +30,33 @@ app.http('save-profile', {
             const userId = principal?.oid || "pilot-user";
 
             const reqBody = await request.json();
-            
-            // Build the table entity payload
+
+            // Only update fields the client actually sent. "Merge" upsert (not
+            // "Replace") prevents a partial save (e.g. only bot preferences)
+            // from clobbering previously stored theme/language/consent, and
+            // avoids the read-modify-write lost-update race.
             const entity = {
                 partitionKey: "Profiles",
                 rowKey: userId,
                 name: principal?.userDetails || "Local User",
                 email: principal?.userDetails || "local@uade.edu.ar",
-                theme: reqBody.theme || "light",
-                language: reqBody.language || "es",
-                consentAccepted: reqBody.consentAccepted ?? false
             };
+            if (typeof reqBody?.theme === 'string' && reqBody.theme) entity.theme = reqBody.theme;
+            if (typeof reqBody?.language === 'string' && reqBody.language) entity.language = reqBody.language;
+            if (typeof reqBody?.consentAccepted === 'boolean') entity.consentAccepted = reqBody.consentAccepted;
+
+            const botPrefs = normalizeBotPrefs(reqBody || {});
+            if (botPrefs.botTone) entity.botTone = botPrefs.botTone;
+            if (botPrefs.botLength) entity.botLength = botPrefs.botLength;
+            if (botPrefs.includeSources !== undefined) entity.includeSources = botPrefs.includeSources;
 
             const { getTableClient } = await import('../services/storage.js');
             const tableClient = getTableClient(tableName);
 
             // Upsert the data seamlessly handling initial creation or subsequent updates
-            await tableClient.upsertEntity(entity, "Replace");
+            await tableClient.upsertEntity(entity, "Merge");
+
+            context.log(`[SaveProfile] Profile saved userId=${userId} theme=${entity.theme} botTone=${entity.botTone} botLength=${entity.botLength} includeSources=${entity.includeSources}`);
 
             return {
                 status: 200,

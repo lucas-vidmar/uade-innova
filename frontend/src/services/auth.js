@@ -251,6 +251,45 @@ export const auth = {
         window.dispatchEvent(new CustomEvent('auth:botPrefsChanged', { detail: prefs }));
     },
 
+    /**
+     * Persiste las preferencias del asistente en UserProfiles (story 11-5-1).
+     * localStorage se mantiene como cache/fallback; el servidor es la fuente
+     * durable para que sobrevivan cambio de dispositivo o limpieza del browser.
+     * @returns {Promise<boolean>} true si el backend confirmó el guardado.
+     */
+    async saveBotPreferences(prefs) {
+        this.setBotPreferences(prefs);
+        try {
+            await api.saveProfile({
+                botTone: prefs.tone,
+                botLength: prefs.length,
+                includeSources: prefs.includeSources,
+            });
+            return true;
+        } catch (err) {
+            console.error('[Auth] Error persistiendo preferencias del asistente al backend:', err);
+            return false;
+        }
+    },
+
+    /**
+     * Hidrata las preferencias del asistente desde el perfil de UserProfiles
+     * (story 11-5-1) cuando el servidor trae valores, de modo que el usuario
+     * recupera su configuración aunque haya limpiado el localStorage.
+     */
+    hydrateBotPreferences(profile) {
+        if (!profile) return;
+        const tone = profile.botTone || profile.bot_tone;
+        const length = profile.botLength || profile.bot_length;
+        const includeSources = profile.includeSources ?? profile.include_sources;
+        if (tone) localStorage.setItem('edu_bot_tone', tone);
+        if (length) localStorage.setItem('edu_bot_length', length);
+        if (includeSources !== undefined && includeSources !== null) localStorage.setItem('edu_bot_include_sources', String(Boolean(includeSources)));
+        window.dispatchEvent(new CustomEvent('auth:botPrefsChanged', {
+            detail: { tone, length, includeSources: Boolean(includeSources) },
+        }));
+    },
+
     getReminderPreferences() {
             return {
                 enabled: sessionStorage.getItem('edu_reminder_enabled') !== 'false',
@@ -509,6 +548,9 @@ export const auth = {
                 safeSetItem('edu_consent_accepted', accepted);
                 if (profile.theme) sessionStorage.setItem('edu_theme', profile.theme);
                 if (profile.language) sessionStorage.setItem('edu_lang', profile.language);
+                // Bot preferences (story 11-5-1): server profile is the durable
+                // source, localStorage is a cache that must not override it.
+                this.hydrateBotPreferences(profile);
             }
 
             if (profile && profile.role) {

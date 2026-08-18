@@ -35,9 +35,11 @@ mock.module('../services/telemetry.js', {
   namedExports: { trackUserLogin: mock.fn(async () => {}) },
 });
 
+let entityToReturn = null;
 const storageMocks = {
   getTableClient: mock.fn(() => ({
     getEntity: mock.fn(async () => {
+      if (entityToReturn) return entityToReturn;
       const err = new Error('Not Found');
       err.statusCode = 404;
       throw err;
@@ -83,4 +85,55 @@ test('get-profile falls back to student role for anonymous/unknown roles (no loc
   const res = await handlers['get-profile']({}, context);
   const body = res.jsonBody;
   assert.equal(body.role, 'student');
+});
+
+test('get-profile returns default bot preferences when profile does not exist (11-5-1)', async () => {
+  entityToReturn = null;
+  const context = makeContext();
+  context.user = { userId: 'alu-001', role: 'Alumno', email: 'alu@uade.edu.ar', scope: undefined, principal: null };
+  const res = await handlers['get-profile']({}, context);
+  const body = res.jsonBody;
+  assert.equal(body.botTone, 'formal');
+  assert.equal(body.botLength, 'detailed');
+  assert.equal(body.includeSources, true);
+});
+
+test('get-profile returns persisted bot preferences from UserProfiles (11-5-1)', async () => {
+  entityToReturn = {
+    theme: 'dark',
+    language: 'es',
+    consentAccepted: 'true',
+    botTone: 'didactic',
+    botLength: 'concise',
+    includeSources: 'false',
+  };
+  const context = makeContext();
+  context.user = { userId: 'alu-001', role: 'Alumno', email: 'alu@uade.edu.ar', scope: undefined, principal: null };
+  const res = await handlers['get-profile']({}, context);
+  const body = res.jsonBody;
+  assert.equal(body.botTone, 'didactic');
+  assert.equal(body.botLength, 'concise');
+  assert.equal(body.includeSources, false);
+  assert.equal(body.consentAccepted, true);
+  entityToReturn = null;
+});
+
+test('get-profile normalizes invalid stored bot preferences to defaults (11-5-1)', async () => {
+  entityToReturn = {
+    theme: 'dark',
+    language: 'es',
+    consentAccepted: 'false',
+    botTone: 'agresivo',
+    botLength: 'extenso',
+    includeSources: 'yes',
+  };
+  const context = makeContext();
+  context.user = { userId: 'alu-001', role: 'Alumno', email: 'alu@uade.edu.ar', scope: undefined, principal: null };
+  const res = await handlers['get-profile']({}, context);
+  const body = res.jsonBody;
+  assert.equal(body.botTone, 'formal');
+  assert.equal(body.botLength, 'detailed');
+  assert.equal(body.includeSources, true);
+  assert.equal(body.consentAccepted, false);
+  entityToReturn = null;
 });

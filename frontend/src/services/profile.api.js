@@ -13,6 +13,14 @@ export async function saveProfile(data) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
     });
+    if (!res.ok) {
+        let message = `Error ${res.status}: no se pudo guardar el perfil`;
+        try {
+            const err = await res.json();
+            if (err?.error) message = err.error;
+        } catch (_) {}
+        throw new Error(message);
+    }
     return res.json();
 }
 

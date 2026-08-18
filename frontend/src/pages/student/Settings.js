@@ -178,8 +178,13 @@ export async function renderStudentSettings(container) {
         state.botTone = newTone;
         state.botLength = newLength;
         state.botIncludeSources = newSources;
-        auth.setBotPreferences({ tone: newTone, length: newLength, includeSources: newSources });
-        toast('success', 'Preferencias guardadas', 'Las preferencias del asistente se actualizaron.');
+        // Persistir a UserProfiles (story 11-5-1) y actualizar la cache local.
+        const saved = await auth.saveBotPreferences({ tone: newTone, length: newLength, includeSources: newSources });
+        if (saved) {
+          toast('success', 'Preferencias guardadas', 'Las preferencias del asistente se actualizaron.');
+        } else {
+          toast('error', 'No se pudo sincronizar', 'Las preferencias se aplican en esta sesión, pero no se guardaron en el servidor. Verificá tu conexión e intentá de nuevo.');
+        }
       } catch (err) {
         toast('error', 'Error', 'No se pudieron guardar las preferencias.');
       }
