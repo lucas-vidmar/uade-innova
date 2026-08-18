@@ -67,7 +67,9 @@ import {
     getTranscriptionSuggestions, applyTranscriptionCorrection,
     rejectTranscriptionSuggestion,
     getStudentReports,
-    submitGradeDispute
+    submitGradeDispute,
+    getGradeDisputes,
+    resolveGradeDispute,
 } from './corrections.api.js';
 import {
     getPromptTypes, getPromptVersions, getActivePrompt,
@@ -131,7 +133,7 @@ getTeacherAiFeedbackAlerts, getCorrectionsPending,
     getGlossary, getGlossaryTerm, updateGlossary,
     getTranscriptionSuggestions, applyTranscriptionCorrection,
     rejectTranscriptionSuggestion,
-    getStudentReports, submitGradeDispute,
+    getStudentReports, submitGradeDispute, getGradeDisputes, resolveGradeDispute,
 
     getPromptTypes, getPromptVersions, getActivePrompt,
     createPromptVersion, updatePromptVersion,

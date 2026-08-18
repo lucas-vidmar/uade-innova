@@ -10,8 +10,13 @@ const authMocks = {
     parseClientPrincipal: mock.fn(() => ({ userRoles: ['Director'] })),
 };
 
+const storageMocks = {
+    loadJson: mock.fn(async () => []),
+};
+
 const handlers = {};
 mock.module('../services/auth-utils.js', { namedExports: authMocks });
+mock.module('../services/storage.js', { namedExports: storageMocks });
 mock.module('@azure/functions', {
     namedExports: {
         app: {
@@ -102,12 +107,35 @@ test('sga-get-tasks returns 400 when studentId is missing', async () => {
     assert.equal(response.status, 400);
 });
 
-test('sga-get-tasks returns an empty task list while SGA API is not connected', async () => {
+test('sga-get-tasks returns an empty task list while no tasks blob exists', async () => {
+    storageMocks.loadJson.mock.mockImplementation(async () => null);
     const response = await handlers['sga-get-tasks']({ query: new URLSearchParams({ studentId: 'alu-001' }) }, {});
     assert.equal(response.status, 200);
     const payload = JSON.parse(response.body);
     assert.ok(Array.isArray(payload));
     assert.equal(payload.length, 0);
+});
+
+test('sga-get-tasks returns persisted tasks from the tasks-config blob', async () => {
+    const persisted = [
+        { id: 't-02', studentId: 'alu-001', title: 'Quiz Online', dueDate: '2026-03-20', weight: 10, status: 'disputed', classIds: ['class-02'], grade: 8.5, subjectId: 'arq-software-2026' },
+    ];
+    storageMocks.loadJson.mock.mockImplementation(async () => persisted);
+    const response = await handlers['sga-get-tasks']({ query: new URLSearchParams({ studentId: 'alu-001' }) }, {});
+    assert.equal(response.status, 200);
+    const payload = JSON.parse(response.body);
+    assert.equal(payload.length, 1);
+    assert.equal(payload[0].status, 'disputed');
+});
+
+test('sga-get-tasks denies access to another student', async () => {
+    authMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'alu-001', userRoles: ['Alumno'] }));
+    const prev = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+    const response = await handlers['sga-get-tasks']({ query: new URLSearchParams({ studentId: 'alu-002' }) }, {});
+    assert.equal(response.status, 403);
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = prev;
+    authMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
 });
 
 test('sga-get-early-alerts returns schema-conformant alerts', async () => {

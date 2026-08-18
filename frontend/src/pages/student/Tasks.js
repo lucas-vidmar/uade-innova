@@ -220,7 +220,14 @@ function bindDisputeEvents(container) {
         submitBtn.disabled = true;
         submitBtn.textContent = 'Enviando...';
         try {
-          await api.submitGradeDispute({ taskId, reason: val });
+          await api.submitGradeDispute({
+            taskId,
+            reason: val,
+            taskTitle,
+            studentName: auth.getUser().name,
+            subjectId: auth.getActiveSubjectId(),
+            originalGrade: currentGrade,
+          });
           cleanup();
           const { toast } = await import('../../components/Toast.js');
           toast('success', 'Disputa enviada', 'El docente recibió una notificación para revisar la nota.');

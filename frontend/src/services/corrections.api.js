@@ -108,14 +108,52 @@ export async function getCorrectionChatContext(subjectId, correctionId) {
     }
 }
 
-export async function submitGradeDispute({ taskId, reason }) {
+export async function submitGradeDispute({ taskId, reason, taskTitle, studentName, subjectId, originalGrade }) {
     const res = await apiFetch(`${BASE_URL}/grade-dispute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ taskId, reason: String(reason || '').trim() }),
+        body: JSON.stringify({
+            taskId,
+            reason: String(reason || '').trim(),
+            taskTitle: String(taskTitle || '').trim(),
+            studentName: String(studentName || '').trim(),
+            subjectId: String(subjectId || '').trim(),
+            originalGrade,
+        }),
     });
     if (!res.ok) {
         let message = `Error ${res.status}: no se pudo enviar la disputa`;
+        try { const err = await res.json(); if (err?.error) message = err.error; } catch {}
+        throw new Error(message);
+    }
+    return res.json();
+}
+
+export async function getGradeDisputes(subjectId) {
+    if (!subjectId) return [];
+    const res = await fetchWithTimeout(`${BASE_URL}/grade-disputes?subjectId=${encodeURIComponent(subjectId)}`, { timeout: 4000 });
+    if (!res.ok) {
+        let message = `Error ${res.status}: no se pudieron cargar las disputas`;
+        try { const err = await res.json(); if (err?.error) message = err.error; } catch {}
+        throw new Error(message);
+    }
+    const json = await res.json();
+    return Array.isArray(json) ? json : [];
+}
+
+export async function resolveGradeDispute({ disputeId, subjectId, decision, newGrade }) {
+    const res = await apiFetch(`${BASE_URL}/grade-dispute/resolve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            disputeId,
+            subjectId,
+            decision,
+            newGrade: newGrade != null ? Number(newGrade) : undefined,
+        }),
+    });
+    if (!res.ok) {
+        let message = `Error ${res.status}: no se pudo resolver la disputa`;
         try { const err = await res.json(); if (err?.error) message = err.error; } catch {}
         throw new Error(message);
     }

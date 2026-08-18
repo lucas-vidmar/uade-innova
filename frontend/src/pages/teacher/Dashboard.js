@@ -32,12 +32,13 @@ export async function renderTeacherDashboard(container) {
 
   const activeSubjectName = user.subjects?.find(s => s.id === activeSubjectId)?.name || 'Materia';
 
-  let classes = [], deadlines = [], corrections = [];
+  let classes = [], deadlines = [], corrections = [], disputes = [];
   try {
-    [classes = [], deadlines = [], corrections = []] = await Promise.all([
+    [classes = [], deadlines = [], corrections = [], disputes = []] = await Promise.all([
       api.getClasses(activeSubjectId),
       api.getDeadlines(activeSubjectId),
       api.getCorrectionsPending(activeSubjectId, undefined, 'all').catch(() => []),
+      api.getGradeDisputes(activeSubjectId).catch(() => []),
     ]);
   } catch {
     classes = classes || [];
@@ -195,6 +196,30 @@ export async function renderTeacherDashboard(container) {
       ` : ''}
     </div>
 
+    <div class="section-title" style="margin-top:var(--space-10)"><h2>${icon('alert')} Disputas de nota</h2><div class="line"></div></div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Disputas pendientes de revisión</span>
+        <span class="badge badge-warning">${(disputes || []).length}</span>
+      </div>
+      <div class="class-list" id="dashboard-disputes-list">
+        ${(disputes || []).length > 0 ? disputes.map((item) => `
+          <div class="class-list-item" style="align-items:flex-start" data-dispute-id="${escapeHtml(item.disputeId)}">
+            <div class="class-list-date">${icon('alert')}</div>
+            <div class="class-list-info">
+              <div class="class-list-title">${escapeHtml(item.taskTitle || item.taskId)} — ${escapeHtml(item.studentName || item.studentId)}</div>
+              <div class="class-list-topics">${escapeHtml(item.reason || 'Sin detalle provisto.')}</div>
+              <div class="class-list-files">Nota actual: ${item.originalGrade != null ? item.originalGrade : '—'} · ${item.createdAt ? (() => { const d = new Date(item.createdAt); return isNaN(d.getTime()) ? '---' : d.toLocaleDateString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); })() : '---'}</div>
+            </div>
+            <div class="class-list-actions" style="gap:var(--space-2)">
+              <button class="btn btn-secondary btn-sm dispute-resolve-btn" data-dispute-id="${escapeHtml(item.disputeId)}">Resolver</button>
+              <button class="btn btn-danger btn-sm dispute-reject-btn" data-dispute-id="${escapeHtml(item.disputeId)}">Rechazar</button>
+            </div>
+          </div>
+        `).join('') : '<div class="empty-state" style="padding:24px">No hay disputas de nota pendientes.</div>'}
+      </div>
+    </div>
+
     <div class="section-title" style="margin-top:var(--space-10)"><h2>${icon('activity')} Progreso de Alumnos</h2><div class="line"></div></div>
     <div class="card" id="student-progress-section">
       <div style="padding:var(--space-4);text-align:center;color:var(--color-text-secondary);font-size:var(--text-sm)" class="animate-pulse">Cargando progreso de alumnos...</div>
@@ -345,6 +370,31 @@ export async function renderTeacherDashboard(container) {
       const correction = corrections.find(c => c.correctionId === correctionId);
       if (!correction) return;
       showReviewAlertModal(activeSubjectId, correction, container);
+    });
+  });
+
+  /* ── Dispute resolve / reject ──────────────────────────── */
+  container.querySelectorAll('.dispute-resolve-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const disputeId = btn.getAttribute('data-dispute-id');
+      const dispute = (disputes || []).find(d => d.disputeId === disputeId);
+      if (!dispute) return;
+      showDisputeResolveModal(activeSubjectId, dispute, container);
+    });
+  });
+  container.querySelectorAll('.dispute-reject-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const disputeId = btn.getAttribute('data-dispute-id');
+      if (!confirm('¿Rechazar esta disputa? Se notificará al alumno.')) return;
+      try {
+        await api.resolveGradeDispute({ disputeId, subjectId: activeSubjectId, decision: 'rejected' });
+        toast('success', 'Disputa rechazada', 'Se notificó al alumno el resultado.');
+        renderTeacherDashboard(container);
+      } catch (err) {
+        toast('error', 'Error', err.message || 'No se pudo rechazar la disputa.');
+      }
     });
   });
 
@@ -651,6 +701,75 @@ function showReviewAlertModal(subjectId, correction, container) {
       renderTeacherDashboard(container);
     } catch (err) {
       toast('error', 'Error al resolver', err.message || 'No se pudo actualizar el estado.');
+    }
+  });
+
+  document.body.appendChild(overlay);
+}
+
+function showDisputeResolveModal(subjectId, dispute, container) {
+  if (!dispute) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-content" style="max-width:520px;width:92%">
+      <div class="modal-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <h3 class="h4" style="margin:0">Resolver disputa de nota</h3>
+        <button type="button" class="btn btn-ghost btn-sm modal-close-btn" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:var(--space-4)">
+        <div style="background:var(--color-surface-2);border-radius:var(--radius-md);padding:var(--space-4)">
+          <div style="font-size:var(--font-size-xs);color:var(--color-text-muted);margin-bottom:var(--space-1)">Tarea</div>
+          <div style="font-weight:600;font-size:var(--font-size-sm)">${escapeHtml(dispute.taskTitle || dispute.taskId)}</div>
+          <div style="font-size:var(--font-size-xs);color:var(--color-text-secondary);margin-top:var(--space-2)">Alumno: ${escapeHtml(dispute.studentName || dispute.studentId)} · Nota actual: ${dispute.originalGrade != null ? dispute.originalGrade : '—'}</div>
+          <div style="margin-top:var(--space-3);padding-top:var(--space-3);border-top:1px solid var(--color-border)">
+            <div style="font-size:var(--font-size-xs);color:var(--color-text-muted);margin-bottom:var(--space-1)">Motivo del alumno</div>
+            <div style="font-size:var(--font-size-xs);color:var(--color-text-secondary);line-height:1.5">${escapeHtml(dispute.reason || 'Sin detalle provisto.')}</div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Nueva nota (si se resuelve a favor)</label>
+          <input type="number" class="form-input" id="dispute-new-grade" min="0" max="10" step="0.1" value="${dispute.originalGrade != null ? dispute.originalGrade : 0}" />
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex;gap:var(--space-2);justify-content:flex-end">
+        <button type="button" class="btn btn-ghost modal-close-btn">Cancelar</button>
+        <button type="button" class="btn btn-danger" id="dispute-modal-reject">Rechazar</button>
+        <button type="button" class="btn btn-primary" id="dispute-modal-resolve">Resolver a favor</button>
+      </div>
+    </div>
+  `;
+
+  const cleanup = () => overlay.remove();
+  overlay.querySelectorAll('.modal-close-btn').forEach(el => el.addEventListener('click', cleanup));
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(); });
+
+  overlay.querySelector('#dispute-modal-reject').addEventListener('click', async () => {
+    if (!confirm('¿Rechazar esta disputa? Se notificará al alumno.')) return;
+    try {
+      await api.resolveGradeDispute({ disputeId: dispute.disputeId, subjectId, decision: 'rejected' });
+      cleanup();
+      toast('success', 'Disputa rechazada', 'Se notificó al alumno el resultado.');
+      renderTeacherDashboard(container);
+    } catch (err) {
+      toast('error', 'Error', err.message || 'No se pudo rechazar la disputa.');
+    }
+  });
+
+  overlay.querySelector('#dispute-modal-resolve').addEventListener('click', async () => {
+    const newGrade = Number(overlay.querySelector('#dispute-new-grade').value);
+    if (Number.isNaN(newGrade) || newGrade < 0 || newGrade > 10) {
+      toast('error', 'Nota inválida', 'Ingresá una nota entre 0 y 10.');
+      return;
+    }
+    if (!confirm(`¿Resolver a favor con nota ${newGrade}? Se notificará al alumno.`)) return;
+    try {
+      await api.resolveGradeDispute({ disputeId: dispute.disputeId, subjectId, decision: 'resolved', newGrade });
+      cleanup();
+      toast('success', 'Disputa resuelta', 'Se notificó al alumno el resultado.');
+      renderTeacherDashboard(container);
+    } catch (err) {
+      toast('error', 'Error', err.message || 'No se pudo resolver la disputa.');
     }
   });
 
