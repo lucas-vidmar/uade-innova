@@ -125,6 +125,7 @@ export async function renderStudentTasks(container) {
 
   bindDisputeEvents(container);
   bindConsultAIEvents(container);
+  bindTaskDetailEvents(container, [...pending, ...completed], classes);
 }
 
 function buildRelatedClassesHtml(t, classes) {
@@ -143,11 +144,17 @@ function buildPendingRow(t, classes) {
               : { label: '🔵 Normal', badge: 'badge-info' };
   const weightLabel = t.weight >= 20 ? 'badge-primary' : 'badge-neutral';
   const relatedHtml = buildRelatedClassesHtml(t, classes);
-  return '<tr><td><span class="badge ' + urgency.badge + '">' + urgency.label + '</span></td><td><strong>' + t.title + '</strong>' + relatedHtml + '</td><td><span class="badge ' + weightLabel + '">' + t.weight + '%</span></td><td>' + new Date(t.dueDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }) + '</td><td><span class="badge badge-warning">⏳ Pendiente</span></td></tr>';
+  const detailBtn = (t.classIds || []).length > 0
+    ? '<button class="btn btn-ghost btn-sm task-detail-btn" data-task-id="' + escapeHtml(t.id) + '" title="Ver detalle y materiales relacionados" style="font-size:11px;color:var(--color-primary-light);margin-top:4px;padding:2px 8px;">Ver detalle</button>'
+    : '';
+  return '<tr><td><span class="badge ' + urgency.badge + '">' + urgency.label + '</span></td><td><strong>' + t.title + '</strong>' + relatedHtml + detailBtn + '</td><td><span class="badge ' + weightLabel + '">' + t.weight + '%</span></td><td>' + new Date(t.dueDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }) + '</td><td><span class="badge badge-warning">⏳ Pendiente</span></td></tr>';
 }
 
 function buildCompletedRow(t, classes) {
   const relatedHtml = buildRelatedClassesHtml(t, classes);
+  const detailBtn = (t.classIds || []).length > 0
+    ? '<button class="btn btn-ghost btn-sm task-detail-btn" data-task-id="' + escapeHtml(t.id) + '" title="Ver detalle y materiales relacionados" style="font-size:11px;color:var(--color-primary-light);margin-top:4px;padding:2px 8px;">Ver detalle</button>'
+    : '';
   const gradeColor = (t.grade || 0) >= 6 ? 'var(--color-success)' : 'var(--color-error)';
   const consultAiBtn = t.grade !== null
     ? '<button class="btn btn-ghost btn-sm consult-ai-btn" data-ai-task-title="' + escapeHtml(t.title) + '" style="margin-left:8px;font-size:12px;color:var(--color-primary-light);" title="Consultar con IA">🤖 Consultar con IA</button>'
@@ -158,7 +165,7 @@ function buildCompletedRow(t, classes) {
   const statusBadge = t.status === 'disputed'
     ? '<span class="badge badge-warning">🟡 En disputa</span>'
     : '<span class="badge badge-success">✅ Aprobado</span>';
-  return '<tr class="task-row-hover"><td>' + t.title + relatedHtml + '</td><td><span class="badge badge-neutral">' + t.weight + '%</span></td><td><strong style="color:' + gradeColor + '">' + (t.grade !== null ? t.grade.toFixed(1) : '—') + '</strong>' + consultAiBtn + disputeBtn + '</td><td>' + statusBadge + '</td></tr>';
+  return '<tr class="task-row-hover"><td>' + t.title + relatedHtml + detailBtn + '</td><td><span class="badge badge-neutral">' + t.weight + '%</span></td><td><strong style="color:' + gradeColor + '">' + (t.grade !== null ? t.grade.toFixed(1) : '—') + '</strong>' + consultAiBtn + disputeBtn + '</td><td>' + statusBadge + '</td></tr>';
 }
 
 function bindDisputeEvents(container) {
@@ -260,4 +267,67 @@ function bindConsultAIEvents(container) {
       window.location.hash = `#/student/dashboard?preset=${encodeURIComponent(preset)}`;
     });
   });
+}
+
+function bindTaskDetailEvents(container, tasks, classes) {
+  const taskLookup = {};
+  (tasks || []).forEach(t => { taskLookup[t.id] = t; });
+  container.querySelectorAll('.task-detail-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const task = taskLookup[btn.dataset.taskId];
+      if (!task) return;
+      showTaskDetailModal(task, classes);
+    });
+  });
+}
+
+function showTaskDetailModal(task, classes) {
+  const related = (classes || []).filter(c => (task.classIds || []).includes(c.id));
+  const statusLabel = task.status === 'completed'
+    ? (task.grade !== null ? '✅ Aprobado · ' + task.grade.toFixed(1) : '✅ Completada')
+    : '⏳ Pendiente';
+  const dueLabel = task.dueDate
+    ? new Date(task.dueDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'long' })
+    : '—';
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-content" style="max-width:520px;width:92%;">
+      <div class="modal-header">
+        <h3 class="h4" style="margin:0;">${escapeHtml(task.title)}</h3>
+        <button type="button" class="btn btn-ghost btn-sm dialog-close" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:var(--space-3);">
+        ${task.description ? `<div style="font-size:14px;color:var(--color-text-secondary);line-height:1.5;">${escapeHtml(task.description)}</div>` : ''}
+        <div style="display:flex;flex-wrap:wrap;gap:var(--space-2);">
+          <span class="badge badge-neutral">Vence ${dueLabel}</span>
+          <span class="badge badge-neutral">Peso ${task.weight}%</span>
+          <span class="badge badge-${task.status === 'completed' ? 'success' : 'warning'}">${statusLabel}</span>
+        </div>
+        <div style="margin-top:var(--space-2);padding-top:var(--space-4);border-top:1px solid var(--color-border);">
+          <div style="font-weight:600;margin-bottom:var(--space-3);">📚 Materiales relacionados</div>
+          ${related.length > 0 ? `
+            <div style="display:flex;flex-direction:column;gap:var(--space-2);">
+              ${related.map(c => `
+                <a href="#/student/class/${encodeURIComponent(c.id)}" style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:var(--radius-sm);background:var(--color-surface-2);text-decoration:none;color:var(--color-text-primary);font-size:14px;font-weight:500;">
+                  <span>📄</span> ${escapeHtml(c.title || c.id)}
+                </a>
+              `).join('')}
+            </div>
+            <div style="margin-top:var(--space-3);font-size:12px;color:var(--color-text-muted);">Cada clase incluye sus materiales de referencia.</div>
+          ` : '<div style="font-size:13px;color:var(--color-text-muted);">Esta tarea no tiene clases vinculadas.</div>'}
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost dialog-close">Cerrar</button>
+      </div>
+    </div>
+  `;
+
+  const cleanup = () => overlay.remove();
+  overlay.querySelectorAll('.dialog-close').forEach(el => el.addEventListener('click', cleanup));
+  overlay.addEventListener('click', (event) => { if (event.target === overlay) cleanup(); });
+  overlay.addEventListener('keydown', (event) => { if (event.key === 'Escape') cleanup(); });
+  document.body.appendChild(overlay);
 }

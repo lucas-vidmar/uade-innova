@@ -432,7 +432,8 @@ function showCreateTaskModal(subjectId, classes, container) {
         </div>
         <div class="form-group">
           <label class="form-label">Clases vinculadas</label>
-          <div style="display:flex;flex-wrap:wrap;gap:var(--space-2)" id="task-classes-container">
+          <button type="button" class="btn btn-secondary btn-sm" id="task-link-classes-btn" aria-expanded="false" aria-controls="task-classes-container">${icon('link')} Vincular a clases</button>
+          <div style="display:none;flex-wrap:wrap;gap:var(--space-2);margin-top:var(--space-3);padding:var(--space-3);border:1px solid var(--color-border);border-radius:var(--radius-md)" id="task-classes-container" role="group" aria-label="Seleccionar clases">
             ${(classes || []).map(c => `
               <label class="badge badge-neutral" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:4px;padding:6px 12px;">
                 <input type="checkbox" class="task-class-checkbox" value="${c.id}" />
@@ -463,6 +464,25 @@ function showCreateTaskModal(subjectId, classes, container) {
   overlay.querySelectorAll('.modal-close-btn').forEach(btn => btn.addEventListener('click', cleanup));
   overlay.addEventListener('click', (event) => { if (event.target === overlay) cleanup(); });
 
+  /* ── 'Vincular a clases' toggle: reveals the class multi-select ── */
+  const linkClassesBtn = overlay.querySelector('#task-link-classes-btn');
+  const classesContainer = overlay.querySelector('#task-classes-container');
+  if (linkClassesBtn && classesContainer) {
+    const toggleClasses = () => {
+      const visible = classesContainer.style.display !== 'flex';
+      classesContainer.style.display = visible ? 'flex' : 'none';
+      linkClassesBtn.setAttribute('aria-expanded', visible ? 'true' : 'false');
+      linkClassesBtn.innerHTML = visible
+        ? `${icon('link')} Ocultar clases`
+        : `${icon('link')} Vincular a clases`;
+      if (visible) {
+        const firstCheckbox = classesContainer.querySelector('.task-class-checkbox');
+        if (firstCheckbox) firstCheckbox.focus();
+      }
+    };
+    linkClassesBtn.addEventListener('click', toggleClasses);
+  }
+
   overlay.querySelector('#task-save-btn')?.addEventListener('click', async () => {
     const title = overlay.querySelector('#task-title').value.trim();
     const description = overlay.querySelector('#task-description').value.trim();
@@ -479,6 +499,9 @@ function showCreateTaskModal(subjectId, classes, container) {
     if (selectedClasses.length === 0) {
       const { toast } = await import('../../components/Toast.js');
       toast('error', 'Campos requeridos', 'Seleccioná al menos una clase vinculada.');
+      if (linkClassesBtn && classesContainer && classesContainer.style.display !== 'flex') {
+        linkClassesBtn.click();
+      }
       return;
     }
 
@@ -515,6 +538,12 @@ function showCreateTaskModal(subjectId, classes, container) {
 
 /* ── Deadline Edit Modal ────────────────────────────────── */
 function showDeadlineEditModal(deadline, classes, subjectId, container) {
+  const linkedClassIds = (deadline.classIds || [deadline.classId]).filter(Boolean);
+  const linkedCount = classes.filter(c => linkedClassIds.includes(c.id)).length;
+  const linkBtnLabel = linkedCount > 0
+    ? `Vincular a clases (${linkedCount} vinculada${linkedCount === 1 ? '' : 's'})`
+    : 'Vincular a clases';
+
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
@@ -530,10 +559,11 @@ function showDeadlineEditModal(deadline, classes, subjectId, container) {
         </div>
         <div class="form-group">
           <label class="form-label">Clases vinculadas</label>
-          <div style="display:flex;flex-wrap:wrap;gap:var(--space-2)" id="edit-deadline-classes">
+          <button type="button" class="btn btn-secondary btn-sm" id="edit-link-classes-btn" aria-expanded="false" aria-controls="edit-deadline-classes">${icon('link')} ${linkBtnLabel}</button>
+          <div style="display:none;flex-wrap:wrap;gap:var(--space-2);margin-top:var(--space-3);padding:var(--space-3);border:1px solid var(--color-border);border-radius:var(--radius-md)" id="edit-deadline-classes" role="group" aria-label="Seleccionar clases">
             ${(classes || []).map(c => `
               <label class="badge badge-neutral" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:4px;padding:6px 12px;">
-                <input type="checkbox" class="edit-deadline-class-checkbox" value="${c.id}" ${(deadline.classIds || [deadline.classId]).filter(Boolean).includes(c.id) ? 'checked' : ''} />
+                <input type="checkbox" class="edit-deadline-class-checkbox" value="${c.id}" ${linkedClassIds.includes(c.id) ? 'checked' : ''} />
                 ${c.title || c.id}
               </label>
             `).join('')}
@@ -565,12 +595,31 @@ function showDeadlineEditModal(deadline, classes, subjectId, container) {
   overlay.querySelectorAll('.modal-close-btn').forEach(el => el.addEventListener('click', cleanup));
   overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(); });
 
+  /* ── 'Vincular a clases' toggle: reveals the class multi-select ── */
+  const editLinkBtn = overlay.querySelector('#edit-link-classes-btn');
+  const editClassesContainer = overlay.querySelector('#edit-deadline-classes');
+  if (editLinkBtn && editClassesContainer) {
+    const toggleEditClasses = () => {
+      const visible = editClassesContainer.style.display !== 'flex';
+      editClassesContainer.style.display = visible ? 'flex' : 'none';
+      editLinkBtn.setAttribute('aria-expanded', visible ? 'true' : 'false');
+      const checkedCount = [...editClassesContainer.querySelectorAll('.edit-deadline-class-checkbox:checked')].length;
+      editLinkBtn.innerHTML = visible
+        ? `${icon('link')} Ocultar clases`
+        : `${icon('link')} Vincular a clases${checkedCount > 0 ? ` (${checkedCount} vinculada${checkedCount === 1 ? '' : 's'})` : ''}`;
+    };
+    editLinkBtn.addEventListener('click', toggleEditClasses);
+  }
+
   overlay.querySelector('#edit-deadline-save').addEventListener('click', async () => {
     const title = overlay.querySelector('#edit-deadline-title').value.trim();
     if (!title) return;
     const selectedClasses = [...overlay.querySelectorAll('.edit-deadline-class-checkbox:checked')].map(cb => cb.value);
     if (selectedClasses.length === 0) {
       toast('error', 'Campos requeridos', 'Seleccioná al menos una clase vinculada.');
+      if (editLinkBtn && editClassesContainer && editClassesContainer.style.display !== 'flex') {
+        editLinkBtn.click();
+      }
       return;
     }
     try {
@@ -782,6 +831,7 @@ function icon(name) {
     book: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>',
     alert: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.86 1.82 18a2 2 0 0 0 1.72 3h16.92a2 2 0 0 0 1.72-3L13.7 3.86a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
     activity: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg>',
+    link: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>',
   };
 
   return `<span class="ui-icon" aria-hidden="true">${icons[name] || icons.clock}</span>`;
