@@ -953,6 +953,11 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
     // 9. Markdown processing
     return processed
       .replace(/\[(\d+)\]/g, '<sup class="citation-ref" data-source-index="$1" style="color:var(--color-primary,#0066cc);cursor:pointer;font-weight:700;">[$1]</sup>')
+      .replace(/\[([^\]]+)\]\(((?:#|\/|https?:\/\/)[^)\s]+)\)/g, (_, label, href) => {
+        const safeHref = href.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const safeLabel = escapeHtml(label);
+        return `<a href="${safeHref}" class="chat-task-link" style="color:var(--color-primary,#0066cc);text-decoration:underline;">${safeLabel}</a>`;
+      })
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.+?)\*/g, '<em>$1</em>')
       .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')

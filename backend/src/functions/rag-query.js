@@ -495,28 +495,83 @@ app.http('rag-query', {
         let deadlineBlock = '';
         const deadlinePatterns = ['entrega', 'vencimiento', 'deadline', 'fecha', 'semana', 'cuándo', 'próxima', 'próximo'];
         if (deadlinePatterns.some(p => question.toLowerCase().includes(p))) {
+            const now = new Date();
+            const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+            // ── Entregas del alumno (tareas por estudiante, Story 11.1.5) ──
+            // Carga las tareas del alumno desde tasks-config/{studentId}.json
+            // (misma fuente que GET /api/tasks) para responder "¿qué entregas
+            // tengo esta semana?" con el detalle de la propia entrega.
+            const tasksStudentId = user?.id || sanitizedId;
+            let studentTasks = [];
             try {
-                const deadlines = await loadJson('deadlines', `${subjectId}.json`);
-                if (Array.isArray(deadlines) && deadlines.length > 0) {
-                    const now = new Date();
-                    const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-                    const upcoming = deadlines.filter(d => {
-                        const due = new Date(d.dueDate);
-                        return due >= now && due <= weekFromNow;
-                    });
-                    if (upcoming.length > 0) {
-                        deadlineBlock = `\n\n<entregas_semana>\nEntregas de la semana:\n${upcoming.map(d => `- ${d.title}: vence el ${new Date(d.dueDate).toLocaleDateString('es-AR')}`).join('\n')}\n</entregas_semana>`;
-                    } else {
-                        const nextDeadline = deadlines
-                            .filter(d => new Date(d.dueDate) >= now)
-                            .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))[0];
-                        if (nextDeadline) {
-                            deadlineBlock = `\n\n<entregas_semana>\nNo tenés entregas esta semana. Tu próxima entrega es ${nextDeadline.title} el ${new Date(nextDeadline.dueDate).toLocaleDateString('es-AR')}.\n</entregas_semana>`;
+                const savedTasks = await loadJson(CONFIG.containers.tasks, `${tasksStudentId}.json`);
+                if (Array.isArray(savedTasks)) studentTasks = savedTasks;
+            } catch (taskErr) {
+                context.warn(`[RAG] Error loading student tasks (non-blocking) studentId=${tasksStudentId}:`, taskErr.message);
+            }
+
+            const pendingSubjectTasks = studentTasks.filter(t =>
+                t.subjectId === subjectId &&
+                t.status !== 'completed'
+            );
+            const upcomingTasks = pendingSubjectTasks.filter(t => {
+                const due = new Date(t.dueDate);
+                return due >= now && due <= weekFromNow;
+            });
+
+            let subjectName = subjectId;
+            try {
+                const subjects = await loadJson(CONFIG.containers.classes, CONFIG.blobs.subjects);
+                if (Array.isArray(subjects)) {
+                    const found = subjects.find(s => s?.id === subjectId);
+                    if (found?.name) subjectName = found.name;
+                }
+            } catch (subjectErr) {
+                context.warn('[RAG] Error loading subjects for deadlines (non-blocking):', subjectErr.message);
+            }
+
+            if (upcomingTasks.length > 0) {
+                const lines = upcomingTasks
+                    .map(t => {
+                        const date = new Date(t.dueDate).toLocaleDateString('es-AR');
+                        return `- ${t.title} (${subjectName}) — vence el ${date} — [Ver tarea](#/student/tasks)`;
+                    })
+                    .join('\n');
+                deadlineBlock = `\n\n<entregas_semana>\nEntregas de la semana (${subjectName}):\n${lines}\n</entregas_semana>`;
+                context.log(`[RAG] Deadline augmentation: ${upcomingTasks.length} student tasks this week for subjectId=${subjectId}, studentId=${tasksStudentId}`);
+            } else if (studentTasks.some(t => t.subjectId === subjectId && t.status !== 'completed')) {
+                const nextTask = pendingSubjectTasks
+                    .filter(t => new Date(t.dueDate) >= now)
+                    .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))[0];
+                if (nextTask) {
+                    const date = new Date(nextTask.dueDate).toLocaleDateString('es-AR');
+                    deadlineBlock = `\n\n<entregas_semana>\nNo tenés entregas esta semana. Tu próxima entrega es ${nextTask.title} el ${date}.\n</entregas_semana>`;
+                    context.log(`[RAG] Deadline augmentation: no weekly tasks, next student task subjectId=${subjectId}, studentId=${tasksStudentId}`);
+                }
+            } else {
+                // Fallback: entregas por materia (deadlines/{subjectId}.json)
+                try {
+                    const deadlines = await loadJson('deadlines', `${subjectId}.json`);
+                    if (Array.isArray(deadlines) && deadlines.length > 0) {
+                        const upcoming = deadlines.filter(d => {
+                            const due = new Date(d.dueDate);
+                            return due >= now && due <= weekFromNow;
+                        });
+                        if (upcoming.length > 0) {
+                            deadlineBlock = `\n\n<entregas_semana>\nEntregas de la semana (${subjectName}):\n${upcoming.map(d => `- ${d.title}: vence el ${new Date(d.dueDate).toLocaleDateString('es-AR')}`).join('\n')}\n</entregas_semana>`;
+                        } else {
+                            const nextDeadline = deadlines
+                                .filter(d => new Date(d.dueDate) >= now)
+                                .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))[0];
+                            if (nextDeadline) {
+                                deadlineBlock = `\n\n<entregas_semana>\nNo tenés entregas esta semana. Tu próxima entrega es ${nextDeadline.title} el ${new Date(nextDeadline.dueDate).toLocaleDateString('es-AR')}.\n</entregas_semana>`;
+                            }
                         }
                     }
+                } catch (deadlineErr) {
+                    context.warn('[RAG] Error loading deadlines (non-blocking):', deadlineErr.message);
                 }
-            } catch (deadlineErr) {
-                context.warn('[RAG] Error loading deadlines (non-blocking):', deadlineErr.message);
             }
         }
 

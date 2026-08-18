@@ -1285,3 +1285,94 @@ test('rag-query sandbox mode should keep subjectId scope in Pinecone filter', as
         authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ oid: 'test-user-oid', userRoles: ['Alumno'] }));
     });
 });
+
+test('rag-query augments prompt with student weekly tasks (Story 11.1.5 happy path)', async (t) => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    for (let i = 0; i < 3; i++) { try { await openaiMocks.chatCompletion('drain'); } catch {} }
+    openaiMocks.chatCompletion.mock.resetCalls();
+
+    const now = new Date();
+    const thisWeek = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const later = new Date(now.getTime() + 40 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+    const saved = storageMocks.loadJson.mock.getMockImplementation ? storageMocks.loadJson.mock.getMockImplementation() : null;
+    storageMocks.loadJson.mock.mockImplementation(async (container, blob) => {
+        if (container === 'tasks-config') {
+            return [
+                { id: 'task-1', studentId: 'alu-001', title: 'TP1: Diagrama de Arquitectura C4', dueDate: thisWeek, weight: 25, status: 'pending', classIds: ['class-01'], subjectId: 'arq-software-2026' },
+                { id: 'task-2', studentId: 'alu-001', title: 'Quiz Online', dueDate: later, weight: 10, status: 'pending', classIds: ['class-01'], subjectId: 'arq-software-2026' },
+            ];
+        }
+        if (container === 'classes-config' && blob === 'subjects.json') {
+            return [{ id: 'arq-software-2026', name: 'Arquitectura de Software' }];
+        }
+        return null;
+    });
+
+    authUtilsMocks.getAuthenticatedUser.mock.mockImplementation(() => ({ id: 'alu-001', userId: 'alu-001', sanitizedId: 'alu_001' }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn(), warn: mock.fn() };
+    const mockRequest = {
+        json: async () => ({ question: '¿qué entregas tengo esta semana?', subjectId: 'arq-software-2026', classIds: ['class-01'] }),
+        headers: new Map(),
+        user: { id: 'alu-001' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    const messages = openaiMocks.chatCompletion.mock.calls[0].arguments[0];
+    const systemPrompt = messages.find(m => m.role === 'system').content;
+    assert.ok(systemPrompt.includes('<entregas_semana>'), 'Should include entregas_semana block');
+    assert.ok(systemPrompt.includes('TP1: Diagrama de Arquitectura C4'), 'Should include task title');
+    assert.ok(systemPrompt.includes('Arquitectura de Software'), 'Should include subject name');
+    assert.ok(systemPrompt.includes('[Ver tarea](#/student/tasks)'), 'Should include task detail link');
+
+    t.after(() => {
+        storageMocks.loadJson.mock.mockImplementation(saved || (async () => null));
+        authUtilsMocks.getAuthenticatedUser.mock.mockImplementation(() => ({ id: 'test-user-oid', roles: ['Alumno'] }));
+    });
+});
+
+test('rag-query returns no-weekly-tasks fallback when student has no tasks this week (Story 11.1.5)', async (t) => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    for (let i = 0; i < 3; i++) { try { await openaiMocks.chatCompletion('drain'); } catch {} }
+    openaiMocks.chatCompletion.mock.resetCalls();
+
+    const now = new Date();
+    const later = new Date(now.getTime() + 40 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+    const saved = storageMocks.loadJson.mock.getMockImplementation ? storageMocks.loadJson.mock.getMockImplementation() : null;
+    storageMocks.loadJson.mock.mockImplementation(async (container, blob) => {
+        if (container === 'tasks-config') {
+            return [
+                { id: 'task-3', studentId: 'alu-001', title: 'TP2: Rest API', dueDate: later, weight: 30, status: 'pending', classIds: ['class-01'], subjectId: 'arq-software-2026' },
+            ];
+        }
+        if (container === 'classes-config' && blob === 'subjects.json') {
+            return [{ id: 'arq-software-2026', name: 'Arquitectura de Software' }];
+        }
+        return null;
+    });
+
+    authUtilsMocks.getAuthenticatedUser.mock.mockImplementation(() => ({ id: 'alu-001', userId: 'alu-001', sanitizedId: 'alu_001' }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn(), warn: mock.fn() };
+    const mockRequest = {
+        json: async () => ({ question: '¿qué entregas tengo esta semana?', subjectId: 'arq-software-2026', classIds: ['class-01'] }),
+        headers: new Map(),
+        user: { id: 'alu-001' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    const messages = openaiMocks.chatCompletion.mock.calls[0].arguments[0];
+    const systemPrompt = messages.find(m => m.role === 'system').content;
+    assert.ok(systemPrompt.includes('No tenés entregas esta semana. Tu próxima entrega es TP2: Rest API'), 'Should include the no-weekly-tasks fallback with next task');
+
+    t.after(() => {
+        storageMocks.loadJson.mock.mockImplementation(saved || (async () => null));
+        authUtilsMocks.getAuthenticatedUser.mock.mockImplementation(() => ({ id: 'test-user-oid', roles: ['Alumno'] }));
+    });
+});
