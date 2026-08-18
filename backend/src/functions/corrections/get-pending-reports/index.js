@@ -137,6 +137,7 @@ app.http('get-pending-reports', {
         question: c.question,
         originalAnswer: c.originalAnswer,
         issueDetail: c.issueDetail,
+        message: c.message || '',
         classId: c.classId,
         status: c.status,
         createdAt: c.createdAt,

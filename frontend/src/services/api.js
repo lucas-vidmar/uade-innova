@@ -24,7 +24,7 @@ import {
     ragQuery, ragQueryStream, globalSearch,
     getChatHistory, clearChatHistory, sendChatFeedback,
     sendChatRating, getSatAnalytics, reportChatIssue,
-    reportMissingInfo,
+    reportMissingInfo, reportMissingKeyword,
     saveConversation, listConversations, getConversation, deleteConversation
 } from './rag.api.js';
 import {
@@ -98,7 +98,7 @@ export const api = {
 
     ragQuery, ragQueryStream, globalSearch,
     getChatHistory, clearChatHistory, sendChatFeedback,
-    sendChatRating, getSatAnalytics, reportChatIssue, reportMissingInfo,
+    sendChatRating, getSatAnalytics, reportChatIssue, reportMissingInfo, reportMissingKeyword,
     saveConversation, listConversations, getConversation, deleteConversation,
 
     getMaterialStatus, getMaterialStatusBatch, _getMaterialStatusBatchGet, ingestMaterial,

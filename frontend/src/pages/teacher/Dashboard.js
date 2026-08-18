@@ -177,7 +177,7 @@ export async function renderTeacherDashboard(container) {
             <div class="class-list-date">${icon('alert')}</div>
             <div class="class-list-info">
               <div class="class-list-title">${escapeHtml(item.question || 'Consulta sin título')}</div>
-              <div class="class-list-topics">${escapeHtml(item.issueDetail || 'Sin detalle provisto.')}</div>
+              <div class="class-list-topics">${escapeHtml(item.message || item.issueDetail || 'Sin detalle provisto.')}</div>
               <div class="class-list-files">Reporte: ${item.createdAt ? (() => { const d = new Date(item.createdAt); return isNaN(d.getTime()) ? '---' : d.toLocaleDateString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); })() : '---'}</div>
             </div>
             <div class="class-list-actions" style="gap:var(--space-2)">

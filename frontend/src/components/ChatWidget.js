@@ -196,6 +196,9 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
               <button class="report-issue-btn ${msg.issueReported ? 'active' : ''}" data-message-id="${msg.id || ''}" title="Reportar problema" ${msg.issueReported ? 'disabled' : ''}>
                 ${msg.issueReported ? '✅ Reportado' : 'Reportar respuesta incorrecta'}
               </button>
+              <button class="report-missing-keyword-btn ${msg.missingKeywordReported ? 'active' : ''}" data-message-id="${msg.id || ''}" title="Reportar concepto faltante" ${msg.missingKeywordReported ? 'disabled' : ''}>
+                ${msg.missingKeywordReported ? '✅ Concepto reportado' : 'Reportar concepto faltante'}
+              </button>
               ${isLowConfidence(msg.content) && !msg.missingInfoReported ? `
               <button class="report-missing-info-btn" data-message-id="${msg.id || ''}" title="Reportar información faltante">
                 Reportar información faltante
@@ -410,6 +413,7 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
                   </button>
                 </div>
                 <button class="report-issue-btn" data-message-id="${assistantMsg.id}" title="Reportar problema">Reportar respuesta incorrecta</button>
+                <button class="report-missing-keyword-btn" data-message-id="${assistantMsg.id}" title="Reportar concepto faltante">Reportar concepto faltante</button>
               </div>
             `;
             bindFeedbackEvents(footerEl);
@@ -702,6 +706,75 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
     });
   };
 
+  const showMissingKeywordModal = () => {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal-content" style="max-width:560px;width:92%;">
+          <div class="modal-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+            <h3 class="h4" style="margin:0;">Reportar concepto faltante</h3>
+            <button type="button" class="btn btn-ghost btn-sm dialog-close" aria-label="Cerrar">✕</button>
+          </div>
+          <div class="modal-body">
+            <div style="margin-bottom:16px;">
+              <label class="form-label" for="missing-keyword-input" style="font-weight:600;">¿Qué concepto no encontraste?</label>
+              <textarea id="missing-keyword-input" class="form-input" style="min-height:80px;resize:vertical;" placeholder="Ej: patrón Observer, arquitectura hexagonal..."></textarea>
+              <p id="missing-keyword-error" style="display:none;margin-top:6px;color:var(--color-error);font-size:13px;"></p>
+            </div>
+            <div>
+              <label class="form-label" for="missing-keyword-class" style="font-weight:600;">¿En qué clase esperabas encontrarlo? (opcional)</label>
+              <select id="missing-keyword-class" class="form-input" style="min-height:44px;">
+                <option value="">No estoy seguro / Cualquier clase</option>
+                ${(classes || []).map(c => `
+                  <option value="${c.id}">${escapeHtml(c.title || c.id)}</option>
+                `).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-ghost dialog-cancel">Cancelar</button>
+            <button type="button" class="btn btn-primary dialog-confirm" id="missing-keyword-submit-btn" disabled>Enviar reporte</button>
+          </div>
+        </div>
+      `;
+
+      const textarea = overlay.querySelector('#missing-keyword-input');
+      const errorEl = overlay.querySelector('#missing-keyword-error');
+      const submitBtn = overlay.querySelector('#missing-keyword-submit-btn');
+      const classSelect = overlay.querySelector('#missing-keyword-class');
+
+      const cleanup = (result) => { overlay.remove(); resolve(result); };
+
+      textarea.addEventListener('input', () => {
+        submitBtn.disabled = (textarea.value || '').trim().length < 2;
+        errorEl.style.display = 'none';
+      });
+
+      overlay.querySelector('.dialog-close')?.addEventListener('click', () => cleanup(null));
+      overlay.querySelector('.dialog-cancel')?.addEventListener('click', () => cleanup(null));
+      overlay.addEventListener('click', (event) => { if (event.target === overlay) cleanup(null); });
+
+      submitBtn.addEventListener('click', () => {
+        const val = (textarea.value || '').trim();
+        if (val.length < 2) {
+          errorEl.textContent = 'Ingresá el concepto que no encontraste.';
+          errorEl.style.display = 'block';
+          textarea.focus();
+          return;
+        }
+        cleanup({ keyword: val, classId: classSelect.value || '' });
+      });
+
+      textarea.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') cleanup(null);
+      });
+
+      document.body.appendChild(overlay);
+      setTimeout(() => textarea.focus(), 100);
+    });
+  };
+
   const showCitationModal = (source) => {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -821,6 +894,40 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
           toast('success', 'Reporte enviado', 'El docente recibió una alerta sobre la información faltante.');
         } catch (err) {
           console.error('Error reporting missing info:', err);
+          toast('error', 'No se pudo reportar', err?.message || 'Intentá nuevamente en unos segundos.');
+        }
+      });
+    });
+  parent.querySelectorAll('.report-missing-keyword-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const messageId = btn.dataset.messageId;
+        if (!messageId || btn.disabled) return;
+
+        const result = await showMissingKeywordModal();
+        if (!result) return;
+
+        const msg = messages.find(m => m.id === messageId);
+        const msgIndex = messages.indexOf(msg);
+        const userMsg = msgIndex > 0 ? messages[msgIndex - 1] : null;
+        const question = userMsg?.role === 'user' ? userMsg.content : '';
+        const answer = msg?.content || '';
+
+        try {
+          await api.reportMissingKeyword({
+            messageId,
+            subjectId,
+            classId: result.classId,
+            keyword: result.keyword,
+            question,
+            answer,
+          });
+          if (msg) msg.missingKeywordReported = true;
+          btn.disabled = true;
+          btn.classList.add('active');
+          btn.textContent = '✅ Concepto reportado';
+          toast('success', 'Reporte enviado', 'El docente recibió una alerta sobre el concepto faltante.');
+        } catch (err) {
+          console.error('Error reporting missing keyword:', err);
           toast('error', 'No se pudo reportar', err?.message || 'Intentá nuevamente en unos segundos.');
         }
       });

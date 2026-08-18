@@ -17,6 +17,7 @@ const authMocks = {
 const storageState = {
     chatLogs: new Map(),
     alerts: new Map(),
+    classes: new Map(),
 };
 
 const storageMocks = {
@@ -36,6 +37,9 @@ const storageMocks = {
         }
         if (container === 'teacher-alerts') {
             return storageState.alerts.get(blobName) || null;
+        }
+        if (container === 'classes-config') {
+            return storageState.classes.get(blobName) || null;
         }
         return null;
     }),
@@ -76,6 +80,7 @@ await import('./chat-api.js');
 function resetState() {
     storageState.chatLogs.clear();
     storageState.alerts.clear();
+    storageState.classes.clear();
     principalMock = { userRoles: ['Docente'], oid: 'teacher-oid' };
 }
 
@@ -128,6 +133,86 @@ test('teacher-ai-feedback-alerts should require teacher or director role', async
     );
 
     assert.strictEqual(response.status, 403);
+});
+
+test('chat-report-issue missing-keyword should log type and notify teacher with class name', async () => {
+    resetState();
+    storageState.classes.set('arq-software-2026.json', [
+        { id: 'class-03', title: 'Clase 3 — Arquitectura Hexagonal y DDD' },
+        { id: 'class-04', title: 'Clase 4 — Patrones de Diseño' },
+    ]);
+
+    principalMock = { userRoles: ['Alumno'], oid: 'student-1' };
+
+    const response = await handlers['chat-report-issue'](
+        {
+            json: async () => ({
+                messageId: 'msg-900',
+                subjectId: 'arq-software-2026',
+                issueDetail: 'Patrón Observer',
+                question: '¿Qué es el patrón Observer?',
+                answer: 'No encontré información sobre ese patrón.',
+                type: 'missing-keyword',
+                classId: 'class-03',
+            }),
+        },
+        { log: () => {}, error: () => {}, warn: () => {} }
+    );
+
+    assert.strictEqual(response.status, 200);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.success, true);
+
+    const alertPath = 'arq-software-2026/missing-kw-msg-900.json';
+    const alert = storageState.alerts.get(alertPath);
+    assert.ok(alert);
+    assert.strictEqual(alert.type, 'missing-keyword');
+    assert.strictEqual(alert.keyword, 'Patrón Observer');
+    assert.strictEqual(alert.issueDetail, 'Patrón Observer');
+    assert.strictEqual(alert.classId, 'class-03');
+    assert.strictEqual(alert.message, "Un alumno reportó que el concepto 'Patrón Observer' no aparece en los materiales de Clase 3 — Arquitectura Hexagonal y DDD");
+});
+
+test('chat-report-issue missing-keyword without class falls back to materia label', async () => {
+    resetState();
+    principalMock = { userRoles: ['Alumno'], oid: 'student-1' };
+
+    const response = await handlers['chat-report-issue'](
+        {
+            json: async () => ({
+                messageId: 'msg-901',
+                subjectId: 'arq-software-2026',
+                issueDetail: 'Microservicios',
+                type: 'missing-keyword',
+            }),
+        },
+        { log: () => {}, error: () => {}, warn: () => {} }
+    );
+
+    assert.strictEqual(response.status, 200);
+    const alert = storageState.alerts.get('arq-software-2026/missing-kw-msg-901.json');
+    assert.ok(alert);
+    assert.strictEqual(alert.type, 'missing-keyword');
+    assert.strictEqual(alert.message, "Un alumno reportó que el concepto 'Microservicios' no aparece en los materiales de la materia");
+});
+
+test('chat-report-issue missing-keyword rejects empty keyword', async () => {
+    resetState();
+    principalMock = { userRoles: ['Alumno'], oid: 'student-1' };
+
+    const response = await handlers['chat-report-issue'](
+        {
+            json: async () => ({
+                messageId: 'msg-902',
+                subjectId: 'arq-software-2026',
+                issueDetail: '   ',
+                type: 'missing-keyword',
+            }),
+        },
+        { log: () => {}, error: () => {}, warn: () => {} }
+    );
+
+    assert.strictEqual(response.status, 400);
 });
 
 test('teacher-ai-feedback-alerts should return sorted alerts by subject', async () => {

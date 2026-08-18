@@ -2,6 +2,7 @@ import { withCorrelation } from '../middleware/with-correlation.js';
 import { withAuth } from '../middleware/with-auth.js';
 import { validateFrontDoorId, parseClientPrincipal, getAuthenticatedUser } from '../services/auth-utils.js';
 import { getEnrollment, upsertCorrection, listCorrections, getCorrection, getConversation, RATINGS_TABLE } from '../services/state-store.js';
+import { CONFIG } from '../services/config.js';
 import { v4 as uuidv4 } from 'uuid';
 /**
  * chat-api.js — Azure Functions para feedback e historial de chat
@@ -11,6 +12,7 @@ import { saveJson, loadJson, listBlobs, deleteBlob, getTableClient } from '../se
 
 const CONTAINER_CHAT = 'chat-logs';
 const CONTAINER_TEACHER_ALERTS = 'teacher-alerts';
+const CONTAINER_CLASSES = CONFIG.containers.classes;
 
 function normalizeLimit(value, fallback = 20) {
     const parsed = Number(value);
@@ -22,6 +24,23 @@ function canReadTeacherAlerts(principal) {
     if (process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development') return true;
     const roles = principal?.userRoles || [];
     return roles.includes('Docente') || roles.includes('Director');
+}
+
+async function resolveClassName(subjectId, classId) {
+    if (!subjectId || !classId) return '';
+    try {
+        const classes = await loadJson(CONTAINER_CLASSES, `${subjectId}.json`);
+        if (!Array.isArray(classes)) return '';
+        const match = classes.find((c) => String(c.id) === String(classId));
+        return match?.title ? String(match.title) : '';
+    } catch {
+        return '';
+    }
+}
+
+function missingKeywordTeacherMessage(keyword, className) {
+    const base = `Un alumno reportó que el concepto '${keyword}' no aparece en los materiales`;
+    return className ? `${base} de ${className}` : `${base} de la materia`;
 }
 
 // ── GET /api/chat-history?subjectId={id} ─────────────────────────────
@@ -280,10 +299,13 @@ app.http('chat-report-issue', {
             const { messageId, subjectId, issueDetail, question, answer, type, classId: reportClassId } = await request.json();
             const { userId, sanitizedId } = getAuthenticatedUser(request);
             const detail = String(issueDetail || '').trim();
-            const reportType = type === 'missing-info' ? 'missing-info' : 'ai-feedback-issue';
+            const reportType = type === 'missing-info' ? 'missing-info' : type === 'missing-keyword' ? 'missing-keyword' : 'ai-feedback-issue';
 
             if (!messageId || !subjectId) {
                 return { status: 400, body: JSON.stringify({ error: 'Faltan campos messageId o subjectId' }) };
+            }
+            if (reportType === 'missing-keyword' && detail.length < 2) {
+                return { status: 400, body: JSON.stringify({ error: 'El concepto reportado es obligatorio.' }) };
             }
 
             const now = new Date().toISOString();
@@ -313,7 +335,11 @@ app.http('chat-report-issue', {
                 context.warn(`[chat-report-issue] Could not load/save chat log blob (non-fatal): ${blobErr?.message || blobErr}`);
             }
 
-            const alertId = `ai-issue-${messageId}`;
+            const alertId = `${reportType === 'missing-keyword' ? 'missing-kw' : 'ai-issue'}-${messageId}`;
+            const resolvedClassIdFinal = reportClassId || resolvedClassId || '';
+            const keywordMessage = reportType === 'missing-keyword'
+                ? missingKeywordTeacherMessage(detail, await resolveClassName(subjectId, resolvedClassIdFinal))
+                : '';
             const alert = {
                 id: alertId,
                 type: reportType,
@@ -324,7 +350,9 @@ app.http('chat-report-issue', {
                 question: resolvedQuestion,
                 answerExcerpt: String(resolvedAnswer).slice(0, 240),
                 issueDetail: detail || 'Sin detalle adicional provisto por el alumno.',
-                classId: reportClassId || resolvedClassId || '',
+                keyword: reportType === 'missing-keyword' ? detail : undefined,
+                message: keywordMessage || undefined,
+                classId: resolvedClassIdFinal,
                 createdAt: now,
             };
 
@@ -335,11 +363,12 @@ app.http('chat-report-issue', {
               await upsertCorrection({
                 correctionId,
                 subjectId,
-                classId: reportClassId || resolvedClassId || 'unknown',
+                classId: resolvedClassIdFinal || 'unknown',
                 studentId: userId,
                 question: resolvedQuestion,
                 originalAnswer: String(resolvedAnswer).slice(0, 2000),
                 issueDetail: detail || 'Sin detalle adicional provisto por el alumno.',
+                message: keywordMessage || '',
                 messageId,
                 type: reportType,
                 status: 'pending',
@@ -350,7 +379,7 @@ app.http('chat-report-issue', {
               context.error('[chat-report-issue] Failed to persist correction to tables:', dbErr);
             }
 
-            context.log(`[chat-report-issue] issue reported (subject=${subjectId}, messageId=${messageId}, blobFound=${blobFound})`);
+            context.log(`[chat-report-issue] issue reported (subject=${subjectId}, messageId=${messageId}, type=${reportType}, blobFound=${blobFound})`);
 
             return {
                 status: 200,

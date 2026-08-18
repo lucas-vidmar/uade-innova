@@ -235,6 +235,31 @@ export async function reportMissingInfo({ messageId, subjectId, classId, expecte
     return res.json();
 }
 
+export async function reportMissingKeyword({ messageId, subjectId, classId, keyword, question, answer }) {
+    const res = await apiFetch(`${BASE_URL}/chat-report-issue`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            messageId,
+            subjectId,
+            issueDetail: String(keyword || '').trim(),
+            question: question || '',
+            answer: answer || '',
+            type: 'missing-keyword',
+            classId: classId || '',
+        })
+    });
+    if (!res.ok) {
+        let message = `Error ${res.status}: no se pudo reportar`;
+        try {
+            const err = await res.json();
+            if (err?.error) message = err.error;
+        } catch {}
+        throw new Error(message);
+    }
+    return res.json();
+}
+
 export async function saveConversation({ conversationId, subjectId, messages }) {
     const res = await apiFetch(`${BASE_URL}/conversations/${encodeURIComponent(conversationId)}`, {
         method: 'PUT',

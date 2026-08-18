@@ -3239,6 +3239,35 @@
     text-decoration: none;
 }
 
+.report-missing-keyword-btn {
+    background: transparent;
+    border: none;
+    color: var(--color-primary);
+    padding: 0;
+    height: auto;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    text-decoration-color: transparent;
+}
+
+.report-missing-keyword-btn:hover {
+    color: var(--color-warning);
+    text-decoration-color: currentColor;
+}
+
+.report-missing-keyword-btn.active,
+.report-missing-keyword-btn:disabled {
+    cursor: default;
+    color: var(--color-success);
+    background: transparent;
+    border: none;
+    text-decoration: none;
+}
+
 .chat-sources {
     display: flex;
     flex-wrap: wrap;
