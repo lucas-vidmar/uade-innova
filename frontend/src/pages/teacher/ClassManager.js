@@ -260,6 +260,35 @@ export async function renderClassManager(container) {
 
             applyPendingHighlight();
 
+            document.getElementById('btn-toggle-student-picker')?.addEventListener('click', () => {
+                showStudentPicker = !showStudentPicker;
+                render();
+            });
+
+            container.querySelectorAll('.teacher-student-add').forEach((btn) => {
+                btn.addEventListener('click', async () => {
+                    const studentId = btn.getAttribute('data-student-id');
+                    if (!studentId) return;
+                    try {
+                        await assignStudent(studentId, true);
+                    } catch (err) {
+                        toast('error', 'Error', err?.message || 'No se pudo asignar el alumno.');
+                    }
+                });
+            });
+
+            container.querySelectorAll('.teacher-student-remove').forEach((btn) => {
+                btn.addEventListener('click', async () => {
+                    const studentId = btn.getAttribute('data-student-id');
+                    if (!studentId) return;
+                    try {
+                        await assignStudent(studentId, false);
+                    } catch (err) {
+                        toast('error', 'Error', err?.message || 'No se pudo desasignar el alumno.');
+                    }
+                });
+            });
+
             // Agregar clase
             document.getElementById('btn-add-class')?.addEventListener('click', () => {
                 const overlay = document.createElement('div');
@@ -642,6 +671,7 @@ export async function renderClassManager(container) {
             });
         };
 
+        await refreshStudents();
         render();
     } catch (e) {
         console.error(e);
