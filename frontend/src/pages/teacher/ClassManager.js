@@ -31,12 +31,44 @@ export async function renderClassManager(container) {
     try {
         let classes = await api.getClasses(subjectId);
         let pendingCellHighlight = null;
+        let students = [];
+        let subjectStudents = [];
+        let showStudentPicker = false;
         const escapeHtml = (value = '') => String(value)
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#39;');
+
+        // Enrolled students + student catalog for this subject (Story 1.6).
+        const refreshStudents = async () => {
+            try {
+                const allUsers = await api.getAdminUsers();
+                students = allUsers.filter((u) => String(u.role || '').toLowerCase() === 'student');
+            } catch (err) {
+                console.warn('[ClassManager] No se pudieron cargar los usuarios:', err);
+                students = [];
+            }
+            try {
+                const enrollments = await api.getEnrollmentsBySubject(subjectId);
+                subjectStudents = enrollments.filter((e) => e.role === 'student' && e.status === 'active');
+            } catch (err) {
+                console.warn('[ClassManager] No se pudieron cargar las inscripciones:', err);
+                subjectStudents = [];
+            }
+        };
+
+        const assignStudent = async (studentId, assign) => {
+            if (assign) {
+                await api.createEnrollment(subjectId, studentId, 'student', 'active');
+            } else {
+                await api.deleteEnrollment(subjectId, studentId);
+            }
+            await refreshStudents();
+            render();
+            toast('success', assign ? 'Alumno asignado' : 'Alumno desasignado', assign ? 'El alumno fue asignado a la materia.' : 'El alumno fue desasignado de la materia.');
+        };
 
         const saveAllClasses = async (newClassesList) => {
             let success = false;
@@ -59,6 +91,50 @@ export async function renderClassManager(container) {
         const render = () => {
             container.innerHTML = `
                 <div class="page-container">
+                    <div class="card" style="padding:var(--space-5);margin-bottom:var(--space-5)">
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+                            <div>
+                                <h3 style="margin:0 0 4px;">Alumnos de la materia</h3>
+                                <p style="font-size:var(--fs-sm);color:var(--color-text-secondary);margin:0;">Asigná alumnos a esta materia para que accedan a sus contenidos.</p>
+                            </div>
+                            <button class="btn btn-secondary btn-sm" id="btn-toggle-student-picker">${showStudentPicker ? 'Cerrar selector' : '+ Agregar alumno'}</button>
+                        </div>
+
+                        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:var(--space-4)">
+                            ${subjectStudents.length === 0
+                                ? '<span class="subject-prof-empty" style="color:var(--color-text-secondary);font-size:0.85rem;">Sin alumnos asignados todavía.</span>'
+                                : subjectStudents.map((enr) => {
+                                    const student = students.find((s) => s.id === enr.userId);
+                                    return `
+                                        <span class="subject-prof-pill">
+                                            <span class="subject-prof-pill-name">${escapeHtml(student?.name || enr.userId)}</span>
+                                            <button class="teacher-student-remove" data-student-id="${escapeHtml(enr.userId)}" title="Quitar alumno">×</button>
+                                        </span>
+                                    `;
+                                }).join('')}
+                        </div>
+
+                        ${showStudentPicker ? `
+                            <div style="margin-top:var(--space-4);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:var(--space-3);">
+                                <div class="subject-prof-picker-title" style="font-weight:600;margin-bottom:var(--space-2);">Agregar alumno</div>
+                                <div style="display:flex;flex-wrap:wrap;gap:6px;max-height:220px;overflow-y:auto;">
+                                    ${(() => {
+                                        const assignedIds = new Set(subjectStudents.map((e) => e.userId));
+                                        const available = students.filter((s) => !assignedIds.has(s.id));
+                                        if (available.length === 0) {
+                                            return '<span class="subject-prof-empty" style="color:var(--color-text-secondary);font-size:0.85rem;">No hay más alumnos disponibles.</span>';
+                                        }
+                                        return available.map((s) => `
+                                            <button class="btn btn-secondary btn-sm teacher-student-add" data-student-id="${escapeHtml(s.id)}">
+                                                ${escapeHtml(s.name || s.id)} <span style="opacity:.6">(${escapeHtml(s.id)})</span>
+                                            </button>
+                                        `).join('');
+                                    })()}
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+
                     ${Array.isArray(classes) && classes.length === 0 ? `
                         <div class="empty-state">
                             <span class="empty-icon">📚</span>
