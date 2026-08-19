@@ -50,6 +50,7 @@
 - [Graph API Credentials](./graph-api-credentials.md) — Microsoft Graph configuration
 - [Reindex Vector ClassId Migration](./reindex-vector-classid-migration.md) — Vector index migration plan
 - [Secrets Inventory (Key Vault / Managed Identity)](./secrets-inventory.md) — Secretos y clasificación Key Vault vs Managed Identity
+- [Azure Cost Management Setup](./azure-cost-setup.md) — Configuración de SP y variables para Cost Management API
 - [Project Status](./project-status.md) — Current project status
 - [Notifications API (OpenAPI)](./notifications-api.json) — Notifications API specification
 - [SGA OpenAPI](./sga-openapi.json) — SGA API specification
