@@ -482,14 +482,57 @@ export async function renderSubjectManagement(container) {
                                                         ` : ''}
                                                     </div>
                                                 </td>
-                                                <td style="text-align:center;">
-                                                    <span
-                                                        class="inline-cell inline-edit-subject subject-directory-enrolled"
-                                                        data-subject-id="${escapeHtml(subject.id)}"
-                                                        data-field="enrolledCount"
-                                                        data-current-value="${subject.enrolledCount || ''}"
-                                                        title="Click para editar cantidad de alumnos"
-                                                    >${subject.enrolledCount || '-'}</span>
+                                                <td>
+                                                    <div class="subject-prof-pills-wrap">
+                                                        <div class="subject-prof-pills">
+                                                            ${(() => {
+                                                                const studentIds = getEnrolledStudentIds(subject);
+                                                                const assignedStudents = studentIds
+                                                                    .map((sid) => getStudentUsers().find((s) => s.id === sid))
+                                                                    .filter(Boolean);
+                                                                const missingCount = studentIds.length - assignedStudents.length;
+                                                                const pills = assignedStudents.map((s) => `
+                                                                    <span class="subject-prof-pill">
+                                                                        <span class="subject-prof-pill-name">${escapeHtml(s.name || s.id)}</span>
+                                                                        <button class="subject-student-remove" data-subject-id="${escapeHtml(subject.id)}" data-student-id="${escapeHtml(s.id)}" title="Quitar alumno">×</button>
+                                                                    </span>
+                                                                `);
+                                                                if (missingCount > 0) {
+                                                                    pills.push(`<span class="subject-prof-pill subject-prof-empty">+${missingCount} sin perfil</span>`);
+                                                                }
+                                                                return pills.length > 0
+                                                                    ? pills.join('')
+                                                                    : '<span class="subject-prof-empty">Sin alumnos</span>';
+                                                            })()}
+
+                                                            <button class="subject-student-add" data-subject-id="${escapeHtml(subject.id)}" title="Agregar alumno">+</button>
+                                                        </div>
+
+                                                        ${activeStudentPickerSubjectId === subject.id ? `
+                                                            <div class="subject-prof-picker">
+                                                                <div class="subject-prof-picker-card">
+                                                                    <div class="subject-prof-picker-title">Agregar alumno</div>
+                                                                    <div class="subject-prof-picker-list">
+                                                                        ${(() => {
+                                                                            const studentIds = getEnrolledStudentIds(subject);
+                                                                            const availableStudents = getStudentUsers().filter((s) => !studentIds.includes(s.id));
+                                                                            if (availableStudents.length === 0) {
+                                                                                return '<div class="subject-prof-picker-empty">No hay más alumnos disponibles</div>';
+                                                                            }
+                                                                            return availableStudents.map((s) => `
+                                                                                <button class="subject-student-picker-item" data-subject-id="${escapeHtml(subject.id)}" data-student-id="${escapeHtml(s.id)}">
+                                                                                    ${escapeHtml(s.name || s.id)} <span style="opacity:.6">(${escapeHtml(s.id)})</span>
+                                                                                </button>
+                                                                            `).join('');
+                                                                        })()}
+                                                                    </div>
+                                                                    <div class="subject-prof-picker-actions">
+                                                                        <button class="btn btn-ghost btn-sm subject-student-picker-close" data-subject-id="${escapeHtml(subject.id)}">Cerrar</button>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ` : ''}
+                                                    </div>
                                                 </td>
                                                 <td style="text-align:center;">
                                                     <div class="subject-directory-actions">
@@ -638,6 +681,49 @@ export async function renderSubjectManagement(container) {
                     render();
                 } catch (err) {
                     toast('error', 'Error', err.message || 'No se pudo actualizar la asignacion de profesores.');
+                }
+            });
+        });
+
+        container.querySelectorAll('.subject-student-add').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const subjectId = btn.getAttribute('data-subject-id');
+                if (!subjectId) return;
+                activeStudentPickerSubjectId = activeStudentPickerSubjectId === subjectId ? null : subjectId;
+                render();
+            });
+        });
+
+        container.querySelectorAll('.subject-student-picker-close').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                activeStudentPickerSubjectId = null;
+                render();
+            });
+        });
+
+        container.querySelectorAll('.subject-student-picker-item').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                const subjectId = btn.getAttribute('data-subject-id');
+                const studentId = btn.getAttribute('data-student-id');
+                if (!subjectId || !studentId) return;
+                try {
+                    await saveStudentAssignments(subjectId, studentId, true);
+                    activeStudentPickerSubjectId = null;
+                } catch (err) {
+                    toast('error', 'Error', err?.message || 'No se pudo asignar el alumno.');
+                }
+            });
+        });
+
+        container.querySelectorAll('.subject-student-remove').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                const subjectId = btn.getAttribute('data-subject-id');
+                const studentId = btn.getAttribute('data-student-id');
+                if (!subjectId || !studentId) return;
+                try {
+                    await saveStudentAssignments(subjectId, studentId, false);
+                } catch (err) {
+                    toast('error', 'Error', err?.message || 'No se pudo desasignar el alumno.');
                 }
             });
         });
@@ -813,6 +899,7 @@ export async function renderSubjectManagement(container) {
     try {
         await Promise.all([refreshSubjects(), refreshUsers()]);
         await refreshSubjectProfessorMap();
+        await refreshSubjectEnrollments();
         render();
     } catch (e) {
         console.error(e);
