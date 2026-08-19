@@ -24,6 +24,7 @@ import './functions/chat-api.js';
 import './functions/conversations-api.js';
 import './functions/enrollments-api.js';
 import './functions/get-profile.js';
+import './functions/auth-api.js';
 import './functions/get-roles.js';
 import './functions/save-profile.js';
 import './functions/vector-health.js';

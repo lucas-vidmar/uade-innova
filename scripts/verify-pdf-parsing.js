@@ -7,7 +7,7 @@ import { parseFile } from '../backend/src/services/parser.js';
  * Run with: node scripts/verify-pdf-parsing.js
  */
 
-const TEST_FILE_PATH = path.join(process.cwd(), 'materials', 'ld-Sistemas_de_informacion_gerencial_14 edicion.pdf');
+const TEST_FILE_PATH = path.join(process.cwd(), 'materials', 'bibliography', 'ld-Sistemas_de_informacion_gerencial_14 edicion.pdf');
 
 async function runVerification() {
     console.log('📄 Starting PDF Verification Test...');

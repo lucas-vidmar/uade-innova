@@ -1,5 +1,6 @@
 import { api } from '../../services/api.js';
 import { toast } from '../../components/Toast.js';
+import { renderChangePasswordCard } from '../../components/ChangePasswordForm.js';
 
 export async function renderAdminSettings(container) {
   let config = {
@@ -74,11 +75,15 @@ export async function renderAdminSettings(container) {
       </div>
     </div>
 
+    <div id="change-password-slot"></div>
+
     <div style="display:flex;justify-content:flex-end;gap:var(--space-3);margin-top:var(--space-6)">
       <button class="btn btn-secondary" id="btn-settings-reset">Restablecer</button>
       <button class="btn btn-primary" id="btn-settings-save">Guardar Configuración</button>
     </div>
   `;
+
+  renderChangePasswordCard(container.querySelector('#change-password-slot'), { title: 'Mi contraseña' });
 
   function renderValues() {
     document.getElementById('setting-retention-days').value = config.retentionDays;

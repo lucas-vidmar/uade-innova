@@ -26,6 +26,8 @@ export const CONFIG = {
     quizResults: process.env.AZURE_TABLE_QUIZ_RESULTS || 'QuizResults',
     unansweredQueries: process.env.AZURE_TABLE_UNANSWERED_QUERIES || 'UnansweredQueries',
     adminSettings: process.env.AZURE_TABLE_ADMIN_SETTINGS || 'AdminSettings',
+    users: process.env.AZURE_TABLE_USERS || 'Users',
+    sessions: process.env.AZURE_TABLE_SESSIONS || 'Sessions',
   },
 
   containers: {
@@ -108,6 +110,11 @@ export const CONFIG = {
       jwksTtlMs: Number(process.env.OIDC_JWKS_TTL_MS) || 3600000,
     },
     mockEnabled: process.env.AUTH_MOCK_ENABLED === 'true',
+    sessionTtlMs: Number(process.env.AUTH_SESSION_TTL_MS) || 7 * 24 * 60 * 60 * 1000,
+    loginRateLimit: {
+      windowMs: Number(process.env.LOGIN_RATE_LIMIT_WINDOW_MS) || 60000,
+      attempts: Number(process.env.LOGIN_RATE_LIMIT_ATTEMPTS) || 5,
+    },
   },
 
   budget: {

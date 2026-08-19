@@ -1,0 +1,21 @@
+WEBVTT - Clase 07: Repaso e Integración de Conceptos para el Primer Parcial
+NOTE Materia: DASI - Diseño y Auditoría de Sistemas de Información
+NOTE Unidades I, II y III: Cierre e Integración
+NOTE Referencia Bibliográfica: Laudon & Laudon - Capítulos 1 al 7
+
+1
+00:00:05.000 --> 00:00:20.000
+<v Profesor Martín Ferreiro>Profesor Martín Ferreiro: Buenas tardes a todos. Hoy dedicamos la clase al repaso integral de las Unidades 1, 2 y 3 previo a la instancia de evaluación parcial.</v>
+
+2
+00:00:21.000 --> 00:00:50.000
+<v Profesor Martín Ferreiro>Profesor Martín Ferreiro: Es clave que dominen la relación de causa-efecto entre estrategia de negocio, arquitectura de procesos, requerimientos de información por nivel jerárquico y la selección de infraestructura tecnológica adecuada.</v>
+
+3
+00:00:51.000 --> 00:01:15.000
+<v Alumno Lucas>Alumno Lucas: ¿Habrá preguntas de análisis de casos prácticos donde debamos proponer qué tipo de sistema implementar?</v>
+
+4
+00:01:16.000 --> 00:01:45.000
+<v Profesor Martín Ferreiro>Profesor Martín Ferreiro: Exacto. Se presentará una problemática empresarial concreta y deberán justificar si la solución idónea es un TPS, un ERP, un CRM o un Data Warehouse, argumentando en base a las dimensiones técnica, humana y organizacional.</v>
+

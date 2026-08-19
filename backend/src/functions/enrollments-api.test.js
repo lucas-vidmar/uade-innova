@@ -149,7 +149,7 @@ test('create-enrollment rejects anonymous users', async () => {
 });
 
 test('create-enrollment accepts teacher role', async () => {
-    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'] }));
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'doc-001', userRoles: ['Docente'] }));
     const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
 
@@ -158,14 +158,63 @@ test('create-enrollment accepts teacher role', async () => {
         status: e.status || 'active',
         enrolledAt: e.enrolledAt || '2026-03-10T00:00:00Z',
     }));
+    // Teacher is enrolled as teacher in the subject they are managing (Story 1.6).
+    stateStoreMocks.getEnrollmentsByUser.mock.mockImplementation(async () => [
+        { subjectId: 'arq-software-2026', userId: 'doc-001', role: 'teacher', status: 'active' },
+    ]);
 
     const ctx = makeContext();
+    ctx.user = { id: 'doc-001', userId: 'doc-001', role: 'Docente' };
     const req = makeRequest({}, {});
     req.json = async () => ({ subjectId: 'arq-software-2026', userId: 'alu-001', role: 'student' });
     const res = await handlers['create-enrollment'](req, ctx);
     assert.strictEqual(res.status, 200);
     const body = JSON.parse(res.body);
     assert.strictEqual(body.success, true);
+
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+});
+
+test('create-enrollment rejects teacher outside their own subjects (Story 1.6)', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'doc-001', userRoles: ['Docente'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+
+    // Teacher is only enrolled in another subject.
+    stateStoreMocks.getEnrollmentsByUser.mock.mockImplementation(async () => [
+        { subjectId: 'otra-materia', userId: 'doc-001', role: 'teacher', status: 'active' },
+    ]);
+
+    const ctx = makeContext();
+    ctx.user = { id: 'doc-001', userId: 'doc-001', role: 'Docente' };
+    const req = makeRequest({}, {});
+    req.json = async () => ({ subjectId: 'arq-software-2026', userId: 'alu-001', role: 'student' });
+    const res = await handlers['create-enrollment'](req, ctx);
+    assert.strictEqual(res.status, 403);
+    const body = JSON.parse(res.body);
+    assert.strictEqual(body.error.code, 'FORBIDDEN');
+
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+});
+
+test('create-enrollment allows director in any subject (bypasses teacher scope)', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'dir-001', userRoles: ['Director'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+
+    stateStoreMocks.getEnrollmentsByUser.mock.mockImplementation(async () => []);
+    stateStoreMocks.upsertEnrollment.mock.mockImplementation(async (e) => ({
+        ...e,
+        status: e.status || 'active',
+        enrolledAt: e.enrolledAt || '2026-03-10T00:00:00Z',
+    }));
+
+    const ctx = makeContext();
+    ctx.user = { id: 'dir-001', userId: 'dir-001', role: 'Director' };
+    const req = makeRequest({}, {});
+    req.json = async () => ({ subjectId: 'arq-software-2026', userId: 'alu-001', role: 'student' });
+    const res = await handlers['create-enrollment'](req, ctx);
+    assert.strictEqual(res.status, 200);
 
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
 });

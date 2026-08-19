@@ -203,6 +203,20 @@ export async function checkEnrollment(userId, subjectId) {
     }
 }
 
+export async function getEnrollmentsBySubject(subjectId) {
+    if (!subjectId) return [];
+    try {
+        const res = await fetchWithTimeout(`${BASE_URL}/enrollments?subjectId=${encodeURIComponent(subjectId)}`, { timeout: 4000 });
+        if (!res.ok) return [];
+        const data = await res.json();
+        if (data?.success && Array.isArray(data.data)) return data.data;
+        return Array.isArray(data) ? data : [];
+    } catch (err) {
+        console.error('[API] getEnrollmentsBySubject failed:', err);
+        return [];
+    }
+}
+
 export async function getInterventions({ subjectId, state, risk } = {}) {
     const params = new URLSearchParams();
     if (subjectId) params.set('subjectId', subjectId);

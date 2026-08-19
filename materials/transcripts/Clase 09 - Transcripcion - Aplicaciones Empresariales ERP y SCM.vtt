@@ -1,0 +1,21 @@
+WEBVTT - Clase 09: Aplicaciones Empresariales - ERP y SCM (Unidad IV Parte A)
+NOTE Materia: DASI - Diseño y Auditoría de Sistemas de Información
+NOTE Unidad IV: Aplicaciones Empresariales (ERP y SCM)
+NOTE Referencia Bibliográfica: Laudon & Laudon - Capítulo 9
+
+1
+00:00:05.000 --> 00:00:20.000
+<v Profesor Martín Ferreiro>Profesor Martín Ferreiro: Buenas tardes. Hoy profundizamos en los sistemas de planificación de recursos empresariales (ERP) y la administración de la cadena de suministro (SCM).</v>
+
+2
+00:00:21.000 --> 00:00:45.000
+<v Profesor Martín Ferreiro>Profesor Martín Ferreiro: Un ERP impone mejores prácticas estándar en la industria. Si una empresa adopta un software ERP como SAP o Microsoft Dynamics, a menudo debe adaptar sus procesos internos a los flujos del sistema estándar para evitar costosas personalizaciones.</v>
+
+3
+00:00:46.000 --> 00:01:10.000
+<v Alumno Tomás>Alumno Tomás: ¿Qué es el 'Efecto Látigo' (Bullwhip Effect) en la cadena de suministro y cómo lo mitiga un SCM?</v>
+
+4
+00:01:11.000 --> 00:01:40.000
+<v Profesor Martín Ferreiro>Profesor Martín Ferreiro: El efecto látigo ocurre cuando pequeñas fluctuaciones en la demanda final del consumidor se distorsionan y magnifican a medida que se retrocede en la cadena hacia distribuidores y fabricantes. Un sistema SCM con visibilidad en tiempo real de inventarios y demanda elimina la incertidumbre y reduce drásticamente el inventario de seguridad.</v>
+

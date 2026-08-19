@@ -1,0 +1,21 @@
+WEBVTT - Clase 10: Aplicaciones Empresariales - CRM y Soporte a Decisiones (Unidad IV Parte B)
+NOTE Materia: DASI - Diseño y Auditoría de Sistemas de Información
+NOTE Unidad IV: Aplicaciones Empresariales (CRM y DSS)
+NOTE Referencia Bibliográfica: Laudon & Laudon - Capítulo 9 y 12
+
+1
+00:00:05.000 --> 00:00:20.000
+<v Profesor Martín Ferreiro>Profesor Martín Ferreiro: Hoy vemos Customer Relationship Management (CRM) y Sistemas de Soporte a la Toma de Decisiones (DSS).</v>
+
+2
+00:00:21.000 --> 00:00:45.000
+<v Profesor Martín Ferreiro>Profesor Martín Ferreiro: El CRM consolida todos los puntos de contacto con el cliente (ventas, marketing, servicio posventa). Distinguimos entre CRM Operativo (automatización de la fuerza de ventas, call centers) y CRM Analítico (análisis de valor de vida del cliente y propensión al abandono o Churn Rate).</v>
+
+3
+00:00:46.000 --> 00:01:15.000
+<v Alumna María>Alumna María: ¿Y cómo se diferencian las decisiones estructuradas, semiestructuradas y no estructuradas que alimentan a los DSS?</v>
+
+4
+00:01:16.000 --> 00:01:45.000
+<v Profesor Martín Ferreiro>Profesor Martín Ferreiro: Las decisiones estructuradas son repetitivas y rutinarias (ej: reordenar stock con un umbral prefijado). Las no estructuradas requieren juicio, evaluación e intuición directiva (ej: entrar a un nuevo mercado internacional). Los DSS brindan modelos interactivos de simulación (What-If, Goal-Seeking) para decisiones semiestructuradas.</v>
+

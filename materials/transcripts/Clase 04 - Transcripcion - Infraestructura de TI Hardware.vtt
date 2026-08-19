@@ -1,0 +1,25 @@
+WEBVTT - Clase 04: Infraestructura de TI - Hardware y Tendencias (Unidad III Parte A)
+NOTE Materia: DASI - Diseño y Auditoría de Sistemas de Información
+NOTE Unidad III: Infraestructura de Tecnología de la Información
+NOTE Referencia Bibliográfica: Laudon & Laudon - Capítulo 5
+
+1
+00:00:05.000 --> 00:00:20.000
+<v Profesor Martín Ferreiro>Profesor Martín Ferreiro: Bienvenidos. Entramos en la Unidad 3: Infraestructura de Tecnologías de la Información, comenzando por el hardware y las leyes tecnológicas que impulsan su evolución.</v>
+
+2
+00:00:21.000 --> 00:00:45.000
+<v Profesor Martín Ferreiro>Profesor Martín Ferreiro: La infraestructura de TI consiste en un conjunto de dispositivos físicos y aplicaciones de software requeridas para operar toda la empresa. Hoy repasamos la Ley de Moore, la Ley del Almacenamiento Digital Masivo y la Ley de Metcalfe sobre el valor de las redes.</v>
+
+3
+00:00:46.000 --> 00:01:10.000
+<v Alumno Tomás>Alumno Tomás: Profesor, ¿por qué los centros de cómputos tradicionales migraron masivamente hacia la virtualización y el Cloud Computing?</v>
+
+4
+00:01:11.000 --> 00:01:35.000
+<v Profesor Martín Ferreiro>Profesor Martín Ferreiro: Por costos, escalabilidad y flexibilidad. La virtualización permite ejecutar múltiples instancias de sistemas operativos en un único servidor físico, aumentando la tasa de utilización del 15% a más del 80%. Y la computación en la nube ofrece modelos IaaS, PaaS y SaaS bajo demanda con pago por uso.</v>
+
+5
+00:01:36.000 --> 00:02:10.000
+<v Profesor Martín Ferreiro>Profesor Martín Ferreiro: También debemos considerar la computación verde (Green Computing) y la reducción del consumo energético y huella de carbono de los centros de datos modernos.</v>
+

@@ -1,0 +1,25 @@
+WEBVTT - Clase 13: Seguridad en los Sistemas de Información y Ciberseguridad (Unidad VI)
+NOTE Materia: DASI - Diseño y Auditoría de Sistemas de Información
+NOTE Unidad VI: Seguridad y Control en los SI
+NOTE Referencia Bibliográfica: Laudon & Laudon - Capítulo 8; Charla Luis Lubeck
+
+1
+00:00:05.000 --> 00:00:20.000
+<v Profesor Martín Ferreiro>Profesor Martín Ferreiro: Buenas tardes. Hoy tratamos uno de los temas más críticos de la materia: la Seguridad de la Información, controles internos y auditoría de sistemas.</v>
+
+2
+00:00:21.000 --> 00:00:50.000
+<v Profesor Martín Ferreiro>Profesor Martín Ferreiro: Como nos expuso el especialista Luis Lubeck en su presentación 'La información vale', la seguridad no es un producto sino un proceso continuo de gestión de riesgos basado en la tríada CID: Confidencialidad, Integridad y Disponibilidad.</v>
+
+3
+00:00:51.000 --> 00:01:15.000
+<v Alumna Sofía>Alumna Sofía: Profesor, ¿cuál es la distinción formal entre controles generales y controles de aplicación?</v>
+
+4
+00:01:16.000 --> 00:01:45.000
+<v Profesor Martín Ferreiro>Profesor Martín Ferreiro: Los Controles Generales gobiernan el diseño, la seguridad y el uso de los programas en toda la infraestructura de la organización (controles de software, hardware, seguridad física, operaciones y administrativos). Los Controles de Aplicación son específicos para cada aplicación computarizada (controles de entrada, procesamiento y salida, como validaciones de formato y límites).</v>
+
+5
+00:01:46.000 --> 00:02:15.000
+<v Profesor Martín Ferreiro>Profesor Martín Ferreiro: No olviden los planes de Continuidad del Negocio (BCP) y Recuperación ante Desastres (DRP) con objetivos claros de RTO y RPO.</v>
+

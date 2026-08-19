@@ -45,6 +45,7 @@ import {
     getTeacherAnalytics, getTeacherAlerts,
     getEnrollments, checkEnrollment,
     createEnrollment, deleteEnrollment,
+    getEnrollmentsBySubject,
     getInterventions, updateIntervention, computeInterventions,
     getRiskThresholds, updateRiskThresholds
 } from './sga.api.js';
@@ -57,8 +58,13 @@ import {
     getSafetyRate, getAdminUsers, getVectorHealth, getArchiveUsage,
     getRetentionPolicy, getRetentionExport, saveRetentionPolicy,
     getSubjectWeights, saveSubjectWeights,
-    getAdminConfig, saveAdminConfig, resetAdminConfig
+    getAdminConfig, saveAdminConfig, resetAdminConfig,
+    createAdminUser, updateAdminUser, deleteAdminUser, resetAdminUserPassword
 } from './admin.api.js';
+import {
+    login as authLogin, logout as authLogout,
+    changePassword, getMe
+} from './auth.api.js';
 import {
     getTeacherAiFeedbackAlerts, getCorrectionsPending,
     verifyAnswer, updateCorrectionStatus, reviewCorrection, getCorrection,
@@ -115,6 +121,7 @@ export const api = {
     getTeacherAnalytics, getTeacherAlerts,
     getEnrollments, checkEnrollment,
     createEnrollment, deleteEnrollment,
+    getEnrollmentsBySubject,
     getInterventions, updateIntervention, computeInterventions,
     getRiskThresholds, updateRiskThresholds,
 
@@ -126,6 +133,12 @@ export const api = {
     getRetentionPolicy, getRetentionExport, saveRetentionPolicy,
     getSubjectWeights, saveSubjectWeights,
     getAdminConfig, saveAdminConfig, resetAdminConfig,
+    createAdminUser, updateAdminUser, deleteAdminUser, resetAdminUserPassword,
+
+    login: authLogin,
+    logout: authLogout,
+    changePassword,
+    getMe,
 
     getTeacherAiFeedbackAlerts, getCorrectionsPending,
     verifyAnswer, updateCorrectionStatus, reviewCorrection, getCorrection,

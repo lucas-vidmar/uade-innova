@@ -575,7 +575,7 @@ async function runMegaFlowSuite() {
     try {
       await navigate(page, '#/teacher/upload', BASE_URL);
       const fileInput = page.locator('input[type="file"]').first();
-      const sampleFile = path.resolve('materials', 'Clase 01 Introducción al estudio de sistemas.pptx');
+      const sampleFile = path.resolve('materials', 'presentations', 'Clase 01 Introducción al estudio de sistemas.pptx');
       if (await fileInput.isVisible({ timeout: 600 }).catch(() => false) && fs.existsSync(sampleFile)) {
         await fileInput.setInputFiles(sampleFile).catch(() => {});
         await page.waitForTimeout(200);
@@ -617,7 +617,7 @@ async function runMegaFlowSuite() {
 
     // TEA-09: Material Upload: Submit DOCX Syllabus Document
     try {
-      const docxSample = path.resolve('materials', 'TRABAJO PRÁCTICO FINAL DASI2023.docx');
+      const docxSample = path.resolve('materials', 'class-notes', 'TRABAJO PRÁCTICO FINAL DASI2023.docx');
       const fileInput = page.locator('input[type="file"]').first();
       if (await fileInput.isVisible({ timeout: 600 }).catch(() => false) && fs.existsSync(docxSample)) {
         await fileInput.setInputFiles(docxSample).catch(() => {});

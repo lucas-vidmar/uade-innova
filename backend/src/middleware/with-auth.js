@@ -1,34 +1,37 @@
 /**
- * middleware/with-auth.js — Identity resolution + role enforcement.
+ * middleware/with-auth.js — Session-token identity resolution + role enforcement.
  *
- * Priority order:
- *   1. `Authorization: Bearer <token>` validated via Entra OIDC (if configured).
- *   2. Trusted SWA `x-ms-client-principal` header (proxy path — future #194).
- *   3. Mock fallback — ONLY in Development or when AUTH_MOCK_ENABLED=true.
+ * The Microsoft-account / allowlist auth path is GONE. Identity now comes from
+ * the app-owned central user database:
  *
- * When the server-side allowlist (`ALLOWED_USERS_JSON`) is configured, the
- * verified email is resolved against it (trimmed + case-insensitive, fail
- * closed) and the principal's role + scope are OVERRIDDEN from the allowlist —
- * never from `clientPrincipal.userRoles` or client-submitted params (Story 1.1a).
- * An authenticated-but-unlisted identity receives 403 ACCESS_DENIED.
+ *   1. `Authorization: Bearer <token>` → opaque session in the `Sessions` table.
+ *   2. Session `userId` → user record in the `Users` table (role, status).
+ *   3. Scope resolved from the `Enrollments` table by `userId`.
  *
- * A token that IS present but invalid is NEVER silently downgraded to SWA/mock:
- * it returns a structured 401. `options.roles` enables role gating (403 FORBIDDEN).
+ * Fail closed:
+ *   - Unknown/expired token            → 401 INVALID_SESSION
+ *   - Missing token in production      → 401 AUTH_REQUIRED (when gated)
+ *   - Disabled / unknown user          → 403 ACCESS_DENIED
+ *   - Unenrolled student on scoped API → 403 FORBIDDEN (scope is resolved per
+ *     request from Enrollments; endpoints enforce their own scope).
+ *   - A token that IS present but invalid is NEVER downgraded to mock.
  *
- * Self-contained: does not depend on `getAuthenticatedUser` so functions whose
- * tests mock `auth-utils.js` with a partial export surface still work.
+ * Development/escape-hatch mock identities (no token) are still permitted via
+ * `parseClientPrincipal` so local frontend dev keeps working without the
+ * backend (Story 1.1a dev-mock path).
+ *
+ * `options.roles` enables role gating (403 FORBIDDEN). The roles are the
+ * internal (Spanish) role names used across the codebase: Alumno, Docente,
+ * Director, Admin.
  */
 
-import { parseClientPrincipal, setStashedIdentity } from '../services/auth-utils.js';
-import {
-  isAllowlistConfigured,
-  resolveEntryForEmail,
-  resolveScopeForEmail,
-  resolvePrincipalEmail,
-  resolveUserIdForEmail,
-} from '../services/allowlist.js';
-import { validateBearerToken } from '../services/oidc-validator.js';
+import { setStashedIdentity, parseClientPrincipal } from '../services/auth-utils.js';
 import { structuredErrorResponse, ErrorCategory } from '../services/error-categories.js';
+
+// NOTE: sessions-store / users-store / state-store are imported lazily inside
+// resolveSessionIdentity(). The store modules are mocked (partial surfaces) by
+// many function tests, and a static import here would make every function that
+// wraps withAuth fail to load under those mocks.
 
 const KNOWN_ROLES = ['Director', 'Docente', 'Alumno', 'Admin', 'Security'];
 
@@ -36,11 +39,10 @@ function authError(status, code, message) {
   return structuredErrorResponse(status, message, ErrorCategory.AUTH, code);
 }
 
-// Mirrors auth-utils.isMockAuthAllowed() without importing it, so the mocked
-// module surface in tests (auth-utils mocked with namedExports) stays stable.
-function isMockAuthPermitted() {
-  const env = process.env.AZURE_FUNCTIONS_ENVIRONMENT || process.env.NODE_ENV;
-  return env === 'Development' || env === 'development' || process.env.AUTH_MOCK_ENABLED === 'true';
+function extractBearerToken(request) {
+  const authHeader = request?.headers?.get?.('authorization') || '';
+  const match = /^Bearer\s+(.+)$/i.exec(authHeader);
+  return match ? match[1].trim() : null;
 }
 
 function buildUserFromPrincipal(principal) {
@@ -53,74 +55,75 @@ function buildUserFromPrincipal(principal) {
 }
 
 /**
- * Applies server-side allowlist enforcement to a resolved principal (Story 1.1a).
- * Mutates the principal's userRoles with the allowlist-derived role and returns
- * the email. Returns an error response (403 ACCESS_DENIED) when enforcement
- * fails; returns null when the request may proceed.
- * @param {Object|null} principal
- * @param {Request} request
+ * Resolves an authenticated identity from an opaque session token. Returns
+ * { user, principal } on success, or an error response when the token is
+ * invalid / user is missing or disabled (fail closed).
+ * @param {string} token
  * @param {Object} context
- * @returns {{error: Object}|{email: string|null}}
+ * @returns {Promise<{user: Object, principal: Object}|{error: Object}>}
  */
-function enforceAllowlist(principal, request, context) {
-  if (!isAllowlistConfigured()) {
-    return { email: null };
-  }
+async function resolveSessionIdentity(token, context) {
+  const { getSession } = await import('../services/sessions-store.js');
+  const { getUserById, INTERNAL_ROLE_BY_ROLE } = await import('../services/users-store.js');
+  const { getEnrollmentsByUser } = await import('../services/state-store.js');
 
-  const email = resolvePrincipalEmail(principal, request);
-
-  if (email) {
-    const entry = resolveEntryForEmail(email);
-    if (!entry) {
-      context?.log?.(`[Auth] Deny (allowlist): email=${email} — no en allowlist (fail closed).`);
-      return {
-        error: authError(403, 'ACCESS_DENIED', 'Tu cuenta no está habilitada para acceder a esta plataforma. Contactá a administración.'),
-      };
-    }
-    // Role/scope come from the allowlist, never from clientPrincipal.userRoles.
-    // The application user id (pilot data key) is resolved from the allowlist
-    // entry too (Story 10.24) so enrollment/notification data keys match the
-    // verified identity.
-    const appUserId = resolveUserIdForEmail(email);
-    if (!principal) {
-      // No SWA/OIDC principal but a verified relayed email (pilot transport):
-      // synthesize a principal so the rest of the pipeline works.
-      principal = {
-        userId: appUserId || email,
-        userDetails: email,
-        userRoles: ['authenticated', entry.internalRole],
-        claims: [],
-      };
-    } else {
-      principal.userRoles = ['authenticated', entry.internalRole];
-    }
-    return { email, principal, userId: appUserId || null };
-  }
-
-  if (!principal) {
-    // No identity and no verifiable email: unauthenticated — 401, not 403.
-    context?.log?.('[Auth] Deny (allowlist): sin identidad ni email (401).');
+  const session = await getSession(token);
+  if (!session) {
+    context?.log?.('[Auth] Rejected session token (unknown or expired).');
     return {
-      error: authError(401, 'AUTH_REQUIRED', 'Se requiere autenticación para acceder a este recurso.'),
+      error: authError(401, 'INVALID_SESSION', 'La sesión no es válida o expiró. Iniciá sesión nuevamente.'),
     };
   }
 
-  if (!isMockAuthPermitted()) {
-    // Authenticated principal but no verifiable email in production: fail closed.
-    context?.log?.('[Auth] Deny (allowlist): identidad sin email verificable (fail closed).');
+  const appUser = await getUserById(session.userId);
+  if (!appUser || appUser.status !== 'active') {
+    context?.log?.(`[Auth] Deny: userId=${session.userId} — usuario inexistente o deshabilitado (fail closed).`);
     return {
-      error: authError(403, 'ACCESS_DENIED', 'No se pudo verificar tu identidad. Iniciá sesión nuevamente.'),
+      error: authError(403, 'ACCESS_DENIED', 'Tu cuenta no está habilitada para acceder a esta plataforma. Contactá a administración.'),
     };
   }
 
-  // Development / escape-hatch mock identities carry no email: preserve mock
-  // precedence so local dev keeps working while the allowlist is configured.
-  context?.log?.('[Auth] Allowlist configurada + identidad mock sin email: precedencia mock (Development / escape hatch).');
-  return { email: null };
+  const internalRole = INTERNAL_ROLE_BY_ROLE[appUser.role];
+  if (!internalRole) {
+    context?.log?.(`[Auth] Deny: userId=${appUser.userId} — rol inválido ${appUser.role} (fail closed).`);
+    return {
+      error: authError(403, 'ACCESS_DENIED', 'Tu cuenta no tiene un rol válido. Contactá a administración.'),
+    };
+  }
+
+  // Scope is resolved from Enrollments per request (Story 1.1b). Director/Admin
+  // roles keep an empty subject scope here; their dashboards are not scoped.
+  const enrollments = await getEnrollmentsByUser(appUser.userId);
+  const subjects = [...new Set(
+    enrollments.filter((e) => e.status === 'active').map((e) => e.subjectId)
+  )].filter(Boolean);
+
+  const user = {
+    userId: appUser.userId,
+    id: appUser.userId,
+    sanitizedId: String(appUser.userId).replace(/[^a-zA-Z0-9]/g, '_'),
+    role: internalRole,
+    email: appUser.email,
+    name: appUser.name,
+    mustChangePassword: appUser.mustChangePassword === true,
+    scope: { subjects, classes: [] },
+    principal: null,
+  };
+
+  const principal = {
+    userId: appUser.userId,
+    userDetails: appUser.email,
+    userRoles: ['authenticated', internalRole],
+    claims: [],
+  };
+
+  context?.log?.(`[Auth] Authenticated via session: userId=${appUser.userId}, role=${internalRole}, scope=${subjects.join(',') || 'n/a'}`);
+  return { user, principal };
 }
 
 /**
- * Wraps an HTTP handler with identity resolution + optional role enforcement.
+ * Wraps an HTTP handler with session-token identity resolution + optional role
+ * enforcement.
  * @param {Function} handler The Azure Functions HTTP handler.
  * @param {{roles?: string[]}} [options]
  */
@@ -132,58 +135,44 @@ export function withAuth(handler, options = {}) {
       return handler(request, context);
     }
 
-    const tokenResult = await validateBearerToken(request);
-
+    const token = extractBearerToken(request);
+    let user = null;
     let principal = null;
-    if (tokenResult.status === 'valid') {
-      principal = tokenResult.principal;
-      context?.log?.(`[Auth] Authenticated via OIDC: userId=${principal?.userId}`);
-    } else if (tokenResult.status === 'invalid') {
-      const reason = tokenResult.reason;
-      if (reason === 'expired' || reason === 'not-before') {
-        context?.log?.(`[Auth] Rejected token (${reason})`);
-        return authError(401, 'TOKEN_EXPIRED', 'La sesión expiró. Iniciá sesión nuevamente.');
+
+    if (token) {
+      const result = await resolveSessionIdentity(token, context);
+      if (result.error) {
+        return result.error;
       }
-      context?.log?.(`[Auth] Rejected token (${reason})`);
-      return authError(401, 'INVALID_TOKEN', 'Token de autenticación inválido.');
-    }
-
-    if (!principal) {
+      user = result.user;
+      principal = result.principal;
+      context.user = user;
+      context.principal = principal;
+    } else {
+      // No bearer token: fall back to a trusted SWA principal
+      // (x-ms-client-principal header) or the DEV-only mock principal
+      // (guarded inside auth-utils). In production a principal-less request is
+      // anonymous and role-gated routes fail closed with 401.
       principal = parseClientPrincipal(request);
+      if (principal) {
+        user = buildUserFromPrincipal(principal);
+        user.id = user.userId;
+        context.user = user;
+        context.principal = principal;
+      }
     }
 
-    // Server-side allowlist enforcement (Story 1.1a): resolve verified email →
-    // override role/scope; deny unlisted identities (fail closed). May return a
-    // synthesized principal when identity came from the relayed email only.
-    const allowlistResult = enforceAllowlist(principal, request, context);
-    if (allowlistResult.error) {
-      return allowlistResult.error;
-    }
-    if (allowlistResult.principal) {
-      principal = allowlistResult.principal;
-    }
+    if (context.user === undefined) context.user = user;
+    if (context.principal === undefined) context.principal = principal;
 
-    const user = buildUserFromPrincipal(principal);
-    if (user) {
-      if (allowlistResult.email) user.email = allowlistResult.email;
-      // Application user id (pilot data key) resolved from the allowlist; used
-      // to key enrollment/notification/correction data. Falls back to the raw
-      // principal userId (OID) for identities not resolved via allowlist.
-      user.id = allowlistResult.userId || user.userId;
-      user.scope = allowlistResult.email ? resolveScopeForEmail(allowlistResult.email) : undefined;
-    }
-
-    context.user = user;
-    context.principal = principal || null;
     // Stash resolved identity in a WeakMap (auth-utils) so functions that resolve
     // identity via parseClientPrincipal(request)/getAuthenticatedUser(request)
-    // honor the validated OIDC principal instead of re-deriving from SWA/mock
-    // headers (#218). HttpRequest.user/principal are read-only getters, so direct
-    // assignment fails.
-    setStashedIdentity(request, { user, principal: principal || null });
+    // honor the validated session instead of re-deriving from SWA/mock headers.
+    setStashedIdentity(request, { user, principal });
 
     if (requiredRoles.length > 0) {
       if (!principal) {
+        context?.log?.('[Auth] Deny: se requiere autenticación.');
         return authError(401, 'AUTH_REQUIRED', 'Se requiere autenticación para acceder a este recurso.');
       }
       const userRoles = principal.userRoles || [];

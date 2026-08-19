@@ -74,11 +74,11 @@ export async function apiFetch(resource, options = {}) {
 
     const headers = withCorrelationHeaders(options.headers);
 
-    // Dev/preview-only mock identity relay (Story 1.1a): in dev and preview
-    // builds where VITE_MOCK_AUTH_ENABLED=true, forward the local mock role/uid
-    // so the demo persona still reaches the backend mock path. NEVER in
-    // production: the server authorizes from the allowlist using the SWA-relayed
-    // email, never from a client-submitted role.
+    // Dev/preview-only mock identity relay: in dev and preview builds where
+    // VITE_MOCK_AUTH_ENABLED=true, forward the local mock role/uid so the demo
+    // persona still reaches the backend mock path. NEVER in production: the
+    // server authorizes from the opaque session token, never from a client
+    // submitted role.
     const devMock = (() => {
         try {
             return import.meta.env.DEV || import.meta.env.VITE_MOCK_AUTH_ENABLED === 'true';
@@ -96,14 +96,12 @@ export async function apiFetch(resource, options = {}) {
         if (qs) url = resource + (resource.includes('?') ? '&' : '?') + qs;
     }
 
-    // Relay the SWA-resolved identity to the backend (Story 1.1a). The backend
-    // authorizes from the server-side allowlist using this email — the browser
-    // only mirrors what `/.auth/me` reported; it never chooses a role. When the
-    // SWA `/api` proxy is enabled the trusted `x-ms-client-principal` header
-    // takes precedence server-side and this header is ignored.
+    // Attach the opaque session token (Authorization: Bearer) when present
+    // (Story 1.1a rewrite). The server resolves role/scope from the Users +
+    // Enrollments tables — never from a client-submitted email/role.
     try {
-        const email = window.sessionStorage.getItem('edu_email');
-        if (email) headers.set('x-ms-client-principal-name', email);
+        const token = window.sessionStorage.getItem('edu_token');
+        if (token) headers.set('Authorization', `Bearer ${token}`);
     } catch (_) {}
 
     return fetch(url, {

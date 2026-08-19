@@ -72,7 +72,7 @@ function sessionMockingEnabled() {
 
 export async function getAdminUsers() {
     try {
-        const res = await fetchWithTimeout(`${BASE_URL}/manage/users`, { timeout: 4000 });
+        const res = await fetchWithTimeout(`${BASE_URL}/admin/users`, { timeout: 4000 });
         if (!res.ok) {
             console.warn(`[API] getAdminUsers returned ${res.status}.`);
             if (sessionMockingEnabled()) {
@@ -83,7 +83,8 @@ export async function getAdminUsers() {
             return [];
         }
         const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) return data;
+        const users = Array.isArray(data) ? data : (data?.data || []);
+        if (users.length > 0) return users;
         if (sessionMockingEnabled()) {
             await delay(200);
             return [];
@@ -97,6 +98,44 @@ export async function getAdminUsers() {
         }
         return [];
     }
+}
+
+export async function createAdminUser(payload) {
+    const res = await apiFetch(`${BASE_URL}/admin/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw await parseApiError(res, 'No se pudo crear el usuario.');
+    return res.json();
+}
+
+export async function updateAdminUser(userId, payload) {
+    const res = await apiFetch(`${BASE_URL}/admin/users/${encodeURIComponent(userId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw await parseApiError(res, 'No se pudo actualizar el usuario.');
+    return res.json();
+}
+
+export async function deleteAdminUser(userId) {
+    const res = await apiFetch(`${BASE_URL}/admin/users/${encodeURIComponent(userId)}`, {
+        method: 'DELETE',
+    });
+    if (!res.ok) throw await parseApiError(res, 'No se pudo eliminar el usuario.');
+    return res.json();
+}
+
+export async function resetAdminUserPassword(userId, password) {
+    const res = await apiFetch(`${BASE_URL}/admin/users/${encodeURIComponent(userId)}/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(password ? { password } : {}),
+    });
+    if (!res.ok) throw await parseApiError(res, 'No se pudo resetear la contraseña.');
+    return res.json();
 }
 
 export async function getVectorHealth() {

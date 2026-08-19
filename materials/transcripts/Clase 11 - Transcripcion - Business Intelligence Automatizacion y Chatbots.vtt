@@ -1,0 +1,21 @@
+WEBVTT - Clase 11: Business Intelligence, Automatización (RPA) y Chatbots
+NOTE Materia: DASI - Diseño y Auditoría de Sistemas de Información
+NOTE Unidad IV: Business Intelligence y Nuevas Tecnologías
+NOTE Referencia Bibliográfica: Laudon & Laudon - Capítulo 11 y 12; Talleres BDO
+
+1
+00:00:05.000 --> 00:00:20.000
+<v Profesor Martín Ferreiro>Profesor Martín Ferreiro: Bienvenidos. Hoy dedicamos la sesión a la Inteligencia de Negocios (BI), automatización robótica de procesos (RPA) y asistentes conversacionales en la gestión operativa.</v>
+
+2
+00:00:21.000 --> 00:00:45.000
+<v Profesor Martín Ferreiro>Profesor Martín Ferreiro: Business Intelligence abarca la infraestructura para recolectar, almacenar y analizar datos, mientras que Business Analytics comprende las herramientas estadísticas y de modelado (minería de datos, machine learning predictivo).</v>
+
+3
+00:00:46.000 --> 00:01:10.000
+<v Alumno Carlos>Alumno Carlos: ¿Cómo se complementa RPA con los sistemas legados que no tienen APIs modernas?</v>
+
+4
+00:01:11.000 --> 00:01:40.000
+<v Profesor Martín Ferreiro>Profesor Martín Ferreiro: RPA emula las acciones de un operador humano sobre la interfaz gráfica (GUI), permitiendo automatizar tareas repetitivas de carga y conciliación entre sistemas antiguos y aplicaciones web sin requerir reescribir el backend.</v>
+

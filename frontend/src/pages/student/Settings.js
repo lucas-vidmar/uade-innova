@@ -2,6 +2,7 @@ import { api } from '../../services/api.js';
 import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
 import { toast } from '../../components/Toast.js';
+import { renderChangePasswordCard } from '../../components/ChangePasswordForm.js';
 
 export async function renderStudentSettings(container) {
   renderHeader('Configuración');
@@ -134,6 +135,9 @@ export async function renderStudentSettings(container) {
             ${state.saving ? 'Guardando...' : 'Guardar preferencias'}
           </button>
         </div>
+
+        <!-- Self-service password change (Story 1.5) -->
+        <div id="change-password-slot"></div>
       </div>
     `;
 
@@ -223,4 +227,8 @@ export async function renderStudentSettings(container) {
   }
 
   render();
+  const slot = container.querySelector('#change-password-slot');
+  if (slot) {
+    renderChangePasswordCard(slot, { title: 'Contraseña' });
+  }
 }

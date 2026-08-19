@@ -1,0 +1,162 @@
+[
+  {
+    "id": 1,
+    "category": "Course Administration & Syllabus",
+    "question": "En el cronograma oficial de la materia DASI (comisión de los lunes), ¿qué clase y fecha específica fue designada bajo la modalidad de 'Clase Invertida', qué unidad temática abarca y qué capítulos exactos del libro de Laudon & Laudon se asignaron para dicha sesión?",
+    "sourceFile": "materials/class-notes/DASI Cronograma dia Jueves_1C2023_ejemplo.docx",
+    "expectedAnswer": "Clase 5 (fecha 10/4), correspondiente a la Unidad III (Infraestructura de TI) y Unidad IV (Aplicaciones empresariales), con lectura obligatoria de los Capítulos 5, 6 y 7 de Laudon & Laudon (14.ª Edición).",
+    "requiredKeywords": ["Clase 5", "10/4", "Unidad III", "Capítulo 5, 6 y 7", "Laudon"]
+  },
+  {
+    "id": 2,
+    "category": "Course Administration & Syllabus",
+    "question": "¿Cuáles son los datos administrativos de la cátedra de DASI: código de asignatura, número de clase/comisión, departamento académico, facultad y aula física asignada para el cursado y exámenes?",
+    "sourceFile": "materials/class-notes/DASI Cronograma dia Jueves_1C2023_ejemplo.docx",
+    "expectedAnswer": "Código: 428520, N.° de Clase: 2257, Facultad: FACE, Departamento: DEARH, Aula: Aula 564.",
+    "requiredKeywords": ["428520", "2257", "FACE", "DEARH", "564"]
+  },
+  {
+    "id": 3,
+    "category": "Course Administration & Syllabus",
+    "question": "Además del libro principal de Laudon & Laudon, ¿qué autor y texto de bibliografía complementaria se exige específicamente para las Clases 2, 3 y 4 (Unidad II sobre Procesos de Negocio)?",
+    "sourceFile": "materials/class-notes/DASI Cronograma dia Jueves_1C2023_ejemplo.docx",
+    "expectedAnswer": "José Luis Pungitore, 'Sistemas administrativos y control interno: descripción de operaciones básicas en la empresa bajo condiciones de control' (3.ª Edición).",
+    "requiredKeywords": ["Pungitore", "Sistemas administrativos y control interno", "3a Ed"]
+  },
+  {
+    "id": 4,
+    "category": "Final Term Project (TP Final)",
+    "question": "Según las pautas formales del Trabajo Práctico Final, ¿cuál es el límite máximo de integrantes por grupo, la extensión mínima y formato del informe escrito en Word, y qué conducta específica durante la exposición oral es causal de desaprobación directa del trabajo?",
+    "sourceFile": "materials/class-notes/TRABAJO PRÁCTICO FINAL DASI2023.docx",
+    "expectedAnswer": "Máximo de 8 integrantes por equipo. Informe escrito no inferior a 20 páginas (Times New Roman 12 pt, interlineado 1.5 pt). Leer directamente el texto de las transparencias o documentos durante la presentación es causal de desaprobación.",
+    "requiredKeywords": ["8 integrantes", "20", "Times New Roman", "1.5", "Leer directamente"]
+  },
+  {
+    "id": 5,
+    "category": "Final Term Project (TP Final)",
+    "question": "En la consigna del TP Final, los equipos deben virtualizar una actividad de la compañía mediante un chatbot en Tidio®. ¿Cuáles son los dos casos de negocio punta a punta específicos entre los cuales los grupos deben desarrollar su asistente conversacional?",
+    "sourceFile": "materials/class-notes/TRABAJO PRÁCTICO FINAL DASI2023.docx",
+    "expectedAnswer": "1) 'De la solicitud al pago: Asistencia al proveedor para el procesamiento de su factura' y 2) 'De la necesidad a la cobranza: Asistencia a los clientes para cotizar un producto y/o servicio'.",
+    "requiredKeywords": ["solicitud al pago", "procesamiento de su factura", "necesidad a la cobranza", "cotizar"]
+  },
+  {
+    "id": 6,
+    "category": "Final Term Project (TP Final)",
+    "question": "¿Qué técnica formal de evaluación multicriterio exige el TP Final para justificar la elección del software empresarial y cuál es la cantidad mínima de alternativas que deben contrastarse?",
+    "sourceFile": "materials/class-notes/TRABAJO PRÁCTICO FINAL DASI2023.docx",
+    "expectedAnswer": "Deben comparar un mínimo de 3 softwares empresariales justificando la elección mediante la Técnica de Ponderación (probando versiones demo/trial).",
+    "requiredKeywords": ["mínimo 3", "Técnica de Ponderación", "versiones de prueba"]
+  },
+  {
+    "id": 7,
+    "category": "Final Term Project (TP Final)",
+    "question": "¿Cuáles son las consecuencias institucionales y disciplinarias reglamentarias que establece el documento de cátedra ante la detección de plagio o deshonestidad intelectual en el Trabajo Práctico Final?",
+    "sourceFile": "materials/class-notes/TRABAJO PRÁCTICO FINAL DASI2023.docx",
+    "expectedAnswer": "Calificación de 0 (cero), recursar directamente la materia, elevación de expediente de Sanción del Decanato y sanciones disciplinarias bajo el Código de Ética de UADE.",
+    "requiredKeywords": ["0 (cero)", "recurse", "Sanción del Decanato", "Código de Ética"]
+  },
+  {
+    "id": 8,
+    "category": "Guest Lecture & Cybersecurity",
+    "question": "En la presentación invitada de Luis Lubeck sobre ciberseguridad, ¿cuál es el costo estimado del cibercrimen global para el año 2015 y a cuánto se proyectaba su crecimiento para el año 2021 según las cifras presentadas?",
+    "sourceFile": "materials/presentations/La_informacion_vale_Ciberseguridad_Presentacion_Luis_Lubeck.pdf",
+    "expectedAnswer": "En 2015: $400B ($400 billones), proyectado para 2021 a $6T ($6 trillones).",
+    "requiredKeywords": ["2015", "400B", "2021", "6T"]
+  },
+  {
+    "id": 9,
+    "category": "Guest Lecture & Cybersecurity",
+    "question": "Según los datos de CVE Details y los laboratorios de ESET expuestos por Luis Lubeck, ¿cuántas vulnerabilidades se reportaron en total durante 2018 (promedio diario de CVEs) y cuántas muestras únicas de nuevo malware se detectaban por día y por año?",
+    "sourceFile": "materials/presentations/La_informacion_vale_Ciberseguridad_Presentacion_Luis_Lubeck.pdf",
+    "expectedAnswer": "Durante 2018: 16.555 vulnerabilidades totales (45 CVEs por día). Muestras de malware en ESET: 300.000 por día (109.500.000 por año).",
+    "requiredKeywords": ["16.555", "45", "300.000", "109.500.000"]
+  },
+  {
+    "id": 10,
+    "category": "Guest Lecture & Cybersecurity",
+    "question": "¿Cuál es la definición textual y conceptual de 'Vulnerabilidad' brindada en la diapositiva 5 de la disertación de Luis Lubeck?",
+    "sourceFile": "materials/presentations/La_informacion_vale_Ciberseguridad_Presentacion_Luis_Lubeck.pdf",
+    "expectedAnswer": "'Falla en el desarrollo de una aplicación, sistema o dispositivo que permite la realización de alguna acción indeseada o incorrecta.'",
+    "requiredKeywords": ["Falla en el desarrollo", "aplicación, sistema o dispositivo", "acción indeseada o incorrecta"]
+  },
+  {
+    "id": 11,
+    "category": "Classroom Transcripts & Dialogue",
+    "question": "En la transcripción de la Clase 01, ¿qué ejemplo concreto del mundo real utiliza el profesor Martín Ferreiro al responder la pregunta del alumno Lucas para ilustrar la diferencia entre 'dato en bruto' e 'información estructurada'?",
+    "sourceFile": "materials/transcripts/Clase 01 - Transcripcion - Introduccion a los Sistemas de Informacion.vtt",
+    "expectedAnswer": "Utiliza una lista de tickets de supermercado con números en bruto como datos, en contraste con el total de ventas agrupadas y procesadas con significado gerencial como información.",
+    "requiredKeywords": ["tickets de supermercado", "datos en bruto", "información", "Lucas"]
+  },
+  {
+    "id": 12,
+    "category": "Classroom Transcripts & Dialogue",
+    "question": "Durante la Clase 04 sobre Infraestructura de Hardware y Cloud, ¿qué porcentajes cuantitativos exactos de tasa de utilización de servidores compara el profesor para justificar la adopción masiva de la virtualización frente al hardware físico tradicional?",
+    "sourceFile": "materials/transcripts/Clase 04 - Transcripcion - Infraestructura de TI Hardware.vtt",
+    "expectedAnswer": "Un servidor físico tradicional opera con una utilización de apenas ~15%, mientras que la virtualización eleva la tasa de utilización a más del 80%.",
+    "requiredKeywords": ["15%", "80%", "virtualización"]
+  },
+  {
+    "id": 13,
+    "category": "Classroom Transcripts & Dialogue",
+    "question": "En la Clase 08 sobre Adquisición y Desarrollo de SI (Unidad V), ¿cuáles son las 4 estrategias de conversión o puesta en marcha de un nuevo sistema mencionadas en la clase y cuál es señalada como la más segura pero de mayor costo?",
+    "sourceFile": "materials/transcripts/Clase 08 - Transcripcion - Adquisicion y Desarrollo de Sistemas de Informacion.vtt",
+    "expectedAnswer": "1) Estrategia Paralela (señalada como la más segura pero de mayor costo), 2) Corte Directo, 3) Estudio Piloto, y 4) Enfoque Gradual/por Fases.",
+    "requiredKeywords": ["Paralela", "Corte Directo", "Estudio Piloto", "Gradual", "más segura"]
+  },
+  {
+    "id": 14,
+    "category": "Classroom Transcripts & Dialogue",
+    "question": "En la clase sobre Business Intelligence y Automatización (Clase 11), ¿cuál es la justificación técnica que da el docente ante la consulta del alumno Carlos sobre por qué implementar Robotic Process Automation (RPA) en lugar de una integración tradicional de backend?",
+    "sourceFile": "materials/transcripts/Clase 11 - Transcripcion - Business Intelligence Automatizacion y Chatbots.vtt",
+    "expectedAnswer": "Porque RPA emula las acciones de un operador sobre la interfaz gráfica (GUI), permitiendo automatizar flujos con sistemas legados que carecen de APIs modernas sin reescribir el backend.",
+    "requiredKeywords": ["RPA", "GUI", "sistemas legados", "APIs", "backend"]
+  },
+  {
+    "id": 15,
+    "category": "Classroom Transcripts & Dialogue",
+    "question": "En la clase de Seguridad y Auditoría de SI (Clase 13), ¿cómo diferencia formalmente el profesor los 'Controles Generales' de los 'Controles de Aplicación' ante la consulta de la alumna Sofía?",
+    "sourceFile": "materials/transcripts/Clase 13 - Transcripcion - Seguridad en los SI y Ciberseguridad.vtt",
+    "expectedAnswer": "Los Controles Generales gobiernan el diseño, seguridad y uso global de toda la infraestructura (software, hardware, seguridad física, administración). Los Controles de Aplicación son específicos de cada programa individual (controles de entrada, procesamiento y salida).",
+    "requiredKeywords": ["Controles Generales", "Controles de Aplicación", "infraestructura", "entrada, procesamiento y salida"]
+  },
+  {
+    "id": 16,
+    "category": "Classroom Transcripts & Dialogue",
+    "question": "Durante la Clase 14 sobre Ética y Responsabilidad Social, ¿qué 5 principios éticos universales enumera el profesor para analizar dilemas morales derivados de las tecnologías de información?",
+    "sourceFile": "materials/transcripts/Clase 14 - Transcripcion - Etica Privacidad y Responsabilidad Social en los SI.vtt",
+    "expectedAnswer": "1) La Regla de Oro, 2) El Imperativo Categórico de Kant, 3) La Regla del Cambio de Descartes, 4) El Principio Utilitarista, y 5) El Principio de Aversión al Riesgo.",
+    "requiredKeywords": ["Regla de Oro", "Imperativo Categórico", "Descartes", "Utilitarista", "Aversión al Riesgo"]
+  },
+  {
+    "id": 17,
+    "category": "Theoretical & Architecture Synthesis",
+    "question": "Basándose en la presentación de Aplicaciones Empresariales (ERP-SCM), ¿cómo se define el 'Efecto Látigo' (Bullwhip Effect) en la cadena de abastecimiento y mediante qué mecanismo de información compartido entre actores se mitiga?",
+    "sourceFile": "materials/presentations/Clase 09 - U4a - Aplicaciones empresariales de los SI (ERP-SCM)FINAL.pptx",
+    "expectedAnswer": "Es la distorsión y amplificación de la demanda a medida que se retrocede hacia mayoristas y fabricantes. Se mitiga mediante visibilidad compartida en tiempo real de la demanda e inventarios a lo largo del sistema SCM.",
+    "requiredKeywords": ["Efecto Látigo", "distorsión", "demanda", "tiempo real", "SCM"]
+  },
+  {
+    "id": 18,
+    "category": "Theoretical & Architecture Synthesis",
+    "question": "En la Clase 12 sobre Estrategia de Sistemas (Modelo de Porter), ¿qué caso empresarial paradigmático se cita para la estrategia de 'Enfoque en nichos de mercado' y cómo los sistemas integrados elevan los 'Costos de Cambio' (Switching Costs)?",
+    "sourceFile": "materials/presentations/Clase 12 - U7 - Estrategia de Sistemas de Información2020.pptx",
+    "expectedAnswer": "Se cita el sistema OnQ de hoteles Hilton. Los sistemas integrados elevan los costos de cambio porque mudar a otro proveedor implicaría altos costos de re-entrenamiento y pérdida de datos históricos.",
+    "requiredKeywords": ["Hilton", "OnQ", "Costos de Cambio", "Switching Costs"]
+  },
+  {
+    "id": 19,
+    "category": "Theoretical & Architecture Synthesis",
+    "question": "En la clase de Bases de Datos y Telecomunicaciones (Clase 06), ¿cuál es la razón técnica y de rendimiento fundamental por la cual las consultas analíticas gerenciales no deben ejecutarse directamente sobre el motor de base de datos transaccional (OLTP)?",
+    "sourceFile": "materials/transcripts/Clase 06 - Transcripcion - Bases de Datos Redes y Telecomunicaciones.vtt",
+    "expectedAnswer": "Porque las consultas analíticas pesadas saturan recursos y degradan la velocidad de respuesta del sistema transaccional en producción. Por ello se desacoplan hacia un Data Warehouse mediante procesos ETL.",
+    "requiredKeywords": ["transaccional", "saturar", "ETL", "Data Warehouse", "analíticas"]
+  },
+  {
+    "id": 20,
+    "category": "Course Administration & Syllabus",
+    "question": "Consultando el cronograma oficial de DASI, ¿cuáles son las fechas exactas programadas para: 1) El Examen Parcial, 2) La Exposición y Evaluación del Trabajo Práctico Final, y 3) El Examen Final del cuatrimestre?",
+    "sourceFile": "materials/class-notes/DASI Cronograma dia Jueves_1C2023_ejemplo.docx",
+    "expectedAnswer": "1) Examen Parcial: Clase 6 (17/4), 2) Exposición del TP Final: Clase 14 (26/6), 3) Examen Final: Clase 16 (17/7).",
+    "requiredKeywords": ["17/4", "26/6", "17/7", "Clase 6", "Clase 14", "Clase 16"]
+  }
+]

@@ -20,11 +20,13 @@ export async function renderSubjectManagement(container) {
     let subjects = [];
     let users = [];
     let subjectProfessorMap = {};
+    let subjectEnrollmentMap = {};
     let pendingHighlight = null;
     let query = '';
     let currentPage = 1;
     const PAGE_SIZE = 8;
     let activeProfessorPickerSubjectId = null;
+    let activeStudentPickerSubjectId = null;
     let columnFilters = {
         id: '',
         name: '',
@@ -59,10 +61,35 @@ export async function renderSubjectManagement(container) {
         subjectProfessorMap = Object.fromEntries(entries);
     };
 
+    // Enrollments per subject: { subjectId: [{ userId, role, status }] } (Story 1.6)
+    const refreshSubjectEnrollments = async () => {
+        const entries = await Promise.all(subjects.map(async (subject) => {
+            try {
+                const enrollments = safeArray(await api.getEnrollmentsBySubject(subject.id));
+                return [subject.id, enrollments];
+            } catch {
+                return [subject.id, []];
+            }
+        }));
+        subjectEnrollmentMap = Object.fromEntries(entries);
+    };
+
     const getTeacherUsers = () => users.filter((user) => {
         const role = String(user.role || '').toLowerCase();
         return role === 'teacher' || role === 'professor' || role === 'docente';
     });
+
+    const getStudentUsers = () => users.filter((user) => {
+        const role = String(user.role || '').toLowerCase();
+        return role === 'student' || role === 'alumno';
+    });
+
+    const getEnrolledStudentIds = (subject) => {
+        const entries = subjectEnrollmentMap[subject.id] || [];
+        return entries
+            .filter((e) => e.role === 'student' && e.status === 'active')
+            .map((e) => e.userId);
+    };
 
     const getSubjectProfessorIds = (subject) => {
         const mapped = subjectProfessorMap[subject.id];
@@ -134,6 +161,27 @@ export async function renderSubjectManagement(container) {
             ...subjectProfessorMap,
             [subjectId]: [...selectedIds],
         };
+    };
+
+    const saveStudentAssignments = async (subjectId, studentId, assign) => {
+        if (!subjectId || !studentId) return;
+        const student = getStudentUsers().find((u) => u.id === studentId);
+        if (assign) {
+            await api.createEnrollment(subjectId, studentId, 'student', 'active');
+            enrollmentService.clearCache(studentId);
+        } else {
+            await api.deleteEnrollment(subjectId, studentId);
+            enrollmentService.clearCache(studentId);
+        }
+        // Refresh the in-memory map without a full page re-render.
+        const enrollments = safeArray(await api.getEnrollmentsBySubject(subjectId));
+        subjectEnrollmentMap = {
+            ...subjectEnrollmentMap,
+            [subjectId]: enrollments,
+        };
+        toast('success', assign ? 'Alumno asignado' : 'Alumno desasignado',
+            assign ? `${student?.name || studentId} fue asignado a la materia.` : `${student?.name || studentId} fue desasignado de la materia.`);
+        render();
     };
 
     const generateSubjectId = (name) => String(name || '')

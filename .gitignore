@@ -81,7 +81,8 @@ test-report/**/screenshot-*.png
 # Test artifacts
 *.snap
 *.d.ts
-/test-report
+test-report/
+_dev-verify/
 
 
 # Agent working artifacts (generated during AI sessions)

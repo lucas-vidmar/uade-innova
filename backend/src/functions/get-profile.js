@@ -13,9 +13,13 @@ app.http('get-profile', {
     handler: withCorrelation(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         try {
-            // Use the allowlist-resolved identity stashed by withAuth (Story 1.1a).
-            // Role/email/scope come from the server-side allowlist, never from the client.
+            // Use the session-resolved identity stashed by withAuth: role/email
+            // come from the Users table and scope from Enrollments — never from
+            // the client. Fail closed when no identity is resolved.
             const user = context.user || getAuthenticatedUser(request);
+            if (!user || !user.role) {
+                return { status: 401, body: JSON.stringify({ error: 'Se requiere autenticación para acceder a este recurso.', code: 'AUTH_REQUIRED', errorCategory: 'AUTH' }) };
+            }
             const principal = user?.principal || parseClientPrincipal(request);
 
             const userId = user?.userId || principal?.oid || "pilot-user";

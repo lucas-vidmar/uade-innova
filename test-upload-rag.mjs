@@ -168,9 +168,10 @@ async function main() {
   console.log('  PHASE 2: Uploading materials');
   console.log('═══════════════════════════════════════════════════\n');
 
-  const materialFiles = fs.readdirSync(MATERIALS_DIR)
-    .filter(f => FILE_TO_CLASS[f])
-    .map(f => ({ filepath: path.join(MATERIALS_DIR, f), ...FILE_TO_CLASS[f] }));
+  const materialFiles = fs.readdirSync(MATERIALS_DIR, { recursive: true })
+    .map(f => typeof f === 'string' ? f : f.toString())
+    .filter(f => FILE_TO_CLASS[path.basename(f)])
+    .map(f => ({ filepath: path.join(MATERIALS_DIR, f), ...FILE_TO_CLASS[path.basename(f)] }));
 
   let uploaded = 0, failed = 0;
   for (const mf of materialFiles) {

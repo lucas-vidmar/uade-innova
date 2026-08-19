@@ -20,6 +20,40 @@ function isDirector(principal) {
   return principal?.userRoles?.includes('Director');
 }
 
+function isTeacher(principal) {
+  return principal?.userRoles?.includes('Docente');
+}
+
+/**
+ * Teacher-scope guard (Story 1.6): a teacher may only manage assignments in the
+ * subjects they are themselves enrolled as teacher. Directors bypass the guard.
+ * @param {Request} request
+ * @param {Object} context
+ * @param {string} subjectId
+ * @returns {Promise<Object|string|null>} error response when denied, callerId when allowed
+ */
+async function assertTeacherSubjectScope(request, context, subjectId) {
+  const principal = parseClientPrincipal(request);
+  const callerId = context.user?.id || principal?.userId || principal?.oid || null;
+  if (isDirector(principal)) return callerId;
+  if (!isTeacher(principal)) {
+    return { error: jsonResponse(403, { success: false, error: { code: 'INSUFFICIENT_ROLE', message: 'Teacher or Director role required' } }) };
+  }
+  // Fail closed: without a resolvable caller id a teacher cannot manage any subject.
+  if (!callerId) {
+    return { error: jsonResponse(403, { success: false, error: { code: 'FORBIDDEN', message: 'No se pudo verificar tu identidad.' } }) };
+  }
+  const myEnrollments = await getEnrollmentsByUser(callerId);
+  const teacherSubjects = myEnrollments
+    .filter(e => e.role === 'teacher' && e.status === 'active')
+    .map(e => e.subjectId);
+  if (!teacherSubjects.includes(subjectId)) {
+    context.log(`[Enrollment] Denied: teacher ${callerId} no asignado a materia ${subjectId}.`);
+    return { error: jsonResponse(403, { success: false, error: { code: 'FORBIDDEN', message: 'Solo podés asignar alumnos y docentes en tus propias materias.' } }) };
+  }
+  return callerId;
+}
+
 // ── GET /api/enrollments?userId={userId} ───────────────────────
 app.http('get-enrollments', {
   methods: ['GET'],
@@ -156,6 +190,12 @@ app.http('create-enrollment', {
       return jsonResponse(400, { success: false, error: { code: 'INVALID_ROLE', message: 'role must be "student" or "teacher"' } });
     }
 
+    // Teachers may only manage their own subjects (Story 1.6).
+    const scope = await assertTeacherSubjectScope(request, context, subjectId);
+    if (scope?.error) {
+      return scope.error;
+    }
+
     try {
       const enrollment = await upsertEnrollment({
         subjectId,
@@ -186,8 +226,8 @@ app.http('delete-enrollment', {
     if (!validateFrontDoorId(request)) return jsonResponse(403, { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } });
 
     const principal = parseClientPrincipal(request);
-    if (!isDirector(principal)) {
-      return jsonResponse(403, { success: false, error: { code: 'INSUFFICIENT_ROLE', message: 'Director role required' } });
+    if (!isTeacherOrDirector(principal)) {
+      return jsonResponse(403, { success: false, error: { code: 'INSUFFICIENT_ROLE', message: 'Teacher or Director role required' } });
     }
 
     const userId = request.query.get('userId');
@@ -195,6 +235,12 @@ app.http('delete-enrollment', {
 
     if (!userId || !subjectId) {
       return jsonResponse(400, { success: false, error: { code: 'MISSING_PARAMS', message: 'userId and subjectId are required' } });
+    }
+
+    // Teachers may only manage their own subjects (Story 1.6).
+    const scope = await assertTeacherSubjectScope(request, context, subjectId);
+    if (scope?.error) {
+      return scope.error;
     }
 
     try {

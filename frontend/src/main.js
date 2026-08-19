@@ -165,21 +165,85 @@ async function handleRoute() {
 /* ── Sign-in page (public) ─────────────────────────────────── */
 function renderLogin() {
     const appEl = document.getElementById('app');
-    const returnUrl = encodeURIComponent(window.location.href);
     appEl.innerHTML = `
     <div class="app-shell">
       <div class="main-content">
         <main class="page-content">
-          <div class="card" style="max-width:480px;margin:var(--space-10) auto;text-align:center">
+          <div class="card" style="max-width:420px;margin:var(--space-10) auto;text-align:center">
             <div class="empty-state-icon" aria-hidden="true">🔐</div>
             <h2 class="h3">Iniciá sesión</h2>
-            <p style="color:var(--color-text-secondary);margin:var(--space-3) 0">Para ingresar al panel usá tu cuenta Microsoft (cuenta institucional UADE).</p>
-            <a class="btn btn-primary" href="/.auth/login/aad?post_login_redirect_uri=${returnUrl}" aria-label="Iniciar sesión con Microsoft">Iniciar sesión con Microsoft</a>
+            <p style="color:var(--color-text-secondary);margin:var(--space-3) 0">Usá tu email institucional y contraseña para ingresar al panel.</p>
+            <form id="login-form" novalidate style="text-align:left;margin-top:var(--space-4)">
+              <div class="form-group">
+                <label class="form-label" for="login-email">Email institucional</label>
+                <input id="login-email" class="form-input" type="email" placeholder="nombre@uade.edu.ar" autocomplete="username" required />
+              </div>
+              <div class="form-group" style="margin-top:var(--space-3)">
+                <label class="form-label" for="login-password">Contraseña</label>
+                <input id="login-password" class="form-input" type="password" placeholder="••••••••" autocomplete="current-password" required />
+              </div>
+              <p id="login-error" class="text-secondary" style="color:var(--color-error);font-size:0.85rem;margin:var(--space-3) 0;display:none"></p>
+              <button type="submit" id="login-submit" class="btn btn-primary" style="width:100%;margin-top:var(--space-2)">Ingresar</button>
+            </form>
+            <p style="color:var(--color-text-secondary);font-size:0.8rem;margin-top:var(--space-4)">¿No recordás tu contraseña? Contactá a administración para resetearla.</p>
           </div>
         </main>
       </div>
     </div>
   `;
+
+    const errorEl = document.getElementById('login-error');
+    const submitBtn = document.getElementById('login-submit');
+    const showError = (message) => {
+        if (!errorEl) return;
+        errorEl.textContent = message;
+        errorEl.style.display = 'block';
+    };
+
+    const finishLogin = async (email, password) => {
+        try {
+            const user = await auth.login(email, password);
+            if (auth.isAccessDenied()) {
+                window.location.hash = '#/access-denied';
+                renderAccessDenied();
+                return;
+            }
+            // Authenticated application-state marker (Story 10.20).
+            document.documentElement.dataset.appState = 'authenticated';
+            try {
+                sessionStorage.setItem('edu_app_state', 'authenticated');
+            } catch (_) {}
+            processingNotifications.init();
+            inactivityMonitor.init();
+            window.location.hash = `#/${user.role || auth.getRole()}/dashboard`;
+        } catch (err) {
+            if (err?.code === 'ACCESS_DENIED' || err?.status === 403) {
+                sessionStorage.setItem('edu_access_denied', 'true');
+                window.location.hash = '#/access-denied';
+                renderAccessDenied();
+                return;
+            }
+            showError(err?.message || 'No se pudo iniciar sesión. Verificá tus credenciales.');
+        }
+    };
+
+    document.getElementById('login-form')?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const email = String(document.getElementById('login-email')?.value || '').trim();
+        const password = document.getElementById('login-password')?.value || '';
+        if (!email || !password) {
+            showError('Ingresá tu email y contraseña.');
+            return;
+        }
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Ingresando...';
+        try {
+            await finishLogin(email, password);
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Ingresar';
+        }
+    });
 }
 
 /* ── Access denied (authenticated but unlisted / 403 semantics) ── */
@@ -221,8 +285,8 @@ async function bootstrap() {
     }
 
     if (!authenticated) {
-        // Production already redirects to Microsoft sign-in inside initAuth().
-        // This branch only renders a login CTA when no redirect happened.
+        // Production renders the email/password login form here; dev-mock boot
+        // always authenticates before reaching this branch.
         window.location.hash = '#/login';
         renderLogin();
         return;

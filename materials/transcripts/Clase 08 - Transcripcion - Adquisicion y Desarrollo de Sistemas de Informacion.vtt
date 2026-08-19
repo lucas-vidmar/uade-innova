@@ -1,0 +1,25 @@
+WEBVTT - Clase 08: Adquisición y Desarrollo de Sistemas de Información (Unidad V)
+NOTE Materia: DASI - Diseño y Auditoría de Sistemas de Información
+NOTE Unidad V: Adquisición y Desarrollo de SI
+NOTE Referencia Bibliográfica: Laudon & Laudon - Capítulo 13
+
+1
+00:00:05.000 --> 00:00:20.000
+<v Profesor Martín Ferreiro>Profesor Martín Ferreiro: Iniciamos la Unidad 5: Cómo construyen o adquieren las organizaciones sus sistemas de información. El Ciclo de Vida del Desarrollo de Sistemas (SDLC).</v>
+
+2
+00:00:21.000 --> 00:00:45.000
+<v Profesor Martín Ferreiro>Profesor Martín Ferreiro: Las etapas clásicas son: Análisis de Sistemas (definición del problema y requerimientos), Diseño de Sistemas, Programación, Pruebas (unitarias, de integración y de aceptación), Conversión/Implantación, y Producción y Mantenimiento.</v>
+
+3
+00:00:46.000 --> 00:01:10.000
+<v Alumna Sofía>Alumna Sofía: Profesor, ¿cuáles son las cuatro estrategias principales de conversión o pase a producción?</v>
+
+4
+00:01:11.000 --> 00:01:40.000
+<v Profesor Martín Ferreiro>Profesor Martín Ferreiro: Muy importante: 1) Estrategia Paralela (más segura, mayor costo), 2) Corte Directo (más riesgosa, cambio de un día para el otro), 3) Estudio Piloto (se prueba en una sucursal o sector), y 4) Enfoque Gradual o por Fases (se introducen módulos paulatinamente).</v>
+
+5
+00:01:41.000 --> 00:02:10.000
+<v Profesor Martín Ferreiro>Profesor Martín Ferreiro: También contrastamos el desarrollo tradicional en cascada con las Metodologías Ágiles (Scrum, DevOps) y la decisión de 'Construir a medida vs Comprar paquete comercial / SaaS'.</v>
+
