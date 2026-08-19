@@ -135,28 +135,88 @@ test('unlisted identity is routed to the access-denied page with recovery contro
   await expect(page.getByRole('button', { name: 'Cerrar sesión' })).toBeVisible();
 });
 
-test('unauthenticated session renders the Microsoft sign-in CTA', async ({ page }) => {
+test('unauthenticated session renders the email/password login form (no Microsoft redirect)', async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('uade_use_mock', 'false');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_logged_in', 'false');
   });
 
-  // No principal: `/.auth/me` reports no authenticated user.
-  await page.route('**/.auth/me', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ clientPrincipal: null }) });
-  });
-
   await stubDashboardBoot(page);
 
   // Boot once under the dev-mock session, then move to the public #/login route
-  // where handleRoute() renders the sign-in CTA (see file header note).
+  // where handleRoute() renders the sign-in card (see file header note).
   await page.goto('/#/student/dashboard');
   await page.waitForSelector('#section-classes', { timeout: 15000 });
   await page.evaluate(() => { window.location.hash = '#/login'; });
 
   await expect(page.getByText('Iniciá sesión')).toBeVisible();
-  const loginLink = page.locator('a[href*="/.auth/login/aad"]');
-  await expect(loginLink).toBeVisible();
-  await expect(loginLink).toHaveAttribute('href', /^\/\.auth\/login\/aad\?post_login_redirect_uri=/);
+  // Email/password form replaces the Microsoft CTA.
+  await expect(page.locator('#login-email')).toBeVisible();
+  await expect(page.locator('#login-password')).toBeVisible();
+  await expect(page.locator('#login-submit')).toBeVisible();
+  await expect(page.locator('a[href*="/.auth/login/aad"]')).toHaveCount(0);
+});
+
+test('email/password login with valid credentials boots the role dashboard', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('uade_use_mock', 'false');
+    sessionStorage.setItem('edu_logged_in', 'false');
+  });
+
+  await page.route('**/api/auth/login*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        token: 'session-token-123',
+        expiresAt: '2026-12-31T00:00:00Z',
+        user: { id: 'alu-001', name: 'Lucas Vidmar', surname: '', email: 'lvidmar@uade.edu.ar', role: 'student', mustChangePassword: false, scope: { subjects: ['arq-software-2026'], classes: [] } },
+      }),
+    });
+  });
+  await page.route('**/api/get-profile*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ role: 'student', consentAccepted: true, email: 'lvidmar@uade.edu.ar' }),
+    });
+  });
+  await stubDashboardBoot(page);
+
+  await page.goto('/#/login');
+  await page.waitForSelector('#login-email', { timeout: 15000 });
+  await page.fill('#login-email', 'lvidmar@uade.edu.ar');
+  await page.fill('#login-password', 'secret-1');
+  await page.click('#login-submit');
+
+  await expect(page).toHaveURL(/#\/student\/dashboard/, { timeout: 15000 });
+  await expect(page.evaluate(() => sessionStorage.getItem('edu_token'))).resolves.toBe('session-token-123');
+  await expect(page.evaluate(() => sessionStorage.getItem('edu_role'))).resolves.toBe('student');
+});
+
+test('email/password login with invalid credentials shows an inline error (no redirect)', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('uade_use_mock', 'false');
+    sessionStorage.setItem('edu_logged_in', 'false');
+  });
+
+  await page.route('**/api/auth/login*', async (route) => {
+    await route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'Credenciales inválidas.', code: 'INVALID_CREDENTIALS', errorCategory: 'AUTH' }),
+    });
+  });
+
+  await page.goto('/#/login');
+  await page.waitForSelector('#login-email', { timeout: 15000 });
+  await page.fill('#login-email', 'lvidmar@uade.edu.ar');
+  await page.fill('#login-password', 'wrong-password');
+  await page.click('#login-submit');
+
+  await expect(page.locator('#login-error')).toBeVisible({ timeout: 15000 });
+  await expect(page.locator('#login-error')).toContainText('Credenciales inválidas');
+  await expect(page).toHaveURL(/#\/login/);
 });

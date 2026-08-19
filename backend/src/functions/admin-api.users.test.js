@@ -143,6 +143,22 @@ test('ADMIN_CREATE_USER_RANDOM — generatePassword=true returns a generated pas
   assert.equal(body.generatedPassword, 'R4nd0m-P4ss');
 });
 
+test('ADMIN_CREATE_USER_WEAK_PASSWORD — manual password under 8 chars rejected', async () => {
+  const res = await handlers['admin-create-user'](makeRequest({ body: {
+    userId: 'alu-013',
+    name: 'X',
+    surname: 'Y',
+    email: 'weak@uade.edu.ar',
+    role: 'student',
+    password: 'short',
+  } }), makeContext());
+  assert.equal(res.status, 400);
+  const body = JSON.parse(res.body);
+  assert.equal(body.error.code, 'WEAK_PASSWORD');
+  // createUser must NOT have been called for a rejected weak password.
+  assert.equal(usersStoreMocks.createUser.mock.callCount(), 0);
+});
+
 test('ADMIN_CREATE_USER_NON_UADE — domain violation propagates 400 EMAIL_DOMAIN_INVALID', async () => {
   const domainErr = new Error('El email debe pertenecer al dominio @uade.edu.ar.');
   domainErr.status = 400;
@@ -214,7 +230,7 @@ test('ADMIN_DELETE_USER_NOT_FOUND — unknown user => 404', async () => {
   assert.equal(res.status, 404);
 });
 
-test('ADMIN_RESET_PASSWORD — resets password, sets mustChangePassword, returns password once', async () => {
+test('ADMIN_RESET_PASSWORD — resets password, sets mustChangePassword, revokes target sessions', async () => {
   usersStoreMocks.setUserPassword.mock.mockImplementation(async () => true);
   const res = await handlers['admin-reset-password'](makeRequest({ body: {}, params: { id: 'alu-001' } }), makeContext());
   assert.equal(res.status, 200);
@@ -225,6 +241,23 @@ test('ADMIN_RESET_PASSWORD — resets password, sets mustChangePassword, returns
   assert.equal(id, 'alu-001');
   assert.equal(opts.mustChangePassword, true);
   assert.ok(password);
+  // Reset revokes the target user's sessions (admin is a different user here).
+  assert.equal(sessionStoreMocks.deleteSessionsForUser.mock.callCount(), 1);
+  assert.equal(sessionStoreMocks.deleteSessionsForUser.mock.calls[0].arguments[0], 'alu-001');
+});
+
+test('ADMIN_RESET_PASSWORD_SELF — admin resetting their own password keeps their own session', async () => {
+  usersStoreMocks.setUserPassword.mock.mockImplementation(async () => true);
+  // Admin resets their own id; makeContext().user.id is 'adm-001'.
+  const res = await handlers['admin-reset-password'](
+    { headers: { get: () => 'Bearer adm-token' }, params: { id: 'adm-001' }, json: async () => ({}) },
+    makeContext()
+  );
+  assert.equal(res.status, 200);
+  assert.equal(sessionStoreMocks.deleteSessionsForUser.mock.callCount(), 1);
+  // exceptToken is the admin's own bearer token.
+  assert.equal(sessionStoreMocks.deleteSessionsForUser.mock.calls[0].arguments[0], 'adm-001');
+  assert.equal(sessionStoreMocks.deleteSessionsForUser.mock.calls[0].arguments[1], 'adm-token');
 });
 
 test('ADMIN_RESET_PASSWORD_UNKNOWN — unknown user => 404', async () => {

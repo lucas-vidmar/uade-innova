@@ -210,6 +210,27 @@ export async function getUserByEmail(email) {
 }
 
 /**
+ * Resolves a user by normalized email INCLUDING its passwordHash.
+ * Used exclusively by the login path (auth-login) so password verification
+ * can run against the stored hash. Never exposed to admin/list surfaces —
+ * callers must not return the passwordHash to the client.
+ * @param {string} email
+ * @returns {Promise<Object|null>} full user including passwordHash
+ */
+export async function getUserByEmailWithPassword(email) {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return null;
+  await ensureTable();
+  const client = getTableClient(USERS_TABLE);
+  const filter = `PartitionKey eq '${USERS_PARTITION}'`;
+  for await (const entity of client.listEntities({ queryOptions: { filter } })) {
+    const user = fromEntity(entity);
+    if (user && user.email === normalized) return user;
+  }
+  return null;
+}
+
+/**
  * Creates a user. Enforces: required fields, valid role, @uade.edu.ar domain,
  * unique email and unique userId.
  * @param {Object} input { userId, name, surname, email, role, password, status?, mustChangePassword? }
@@ -224,6 +245,9 @@ export async function createUser(input = {}) {
   const password = String(input.password || '');
 
   if (!userId) throw validationError(400, 'MISSING_USER_ID', 'userId es requerido.');
+  if (!/^[A-Za-z0-9_-]+$/.test(userId)) {
+    throw validationError(400, 'INVALID_USER_ID', 'userId solo puede contener letras, números, guiones y guiones bajos.');
+  }
   if (!name) throw validationError(400, 'MISSING_NAME', 'El nombre es requerido.');
   if (!email) throw validationError(400, 'MISSING_EMAIL', 'El email es requerido.');
   if (!password) throw validationError(400, 'MISSING_PASSWORD', 'La contraseña es requerida.');
@@ -276,7 +300,11 @@ export async function updateUser(userId, updates = {}) {
   }
 
   const next = { ...existing };
-  if (updates.name !== undefined) next.name = String(updates.name).trim();
+  if (updates.name !== undefined) {
+    const name = String(updates.name).trim();
+    if (!name) throw validationError(400, 'MISSING_NAME', 'El nombre es requerido.');
+    next.name = name;
+  }
   if (updates.surname !== undefined) next.surname = String(updates.surname).trim();
   if (updates.role !== undefined) {
     const role = String(updates.role).trim().toLowerCase();

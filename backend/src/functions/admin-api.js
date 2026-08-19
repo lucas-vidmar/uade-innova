@@ -130,6 +130,9 @@ app.http('admin-create-user', {
     if (!finalPassword) {
       return jsonResponse(400, { success: false, error: { code: 'MISSING_PASSWORD', message: 'Se requiere una contraseña o generar una aleatoria.' } });
     }
+    if (!generatePassword && finalPassword.length < 8) {
+      return jsonResponse(400, { success: false, error: { code: 'WEAK_PASSWORD', message: 'La contraseña debe tener al menos 8 caracteres.' } });
+    }
 
     try {
       const created = await createUser({

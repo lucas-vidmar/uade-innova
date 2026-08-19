@@ -140,7 +140,16 @@ export function withAuth(handler, options = {}) {
     let principal = null;
 
     if (token) {
-      const result = await resolveSessionIdentity(token, context);
+      let result;
+      try {
+        result = await resolveSessionIdentity(token, context);
+      } catch (err) {
+        // Storage/transient errors during session resolution must not escape as
+        // an unhandled 500/stack trace. Fail closed with a structured 401 so a
+        // blip forces re-auth instead of leaking internals.
+        context?.log?.(`[Auth] Session resolution error: ${err?.message}`);
+        return authError(401, 'INVALID_SESSION', 'No se pudo verificar tu sesión. Intentá iniciar sesión nuevamente.');
+      }
       if (result.error) {
         return result.error;
       }

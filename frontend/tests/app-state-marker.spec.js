@@ -35,7 +35,7 @@ test('T1 marker appears when /.auth/me returns an authenticated principal', asyn
       }),
     });
   });
-  await page.route('**/api/get-profile', async route => {
+  await page.route('**/api/get-profile*', async route => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -64,7 +64,7 @@ test('T1 marker does NOT appear when access is denied (ACCESS_DENIED profile)', 
     });
   });
   // Server resolves the identity to a deny (403 semantics) — allowlist miss.
-  await page.route('**/api/get-profile', async route => {
+  await page.route('**/api/get-profile*', async route => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',

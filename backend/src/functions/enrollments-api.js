@@ -95,6 +95,12 @@ app.http('get-enrollments', {
       if (!isDir && !isTeacher) {
         return jsonResponse(403, { success: false, error: { code: 'FORBIDDEN', message: 'Solo docentes o directores pueden ver la lista de inscriptos.' } });
       }
+      // Story 1.6: a teacher may only list the roster of their own subjects;
+      // Directors bypass the guard. Denied teachers get 403 (fail closed).
+      if (isTeacher && !isDir) {
+        const scoped = await assertTeacherSubjectScope(request, context, subjectId);
+        if (scoped && scoped.error) return scoped.error;
+      }
 
       const enrollments = await getEnrollmentsBySubject(subjectId);
       return jsonResponse(200, {

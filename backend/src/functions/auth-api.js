@@ -18,7 +18,7 @@ import { withAuth } from '../middleware/with-auth.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { createRateLimiter } from '../services/rate-limiter.js';
 import {
-  getUserByEmail,
+  getUserByEmailWithPassword,
   getUserById,
   verifyPassword,
   setUserPassword,
@@ -117,7 +117,7 @@ app.http('auth-login', {
       return authError(429, 'TOO_MANY_ATTEMPTS', 'Demasiados intentos de inicio de sesión. Intentá de nuevo en unos minutos.');
     }
 
-    const user = await getUserByEmail(email);
+    const user = await getUserByEmailWithPassword(email);
     // Fail closed without revealing existence: unknown email and wrong password
     // produce the same 401 INVALID_CREDENTIALS.
     if (!user || !verifyPassword(password, user.passwordHash)) {

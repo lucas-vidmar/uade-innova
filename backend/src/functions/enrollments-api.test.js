@@ -264,3 +264,66 @@ test('delete-enrollment succeeds for director', async () => {
 
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
 });
+
+test('delete-enrollment rejects teacher outside their own subjects (Story 1.6)', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'doc-001', userRoles: ['Docente'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+
+    // Teacher is only enrolled in another subject.
+    stateStoreMocks.getEnrollmentsByUser.mock.mockImplementation(async () => [
+        { subjectId: 'otra-materia', userId: 'doc-001', role: 'teacher', status: 'active' },
+    ]);
+
+    const ctx = makeContext();
+    ctx.user = { id: 'doc-001', userId: 'doc-001', role: 'Docente' };
+    const req = makeRequest({ userId: 'alu-001', subjectId: 'arq-software-2026' });
+    const res = await handlers['delete-enrollment'](req, ctx);
+    assert.strictEqual(res.status, 403);
+    const body = JSON.parse(res.body);
+    assert.strictEqual(body.error.code, 'FORBIDDEN');
+
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+});
+
+test('delete-enrollment allows teacher in their own subject (Story 1.6)', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'doc-001', userRoles: ['Docente'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+
+    // Teacher is enrolled as teacher in the target subject.
+    stateStoreMocks.getEnrollmentsByUser.mock.mockImplementation(async () => [
+        { subjectId: 'arq-software-2026', userId: 'doc-001', role: 'teacher', status: 'active' },
+    ]);
+    stateStoreMocks.deleteEnrollment.mock.mockImplementation(async () => true);
+
+    const ctx = makeContext();
+    ctx.user = { id: 'doc-001', userId: 'doc-001', role: 'Docente' };
+    const req = makeRequest({ userId: 'alu-001', subjectId: 'arq-software-2026' });
+    const res = await handlers['delete-enrollment'](req, ctx);
+    assert.strictEqual(res.status, 200);
+    const body = JSON.parse(res.body);
+    assert.strictEqual(body.data.deleted, true);
+
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+});
+
+test('get-enrollments rejects teacher reading a roster of a subject they do not teach (Story 1.6)', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'doc-001', userRoles: ['Docente'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+
+    stateStoreMocks.getEnrollmentsByUser.mock.mockImplementation(async () => [
+        { subjectId: 'otra-materia', userId: 'doc-001', role: 'teacher', status: 'active' },
+    ]);
+
+    const ctx = makeContext();
+    ctx.user = { id: 'doc-001', userId: 'doc-001', role: 'Docente' };
+    const req = makeRequest({ subjectId: 'arq-software-2026' });
+    const res = await handlers['get-enrollments'](req, ctx);
+    assert.strictEqual(res.status, 403);
+    const body = JSON.parse(res.body);
+    assert.strictEqual(body.error.code, 'FORBIDDEN');
+
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+});

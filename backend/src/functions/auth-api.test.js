@@ -28,7 +28,7 @@ mock.module('../middleware/with-correlation.js', {
 });
 
 const userStoreMocks = {
-  getUserByEmail: mock.fn(async () => null),
+  getUserByEmailWithPassword: mock.fn(async () => null),
   getUserById: mock.fn(async () => null),
   verifyPassword: mock.fn(() => false),
   setUserPassword: mock.fn(async () => true),
@@ -96,7 +96,7 @@ function activeUser(overrides = {}) {
 }
 
 beforeEach(() => {
-  userStoreMocks.getUserByEmail.mock.resetCalls();
+  userStoreMocks.getUserByEmailWithPassword.mock.resetCalls();
   userStoreMocks.getUserById.mock.resetCalls();
   userStoreMocks.verifyPassword.mock.resetCalls();
   userStoreMocks.verifyPassword.mock.mockImplementation(() => true);
@@ -109,7 +109,7 @@ beforeEach(() => {
 });
 
 test('HAPPY_LOGIN — valid credentials => 200 + opaque token + lowercase role/scope', async () => {
-  userStoreMocks.getUserByEmail.mock.mockImplementation(async () => activeUser());
+  userStoreMocks.getUserByEmailWithPassword.mock.mockImplementation(async () => activeUser());
   const ctx = makeContext();
   const res = await handlers['auth-login'](makeRequest({ email: 'alu001@uade.edu.ar', password: 'secret-1' }, { ip: '1.2.3.4' }), ctx);
   assert.equal(res.status, 200);
@@ -122,7 +122,7 @@ test('HAPPY_LOGIN — valid credentials => 200 + opaque token + lowercase role/s
 });
 
 test('BAD_PASSWORD — correct email + wrong password => 401 INVALID_CREDENTIALS (generic)', async () => {
-  userStoreMocks.getUserByEmail.mock.mockImplementation(async () => activeUser());
+  userStoreMocks.getUserByEmailWithPassword.mock.mockImplementation(async () => activeUser());
   userStoreMocks.verifyPassword.mock.mockImplementation(() => false);
   const ctx = makeContext();
   const res = await handlers['auth-login'](makeRequest({ email: 'alu001@uade.edu.ar', password: 'wrong' }, { ip: '1.2.3.5' }), ctx);
@@ -133,7 +133,7 @@ test('BAD_PASSWORD — correct email + wrong password => 401 INVALID_CREDENTIALS
 });
 
 test('UNKNOWN_EMAIL — unknown email => same 401 INVALID_CREDENTIALS (no user enumeration)', async () => {
-  userStoreMocks.getUserByEmail.mock.mockImplementation(async () => null);
+  userStoreMocks.getUserByEmailWithPassword.mock.mockImplementation(async () => null);
   const ctx = makeContext();
   const res = await handlers['auth-login'](makeRequest({ email: 'ghost@uade.edu.ar', password: 'whatever' }, { ip: '1.2.3.6' }), ctx);
   assert.equal(res.status, 401);
@@ -142,7 +142,7 @@ test('UNKNOWN_EMAIL — unknown email => same 401 INVALID_CREDENTIALS (no user e
 });
 
 test('DISABLED_USER — status disabled => 403 ACCESS_DENIED', async () => {
-  userStoreMocks.getUserByEmail.mock.mockImplementation(async () => activeUser({ status: 'disabled' }));
+  userStoreMocks.getUserByEmailWithPassword.mock.mockImplementation(async () => activeUser({ status: 'disabled' }));
   const ctx = makeContext();
   const res = await handlers['auth-login'](makeRequest({ email: 'alu001@uade.edu.ar', password: 'secret-1' }, { ip: '1.2.3.7' }), ctx);
   assert.equal(res.status, 403);
@@ -159,7 +159,7 @@ test('MISSING_FIELDS — empty email/password => 400', async () => {
 test('RATE_LIMIT — repeated attempts are throttled with 429 TOO_MANY_ATTEMPTS', async () => {
   // CONFIG default login limit is 5 attempts per window. Force rejection after
   // the limit by exercising the same IP+email key several times.
-  userStoreMocks.getUserByEmail.mock.mockImplementation(async () => activeUser());
+  userStoreMocks.getUserByEmailWithPassword.mock.mockImplementation(async () => activeUser());
   const ctx = makeContext();
   let saw429 = false;
   for (let i = 0; i < 12; i += 1) {

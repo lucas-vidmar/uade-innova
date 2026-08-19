@@ -1,21 +1,20 @@
 /**
- * scripts/smoke-allowlist-identities.js — Production per-role allowlist smoke probe (Story 10.25)
+ * scripts/smoke-allowlist-identities.js — Production per-role identity smoke probe (Story 10.25 + 1.7)
  *
- * Asserts one allowlisted smoke-test identity per configured role (student,
- * teacher, director, admin) resolves through the server-side allowlist and
- * reaches its mapped dashboard, and that an unlisted (but authenticated)
- * identity is denied with the access-denied page (sign-out/retry).
+ * Asserts one seeded identity per configured role (student, teacher, director,
+ * admin) resolves through the central Users + Enrollments tables and the
+ * session-token flow to its expected frontend role + scope. Each identity logs
+ * in with email+password (POST /api/auth/login → opaque session token) and then
+ * GET /api/get-profile is authorized with `Authorization: Bearer <token>`.
  *
  * Two assertion layers:
  *
- *  1. HTTP layer (always, when enabled) — the deploy-time gate. Calls
- *     `{SMOKE_FUNCTION_URL}/api/get-profile` with the per-role allowlist email
- *     on the pilot identity transport (`x-ms-client-principal-name`, see
- *     allowlist.js:106-115) plus `x-azure-fdid` when SMOKE_FRONT_DOOR_ID is
- *     set. Asserts:
- *       - allowlisted role → HTTP 200 + body.role === expected frontend role +
- *         allowlist-resolved scope (AC1: identity resolves through the allowlist)
+ *  1. HTTP layer (always, when enabled) — the deploy-time gate:
+ *       - login succeeds → token issued (AC: identity authenticates against Users)
+ *       - GET /api/get-profile (Bearer) → HTTP 200 + body.role === expected
+ *         frontend role + Enrollments-resolved scope (AC1)
  *       - unlisted identity → HTTP 403 + body.code === 'ACCESS_DENIED' (AC3)
+ *     plus `x-azure-fdid` when SMOKE_FRONT_DOOR_ID is set.
  *
  *  2. Browser layer (optional, SMOKE_BROWSER_CHECK=true) — signs in per-role
  *     and asserts the app reaches `#/{role}/dashboard` with the authenticated
@@ -136,25 +135,61 @@ export function withTimeout(fetchImpl, url, init, timeoutMs) {
     return fetchImpl(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
-function profileHeaders(cfg) {
+function profileHeaders(cfg, token) {
     const headers = { accept: 'application/json' };
+    if (token) headers.authorization = `Bearer ${token}`;
     if (cfg.frontDoorId) headers['x-azure-fdid'] = cfg.frontDoorId;
     return headers;
 }
 
 /**
- * HTTP — allowlisted role identity resolves through the allowlist to its
- * expected frontend role and scope, and the mapped dashboard is reachable
- * (AC1). The identity transport is the pilot `x-ms-client-principal-name`
- * header (allowlist.js:106-115), the same mechanism the deploy-time probes use.
+ * Authenticates an email+password identity against the central Users table via
+ * POST /api/auth/login (Story 1.1a/1.7) and returns the opaque session token.
+ * Resolves through the new session model (sessions-store.js) instead of the
+ * retired `x-ms-client-principal-name` allowlist header.
  */
-export async function checkAllowlistedRole(cfg, role, email, fetchImpl = fetch) {
+export async function loginSession(cfg, identity, fetchImpl = fetch) {
+    const url = `${cfg.functionUrl}/api/auth/login`;
+    let res;
+    try {
+        res = await withTimeout(fetchImpl, url, {
+            method: 'POST',
+            headers: { accept: 'application/json', 'content-type': 'application/json' },
+            body: JSON.stringify({ email: identity.email, password: identity.password || '' }),
+        }, cfg.timeoutMs);
+    } catch (err) {
+        return { error: `${url} unreachable: ${err.message}` };
+    }
+    if (res.status !== 200) {
+        return { error: `${url} returned HTTP ${res.status} for ${identity.email} (expected 200 login)` };
+    }
+    let body;
+    try {
+        body = await res.json();
+    } catch (err) {
+        return { error: `${url} body unreadable: ${err.message}` };
+    }
+    if (!body || !body.token) {
+        return { error: `${url} did not return a session token (body.token missing)` };
+    }
+    return { token: body.token };
+}
+
+/**
+ * HTTP — allowlisted role identity resolves through the server-side Users table
+ * to its expected frontend role and scope (AC1). Identity is authenticated with
+ * email+password (login → session token) and then GET /api/get-profile is
+ * authorized with `Authorization: Bearer <token>`.
+ */
+export async function checkAllowlistedRole(cfg, role, identity, fetchImpl = fetch) {
     const name = `allowlist-${role}`;
     if (!cfg.functionUrl) {
         return fail(name, 'SMOKE_FUNCTION_URL required when SMOKE_ALLOWLIST_ENABLED=true (fail closed)');
     }
+    const login = await loginSession(cfg, identity, fetchImpl);
+    if (login.error) return fail(name, login.error);
     const url = `${cfg.functionUrl}/api/get-profile`;
-    const headers = { ...profileHeaders(cfg), 'x-ms-client-principal-name': email };
+    const headers = profileHeaders(cfg, login.token);
     let res;
     try {
         res = await withTimeout(fetchImpl, url, { method: 'GET', headers }, cfg.timeoutMs);
@@ -162,7 +197,7 @@ export async function checkAllowlistedRole(cfg, role, email, fetchImpl = fetch) 
         return fail(name, `${url} unreachable: ${err.message}`);
     }
     if (res.status !== 200) {
-        return fail(name, `${url} returned HTTP ${res.status} (expected 200; allowlist resolution failed)`);
+        return fail(name, `${url} returned HTTP ${res.status} (expected 200; session resolution failed)`);
     }
     let body;
     try {
@@ -172,27 +207,29 @@ export async function checkAllowlistedRole(cfg, role, email, fetchImpl = fetch) 
     }
     const expectedRole = ROLE_TO_FRONTEND_ROLE[role];
     if (body.role !== expectedRole) {
-        return fail(name, `allowlist resolved role=${body.role}, expected ${expectedRole}`);
+        return fail(name, `session resolved role=${body.role}, expected ${expectedRole}`);
     }
     if (!body.scope || !Array.isArray(body.scope.subjects)) {
-        return fail(name, `allowlist-resolved scope missing for role=${role} (email=${email})`);
+        return fail(name, `session-resolved scope missing for role=${role} (email=${identity.email})`);
     }
     const dashboard = ROLE_TO_DASHBOARD[role];
     return ok(name, `role=${body.role} → ${dashboard} (scope subjects: ${body.scope.subjects.join(', ') || 'n/a'})`);
 }
 
 /**
- * HTTP — unlisted (but authenticated) identity is denied by the server-side
+ * HTTP — unlisted (but authenticatable) identity is denied by the server-side
  * allowlist (AC3). Asserts 403 + code ACCESS_DENIED (with-auth.js:71-78,
  * auth-utils.js:170-174 fail closed).
  */
-export async function checkUnlistedDenied(cfg, email, fetchImpl = fetch) {
+export async function checkUnlistedDenied(cfg, identity, fetchImpl = fetch) {
     const name = 'allowlist-unlisted-denied';
     if (!cfg.functionUrl) {
         return fail(name, 'SMOKE_FUNCTION_URL required when SMOKE_ALLOWLIST_ENABLED=true (fail closed)');
     }
+    const login = await loginSession(cfg, identity, fetchImpl);
+    if (login.error) return fail(name, login.error);
     const url = `${cfg.functionUrl}/api/get-profile`;
-    const headers = { ...profileHeaders(cfg), 'x-ms-client-principal-name': email };
+    const headers = profileHeaders(cfg, login.token);
     let res;
     try {
         res = await withTimeout(fetchImpl, url, { method: 'GET', headers }, cfg.timeoutMs);
@@ -376,19 +413,21 @@ export async function runProbe(cfg, deps = {}) {
         return summarize(results);
     }
 
-    // HTTP layer — fail closed on missing per-role emails.
+    // HTTP layer — fail closed on missing per-role emails/passwords.
     for (const role of ROLE_NAMES) {
         const identity = cfg.roles[role];
         if (!identity || !identity.email) {
             results.push(fail(`allowlist-${role}`, `SMOKE_${role.toUpperCase()}_EMAIL missing (fail closed)`));
+        } else if (!identity.password) {
+            results.push(fail(`allowlist-${role}`, `SMOKE_${role.toUpperCase()}_PASSWORD missing (fail closed)`));
         } else {
-            results.push(await checkAllowlistedRole(cfg, role, identity.email, fetchImpl));
+            results.push(await checkAllowlistedRole(cfg, role, identity, fetchImpl));
         }
     }
-    if (!cfg.unlisted || !cfg.unlisted.email) {
-        results.push(fail('allowlist-unlisted-denied', 'SMOKE_UNLISTED_EMAIL missing (fail closed)'));
+    if (!cfg.unlisted || !cfg.unlisted.email || !cfg.unlisted.password) {
+        results.push(fail('allowlist-unlisted-denied', 'SMOKE_UNLISTED_EMAIL/PASSWORD missing (fail closed)'));
     } else {
-        results.push(await checkUnlistedDenied(cfg, cfg.unlisted.email, fetchImpl));
+        results.push(await checkUnlistedDenied(cfg, cfg.unlisted, fetchImpl));
     }
 
     // Browser layer — optional (SMOKE_BROWSER_CHECK=true) but fails closed on

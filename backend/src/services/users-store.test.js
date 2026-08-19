@@ -62,6 +62,7 @@ mock.module('./storage.js', {
 const {
   createUser,
   getUserByEmail,
+  getUserByEmailWithPassword,
   getUserById,
   listUsers,
   updateUser,
@@ -170,6 +171,34 @@ test('LIST_USERS — returns all users without hashes', async () => {
   const users = await listUsers();
   assert.equal(users.length, 2);
   assert.ok(users.every((u) => u.passwordHash === undefined));
+});
+
+test('GET_BY_EMAIL_WITH_PASSWORD — login lookup includes the passwordHash', async () => {
+  tableData.Users = [];
+  await seedUser();
+  const user = await getUserByEmailWithPassword('alu001@uade.edu.ar');
+  assert.equal(user.userId, 'alu-001');
+  assert.ok(typeof user.passwordHash === 'string' && user.passwordHash.includes(':'));
+  // Public lookup (used by admin/uniqueness) must NOT leak the hash.
+  const publicUser = await getUserByEmail('alu001@uade.edu.ar');
+  assert.equal(publicUser.passwordHash, undefined);
+});
+
+test('CREATE_USER — rejects userId with path-delimiter characters', async () => {
+  tableData.Users = [];
+  await assert.rejects(
+    () => seedUser({ userId: 'bad/id?x' }),
+    (err) => err.code === 'INVALID_USER_ID'
+  );
+});
+
+test('UPDATE_USER — rejects empty/whitespace name', async () => {
+  tableData.Users = [];
+  await seedUser();
+  await assert.rejects(
+    () => updateUser('alu-001', { name: '   ' }),
+    (err) => err.code === 'MISSING_NAME'
+  );
 });
 
 test('UPDATE_ROLE_EMAIL — edit role + status; domain re-validated', async () => {

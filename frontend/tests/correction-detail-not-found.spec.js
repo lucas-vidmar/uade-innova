@@ -45,7 +45,7 @@ async function stubShell(page, options = {}) {
     });
   });
 
-  await page.route('**/api/get-profile', async (route) => {
+  await page.route('**/api/get-profile*', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ consentAccepted: true }) });
   });
 

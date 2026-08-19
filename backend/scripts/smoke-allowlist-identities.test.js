@@ -42,8 +42,16 @@ const UNLISTED_EMAIL = 'unlisted@outside.example.com';
 
 function roleRoutes(overrides = {}) {
     const routes = {
+        '/api/auth/login': (u, init) => {
+            const body = JSON.parse(init.body || '{}');
+            // Login always succeeds for the probe (identity exists in Users);
+            // authorization/entitlement is asserted at /api/get-profile.
+            return jsonResponse(200, { success: true, token: `token-${body.email}` });
+        },
         '/api/get-profile': (u, init) => {
-            const email = init.headers?.['x-ms-client-principal-name'] || init.headers?.get?.('x-ms-client-principal-name');
+            const auth = init.headers?.authorization || init.headers?.get?.('authorization') || '';
+            const token = auth.replace(/^Bearer\s+/i, '');
+            const email = token.replace(/^token-/, '');
             if (email === UNLISTED_EMAIL) {
                 return jsonResponse(403, { error: 'denied', errorCategory: 'AUTH', code: 'ACCESS_DENIED' });
             }
@@ -107,7 +115,7 @@ test('ROLE_TO_DOM_MARKER defines a page marker per dashboard (T1.4)', () => {
 test('allowlisted role: resolves to its frontend role + scope + mapped dashboard (AC1)', async () => {
     for (const role of Object.keys(ROLE_EMAILS)) {
         const cfg = enabledCfg();
-        const res = await checkAllowlistedRole(cfg, role, ROLE_EMAILS[role], stubFetch(roleRoutes()));
+        const res = await checkAllowlistedRole(cfg, role, cfg.roles[role], stubFetch(roleRoutes()));
         assert.strictEqual(res.ok, true, `${role}: ${res.detail}`);
         assert.match(res.detail, new RegExp(`#/${role}/dashboard`));
         assert.match(res.detail, new RegExp(`role=${role}`));
@@ -116,16 +124,16 @@ test('allowlisted role: resolves to its frontend role + scope + mapped dashboard
 
 test('allowlisted role: resolved role mismatch fails (role guard contract)', async () => {
     const cfg = enabledCfg();
-    const res = await checkAllowlistedRole(cfg, 'admin', ROLE_EMAILS.admin, stubFetch({
+    const res = await checkAllowlistedRole(cfg, 'admin', cfg.roles.admin, stubFetch(roleRoutes({
         '/api/get-profile': () => jsonResponse(200, { role: 'student', email: ROLE_EMAILS.admin, scope: { subjects: ['x'], classes: [] } }),
-    }));
+    })));
     assert.strictEqual(res.ok, false);
     assert.match(res.detail, /expected admin/);
 });
 
 test('allowlisted role: non-200 fails', async () => {
     const cfg = enabledCfg();
-    const res = await checkAllowlistedRole(cfg, 'student', ROLE_EMAILS.student, stubFetch({
+    const res = await checkAllowlistedRole(cfg, 'student', cfg.roles.student, stubFetch({
         '/api/get-profile': () => jsonResponse(500, { error: 'boom' }),
     }));
     assert.strictEqual(res.ok, false);
@@ -133,30 +141,30 @@ test('allowlisted role: non-200 fails', async () => {
 
 test('allowlisted role: missing scope fails (allowlist resolution incomplete)', async () => {
     const cfg = enabledCfg();
-    const res = await checkAllowlistedRole(cfg, 'student', ROLE_EMAILS.student, stubFetch({
+    const res = await checkAllowlistedRole(cfg, 'student', cfg.roles.student, stubFetch(roleRoutes({
         '/api/get-profile': () => jsonResponse(200, { role: 'student', email: ROLE_EMAILS.student, scope: null }),
-    }));
+    })));
     assert.strictEqual(res.ok, false);
     assert.match(res.detail, /scope missing/);
 });
 
 test('allowlisted role: missing SMOKE_FUNCTION_URL fails closed', async () => {
     const cfg = enabledCfg({ functionUrl: '' });
-    const res = await checkAllowlistedRole(cfg, 'student', ROLE_EMAILS.student, stubFetch(roleRoutes()));
+    const res = await checkAllowlistedRole(cfg, 'student', cfg.roles.student, stubFetch(roleRoutes()));
     assert.strictEqual(res.ok, false);
     assert.match(res.detail, /SMOKE_FUNCTION_URL required/);
 });
 
 test('unlisted identity: 403 + ACCESS_DENIED passes (AC3, server-side denial)', async () => {
     const cfg = enabledCfg();
-    const res = await checkUnlistedDenied(cfg, UNLISTED_EMAIL, stubFetch(roleRoutes()));
+    const res = await checkUnlistedDenied(cfg, cfg.unlisted, stubFetch(roleRoutes()));
     assert.strictEqual(res.ok, true);
     assert.match(res.detail, /ACCESS_DENIED/);
 });
 
 test('unlisted identity: non-403 fails (allowlist must deny, fail closed)', async () => {
     const cfg = enabledCfg();
-    const res = await checkUnlistedDenied(cfg, UNLISTED_EMAIL, stubFetch({
+    const res = await checkUnlistedDenied(cfg, cfg.unlisted, stubFetch({
         '/api/get-profile': () => jsonResponse(200, { role: 'student' }),
     }));
     assert.strictEqual(res.ok, false);
@@ -164,9 +172,9 @@ test('unlisted identity: non-403 fails (allowlist must deny, fail closed)', asyn
 
 test('unlisted identity: 403 without ACCESS_DENIED code fails', async () => {
     const cfg = enabledCfg();
-    const res = await checkUnlistedDenied(cfg, UNLISTED_EMAIL, stubFetch({
+    const res = await checkUnlistedDenied(cfg, cfg.unlisted, stubFetch(roleRoutes({
         '/api/get-profile': () => jsonResponse(403, { error: 'forbidden', code: 'FORBIDDEN' }),
-    }));
+    })));
     assert.strictEqual(res.ok, false);
     assert.match(res.detail, /ACCESS_DENIED/);
 });
@@ -208,9 +216,10 @@ test('runProbe: missing unlisted email fails closed (AC3 gate)', async () => {
 
 test('runProbe: an unlisted identity that is NOT denied fails the gate', async () => {
     const cfg = enabledCfg();
-    const outcome = await runProbe(cfg, { fetchImpl: stubFetch({
+    const outcome = await runProbe(cfg, { fetchImpl: stubFetch(roleRoutes({
         '/api/get-profile': (u, init) => {
-            const email = init.headers?.['x-ms-client-principal-name'] || init.headers?.get?.('x-ms-client-principal-name');
+            const auth = init.headers?.authorization || init.headers?.get?.('authorization') || '';
+            const email = auth.replace(/^Bearer\s+/i, '').replace(/^token-/, '');
             if (email === UNLISTED_EMAIL) {
                 // Unlisted identity is NOT denied → must fail.
                 return jsonResponse(200, { role: 'student', email: UNLISTED_EMAIL, scope: { subjects: ['x'], classes: [] } });
@@ -218,7 +227,7 @@ test('runProbe: an unlisted identity that is NOT denied fails the gate', async (
             const role = Object.keys(ROLE_EMAILS).find((r) => ROLE_EMAILS[r] === email);
             return jsonResponse(200, { role, email, scope: { subjects: ['arq-software-2026'], classes: [] } });
         },
-    }) });
+    })) });
     assert.strictEqual(outcome.failedCount, 1);
     assert.ok(outcome.results.find((r) => r.name === 'allowlist-unlisted-denied').ok === false);
 });
