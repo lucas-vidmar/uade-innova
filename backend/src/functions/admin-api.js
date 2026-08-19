@@ -97,7 +97,7 @@ app.http('manage-get-users', {
 app.http('admin-list-users', {
   methods: ['GET'],
   authLevel: 'anonymous',
-  route: 'admin/users',
+  route: 'dashboard-admin/users',
   handler: withCorrelation(withAuth(async (request, context) => {
     try {
       const [users, profiles] = await Promise.all([listUsers(), loadUserProfiles()]);
@@ -113,7 +113,7 @@ app.http('admin-list-users', {
 app.http('admin-create-user', {
   methods: ['POST'],
   authLevel: 'anonymous',
-  route: 'admin/users',
+  route: 'dashboard-admin/users',
   handler: withCorrelation(withAuth(async (request, context) => {
     let body;
     try {
@@ -161,7 +161,7 @@ app.http('admin-create-user', {
 app.http('admin-update-user', {
   methods: ['PUT'],
   authLevel: 'anonymous',
-  route: 'admin/users/{id}',
+  route: 'dashboard-admin/users/{id}',
   handler: withCorrelation(withAuth(async (request, context) => {
     const id = request.params?.id;
     if (!id) {
@@ -187,7 +187,7 @@ app.http('admin-update-user', {
 app.http('admin-delete-user', {
   methods: ['DELETE'],
   authLevel: 'anonymous',
-  route: 'admin/users/{id}',
+  route: 'dashboard-admin/users/{id}',
   handler: withCorrelation(withAuth(async (request, context) => {
     const id = request.params?.id;
     if (!id) {
@@ -212,7 +212,7 @@ app.http('admin-delete-user', {
 app.http('admin-reset-password', {
   methods: ['POST'],
   authLevel: 'anonymous',
-  route: 'admin/users/{id}/reset-password',
+  route: 'dashboard-admin/users/{id}/reset-password',
   handler: withCorrelation(withAuth(async (request, context) => {
     const id = request.params?.id;
     if (!id) {

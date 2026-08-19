@@ -40,7 +40,7 @@ function toResponse(result) {
 app.http('admin-config-get', {
     methods: ['GET'],
     authLevel: 'anonymous',
-    route: 'admin/config/{scope}',
+    route: 'dashboard-admin/config/{scope}',
     handler: withCorrelation(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         const scope = request.params.scope;
@@ -58,7 +58,7 @@ app.http('admin-config-get', {
 app.http('admin-config-put', {
     methods: ['PUT'],
     authLevel: 'anonymous',
-    route: 'admin/config/{scope}',
+    route: 'dashboard-admin/config/{scope}',
     handler: withCorrelation(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         const scope = request.params.scope;
@@ -87,7 +87,7 @@ app.http('admin-config-put', {
 app.http('admin-config-delete', {
     methods: ['DELETE'],
     authLevel: 'anonymous',
-    route: 'admin/config/{scope}',
+    route: 'dashboard-admin/config/{scope}',
     handler: withCorrelation(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         const scope = request.params.scope;

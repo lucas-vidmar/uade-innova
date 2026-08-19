@@ -72,7 +72,7 @@ function sessionMockingEnabled() {
 
 export async function getAdminUsers() {
     try {
-        const res = await fetchWithTimeout(`${BASE_URL}/admin/users`, { timeout: 4000 });
+        const res = await fetchWithTimeout(`${BASE_URL}/dashboard-admin/users`, { timeout: 4000 });
         if (!res.ok) {
             console.warn(`[API] getAdminUsers returned ${res.status}.`);
             if (sessionMockingEnabled()) {
@@ -101,7 +101,7 @@ export async function getAdminUsers() {
 }
 
 export async function createAdminUser(payload) {
-    const res = await apiFetch(`${BASE_URL}/admin/users`, {
+    const res = await apiFetch(`${BASE_URL}/dashboard-admin/users`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -111,7 +111,7 @@ export async function createAdminUser(payload) {
 }
 
 export async function updateAdminUser(userId, payload) {
-    const res = await apiFetch(`${BASE_URL}/admin/users/${encodeURIComponent(userId)}`, {
+    const res = await apiFetch(`${BASE_URL}/dashboard-admin/users/${encodeURIComponent(userId)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -121,7 +121,7 @@ export async function updateAdminUser(userId, payload) {
 }
 
 export async function deleteAdminUser(userId) {
-    const res = await apiFetch(`${BASE_URL}/admin/users/${encodeURIComponent(userId)}`, {
+    const res = await apiFetch(`${BASE_URL}/dashboard-admin/users/${encodeURIComponent(userId)}`, {
         method: 'DELETE',
     });
     if (!res.ok) throw await parseApiError(res, 'No se pudo eliminar el usuario.');
@@ -129,7 +129,7 @@ export async function deleteAdminUser(userId) {
 }
 
 export async function resetAdminUserPassword(userId, password) {
-    const res = await apiFetch(`${BASE_URL}/admin/users/${encodeURIComponent(userId)}/reset-password`, {
+    const res = await apiFetch(`${BASE_URL}/dashboard-admin/users/${encodeURIComponent(userId)}/reset-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(password ? { password } : {}),
@@ -225,13 +225,13 @@ export async function saveSubjectWeights(subjectId, weights) {
 }
 
 export async function getAdminConfig(scope) {
-    const res = await fetchWithTimeout(`${BASE_URL}/admin/config/${encodeURIComponent(scope)}`, { timeout: 4000 });
+    const res = await fetchWithTimeout(`${BASE_URL}/dashboard-admin/config/${encodeURIComponent(scope)}`, { timeout: 4000 });
     if (!res.ok) return null;
     return res.json();
 }
 
 export async function saveAdminConfig(scope, values) {
-    const res = await apiFetch(`${BASE_URL}/admin/config/${encodeURIComponent(scope)}`, {
+    const res = await apiFetch(`${BASE_URL}/dashboard-admin/config/${encodeURIComponent(scope)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(values),
@@ -245,7 +245,7 @@ export async function saveAdminConfig(scope, values) {
 }
 
 export async function resetAdminConfig(scope) {
-    const res = await apiFetch(`${BASE_URL}/admin/config/${encodeURIComponent(scope)}`, {
+    const res = await apiFetch(`${BASE_URL}/dashboard-admin/config/${encodeURIComponent(scope)}`, {
         method: 'DELETE',
     });
     if (!res.ok) {
