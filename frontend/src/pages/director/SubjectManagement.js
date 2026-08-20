@@ -488,18 +488,18 @@ export async function renderSubjectManagement(container) {
                                                             ${(() => {
                                                                 const studentIds = getEnrolledStudentIds(subject);
                                                                 const assignedStudents = studentIds
-                                                                    .map((sid) => getStudentUsers().find((s) => s.id === sid))
+                                                                    .map((sid) => getStudentUsers().find((s) => s.id === sid || s.userId === sid))
                                                                     .filter(Boolean);
-                                                                const missingCount = studentIds.length - assignedStudents.length;
-                                                                const pills = assignedStudents.map((s) => `
-                                                                    <span class="subject-prof-pill">
-                                                                        <span class="subject-prof-pill-name">${escapeHtml(s.name || s.id)}</span>
-                                                                        <button class="subject-student-remove" data-subject-id="${escapeHtml(subject.id)}" data-student-id="${escapeHtml(s.id)}" title="Quitar alumno">×</button>
+                                                                const pills = assignedStudents.map((s) => {
+                                                                    const sid = s.id || s.userId;
+                                                                    const displayName = String(s.name || s.surname ? `${s.name} ${s.surname || ''}`.trim() : s.email || '').trim() || 'Alumno';
+                                                                    return `
+                                                                    <span class="subject-prof-pill" style="max-width:100%;word-break:break-word;">
+                                                                        <span class="subject-prof-pill-name">${escapeHtml(displayName)}</span>
+                                                                        <button class="subject-student-remove" data-subject-id="${escapeHtml(subject.id)}" data-student-id="${escapeHtml(sid)}" title="Quitar alumno">×</button>
                                                                     </span>
-                                                                `);
-                                                                if (missingCount > 0) {
-                                                                    pills.push(`<span class="subject-prof-pill subject-prof-empty">+${missingCount} sin perfil</span>`);
-                                                                }
+                                                                `;
+                                                                });
                                                                 return pills.length > 0
                                                                     ? pills.join('')
                                                                     : '<span class="subject-prof-empty">Sin alumnos</span>';
@@ -515,15 +515,22 @@ export async function renderSubjectManagement(container) {
                                                                     <div class="subject-prof-picker-list">
                                                                         ${(() => {
                                                                             const studentIds = getEnrolledStudentIds(subject);
-                                                                            const availableStudents = getStudentUsers().filter((s) => !studentIds.includes(s.id));
+                                                                            const availableStudents = getStudentUsers().filter((s) => {
+                                                                                const sid = s.id || s.userId;
+                                                                                return !studentIds.includes(sid);
+                                                                            });
                                                                             if (availableStudents.length === 0) {
                                                                                 return '<div class="subject-prof-picker-empty">No hay más alumnos disponibles</div>';
                                                                             }
-                                                                            return availableStudents.map((s) => `
-                                                                                <button class="subject-student-picker-item" data-subject-id="${escapeHtml(subject.id)}" data-student-id="${escapeHtml(s.id)}">
-                                                                                    ${escapeHtml(s.name || s.id)} <span style="opacity:.6">(${escapeHtml(s.id)})</span>
+                                                                            return availableStudents.map((s) => {
+                                                                                const sid = s.id || s.userId;
+                                                                                const displayName = String(s.name || s.surname ? `${s.name} ${s.surname || ''}`.trim() : s.email || '').trim() || 'Alumno';
+                                                                                return `
+                                                                                <button class="subject-student-picker-item" data-subject-id="${escapeHtml(subject.id)}" data-student-id="${escapeHtml(sid)}">
+                                                                                    ${escapeHtml(displayName)}
                                                                                 </button>
-                                                                            `).join('');
+                                                                            `;
+                                                                            }).join('');
                                                                         })()}
                                                                     </div>
                                                                     <div class="subject-prof-picker-actions">

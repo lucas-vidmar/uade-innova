@@ -100,18 +100,26 @@ export async function renderClassManager(container) {
                             <button class="btn btn-secondary btn-sm" id="btn-toggle-student-picker">${showStudentPicker ? 'Cerrar selector' : '+ Agregar alumno'}</button>
                         </div>
 
-                        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:var(--space-4)">
-                            ${subjectStudents.length === 0
-                                ? '<span class="subject-prof-empty" style="color:var(--color-text-secondary);font-size:0.85rem;">Sin alumnos asignados todavía.</span>'
-                                : subjectStudents.map((enr) => {
-                                    const student = students.find((s) => s.id === enr.userId);
+                        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:var(--space-4);max-width:100%;overflow:visible;">
+                            ${(() => {
+                                const visibleEnrollments = subjectStudents.filter((enr) => {
+                                    const sid = enr.userId;
+                                    return students.some((s) => (s.id === sid || s.userId === sid));
+                                });
+                                if (visibleEnrollments.length === 0) {
+                                    return '<span class="subject-prof-empty" style="color:var(--color-text-secondary);font-size:0.85rem;">Sin alumnos asignados todavía.</span>';
+                                }
+                                return visibleEnrollments.map((enr) => {
+                                    const student = students.find((s) => s.id === enr.userId || s.userId === enr.userId);
+                                    const displayName = String(student?.name || student?.surname ? `${student.name} ${student.surname || ''}`.trim() : student?.email || '').trim() || 'Alumno';
                                     return `
-                                        <span class="subject-prof-pill">
-                                            <span class="subject-prof-pill-name">${escapeHtml(student?.name || enr.userId)}</span>
+                                        <span class="subject-prof-pill" style="max-width:100%;word-break:break-word;">
+                                            <span class="subject-prof-pill-name">${escapeHtml(displayName)}</span>
                                             <button class="teacher-student-remove" data-student-id="${escapeHtml(enr.userId)}" title="Quitar alumno">×</button>
                                         </span>
                                     `;
-                                }).join('')}
+                                }).join('');
+                            })()}
                         </div>
 
                         ${showStudentPicker ? `
@@ -120,15 +128,19 @@ export async function renderClassManager(container) {
                                 <div style="display:flex;flex-wrap:wrap;gap:6px;max-height:220px;overflow-y:auto;">
                                     ${(() => {
                                         const assignedIds = new Set(subjectStudents.map((e) => e.userId));
-                                        const available = students.filter((s) => !assignedIds.has(s.id));
+                                        const available = students.filter((s) => !assignedIds.has(s.id) && !assignedIds.has(s.userId));
                                         if (available.length === 0) {
                                             return '<span class="subject-prof-empty" style="color:var(--color-text-secondary);font-size:0.85rem;">No hay más alumnos disponibles.</span>';
                                         }
-                                        return available.map((s) => `
-                                            <button class="btn btn-secondary btn-sm teacher-student-add" data-student-id="${escapeHtml(s.id)}">
-                                                ${escapeHtml(s.name || s.id)} <span style="opacity:.6">(${escapeHtml(s.id)})</span>
+                                        return available.map((s) => {
+                                            const sid = s.id || s.userId;
+                                            const displayName = String(s.name || s.surname ? `${s.name} ${s.surname || ''}`.trim() : s.email || '').trim() || 'Alumno';
+                                            return `
+                                            <button class="btn btn-secondary btn-sm teacher-student-add" data-student-id="${escapeHtml(sid)}">
+                                                ${escapeHtml(displayName)}
                                             </button>
-                                        `).join('');
+                                        `;
+                                        }).join('');
                                     })()}
                                 </div>
                             </div>
