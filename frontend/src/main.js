@@ -55,7 +55,26 @@ const ROUTES = {
 /* ── App shell ───────────────────────────────────────────── */
 function buildShell() {
     const appEl = document.getElementById('app');
-    if (document.querySelector('.app-shell')) return;
+    if (document.querySelector('.app-shell')) {
+        // Upgrade legacy login-era shells (pre-fix) that lack ids so handleRoute's
+        // page-content lookup succeeds and the login card is properly replaced.
+        let main = document.getElementById('main-content');
+        if (!main) {
+            main = document.querySelector('.app-shell .main-content');
+            if (main) main.id = 'main-content';
+        }
+        let pc = document.getElementById('page-content');
+        if (!pc) {
+            pc = document.querySelector('.app-shell .page-content');
+            if (pc) pc.id = 'page-content';
+            else if (main) main.innerHTML = '<main class="page-content" id="page-content"></main>';
+            else {
+                const shell = document.querySelector('.app-shell');
+                if (shell) shell.innerHTML = '<div class="main-content" id="main-content"><main class="page-content" id="page-content"></main></div>';
+            }
+        }
+        return;
+    }
 
     appEl.innerHTML = `
     <div class="app-shell">
@@ -138,8 +157,13 @@ async function handleRoute() {
         el.classList.toggle('active', href === matchedPath || (matchedPath === '/student/class' && href === '/student/dashboard'));
     });
 
-    const pageContent = document.getElementById('page-content');
-    if (!pageContent) return;
+    let pageContent = document.getElementById('page-content') || document.querySelector('.page-content');
+    if (!pageContent) {
+        // Recovery: rebuild shell then re-query (covers legacy shells without ids)
+        buildShell();
+        pageContent = document.getElementById('page-content') || document.querySelector('.page-content');
+        if (!pageContent) return;
+    }
 
     pageContent.innerHTML = `
     <div style="display:flex;justify-content:center;align-items:center;height:200px;color:var(--color-text-secondary)">
@@ -168,8 +192,8 @@ function renderLogin() {
     const appEl = document.getElementById('app');
     appEl.innerHTML = `
     <div class="app-shell">
-      <div class="main-content">
-        <main class="page-content">
+      <div class="main-content" id="main-content">
+        <main class="page-content" id="page-content">
           <div class="card" style="max-width:420px;margin:var(--space-10) auto;text-align:center">
             <div class="empty-state-icon" aria-hidden="true">🔐</div>
             <h2 class="h3">Iniciá sesión</h2>
@@ -252,8 +276,8 @@ function renderAccessDenied() {
     const appEl = document.getElementById('app');
     appEl.innerHTML = `
     <div class="app-shell">
-      <div class="main-content">
-        <main class="page-content">
+      <div class="main-content" id="main-content">
+        <main class="page-content" id="page-content">
           <div class="card" style="max-width:480px;margin:var(--space-10) auto;text-align:center">
             <div class="empty-state-icon" aria-hidden="true">🔒</div>
             <h2 class="h3">Acceso denegado</h2>
