@@ -98,15 +98,6 @@ export async function renderClassManager(container) {
                         </div>
                         <a href="#/teacher/students" class="btn btn-secondary btn-sm">Ir a Estudiantes →</a>
                     </div>
-                                                ${escapeHtml(displayName)}
-                                            </button>
-                                        `;
-                                        }).join('');
-                                    })()}
-                                </div>
-                            </div>
-                        ` : ''}
-                    </div>
 
                     ${Array.isArray(classes) && classes.length === 0 ? `
                         <div class="empty-state">
