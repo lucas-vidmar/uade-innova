@@ -49,13 +49,14 @@ export async function renderTeacherStudents(container) {
 
     const render = () => {
         const subjectName = auth.getEnrolledSubjects().find(s=>s.id===subjectId)?.name || subjectId;
+        const visibleCount = subjectStudents.filter(enr => students.some(s => (s.id===enr.userId || s.userId===enr.userId))).length;
         container.innerHTML = `
             <div class="page-container">
                 <div class="card" style="padding:var(--space-5);">
                     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
                         <div>
                             <h3 style="margin:0 0 4px;">Alumnos de la materia</h3>
-                            <p style="font-size:var(--fs-sm);color:var(--color-text-secondary);margin:0;">${escapeHtml(subjectName)} — ${subjectStudents.length} alumno(s) asignado(s).</p>
+                            <p style="font-size:var(--fs-sm);color:var(--color-text-secondary);margin:0;">${escapeHtml(subjectName)} — ${visibleCount} alumno(s) asignado(s).</p>
                         </div>
                         <button class="btn btn-secondary btn-sm" id="btn-toggle-picker">${showPicker ? 'Cerrar selector' : '+ Agregar alumno'}</button>
                     </div>

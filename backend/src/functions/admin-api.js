@@ -93,7 +93,7 @@ app.http('manage-get-users', {
   })),
 });
 
-// ── GET /api/admin/users (admin only) ───────────────────────────────
+// ── GET /api/admin/users (teacher+director+admin) ──────────────────
 app.http('admin-list-users', {
   methods: ['GET'],
   authLevel: 'anonymous',
@@ -106,7 +106,7 @@ app.http('admin-list-users', {
       context.error('[AdminAPI] Error listing users:', err);
       return errorResponse(err);
     }
-  }, { roles: ['Admin'] })),
+  }, { roles: ['Admin', 'Director', 'teacher'] })),
 });
 
 // ── POST /api/admin/users (admin only) ──────────────────────────────
