@@ -164,7 +164,7 @@ function mergeWithDynamicEnrollments(userId, base) {
 export async function getEnrollments(userId) {
     if (!userId) return [];
     try {
-        const res = await fetchWithTimeout(`${BASE_URL}/enrollments?userId=${encodeURIComponent(userId)}`, { timeout: 4000 });
+        const res = await apiFetch(`${BASE_URL}/enrollments?userId=${encodeURIComponent(userId)}`);
         if (!res.ok) {
             if (sessionMockingEnabled()) {
                 console.warn('[API] getEnrollments failed, using dynamic enrollments.');

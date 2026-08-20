@@ -3,6 +3,7 @@
    (Story 1.4 / 1.5 — app-owned Users table)
    ============================================================ */
 import { api } from '../../services/api.js';
+import { enrollments as enrollmentService } from '../../services/enrollments.js';
 import { toast } from '../../components/Toast.js';
 import { showConfirmDialog } from '../../components/Dialog.js';
 
@@ -200,7 +201,20 @@ export async function renderUserManagement(container) {
             <div class="loading-state"><div class="animate-pulse">Cargando usuarios...</div></div>
         `;
         const users = await api.getAdminUsers();
+        await loadEnrollmentsForUsers(users);
         renderTable(users);
+    };
+
+    const loadEnrollmentsForUsers = async (users) => {
+        await Promise.all((users || []).map(async (user) => {
+            try {
+                const enrollmentsList = await api.getEnrollments(user.id);
+                user.enrollments = Array.isArray(enrollmentsList) ? enrollmentsList : (enrollmentsList?.data || []);
+            } catch (err) {
+                console.warn(`[UserManagement] Error loading enrollments for ${user.id}:`, err);
+                user.enrollments = [];
+            }
+        }));
     };
 
     const renderTable = (users) => {
@@ -223,6 +237,7 @@ export async function renderUserManagement(container) {
                         <th>Rol</th>
                         <th>Estado</th>
                         <th>Contraseña</th>
+                        <th>Materias</th>
                         <th style="text-align:center">Acciones</th>
                     </tr>
                 </thead>
@@ -248,8 +263,12 @@ export async function renderUserManagement(container) {
                                     ? '<span class="badge badge-warning">Requiere cambio</span>'
                                     : '<span class="badge badge-neutral">—</span>'}
                             </td>
+                            <td>
+                                <span class="user-subjects-count" data-user-id="${escapeHtml(user.id)}">…</span>
+                            </td>
                             <td style="text-align:center;white-space:nowrap">
-                                <button class="btn btn-secondary btn-sm btn-edit-user" title="Editar rol/estado">Editar</button>
+                                <button class="btn btn-secondary btn-sm btn-edit-user" title="Editar usuario">Editar</button>
+                                <button class="btn btn-secondary btn-sm btn-manage-subjects" title="Asignar materias">Materias</button>
                                 <button class="btn btn-secondary btn-sm btn-reset-pw" title="Resetear contraseña">Reset PW</button>
                                 <button class="btn btn-danger btn-sm btn-delete-user" title="Eliminar usuario">Eliminar</button>
                             </td>
@@ -259,6 +278,18 @@ export async function renderUserManagement(container) {
             </table>
         `;
 
+        users.forEach((user) => {
+            if (user.enrollments && Array.isArray(user.enrollments)) {
+                const countEl = tableContainer.querySelector(`.user-subjects-count[data-user-id="${escapeHtml(user.id)}"]`);
+                if (countEl) {
+                    const label = user.enrollments.length > 0
+                        ? `${user.enrollments.length} materia${user.enrollments.length === 1 ? '' : 's'}`
+                        : '—';
+                    countEl.innerHTML = `<span class="badge ${user.enrollments.length > 0 ? 'badge-info' : 'badge-neutral'}">${escapeHtml(label)}</span>`;
+                }
+            }
+        });
+
         tableContainer.querySelectorAll('.btn-edit-user').forEach((btn) => {
             btn.addEventListener('click', async () => {
                 const row = btn.closest('tr');
@@ -266,6 +297,16 @@ export async function renderUserManagement(container) {
                 const user = users.find((u) => String(u.id) === userId);
                 if (!user) return;
                 openEditUserModal(user, refresh);
+            });
+        });
+
+        tableContainer.querySelectorAll('.btn-manage-subjects').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                const row = btn.closest('tr');
+                const userId = row?.getAttribute('data-user-id');
+                const user = users.find((u) => String(u.id) === userId);
+                if (!user) return;
+                await openManageSubjectsModal(user, refresh);
             });
         });
 
@@ -320,6 +361,164 @@ export async function renderUserManagement(container) {
             });
         });
     };
+
+    async function openManageSubjectsModal(user, onSaved) {
+        let overlay = null;
+
+        const buildOptions = (subjects, currentIds) => {
+            return subjects.map((subject) => {
+                const checked = currentIds.includes(subject.id);
+                return `
+                    <label class="subject-assign-row" style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--color-border);cursor:pointer;">
+                        <input type="checkbox" class="subject-assign-check" value="${escapeHtml(subject.id)}" ${checked ? 'checked' : ''} style="width:16px;height:16px;flex:none;" />
+                        <span style="flex:1;font-size:var(--fs-sm);">
+                            <span style="display:block;font-weight:600;">${escapeHtml(subject.name || subject.id)}</span>
+                            <span style="display:block;font-size:0.75rem;color:var(--color-text-secondary);">${escapeHtml(subject.id)}</span>
+                        </span>
+                    </label>
+                `;
+            }).join('');
+        };
+
+        const open = () => {
+            return new Promise((resolve) => {
+                overlay = document.createElement('div');
+                overlay.className = 'modal-overlay';
+                overlay.innerHTML = `
+                    <div class="modal-content" style="max-width:560px;width:94%;">
+                        <div class="modal-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+                            <h3 class="h4" style="margin:0;">Materias de ${escapeHtml(user.name || user.id)}</h3>
+                            <button type="button" class="btn btn-ghost btn-sm ms-close" aria-label="Cerrar">✕</button>
+                        </div>
+                        <div class="modal-body">
+                            <p id="ms-error" style="display:none;color:var(--color-error);font-size:0.85rem;margin:0 0 12px;"></p>
+                            <div id="ms-loading" class="loading-state"><div class="animate-pulse">Cargando materias...</div></div>
+                            <div id="ms-list" style="display:none;max-height:420px;overflow-y:auto;border:1px solid var(--color-border);border-radius:8px;padding:4px 12px;"></div>
+                        </div>
+                        <div class="modal-footer">
+                            <span id="ms-selected-count" class="text-secondary" style="margin-right:auto;font-size:var(--fs-sm);"></span>
+                            <button type="button" class="btn btn-ghost ms-cancel">Cancelar</button>
+                            <button type="button" class="btn btn-primary ms-save" disabled>Guardar</button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(overlay);
+                resolve(overlay);
+            });
+        };
+
+        const close = () => overlay?.remove();
+
+        try {
+            const [subjectsList, enrollmentsList] = await Promise.all([
+                api.getSubjects(),
+                (async () => {
+                    try {
+                        const data = await api.getEnrollments(user.id);
+                        return Array.isArray(data) ? data : (data?.data || []);
+                    } catch {
+                        return [];
+                    }
+                })(),
+            ]);
+            const subjects = Array.isArray(subjectsList) ? subjectsList : [];
+            const currentIds = Array.isArray(enrollmentsList)
+                ? enrollmentsList
+                    .filter((e) => e && e.status === 'active')
+                    .map((e) => e.subjectId)
+                : [];
+
+            await open();
+
+            const listEl = overlay.querySelector('#ms-list');
+            const loadingEl = overlay.querySelector('#ms-loading');
+            const errorEl = overlay.querySelector('#ms-error');
+            const saveBtn = overlay.querySelector('.ms-save');
+            const countEl = overlay.querySelector('#ms-selected-count');
+
+            if (subjects.length === 0) {
+                loadingEl.style.display = 'none';
+                listEl.style.display = 'block';
+                listEl.innerHTML = '<div class="empty-state" style="padding:var(--space-6);text-align:center;"><div class="empty-state-icon">📚</div><p>No hay materias disponibles.</p></div>';
+                return;
+            }
+
+            let selected = new Set(currentIds);
+            listEl.innerHTML = buildOptions(subjects, currentIds);
+            listEl.style.display = 'block';
+            loadingEl.style.display = 'none';
+
+            const updateCount = () => {
+                countEl.textContent = `${selected.size} materia${selected.size === 1 ? '' : 's'} asignada${selected.size === 1 ? '' : 's'}`;
+                saveBtn.disabled = false;
+            };
+            updateCount();
+
+            overlay.querySelectorAll('.subject-assign-check').forEach((checkbox) => {
+                checkbox.addEventListener('change', () => {
+                    const value = checkbox.value;
+                    if (checkbox.checked) {
+                        selected.add(value);
+                    } else {
+                        selected.delete(value);
+                    }
+                    updateCount();
+                });
+            });
+
+            const save = async () => {
+                const target = new Set(selected);
+                saveBtn.disabled = true;
+                saveBtn.textContent = 'Guardando...';
+                const added = subjects.filter((s) => target.has(s.id) && !currentIds.includes(s.id));
+                const removed = currentIds.filter((id) => !target.has(id));
+                try {
+                    await Promise.all([
+                        ...added.map(async (subject) => {
+                            try {
+                                await api.createEnrollment(subject.id, user.id, 'student', 'active');
+                            } catch (err) {
+                                console.warn(`[UserManagement] Error enrolling ${user.id} in ${subject.id}:`, err);
+                            }
+                        }),
+                        ...removed.map(async (subjectId) => {
+                            try {
+                                await api.deleteEnrollment(subjectId, user.id);
+                            } catch (err) {
+                                console.warn(`[UserManagement] Error unenrolling ${user.id} from ${subjectId}:`, err);
+                            }
+                        }),
+                        ...added.map((subject) => enrollmentService.clearCache(user.id)),
+                    ]);
+                    enrollmentService.clearCache(user.id);
+                    close();
+                    toast('success', 'Asignación actualizada',
+                        `${user.name || user.id} quedó con ${target.size} materia${target.size === 1 ? '' : 's'} asignada${target.size === 1 ? '' : 's'}.`);
+                    await onSaved();
+                } catch (err) {
+                    errorEl.textContent = err?.message || 'No se pudo guardar la asignación de materias.';
+                    errorEl.style.display = 'block';
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = 'Guardar';
+                }
+            };
+
+            overlay.querySelector('.ms-close')?.addEventListener('click', close);
+            overlay.querySelector('.ms-cancel')?.addEventListener('click', close);
+            overlay.querySelector('.ms-save')?.addEventListener('click', save);
+            overlay.addEventListener('click', (event) => {
+                if (event.target === overlay) close();
+            });
+        } catch (err) {
+            console.error('[UserManagement] Error opening subject modal:', err);
+            await open();
+            const listEl = overlay.querySelector('#ms-list');
+            const loadingEl = overlay.querySelector('#ms-loading');
+            loadingEl.style.display = 'none';
+            listEl.style.display = 'block';
+            listEl.innerHTML = `<div class="empty-state" style="padding:var(--space-6);text-align:center;"><p>No se pudieron cargar las materias.</p></div>`;
+        }
+    }
 
     function openEditUserModal(user, onSaved) {
         const overlay = document.createElement('div');

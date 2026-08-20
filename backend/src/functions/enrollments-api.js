@@ -13,11 +13,11 @@ function jsonResponse(status, payload) {
 }
 
 function isTeacherOrDirector(principal) {
-  return principal?.userRoles?.some(r => ['Docente', 'Director'].includes(r));
+  return principal?.userRoles?.some(r => ['Docente', 'Director', 'Admin'].includes(r));
 }
 
 function isDirector(principal) {
-  return principal?.userRoles?.includes('Director');
+  return principal?.userRoles?.some(r => ['Director', 'Admin'].includes(r));
 }
 
 function isTeacher(principal) {
@@ -68,7 +68,7 @@ app.http('get-enrollments', {
     const callerId = context.user?.id || principal?.userId || principal?.oid || null;
     const roles = principal?.userRoles || [];
     const isTeacher = roles.includes('Docente');
-    const isDir = roles.includes('Director');
+    const isDir = roles.includes('Director') || roles.includes('Admin');
 
     const requestedUserId = request.query.get('userId');
     const subjectId = request.query.get('subjectId');
@@ -142,7 +142,7 @@ app.http('check-enrollment', {
     const callerId = context.user?.id || principal?.userId || principal?.oid || null;
     const roles = principal?.userRoles || [];
     const isTeacher = roles.includes('Docente');
-    const isDir = roles.includes('Director');
+    const isDir = roles.includes('Director') || roles.includes('Admin');
     const requestedUserId = request.query.get('userId');
     const subjectId = request.query.get('subjectId');
 
