@@ -32,7 +32,7 @@ param flashModelVersion string = '2026-07-31'
 param flashSkuName string = 'GlobalStandard'
 
 @description('Flash deployment capacity (in thousands of TPM).')
-param flashCapacity int = 100
+param flashCapacity int = 500
 
 // ─── AIServices Account (kind AIServices) ────────────────────────
 resource aiServicesAccount 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
