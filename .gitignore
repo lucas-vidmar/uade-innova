@@ -17,6 +17,8 @@ dist/
 # ─── Azure Functions local ────────────────────────────────────
 backend/local.settings.json
 backend/.funcignore
+backend/seed-credentials.local.json
+**/seed-credentials*.json
 
 # ─── macOS ────────────────────────────────────────────────────
 .DS_Store
