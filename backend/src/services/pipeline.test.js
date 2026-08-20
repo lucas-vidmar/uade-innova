@@ -34,6 +34,10 @@ const openaiMocks = {
         generatedAt: new Date().toISOString()
     })),
     chatCompletion: mock.fn(async () => ({ content: 'ok', usage: { total_tokens: 5 } })),
+    resolveModelForTask: mock.fn(async () => 'deepseek-v4-flash'),
+    isDeepSeekModel: mock.fn(() => true),
+    getClientForModel: mock.fn(() => null),
+    getChatModelName: mock.fn(() => 'deepseek-v4-flash'),
 };
 
 const vectorStoreMocks = {

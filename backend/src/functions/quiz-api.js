@@ -7,7 +7,7 @@
 import { app } from '@azure/functions';
 import { withAuth } from '../middleware/with-auth.js';
 import { v4 as uuidv4 } from 'uuid';
-import { chatCompletion, getChatModelName } from '../services/ai.js';
+import { chatCompletion, getChatModelName, resolveModelForTask } from '../services/ai.js';
 import { loadJson } from '../services/storage.js';
 import { getActivePrompt } from '../services/prompts.js';
 import {
@@ -182,6 +182,7 @@ app.http('generate-quiz', {
             const className = body.className || classId;
             const { systemContent, userContent } = await buildQuizPrompt(subjectName, className, contextText, count);
 
+            const quizModel = await resolveModelForTask('quiz');
             const result = await chatCompletion(
                 [
                     { role: 'system', content: systemContent },
@@ -189,6 +190,7 @@ app.http('generate-quiz', {
                 ],
                 false,
                 {
+                    model: quizModel,
                     temperature: CONFIG.ai.temperature.quiz,
                     max_tokens: CONFIG.ai.maxTokens.quiz,
                     headers: context?.dependencyHeaders,
@@ -208,7 +210,7 @@ app.http('generate-quiz', {
                 classId,
                 questionCount: questions.length,
                 questions,
-                model: getChatModelName(),
+                model: quizModel,
                 generatedAt: new Date().toISOString(),
                 durationMs: Date.now() - startTime,
             };

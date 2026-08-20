@@ -4,6 +4,8 @@ import { CONFIG } from '../config.js';
 
 const PROMPTS_TABLE = CONFIG.tables.prompts;
 
+export const ALLOWED_PROMPT_MODELS = ['deepseek-v4-flash', 'gpt-4o-mini'];
+
 export const PROMPT_TYPES = {
   'rag-master': {
     label: 'RAG Master',
@@ -56,6 +58,14 @@ export const PROMPT_TYPES = {
   },
 };
 
+function validateModel(value) {
+  if (value === undefined || value === null || value === '') return { valid: true, value: null };
+  if (!ALLOWED_PROMPT_MODELS.includes(value)) {
+    return { valid: false, error: `Modelo inválido: "${value}". Válidos: ${ALLOWED_PROMPT_MODELS.join(', ')}.` };
+  }
+  return { valid: true, value };
+}
+
 const VALID_TYPES = new Set(Object.keys(PROMPT_TYPES));
 
 function ensurePromptType(type) {
@@ -99,6 +109,7 @@ export async function listVersions(type) {
         createdAt: entity.createdAt || '',
         updatedAt: entity.updatedAt || '',
         createdBy: entity.createdBy || '',
+        model: entity.model || null,
       });
     }
   } catch (err) {
@@ -130,6 +141,7 @@ export async function getActive(type) {
         description: entity.description || '',
         createdAt: entity.createdAt || '',
         updatedAt: entity.updatedAt || '',
+        model: entity.model || null,
       };
     }
   } catch (err) {
@@ -156,6 +168,7 @@ export async function getVersion(type, versionId) {
       createdAt: entity.createdAt || '',
       updatedAt: entity.updatedAt || '',
       createdBy: entity.createdBy || '',
+      model: entity.model || null,
     };
   } catch (err) {
     if (err.statusCode === 404) return null;
@@ -163,8 +176,10 @@ export async function getVersion(type, versionId) {
   }
 }
 
-export async function createVersion({ type, content, systemPrompt, userPromptTemplate, variables, description, createdBy }) {
+export async function createVersion({ type, content, systemPrompt, userPromptTemplate, variables, description, createdBy, model }) {
   ensurePromptType(type);
+  const modelCheck = validateModel(model);
+  if (!modelCheck.valid) throw new Error(modelCheck.error);
   await ensureTable();
   const client = getTableClient(PROMPTS_TABLE);
   const now = new Date().toISOString();
@@ -182,19 +197,30 @@ export async function createVersion({ type, content, systemPrompt, userPromptTem
     createdAt: now,
     updatedAt: now,
     createdBy: createdBy || 'system',
+    ...(modelCheck.value ? { model: modelCheck.value } : {}),
   });
 
-  return { versionId, type, isActive: false, createdAt: now };
+  return { versionId, type, isActive: false, createdAt: now, model: modelCheck.value || null };
 }
 
-export async function updateVersion(type, versionId, { content, systemPrompt, userPromptTemplate, variables, description }) {
+export async function updateVersion(type, versionId, { content, systemPrompt, userPromptTemplate, variables, description, model }) {
   ensurePromptType(type);
+  if (model !== undefined) {
+    const modelCheck = validateModel(model);
+    if (!modelCheck.valid) throw new Error(modelCheck.error);
+    // normalize empty to delete field
+    if (modelCheck.value === null && model !== undefined && model !== null && model !== '') {
+      // already validated, but keep null
+    }
+  }
   const client = getTableClient(PROMPTS_TABLE);
   const existing = await client.getEntity(type, versionId);
   if (!existing) throw new Error(`Versión ${versionId} no encontrada para tipo ${type}`);
 
   const now = new Date().toISOString();
-  await client.updateEntity({
+  const modelCheck = model !== undefined ? validateModel(model) : { valid: true, value: undefined };
+  if (!modelCheck.valid) throw new Error(modelCheck.error);
+  const updatePayload = {
     partitionKey: type,
     rowKey: versionId,
     content: content ?? existing.content,
@@ -203,9 +229,19 @@ export async function updateVersion(type, versionId, { content, systemPrompt, us
     variables: variables ? JSON.stringify(variables) : existing.variables,
     description: description ?? existing.description,
     updatedAt: now,
-  }, 'Merge');
+  };
+  if (modelCheck.value !== undefined) {
+    if (modelCheck.value === null) {
+      // delete model field by not sending? Need to explicitly clear: set to null via Merge will keep? We'll set to undefined to delete via update?
+      // For Table Storage, setting null removes? Use Merge with model: null will persist null, which we treat as fallback. We'll set to null.
+      updatePayload.model = null;
+    } else {
+      updatePayload.model = modelCheck.value;
+    }
+  }
+  await client.updateEntity(updatePayload, 'Merge');
 
-  return { versionId, type, updatedAt: now };
+  return { versionId, type, updatedAt: now, model: modelCheck.value !== undefined ? modelCheck.value : (existing.model || null) };
 }
 
 export async function activateVersion(type, versionId) {

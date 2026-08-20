@@ -62,6 +62,7 @@ app.http('prompts-list-types', {
           activeSystemPrompt: active?.systemPrompt || null,
           activeUserPromptTemplate: active?.userPromptTemplate || null,
           activeVariables: active?.variables || [],
+          activeModel: active?.model || null,
         });
       }
       return jsonResponse(200, result);
@@ -115,7 +116,7 @@ app.http('prompts-create', {
     if (!principal) return directorDenied();
     try {
       const body = await request.json();
-      const { type, content, systemPrompt, userPromptTemplate, variables, description } = body;
+      const { type, content, systemPrompt, userPromptTemplate, variables, description, model } = body;
       if (!type) return jsonResponse(400, { error: 'El campo "type" es requerido' });
 
       const result = await createVersion({
@@ -126,6 +127,7 @@ app.http('prompts-create', {
         variables: variables || [],
         description: description || '',
         createdBy: principal.userId || 'director',
+        model: model || null,
       });
 
       context.log(`[Prompts] Nueva versión creada: type=${type}, versionId=${result.versionId}`);
@@ -152,6 +154,7 @@ app.http('prompts-update', {
         userPromptTemplate: body.userPromptTemplate,
         variables: body.variables,
         description: body.description,
+        model: body.model,
       });
       return jsonResponse(200, result);
     } catch (err) {

@@ -26,13 +26,14 @@ export async function getActivePrompt(type) {
 export async function getShadowPrompt() {
   const allVersions = await listVersions('rag-master').catch(() => []);
   if (allVersions.length === 0) {
-    return { id: 'fallback', content: 'Eres un asistente académico.' };
+    return { id: 'fallback', content: 'Eres un asistente académico.', model: null };
   }
 
   if (allVersions.length === 1) {
     return {
       id: allVersions[0].versionId,
       content: allVersions[0].content,
+      model: allVersions[0].model || null,
     };
   }
 
@@ -40,5 +41,6 @@ export async function getShadowPrompt() {
   return {
     id: selectedVersion.versionId,
     content: selectedVersion.content || '',
+    model: selectedVersion.model || null,
   };
 }

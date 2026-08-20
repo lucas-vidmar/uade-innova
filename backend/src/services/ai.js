@@ -23,7 +23,22 @@ const AOAI_TOKEN_SCOPE = CONFIG.ai.tokenScope;
 
 let _embeddingClient = null;
 let _chatClient = null;
+let _deepSeekClient = null;
+let _azureChatClient = null;
 let _tokenProvider = null;
+
+export function isDeepSeekModel(modelName) {
+    return typeof modelName === 'string' && modelName.startsWith('deepseek');
+}
+
+export async function resolveModelForTask(taskType) {
+    if (!taskType) return CONFIG.ai.deepSeekModel;
+    try {
+        const active = await getActivePrompt(taskType).catch(() => null);
+        if (active?.model) return active.model;
+    } catch {}
+    return CONFIG.ai.models?.[taskType] || CONFIG.ai.deepSeekModel || 'deepseek-v4-flash';
+}
 
 function getTokenProvider() {
     if (!_tokenProvider) {
@@ -75,6 +90,53 @@ function getEmbeddingClient() {
     return _embeddingClient;
 }
 
+function getDeepSeekClient() {
+    if (_deepSeekClient) return _deepSeekClient;
+    const dsEndpoint = CONFIG.ai.deepSeekEndpoint || process.env.AI_FOUNDRY_DEEPSEEK_ENDPOINT;
+    const dsKey = process.env.AI_FOUNDRY_DEEPSEEK_KEY;
+    if (!dsEndpoint || !dsKey) return null;
+    _deepSeekClient = new OpenAI({
+        baseURL: dsEndpoint.replace(/\/$/, ''),
+        apiKey: dsKey,
+        fetch: async (url, init) => {
+            const headers = new Headers(init.headers);
+            headers.set('api-key', dsKey);
+            headers.delete('authorization');
+            const parsedUrl = new URL(url);
+            parsedUrl.searchParams.set('api-version', CONFIG.ai.apiVersion);
+            return fetch(parsedUrl.toString(), { ...init, headers });
+        },
+    });
+    console.log('[AI] Chat Client (DeepSeek V4 Flash via Azure AI Services) initialized');
+    return _deepSeekClient;
+}
+
+function getAzureChatClient() {
+    if (_azureChatClient) return _azureChatClient;
+    const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
+    if (!endpoint) return null;
+    const apiKey = process.env.AZURE_OPENAI_KEY || process.env.AZURE_OPENAI_API_KEY;
+    if (apiKey) {
+        _azureChatClient = new AzureOpenAI({ endpoint, apiKey, apiVersion: CONFIG.ai.apiVersion });
+        console.log('[AI] Chat Client (Azure OpenAI + API Key) initialized');
+    } else {
+        _azureChatClient = createAzureOpenAIClient(getTokenProvider());
+        console.log('[AI] Chat Client (Azure OpenAI + Managed Identity) initialized');
+    }
+    return _azureChatClient;
+}
+
+export function getClientForModel(modelName) {
+    if (isDeepSeekModel(modelName)) {
+        const ds = getDeepSeekClient();
+        if (ds) return ds;
+    }
+    const azure = getAzureChatClient();
+    if (azure) return azure;
+    // fallback to legacy generic client
+    return getChatClient();
+}
+
 /**
  * Cliente para Generación (Azure AI Foundry - DeepSeek)
  * DeepSeek V4 Flash es compatible con la API de OpenAI.
@@ -82,37 +144,15 @@ function getEmbeddingClient() {
  */
 function getChatClient() {
     if (!_chatClient) {
-        const dsEndpoint = CONFIG.ai.deepSeekEndpoint || process.env.AI_FOUNDRY_DEEPSEEK_ENDPOINT;
-        const dsKey = process.env.AI_FOUNDRY_DEEPSEEK_KEY;
-
-        if (dsEndpoint && dsKey) {
-            _chatClient = new OpenAI({
-                baseURL: dsEndpoint.replace(/\/$/, ''),
-                apiKey: dsKey,
-                fetch: async (url, init) => {
-                    const headers = new Headers(init.headers);
-                    headers.set('api-key', dsKey);
-                    headers.delete('authorization');
-                    const parsedUrl = new URL(url);
-                    parsedUrl.searchParams.set('api-version', CONFIG.ai.apiVersion);
-                    return fetch(parsedUrl.toString(), { ...init, headers });
-                },
-            });
-            console.log('[AI] Chat Client (DeepSeek V4 Flash via Azure AI Services) initialized');
+        const ds = getDeepSeekClient();
+        if (ds) {
+            _chatClient = ds;
         } else {
-            const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
-            if (!endpoint) {
+            const azure = getAzureChatClient();
+            if (!azure) {
                 throw new Error('No valid AI Chat configuration found (DeepSeek or Azure OpenAI).');
             }
-
-            const apiKey = process.env.AZURE_OPENAI_KEY || process.env.AZURE_OPENAI_API_KEY;
-            if (apiKey) {
-                _chatClient = new AzureOpenAI({ endpoint, apiKey, apiVersion: CONFIG.ai.apiVersion });
-                console.log('[AI] Chat Client (Azure OpenAI Fallback + API Key) initialized');
-            } else {
-                _chatClient = createAzureOpenAIClient(getTokenProvider());
-                console.log('[AI] Chat Client (Azure OpenAI Fallback + Managed Identity) initialized');
-            }
+            _chatClient = azure;
         }
     }
     return _chatClient;
@@ -177,27 +217,30 @@ export function isChatUsingDeepSeek() {
     return !!((CONFIG.ai.deepSeekEndpoint || process.env.AI_FOUNDRY_DEEPSEEK_ENDPOINT) && process.env.AI_FOUNDRY_DEEPSEEK_KEY);
 }
 
-export function getChatModelName() {
+export function getChatModelName(taskType) {
+    if (taskType && CONFIG.ai.models?.[taskType]) {
+        return CONFIG.ai.models[taskType];
+    }
     if (isChatUsingDeepSeek()) {
         return CONFIG.ai.deepSeekModel;
     }
     return process.env.AZURE_OPENAI_CHAT_DEPLOYMENT || CONFIG.ai.chatModel || 'gpt-4o-mini';
 }
 
+export async function getChatModelNameForTask(taskType) {
+    return await resolveModelForTask(taskType);
+}
+
 /**
  * Chat Completion (Generación de respuestas)
  * Usa DeepSeek V4 Flash por defecto si está configurado.
+ * Soporta selección de modelo por tarea vía overrides.model
  */
 export async function chatCompletion(messages, stream = false, overrides = {}) {
-    const client = getChatClient();
-    const isDeepSeek = isChatUsingDeepSeek();
-    
-    const { headers, signal, ...modelOverrides } = overrides || {};
-    
-    // Si es DeepSeek, usamos el nombre del modelo de Foundry. Si es Azure OpenAI, el deployment.
-    const model = isDeepSeek 
-        ? CONFIG.ai.deepSeekModel
-        : process.env.AZURE_OPENAI_CHAT_DEPLOYMENT;
+    const { headers, signal, model: overrideModel, ...modelOverrides } = overrides || {};
+    const requestedModel = overrideModel || null;
+    const model = requestedModel || (isChatUsingDeepSeek() ? CONFIG.ai.deepSeekModel : (process.env.AZURE_OPENAI_CHAT_DEPLOYMENT || CONFIG.ai.chatModel || 'gpt-4o-mini'));
+    const client = getClientForModel(model);
 
     const options = {
         model,
@@ -207,6 +250,8 @@ export async function chatCompletion(messages, stream = false, overrides = {}) {
         stream,
         ...modelOverrides,
     };
+    // ensure explicit model override wins even if modelOverrides contains model
+    if (requestedModel) options.model = requestedModel;
 
     try {
         if (stream) {
@@ -243,17 +288,18 @@ export async function generateClassSummary(text, subjectName = "", options = {})
     const userContent = userTemplate
         .replace('${subjectName}', subjectName)
         .replace('${text}', text.substring(0, 15000));
+    const model = options.model || promptConfig?.model || await resolveModelForTask('class-summary');
 
     const response = await chatCompletion([
         { role: "system", content: systemContent },
         { role: "user", content: userContent }
-    ], false, { temperature: options.temperature ?? CONFIG.ai.temperature.summary, max_tokens: CONFIG.ai.maxTokens.summary, headers: options.headers });
+    ], false, { model, temperature: options.temperature ?? CONFIG.ai.temperature.summary, max_tokens: CONFIG.ai.maxTokens.summary, headers: options.headers });
 
     return {
         content: response.content,
         usage: response.usage,
         generatedAt: new Date().toISOString(),
-        model: CONFIG.ai.deepSeekModel
+        model
     };
 }
 
@@ -265,16 +311,18 @@ export async function generateClassMap(text, options = {}) {
     const systemContent = promptConfig?.systemPrompt || 'Generas diagramas Mermaid.js precisos. Usá comillas dobles en labels con paréntesis. Tu respuesta debe contener únicamente el código Mermaid.js puro, sin etiquetas de código (```mermaid), sin explicaciones previas ni comentarios posteriores.';
     const userTemplate = promptConfig?.userPromptTemplate || 'Generá un mapa conceptual Mermaid.js (graph TD) para el siguiente texto.\n\n${text}\n\nIMPORTANTE: Usá comillas dobles en los labels que contengan paréntesis, ej: A["texto (año)"] en lugar de A[texto (año)]. Devolvé únicamente el código Mermaid.js, sin ninguna explicación adicional.';
     const userContent = userTemplate.replace('${text}', text.substring(0, 10000));
+    const model = options.model || promptConfig?.model || await resolveModelForTask('mermaid');
 
     const response = await chatCompletion([
         { role: "system", content: systemContent },
         { role: "user", content: userContent }
-    ], false, { temperature: CONFIG.ai.temperature.mermaid, max_tokens: CONFIG.ai.maxTokens.mermaid, headers: options.headers });
+    ], false, { model, temperature: CONFIG.ai.temperature.mermaid, max_tokens: CONFIG.ai.maxTokens.mermaid, headers: options.headers });
 
     return {
         code: extractMermaidCode(response.content),
         usage: response.usage,
         generatedAt: new Date().toISOString(),
+        model,
     };
 }
 
@@ -289,17 +337,18 @@ export async function generatePodcastScript(summaryText, subjectName = '', class
         .replace('${subjectName}', subjectName)
         .replace('${className}', className)
         .replace('${summaryText}', summaryText.substring(0, 12000));
+    const model = options.model || promptConfig?.model || await resolveModelForTask('class-podcast');
 
     const response = await chatCompletion([
         { role: "system", content: systemContent },
         { role: "user", content: userContent }
-    ], false, { temperature: CONFIG.ai.temperature.podcast, max_tokens: CONFIG.ai.maxTokens.podcast, headers: options.headers });
+    ], false, { model, temperature: CONFIG.ai.temperature.podcast, max_tokens: CONFIG.ai.maxTokens.podcast, headers: options.headers });
 
     return {
         content: response.content,
         usage: response.usage,
         generatedAt: new Date().toISOString(),
-        model: CONFIG.ai.deepSeekModel
+        model
     };
 }
 

@@ -1,4 +1,4 @@
-import { chatCompletion } from './ai.js';
+import { chatCompletion, resolveModelForTask } from './ai.js';
 import { getGlossary } from './glossary-store.js';
 import { getTableClient } from './storage.js';
 import { getActivePrompt } from './prompts.js';
@@ -40,10 +40,11 @@ export async function detectGlossaryErrors(subjectId, transcriptText, materialId
 
   let response;
   try {
+    const model = await resolveModelForTask('transcription-correction');
     response = await chatCompletion([
       { role: 'system', content: systemContent },
       { role: 'user', content: prompt },
-    ], false, { temperature: 0.1, max_tokens: 3000 });
+    ], false, { model, temperature: 0.1, max_tokens: 3000 });
   } catch (err) {
     context.error(`[TranscriptionCorrector] DeepSeek error for materialId=${materialId}:`, err.message);
     return [];

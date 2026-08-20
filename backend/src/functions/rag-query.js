@@ -3,7 +3,7 @@
  * Motor RAG: embedding de la pregunta → similitud Pinecone → chat con contexto
  */
 import { app } from '@azure/functions';
-import { generateEmbedding, chatCompletion, getChatModelName } from '../services/ai.js';
+import { generateEmbedding, chatCompletion, getChatModelName, resolveModelForTask } from '../services/ai.js';
 import { querySimilar } from '../services/vector-store.js';
 import { saveJson, loadJson, saveMetricsToTable } from '../services/storage.js';
 import { getShadowPrompt, getActivePrompt } from '../services/prompts.js';
@@ -69,7 +69,9 @@ Devuelve unicamente la pregunta reescrita en espanol, sin comillas ni explicacio
     ];
 
     try {
+        const rewriteModel = rewritePrompt?.model || await resolveModelForTask('rewrite');
         const rewritten = await chatCompletion(rewriteMessages, false, {
+            model: rewriteModel,
             temperature: 0,
             max_tokens: 120,
             headers: context?.dependencyHeaders,
@@ -674,6 +676,7 @@ app.http('rag-query', {
         const { id: promptId, content: systemPromptBase } = getShadowPrompt();
         // Log telemetry explicit event inside standard console output for App Insights Analytics mapping
         context.log(`[A/B Test] Interaction initialized using prompt version: ${promptId}`);
+        const ragModel = await resolveModelForTask('rag-master');
 
         // ── 6b. Cargar feedback docente (correcciones revisadas) ──
         let teacherFeedbackBlock = '';
@@ -737,7 +740,7 @@ ${contextText}
                     const encoder = new TextEncoder();
 
                     // Enviar metadatos iniciales
-                    controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ interactionId, sources, model: getChatModelName() })}\n\n`));
+                    controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ interactionId, sources, model: ragModel })}\n\n`));
 
                     let fullAnswer = '';
                     let finalUsage = null;
@@ -753,7 +756,7 @@ ${contextText}
                     }
 
                     try {
-                        const stream = await chatCompletion(messages, true, { headers: dependencyHeaders, signal: request.signal, max_tokens: maxTokens });
+                        const stream = await chatCompletion(messages, true, { model: ragModel, headers: dependencyHeaders, signal: request.signal, max_tokens: maxTokens });
                         for await (const chunk of stream) {
                             const delta = chunk.choices?.[0]?.delta?.content || '';
                             if (delta) {
@@ -888,7 +891,7 @@ ${contextText}
         let answer;
         let chatUsage;
         try {
-            const chatResult = await chatCompletion(messages, false, { headers: dependencyHeaders, max_tokens: maxTokens });
+            const chatResult = await chatCompletion(messages, false, { model: ragModel, headers: dependencyHeaders, max_tokens: maxTokens });
             answer = chatResult.content;
             chatUsage = chatResult.usage;
         } catch (err) {

@@ -69,6 +69,16 @@ export const CONFIG = {
     },
     defaultVoice: 'nova',
     tokenScope: 'https://cognitiveservices.azure.com/.default',
+    allowedModels: ['deepseek-v4-flash', 'gpt-4o-mini'],
+    models: {
+      'rag-master': process.env.AI_MODEL_RAG_MASTER || process.env.AI_FOUNDRY_DEEPSEEK_MODEL || 'deepseek-v4-flash',
+      rewrite: process.env.AI_MODEL_REWRITE || process.env.AI_FOUNDRY_DEEPSEEK_MODEL || 'deepseek-v4-flash',
+      'class-summary': process.env.AI_MODEL_CLASS_SUMMARY || process.env.AI_FOUNDRY_DEEPSEEK_MODEL || 'deepseek-v4-flash',
+      mermaid: process.env.AI_MODEL_MERMAID || process.env.AI_FOUNDRY_DEEPSEEK_MODEL || 'deepseek-v4-flash',
+      'transcription-correction': process.env.AI_MODEL_TRANSCRIPTION_CORRECTION || process.env.AI_FOUNDRY_DEEPSEEK_MODEL || 'deepseek-v4-flash',
+      'class-podcast': process.env.AI_MODEL_CLASS_PODCAST || process.env.AI_FOUNDRY_DEEPSEEK_MODEL || 'deepseek-v4-flash',
+      quiz: process.env.AI_MODEL_QUIZ || process.env.AI_FOUNDRY_DEEPSEEK_MODEL || 'deepseek-v4-flash',
+    },
   },
 
   rag: {

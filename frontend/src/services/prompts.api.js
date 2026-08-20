@@ -21,11 +21,11 @@ export async function getActivePrompt(type) {
   return res.json();
 }
 
-export async function createPromptVersion({ type, content, systemPrompt, userPromptTemplate, variables, description }) {
+export async function createPromptVersion({ type, content, systemPrompt, userPromptTemplate, variables, description, model }) {
   const res = await apiFetch(`${BASE_URL}/prompts`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type, content, systemPrompt, userPromptTemplate, variables, description }),
+    body: JSON.stringify({ type, content, systemPrompt, userPromptTemplate, variables, description, model }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Error desconocido' }));
@@ -34,11 +34,11 @@ export async function createPromptVersion({ type, content, systemPrompt, userPro
   return res.json();
 }
 
-export async function updatePromptVersion(type, versionId, { content, systemPrompt, userPromptTemplate, variables, description }) {
+export async function updatePromptVersion(type, versionId, { content, systemPrompt, userPromptTemplate, variables, description, model }) {
   const res = await apiFetch(`${BASE_URL}/prompts/${encodeURIComponent(type)}/${encodeURIComponent(versionId)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content, systemPrompt, userPromptTemplate, variables, description }),
+    body: JSON.stringify({ content, systemPrompt, userPromptTemplate, variables, description, model }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Error desconocido' }));

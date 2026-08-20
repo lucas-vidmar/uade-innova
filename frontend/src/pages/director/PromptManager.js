@@ -73,6 +73,7 @@ function renderList(container) {
               <th>Tipo</th>
               <th>Descripción</th>
               <th>Versión Activa</th>
+              <th>Modelo Activo</th>
               <th>Versiones</th>
               <th>Estructura</th>
               <th></th>
@@ -89,6 +90,7 @@ function renderList(container) {
                     : `<span class="badge badge-secondary">Sin activa</span>`
                   }
                 </td>
+                <td><span class="badge" style="background:var(--color-surface-3)">${esc(t.activeModel || 'default')}</span></td>
                 <td><span class="badge badge-info">${t.versionCount}</span></td>
                 <td style="font-size:0.8rem">
                   ${t.hasSystemPrompt ? '<span class="badge badge-primary">system</span> ' : ''}
@@ -174,6 +176,7 @@ function renderTypeDetail(container) {
               <th>Versión</th>
               <th>Descripción</th>
               <th>Estado</th>
+              <th>Modelo</th>
               <th>Creado</th>
               <th>Actualizado</th>
               <th></th>
@@ -190,6 +193,7 @@ function renderTypeDetail(container) {
                     : '<span class="badge badge-secondary">Inactiva</span>'
                   }
                 </td>
+                <td><span class="badge" style="background:var(--color-surface-3)">${esc(v.model || 'default')}</span></td>
                 <td style="font-size:0.85rem">${formatDate(v.createdAt)}</td>
                 <td style="font-size:0.85rem">${formatDate(v.updatedAt)}</td>
                 <td>
@@ -254,7 +258,8 @@ function renderTypeDetail(container) {
 function showEditor(container, version) {
   const typeMeta = state.types.find(t => t.id === state.selectedType);
   const isNew = !version;
-  const v = version || { versionId: '', content: '', systemPrompt: '', userPromptTemplate: '', variables: [], description: '' };
+  const v = version || { versionId: '', content: '', systemPrompt: '', userPromptTemplate: '', variables: [], description: '', model: '' };
+  const ALLOWED_MODELS = ['deepseek-v4-flash', 'gpt-4o-mini'];
 
   const hasTwoParts = typeMeta?.hasSystemPrompt && typeMeta?.hasUserPrompt;
 
@@ -272,6 +277,14 @@ function showEditor(container, version) {
         <div>
           <label class="form-label" for="pe-description">Descripción</label>
           <input type="text" id="pe-description" class="form-input" value="${esc(v.description)}" placeholder="Ej: Prompt mejorado con tono más empático" style="width:100%">
+        </div>
+        <div>
+          <label class="form-label" for="pe-model">Modelo IA</label>
+          <select id="pe-model" class="form-input" style="max-width:300px">
+            <option value="" ${!v.model ? 'selected' : ''}>Default (usa modelo global)</option>
+            ${ALLOWED_MODELS.map(m => `<option value="${m}" ${v.model===m?'selected':''}>${m}</option>`).join('')}
+          </select>
+          <p class="text-xs text-text-muted" style="margin-top:4px">Seleccioná el modelo para esta versión. Vacío = fallback a <code>deepseek-v4-flash</code> global.</p>
         </div>
 
         ${hasTwoParts ? `
@@ -315,6 +328,7 @@ function showEditor(container, version) {
     const content = document.getElementById('pe-content')?.value || '';
     const systemPrompt = document.getElementById('pe-system-prompt')?.value || '';
     const userPromptTemplate = document.getElementById('pe-user-template')?.value || '';
+    const model = document.getElementById('pe-model')?.value || null;
 
     try {
       if (isNew) {
@@ -325,6 +339,7 @@ function showEditor(container, version) {
           userPromptTemplate,
           variables: typeMeta?.variables || [],
           description: description || 'Nueva versión',
+          model: model || null,
         });
         toast('success', 'Versión creada', 'La nueva versión se creó correctamente.');
       } else {
@@ -334,6 +349,7 @@ function showEditor(container, version) {
           userPromptTemplate,
           variables: typeMeta?.variables || [],
           description: description || v.description,
+          model: model || null,
         });
         toast('success', 'Versión actualizada', 'Los cambios se guardaron correctamente.');
       }
@@ -354,6 +370,7 @@ function showEditor(container, version) {
       const content = document.getElementById('pe-content')?.value || '';
       const systemPrompt = document.getElementById('pe-system-prompt')?.value || '';
       const userPromptTemplate = document.getElementById('pe-user-template')?.value || '';
+      const model = document.getElementById('pe-model')?.value || null;
 
       try {
         await api.updatePromptVersion(state.selectedType, v.versionId, {
@@ -362,6 +379,7 @@ function showEditor(container, version) {
           userPromptTemplate,
           variables: typeMeta?.variables || [],
           description: description || v.description,
+          model: model || null,
         });
         await api.activatePromptVersion(state.selectedType, v.versionId);
         toast('success', 'Guardado y activado', `La versión ${v.versionId} se actualizó y activó.`);

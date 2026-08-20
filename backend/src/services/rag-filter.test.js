@@ -8,6 +8,10 @@ const openaiMocks = {
         usage: { total_tokens: 5 }
     })),
     getChatModelName: mock.fn(() => 'deepseek-v4-flash'),
+    resolveModelForTask: mock.fn(async () => 'deepseek-v4-flash'),
+    getChatModelNameForTask: mock.fn(async () => 'deepseek-v4-flash'),
+    isDeepSeekModel: mock.fn(() => true),
+    getClientForModel: mock.fn(() => null),
     chatCompletion: mock.fn(async () => ({ 
         content: 'Respuesta simulada.',
         usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 }
