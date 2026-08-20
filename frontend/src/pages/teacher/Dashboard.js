@@ -236,22 +236,27 @@ export async function renderTeacherDashboard(container) {
     const progressSection = container.querySelector('#student-progress-section');
     if (!progressSection) return;
     try {
-      const [classViews, enrollments] = await Promise.all([
+      const [classViews, enrollments, allUsers] = await Promise.all([
         api.getClassViews(activeSubjectId),
-        api.getEnrollments(activeSubjectId).catch(() => []),
+        api.getEnrollmentsBySubject(activeSubjectId).catch(() => []),
+        api.getAdminUsers().catch(() => []),
       ]);
 
       const studentEnrollments = (enrollments || []).filter(e => e.role === 'student' && e.status === 'active');
-      const studentIds = [...new Set([...studentEnrollments.map(e => e.userId), ...classViews.map(v => v.studentId)])];
+      const validStudentIds = new Set(studentEnrollments.map(e => e.userId));
+      // Only show students actually enrolled in the subject (ignore stale classViews like anonymous)
+      const studentIds = [...validStudentIds].filter(Boolean);
 
       if (studentIds.length === 0 || classes.length === 0) {
         progressSection.innerHTML = '<div style="padding:var(--space-4);text-align:center;color:var(--color-text-muted);font-size:var(--text-sm)">No hay alumnos inscriptos o clases para mostrar progreso.</div>';
         return;
       }
 
+      const usersById = new Map(allUsers.map(u => [u.id || u.userId, u]));
       const studentNames = {};
-      for (const e of studentEnrollments) {
-        studentNames[e.userId] = e.userId;
+      for (const sid of studentIds) {
+        const u = usersById.get(sid);
+        studentNames[sid] = u ? (u.name ? `${u.name} ${u.surname || ''}`.trim() : u.email) : sid;
       }
 
       const viewsByStudent = {};
