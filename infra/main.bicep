@@ -133,6 +133,12 @@ param aiFoundryDeepSeekEndpoint string = ''
 @description('DeepSeek V4 Flash model name (non-secret). Injected as AI_FOUNDRY_DEEPSEEK_MODEL app setting.')
 param aiFoundryDeepSeekModel string = 'deepseek-v4-flash'
 
+@description('Name of the SEPARATE AIServices resource for developer tooling (opencode). Kept distinct from aiservices-dashboard so budgets track independently.')
+param devToolsAiName string = 'aiservices-devtools'
+
+@description('Region for the dev-tooling AIServices resource.')
+param devToolsLocation string = 'eastus2'
+
 // ─── Variables & naming ──────────────────────────────────────────
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
@@ -195,6 +201,19 @@ module openAi './modules/openai.bicep' = {
     embeddingModelName: embeddingModelName
     embeddingModelVersion: embeddingModelVersion
     embeddingDeploymentCapacity: embeddingDeploymentCapacity
+    tags: tags
+  }
+}
+
+// ─── Module: Dev-Tooling AIServices (separate budget) ─────────────
+// Dedicated AIServices resource for developer tooling (opencode).
+// SEPARATE from aiservices-dashboard so cost tracking can split
+// platform usage vs. dev-tooling usage by resource.
+module devToolsAi './modules/devtools.bicep' = {
+  name: 'devToolsAi'
+  params: {
+    location: devToolsLocation
+    name: devToolsAiName
     tags: tags
   }
 }
@@ -417,3 +436,7 @@ output APPLICATIONINSIGHTS_CONNECTION_STRING string = appInsights.outputs.connec
 output AZURE_STATIC_WEB_APP_URI string = staticWebApp.outputs.staticWebAppUri
 // output AZURE_FRONT_DOOR_URI string = ''  // Disabled - CDN not registered
 output AZURE_RESOURCE_GROUP string = resourceGroup().name
+output DEVTOOLS_AI_ENDPOINT string = devToolsAi.outputs.endpoint
+output DEVTOOLS_AI_NAME string = devToolsAi.outputs.name
+output DEVTOOLS_AI_FLASH_DEPLOYMENT string = devToolsAi.outputs.flashDeploymentName
+output DEVTOOLS_AI_PRIMARY_KEY string = devToolsAi.outputs.primaryKey
