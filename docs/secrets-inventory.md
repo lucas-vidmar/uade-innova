@@ -20,8 +20,8 @@ consumida por `backend/src/`, su clasificación de destino y el estado de la mig
 |---|---|---|---|---|
 | `AZURE_OPENAI_API_KEY` | `backend/src/services/ai.js:39,56,98,304` | `infra/modules/functions.bicep` appSettings | ✅ `AZURE-OPENAI-API-KEY` (nuevo) | `keyvault-reference` (AC #3); MI como alternativa cuando RBAC esté activo (AC #5) |
 | `PINECONE_API_KEY` | `backend/src/services/vector-store.js:46` | `functions.bicep` appSettings | ✅ `PINECONE-API-KEY` (ya declarado) | `keyvault-reference` (AC #3) — Pinecone no soporta MI |
-| `AZURE_STORAGE_ACCESS_KEY` | `backend/src/services/storage.js:18,192`; `backend/src/functions/material-download.js:39`; `backend/src/functions/process-material.js:29` | `functions.bicep` appSettings | ✅ `AZURE-STORAGE-ACCESS-KEY` (nuevo) | `managed-identity` (AC #4) para blob/table; shared-key dev-gated |
-| `AZURE_STORAGE_CONNECTION_STRING` | `backend/src/services/storage.js:193,198`; `backend/src/services/storage-lifecycle.js:8`; `backend/src/services/archive-usage.js:9` | `functions.bicep` appSettings | ✅ `AZURE-STORAGE-CONNECTION-STRING` (ya creado en `main.bicep`) | `managed-identity` (AC #4); KV ref como respaldo |
+| `AZURE_STORAGE_ACCESS_KEY` | `backend/src/services/storage.js:24,265`; `backend/src/functions/material-download.js:39`; `backend/src/functions/process-material.js:29` | `functions.bicep` appSettings | ✅ `AZURE-STORAGE-ACCESS-KEY` (nuevo) | `keyvault-reference` (key-based primario, AC #4 replan); MI fallback solo si keys vacías |
+| `AZURE_STORAGE_CONNECTION_STRING` | `backend/src/services/storage.js:25,266`; `backend/src/services/storage-lifecycle.js:8`; `backend/src/services/archive-usage.js:9` | `functions.bicep` appSettings | ✅ `AZURE-STORAGE-CONNECTION-STRING` (ya creado en `main.bicep`) | `keyvault-reference` (key-based primario, AC #4 replan); MI fallback solo si keys vacías |
 | `AI_FOUNDRY_DEEPSEEK_KEY` | `backend/src/services/ai.js:76,84,167` | NO estaba en appSettings (solo local) | ✅ `AI-FOUNDRY-DEEPSEEK-KEY` (nuevo) | `keyvault-reference` (AC #6) — DeepSeek no soporta MI |
 | `AI_FOUNDRY_DEEPSEEK_ENDPOINT` | `backend/src/services/ai.js:75` | NO estaba en appSettings | n/a (no-secreto) | app setting no-secreto (AC #6) |
 | `AI_FOUNDRY_DEEPSEEK_MODEL` | `backend/src/config.js:50` | NO estaba en appSettings | n/a (no-secreto) | app setting no-secreto |
@@ -47,13 +47,11 @@ consumida por `backend/src/`, su clasificación de destino y el estado de la mig
 - [x] AC #1 — este inventario documentado
 - [x] AC #2 — `AZURE-OPENAI-API-KEY`, `AI-FOUNDRY-DEEPSEEK-KEY`, `AZURE-STORAGE-ACCESS-KEY` declarados en Key Vault
 - [x] AC #3 — Functions consume los 4 secretos vía `@Microsoft.KeyVault(SecretUri=...)`
-- [x] AC #4 — `storage.js` prefiere `DefaultAzureCredential`; shared-key solo en desarrollo
+- [x] AC #4 — `storage.js` prefiere keys (`AZURE_STORAGE_CONNECTION_STRING` → `ACCOUNT_NAME+ACCESS_KEY`) en **todos** los entornos; `DefaultAzureCredential` solo fallback si keys vacías (replan 2026-08-19, sin RBAC requerido). Azurite intacto.
 - [x] AC #5 — `ai.js` path de Managed Identity confirmado + logging de error de token
 - [x] AC #6 — `AI_FOUNDRY_DEEPSEEK_KEY` resuelto desde Key Vault; fetch override preservado
 - [x] AC #7 — local config sin secretos reales + script bootstrap vía `az keyvault secret show`
-- [ ] AC #8 — verificación en producción **BLOQUEADA**: requiere role assignments RBAC de UADE
-  (`Key Vault Secrets User`, `Storage Blob Data Contributor`, `Storage Table Data Contributor`,
-  `Cognitive Services OpenAI User`) — no disponibles (permiso Owner en RG).
+- [ ] AC #8 — verificación en producción **BLOQUEADA**: requiere `Key Vault Secrets User` RBAC de UADE para resolver `@Microsoft.KeyVault` refs (permiso Owner en RG). Storage ya no bloquea: key-based evita `Storage Blob/Table Data Contributor`.
 
 ## Notas
 

@@ -8,33 +8,59 @@ import { DefaultAzureCredential } from '@azure/identity';
 
 let _client = null;
 
-function isDevelopment() {
-    return process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development'
-        || process.env.AZURE_STORAGE_CONNECTION_STRING === 'UseDevelopmentStorage=true';
+function isAzuriteEnvironment(connectionString) {
+    return connectionString === 'UseDevelopmentStorage=true'
+        || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
 }
 
-function getClient() {
+export function _resetClientForTests() {
+    _client = null;
+}
+
+export function getClient() {
     if (!_client) {
         const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
-        if (!accountName) {
-            throw new Error('AZURE_STORAGE_ACCOUNT_NAME is not defined in environment variables.');
-        }
-
         const accountKey = process.env.AZURE_STORAGE_ACCESS_KEY;
-        if (isDevelopment() && accountKey) {
+        const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
+
+        // Azurite / Local Development emulator — explicit connection string.
+        if (connectionString === 'UseDevelopmentStorage=true') {
+            _client = BlobServiceClient.fromConnectionString(connectionString);
+            console.log('[Storage] Authenticated using Azurite connection string');
+            return _client;
+        }
+        // Development env without explicit Azurite connection string: fall through
+        // to key-based / MI logic so existing tests with `AZURE_FUNCTIONS_ENVIRONMENT=Development`
+        // + `ACCOUNT_NAME+ACCESS_KEY` still use SharedKey (compat with storage.moveblob.test.js).
+
+        // Prefer key-based access (connection string or account key) in ALL
+        // environments — production included. This lets the Functions runtime reach
+        // Blob Storage without requiring the managed identity to hold an RBAC role.
+        if (connectionString && !connectionString.startsWith('UseDevelopmentStorage')) {
+            _client = BlobServiceClient.fromConnectionString(connectionString);
+            console.log('[Storage] Authenticated using Connection String');
+            return _client;
+        }
+        if (accountName && accountKey) {
             const sharedKeyCredential = new StorageSharedKeyCredential(accountName, accountKey);
             _client = new BlobServiceClient(
                 `https://${accountName}.blob.core.windows.net`,
                 sharedKeyCredential
             );
-            console.log('[Storage] Authenticated using Access Key (local development only)');
-        } else {
-            _client = new BlobServiceClient(
-                `https://${accountName}.blob.core.windows.net`,
-                new DefaultAzureCredential()
-            );
-            console.log('[Storage] Authenticated using Managed Identity (DefaultAzureCredential)');
+            console.log('[Storage] Authenticated using Access Key');
+            return _client;
         }
+
+        if (!accountName) {
+            throw new Error('AZURE_STORAGE_ACCOUNT_NAME is not defined in environment variables.');
+        }
+
+        // Last resort: managed identity / workload identity.
+        _client = new BlobServiceClient(
+            `https://${accountName}.blob.core.windows.net`,
+            new DefaultAzureCredential()
+        );
+        console.log('[Storage] Authenticated using Managed Identity (DefaultAzureCredential)');
     }
     return _client;
 }
@@ -237,8 +263,8 @@ export function getTableClient(tableName) {
     const accountKey = process.env.AZURE_STORAGE_ACCESS_KEY;
     const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
 
-    // Support for Azurite / Local Development
-    if (connectionString === 'UseDevelopmentStorage=true' || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development') {
+    // Azurite / Local Development emulator.
+    if (isAzuriteEnvironment(connectionString)) {
         if (connectionString) {
             return TableClient.fromConnectionString(connectionString, tableName);
         }
@@ -246,11 +272,13 @@ export function getTableClient(tableName) {
         return new TableClient(`http://127.0.0.1:10002/${accountName || 'devstoreaccount1'}`, tableName);
     }
 
-    if (!accountName) {
-        throw new Error('AZURE_STORAGE_ACCOUNT_NAME is not defined in environment variables.');
+    // Prefer key-based access (connection string or account key) in ALL
+    // environments — production included. This lets the Functions runtime reach
+    // Table Storage without requiring the managed identity to hold an RBAC role.
+    if (connectionString && !connectionString.startsWith('UseDevelopmentStorage')) {
+        return TableClient.fromConnectionString(connectionString, tableName);
     }
-
-    if (isDevelopment() && accountKey) {
+    if (accountName && accountKey) {
         return new TableClient(
             `https://${accountName}.table.core.windows.net`,
             tableName,
@@ -258,6 +286,11 @@ export function getTableClient(tableName) {
         );
     }
 
+    if (!accountName) {
+        throw new Error('AZURE_STORAGE_ACCOUNT_NAME is not defined in environment variables.');
+    }
+
+    // Last resort: managed identity / workload identity.
     return new TableClient(
         `https://${accountName}.table.core.windows.net`,
         tableName,
