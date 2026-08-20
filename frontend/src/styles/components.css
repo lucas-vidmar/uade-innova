@@ -810,8 +810,11 @@
     position: fixed;
     inset: 0;
     z-index: 9999;
-    background: rgba(6, 27, 44, 0.85);
-    backdrop-filter: blur(4px);
+    /* A lighter veil keeps the surrounding page readable and gives context,
+       while the spotlight cutout dims everything around the target so the
+       focused element (and only it) stays bright and sharp. (QA-008) */
+    background: rgba(6, 27, 44, 0.35);
+    backdrop-filter: blur(1.5px);
     animation: fadeIn 0.25s ease;
     /* The tour is guidance, not a hard modal: the backdrop must never swallow
        the primary class interaction (QA-008). Pointer events pass through to
@@ -819,6 +822,21 @@
        10001) remain interactive and the tour stays dismissible via Escape,
        ✕ and the step buttons. */
     pointer-events: none;
+}
+
+/* Spotlight cutout: a transparent window over the target whose surrounding
+   (huge) box-shadow re-dims the rest of the page, producing the classic
+   guided-tour "hole". The target stays full-color and interactive. */
+.onboarding-spotlight {
+    position: absolute;
+    z-index: 10001;
+    border-radius: var(--radius-lg);
+    box-shadow:
+        0 0 0 6px rgba(6, 27, 44, 0.9),
+        0 0 0 200vmax rgba(6, 27, 44, 0.62);
+    border: 2px solid var(--color-accent);
+    pointer-events: none;
+    box-sizing: border-box;
 }
 
 /* ── Tooltip card ──────────────────────────────────────── */
