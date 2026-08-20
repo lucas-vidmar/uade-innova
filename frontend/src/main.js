@@ -25,6 +25,7 @@ const ROUTES = {
     '/student/chat': () => import('./pages/student/Dashboard.js').then(m => m.renderStudentDashboard),
     '/teacher/dashboard': () => import('./pages/teacher/Dashboard.js').then(m => m.renderTeacherDashboard),
     '/teacher/classes': () => import('./pages/teacher/ClassManager.js').then(m => m.renderClassManager),
+    '/teacher/students': () => import('./pages/teacher/Students.js').then(m => m.renderTeacherStudents),
     '/teacher/upload': () => import('./pages/teacher/UploadMaterials.js').then(m => m.renderTeacherUpload),
     '/teacher/analytics': () => import('./pages/teacher/Analytics.js').then(m => m.renderTeacherAnalytics),
     '/teacher/rag-sandbox': () => import('./pages/teacher/RagSandbox.js').then(m => m.renderTeacherRagSandbox),

@@ -33,7 +33,7 @@ export async function renderClassManager(container) {
         let pendingCellHighlight = null;
         let students = [];
         let subjectStudents = [];
-        let showStudentPicker = false;
+        // students moved to dedicated #/teacher/students tab — ClassManager keeps count only
         const escapeHtml = (value = '') => String(value)
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
@@ -91,52 +91,13 @@ export async function renderClassManager(container) {
         const render = () => {
             container.innerHTML = `
                 <div class="page-container">
-                    <div class="card" style="padding:var(--space-5);margin-bottom:var(--space-5)">
-                        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-                            <div>
-                                <h3 style="margin:0 0 4px;">Alumnos de la materia</h3>
-                                <p style="font-size:var(--fs-sm);color:var(--color-text-secondary);margin:0;">Asigná alumnos a esta materia para que accedan a sus contenidos.</p>
-                            </div>
-                            <button class="btn btn-secondary btn-sm" id="btn-toggle-student-picker">${showStudentPicker ? 'Cerrar selector' : '+ Agregar alumno'}</button>
+                    <div class="card" style="padding:var(--space-4);margin-bottom:var(--space-5);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+                        <div>
+                            <h3 style="margin:0 0 4px;">Alumnos de la materia</h3>
+                            <p style="font-size:var(--fs-sm);color:var(--color-text-secondary);margin:0;">${subjectStudents.length} alumno(s) asignado(s) — gestioná en la sección Estudiantes.</p>
                         </div>
-
-                        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:var(--space-4);max-width:100%;overflow:visible;">
-                            ${(() => {
-                                const visibleEnrollments = subjectStudents.filter((enr) => {
-                                    const sid = enr.userId;
-                                    return students.some((s) => (s.id === sid || s.userId === sid));
-                                });
-                                if (visibleEnrollments.length === 0) {
-                                    return '<span class="subject-prof-empty" style="color:var(--color-text-secondary);font-size:0.85rem;">Sin alumnos asignados todavía.</span>';
-                                }
-                                return visibleEnrollments.map((enr) => {
-                                    const student = students.find((s) => s.id === enr.userId || s.userId === enr.userId);
-                                    const displayName = String(student?.name || student?.surname ? `${student.name} ${student.surname || ''}`.trim() : student?.email || '').trim() || 'Alumno';
-                                    return `
-                                        <span class="subject-prof-pill" style="max-width:100%;word-break:break-word;">
-                                            <span class="subject-prof-pill-name">${escapeHtml(displayName)}</span>
-                                            <button class="teacher-student-remove" data-student-id="${escapeHtml(enr.userId)}" title="Quitar alumno">×</button>
-                                        </span>
-                                    `;
-                                }).join('');
-                            })()}
-                        </div>
-
-                        ${showStudentPicker ? `
-                            <div style="margin-top:var(--space-4);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:var(--space-3);">
-                                <div class="subject-prof-picker-title" style="font-weight:600;margin-bottom:var(--space-2);">Agregar alumno</div>
-                                <div style="display:flex;flex-wrap:wrap;gap:6px;max-height:220px;overflow-y:auto;">
-                                    ${(() => {
-                                        const assignedIds = new Set(subjectStudents.map((e) => e.userId));
-                                        const available = students.filter((s) => !assignedIds.has(s.id) && !assignedIds.has(s.userId));
-                                        if (available.length === 0) {
-                                            return '<span class="subject-prof-empty" style="color:var(--color-text-secondary);font-size:0.85rem;">No hay más alumnos disponibles.</span>';
-                                        }
-                                        return available.map((s) => {
-                                            const sid = s.id || s.userId;
-                                            const displayName = String(s.name || s.surname ? `${s.name} ${s.surname || ''}`.trim() : s.email || '').trim() || 'Alumno';
-                                            return `
-                                            <button class="btn btn-secondary btn-sm teacher-student-add" data-student-id="${escapeHtml(sid)}">
+                        <a href="#/teacher/students" class="btn btn-secondary btn-sm">Ir a Estudiantes →</a>
+                    </div>
                                                 ${escapeHtml(displayName)}
                                             </button>
                                         `;
@@ -271,35 +232,6 @@ export async function renderClassManager(container) {
             };
 
             applyPendingHighlight();
-
-            document.getElementById('btn-toggle-student-picker')?.addEventListener('click', () => {
-                showStudentPicker = !showStudentPicker;
-                render();
-            });
-
-            container.querySelectorAll('.teacher-student-add').forEach((btn) => {
-                btn.addEventListener('click', async () => {
-                    const studentId = btn.getAttribute('data-student-id');
-                    if (!studentId) return;
-                    try {
-                        await assignStudent(studentId, true);
-                    } catch (err) {
-                        toast('error', 'Error', err?.message || 'No se pudo asignar el alumno.');
-                    }
-                });
-            });
-
-            container.querySelectorAll('.teacher-student-remove').forEach((btn) => {
-                btn.addEventListener('click', async () => {
-                    const studentId = btn.getAttribute('data-student-id');
-                    if (!studentId) return;
-                    try {
-                        await assignStudent(studentId, false);
-                    } catch (err) {
-                        toast('error', 'Error', err?.message || 'No se pudo desasignar el alumno.');
-                    }
-                });
-            });
 
             // Agregar clase
             document.getElementById('btn-add-class')?.addEventListener('click', () => {

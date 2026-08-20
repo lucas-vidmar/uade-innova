@@ -21,6 +21,7 @@ const NAV = {
   teacher: [
     { id: 'teacher-dashboard', icon: 'home', label: 'Mis Catedras', path: '#/teacher/dashboard' },
     { id: 'teacher-classes', icon: 'stack', label: 'Gestor de Clases', path: '#/teacher/classes' },
+    { id: 'teacher-students', icon: 'users', label: 'Estudiantes', path: '#/teacher/students' },
     { id: 'teacher-upload', icon: 'upload', label: 'Cargar Materiales', path: '#/teacher/upload' },
     { id: 'teacher-materials', icon: 'files', label: 'Gestión de Materiales', path: '#/teacher/materials' },
     { id: 'teacher-corrections', icon: 'alert', label: 'Bandeja de Correcciones', path: '#/teacher/corrections' },
