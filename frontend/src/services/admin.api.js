@@ -1,5 +1,5 @@
 import {
-    BASE_URL, apiFetch, fetchWithTimeout, delay, parseApiError
+    BASE_URL, apiFetch, fetchWithTimeout, parseApiError
 } from './core.js';
 
 export async function getDirectorStats() {
@@ -61,41 +61,18 @@ export async function getSafetyRate(subjectId, days = 30) {
     return res.json();
 }
 
-function sessionMockingEnabled() {
-    try {
-        return sessionStorage.getItem('edu_logged_in') !== 'false'
-            && !!sessionStorage.getItem('edu_role');
-    } catch {
-        return false;
-    }
-}
-
 export async function getAdminUsers() {
     try {
-        const res = await fetchWithTimeout(`${BASE_URL}/dashboard-admin/users`, { timeout: 4000 });
+        const res = await apiFetch(`${BASE_URL}/dashboard-admin/users`);
         if (!res.ok) {
             console.warn(`[API] getAdminUsers returned ${res.status}.`);
-            if (sessionMockingEnabled()) {
-                console.warn('[API] Mock login detected, returning fallback users.');
-                await delay(200);
-                return [];
-            }
             return [];
         }
         const data = await res.json();
         const users = Array.isArray(data) ? data : (data?.data || []);
-        if (users.length > 0) return users;
-        if (sessionMockingEnabled()) {
-            await delay(200);
-            return [];
-        }
-        return [];
+        return Array.isArray(users) ? users : [];
     } catch (err) {
         console.error('[API] getAdminUsers failed:', err);
-        if (sessionMockingEnabled()) {
-            await delay(200);
-            return [];
-        }
         return [];
     }
 }

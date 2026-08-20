@@ -1,0 +1,611 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.41.2.15936",
+      "templateHash": "14561819499798919071"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure region for resources."
+      }
+    },
+    "functionAppName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the Function App."
+      }
+    },
+    "storageAccountName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the Storage Account required by the Function runtime."
+      }
+    },
+    "appInsightsConnectionString": {
+      "type": "string",
+      "metadata": {
+        "description": "Application Insights connection string."
+      }
+    },
+    "openAiEndpoint": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure OpenAI endpoint."
+      }
+    },
+    "openAiChatDeployment": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure OpenAI chat model deployment name."
+      }
+    },
+    "openAiEmbeddingDeployment": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure OpenAI embedding model deployment name."
+      }
+    },
+    "openAiTtsDeployment": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure OpenAI TTS model deployment name."
+      }
+    },
+    "aiFoundryDeepSeekEndpoint": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "DeepSeek V4 Flash endpoint via Azure AI Foundry (non-secret). Injected as AI_FOUNDRY_DEEPSEEK_ENDPOINT."
+      }
+    },
+    "aiFoundryDeepSeekModel": {
+      "type": "string",
+      "defaultValue": "deepseek-v4-flash",
+      "metadata": {
+        "description": "DeepSeek V4 Flash model name (non-secret). Injected as AI_FOUNDRY_DEEPSEEK_MODEL."
+      }
+    },
+    "classMaterialsStorageAccount": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure Storage account name for class materials."
+      }
+    },
+    "pineconeIndexName": {
+      "type": "string",
+      "defaultValue": "dashboard-edu-pilot",
+      "metadata": {
+        "description": "Pinecone index name for vectors."
+      }
+    },
+    "pineconeEnvironment": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Pinecone environment (optional when host is provided)."
+      }
+    },
+    "pineconeHost": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Pinecone host endpoint (optional but recommended)."
+      }
+    },
+    "pineconeApiKeySecretName": {
+      "type": "string",
+      "defaultValue": "PINECONE-API-KEY",
+      "metadata": {
+        "description": "Key Vault secret name that stores the Pinecone API key."
+      }
+    },
+    "keyVaultUri": {
+      "type": "string",
+      "metadata": {
+        "description": "Key Vault URI."
+      }
+    },
+    "storageAccountId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the Storage account."
+      }
+    },
+    "storageUseKeyVaultRef": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Use the Key Vault reference for storage credentials instead of the deploy-time plain connection string. Defaults to false until UADE grants the Key Vault Secrets User role (RBAC pending). When false, AZURE_STORAGE_CONNECTION_STRING/AZURE_STORAGE_ACCESS_KEY are injected as the plain values built from listKeys, which keeps Table/Blob access working via the account key without requiring the Function App identity to hold storage RBAC."
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Tags to apply to resources."
+      }
+    },
+    "classMaterialsContainerName": {
+      "type": "string",
+      "defaultValue": "class-materials",
+      "metadata": {
+        "description": "Name of the Storage container for class materials."
+      }
+    },
+    "ingestionQueueName": {
+      "type": "string",
+      "defaultValue": "ingestion-tasks",
+      "metadata": {
+        "description": "Name of the ingestion tasks queue for Queue-triggered functions."
+      }
+    },
+    "allowedCorsOrigins": {
+      "type": "array",
+      "defaultValue": [
+        "*"
+      ],
+      "metadata": {
+        "description": "List of allowed CORS origins (e.g., [\"https://myapp.azurestaticapps.net\"]). Default \"*\" allows all origins during development."
+      }
+    },
+    "authMockEnabled": {
+      "type": "string",
+      "defaultValue": "true",
+      "metadata": {
+        "description": "Permits the mock auth fallback in non-Development environments (pilot continuity until #194 provisions Entra). Flip to false after SSO lands."
+      }
+    },
+    "allowedUsersJson": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Server-side identity allowlist JSON (Story 1.1a). Stored in Key Vault (ALLOWED-USERS-JSON) and referenced here; never a VITE_* var nor exposed to the browser. Empty => allowlist inactive (legacy role behavior)."
+      }
+    },
+    "materialsTableName": {
+      "type": "string",
+      "defaultValue": "materials",
+      "metadata": {
+        "description": "Table name for material state entities."
+      }
+    },
+    "classesTableName": {
+      "type": "string",
+      "defaultValue": "classes",
+      "metadata": {
+        "description": "Table name for class state entities."
+      }
+    },
+    "enrollmentsTableName": {
+      "type": "string",
+      "defaultValue": "Enrollments",
+      "metadata": {
+        "description": "Table name for enrollment entities."
+      }
+    },
+    "userConsentTableName": {
+      "type": "string",
+      "defaultValue": "UserConsent",
+      "metadata": {
+        "description": "Table name for user consent records."
+      }
+    },
+    "correctionsTableName": {
+      "type": "string",
+      "defaultValue": "Corrections",
+      "metadata": {
+        "description": "Table name for verified answer corrections."
+      }
+    },
+    "correctionsPendingTableName": {
+      "type": "string",
+      "defaultValue": "CorrectionsPending",
+      "metadata": {
+        "description": "Table name for pending correction index."
+      }
+    },
+    "conversationsTableName": {
+      "type": "string",
+      "defaultValue": "Conversations",
+      "metadata": {
+        "description": "Table name for saved conversation threads."
+      }
+    },
+    "conversationRatingsTableName": {
+      "type": "string",
+      "defaultValue": "ConversationRatings",
+      "metadata": {
+        "description": "Table name for conversation ratings."
+      }
+    },
+    "notificationPreferencesTableName": {
+      "type": "string",
+      "defaultValue": "NotificationPreferences",
+      "metadata": {
+        "description": "Table name for notification preferences."
+      }
+    },
+    "userEventsTableName": {
+      "type": "string",
+      "defaultValue": "UserEvents",
+      "metadata": {
+        "description": "Table name for user activity events."
+      }
+    },
+    "interventionsTableName": {
+      "type": "string",
+      "defaultValue": "Interventions",
+      "metadata": {
+        "description": "Table name for intervention records."
+      }
+    },
+    "riskThresholdsTableName": {
+      "type": "string",
+      "defaultValue": "RiskThresholds",
+      "metadata": {
+        "description": "Table name for per-subject risk thresholds."
+      }
+    },
+    "glossaryFilesContainerName": {
+      "type": "string",
+      "defaultValue": "glossary-files",
+      "metadata": {
+        "description": "Name of the glossary-files blob container."
+      }
+    },
+    "summariesContainerName": {
+      "type": "string",
+      "defaultValue": "summaries",
+      "metadata": {
+        "description": "Name of the summaries blob container."
+      }
+    },
+    "notificationQueueName": {
+      "type": "string",
+      "defaultValue": "notification-queue",
+      "metadata": {
+        "description": "Name of the notification dispatch queue."
+      }
+    }
+  },
+  "variables": {
+    "corsAllowedOrigins": "[join(parameters('allowedCorsOrigins'), ',')]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}-plan', parameters('functionAppName'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "sku": {
+        "name": "Y1",
+        "tier": "Dynamic"
+      },
+      "kind": "functionapp",
+      "properties": {
+        "reserved": true
+      }
+    },
+    {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2023-01-01",
+      "name": "[parameters('functionAppName')]",
+      "location": "[parameters('location')]",
+      "tags": "[union(parameters('tags'), createObject('azd-service-name', 'backend'))]",
+      "kind": "functionapp,linux",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', format('{0}-plan', parameters('functionAppName')))]",
+        "reserved": true,
+        "httpsOnly": true,
+        "siteConfig": {
+          "linuxFxVersion": "NODE|20",
+          "functionAppScaleLimit": 10,
+          "minimumElasticInstanceCount": 0,
+          "use32BitWorkerProcess": false,
+          "ipSecurityRestrictions": [],
+          "scmIpSecurityRestrictionsUseMain": true,
+          "cors": {
+            "allowedOrigins": "[parameters('allowedCorsOrigins')]",
+            "supportCredentials": false
+          },
+          "appSettings": [
+            {
+              "name": "AzureWebJobsStorage",
+              "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(parameters('storageAccountId'), '2023-01-01').keys[0].value, environment().suffixes.storage)]"
+            },
+            {
+              "name": "FUNCTIONS_EXTENSION_VERSION",
+              "value": "~4"
+            },
+            {
+              "name": "FUNCTIONS_WORKER_RUNTIME",
+              "value": "node"
+            },
+            {
+              "name": "WEBSITE_NODE_DEFAULT_VERSION",
+              "value": "~20"
+            },
+            {
+              "name": "AzureWebJobsFeatureFlags",
+              "value": "EnableWorkerIndexing"
+            },
+            {
+              "name": "SCM_DO_BUILD_DURING_DEPLOYMENT",
+              "value": "true"
+            },
+            {
+              "name": "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING",
+              "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(parameters('storageAccountId'), '2023-01-01').keys[0].value, environment().suffixes.storage)]"
+            },
+            {
+              "name": "WEBSITE_CONTENTSHARE",
+              "value": "[format('func-content-{0}', uniqueString(resourceGroup().id))]"
+            },
+            {
+              "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+              "value": "[parameters('appInsightsConnectionString')]"
+            },
+            {
+              "name": "LOG_LEVEL",
+              "value": "info"
+            },
+            {
+              "name": "AZURE_OPENAI_ENDPOINT",
+              "value": "[parameters('openAiEndpoint')]"
+            },
+            {
+              "name": "AZURE_OPENAI_API_KEY",
+              "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/AZURE-OPENAI-API-KEY/)', parameters('keyVaultUri'))]"
+            },
+            {
+              "name": "AZURE_OPENAI_CHAT_DEPLOYMENT",
+              "value": "[parameters('openAiChatDeployment')]"
+            },
+            {
+              "name": "AZURE_OPENAI_EMBEDDING_DEPLOYMENT",
+              "value": "[parameters('openAiEmbeddingDeployment')]"
+            },
+            {
+              "name": "AZURE_OPENAI_TTS_DEPLOYMENT",
+              "value": "[parameters('openAiTtsDeployment')]"
+            },
+            {
+              "name": "AZURE_SUBSCRIPTION_ID",
+              "value": "[subscription().subscriptionId]"
+            },
+            {
+              "name": "AZURE_RESOURCE_GROUP_NAME",
+              "value": "[resourceGroup().name]"
+            },
+            {
+              "name": "AZURE_STORAGE_CONNECTION_STRING",
+              "value": "[if(parameters('storageUseKeyVaultRef'), format('@Microsoft.KeyVault(SecretUri={0}secrets/AZURE-STORAGE-CONNECTION-STRING/)', parameters('keyVaultUri')), format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(parameters('storageAccountId'), '2023-01-01').keys[0].value, environment().suffixes.storage))]"
+            },
+            {
+              "name": "AZURE_STORAGE_ACCOUNT_NAME",
+              "value": "[parameters('classMaterialsStorageAccount')]"
+            },
+            {
+              "name": "AZURE_STORAGE_CONTAINER_MATERIALS",
+              "value": "[parameters('classMaterialsContainerName')]"
+            },
+            {
+              "name": "AZURE_TABLE_MATERIALS",
+              "value": "[parameters('materialsTableName')]"
+            },
+            {
+              "name": "AZURE_TABLE_CLASSES",
+              "value": "[parameters('classesTableName')]"
+            },
+            {
+              "name": "AZURE_TABLE_ENROLLMENTS",
+              "value": "[parameters('enrollmentsTableName')]"
+            },
+            {
+              "name": "AZURE_STORAGE_ENROLLMENTS_TABLE",
+              "value": "[parameters('enrollmentsTableName')]"
+            },
+            {
+              "name": "PINECONE_INDEX_NAME",
+              "value": "[parameters('pineconeIndexName')]"
+            },
+            {
+              "name": "PINECONE_ENVIRONMENT",
+              "value": "[parameters('pineconeEnvironment')]"
+            },
+            {
+              "name": "PINECONE_HOST",
+              "value": "[parameters('pineconeHost')]"
+            },
+            {
+              "name": "PINECONE_API_KEY",
+              "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/{1}/)', parameters('keyVaultUri'), parameters('pineconeApiKeySecretName'))]"
+            },
+            {
+              "name": "AZURE_STORAGE_ACCESS_KEY",
+              "value": "[if(parameters('storageUseKeyVaultRef'), format('@Microsoft.KeyVault(SecretUri={0}secrets/AZURE-STORAGE-ACCESS-KEY/)', parameters('keyVaultUri')), listKeys(parameters('storageAccountId'), '2023-01-01').keys[0].value)]"
+            },
+            {
+              "name": "AI_FOUNDRY_DEEPSEEK_ENDPOINT",
+              "value": "[parameters('aiFoundryDeepSeekEndpoint')]"
+            },
+            {
+              "name": "AI_FOUNDRY_DEEPSEEK_MODEL",
+              "value": "[parameters('aiFoundryDeepSeekModel')]"
+            },
+            {
+              "name": "AI_FOUNDRY_DEEPSEEK_KEY",
+              "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/AI-FOUNDRY-DEEPSEEK-KEY/)', parameters('keyVaultUri'))]"
+            },
+            {
+              "name": "NODE_ENV",
+              "value": "production"
+            },
+            {
+              "name": "AUTH_MOCK_ENABLED",
+              "value": "[parameters('authMockEnabled')]"
+            },
+            {
+              "name": "ALLOWED_USERS_JSON",
+              "value": "[if(not(empty(parameters('allowedUsersJson'))), parameters('allowedUsersJson'), format('@Microsoft.KeyVault(SecretUri={0}secrets/ALLOWED-USERS-JSON/)', parameters('keyVaultUri')))]"
+            },
+            {
+              "name": "ENTRA_TENANT_ID",
+              "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/ENTRA-TENANT-ID/)', parameters('keyVaultUri'))]"
+            },
+            {
+              "name": "ENTRA_CLIENT_ID",
+              "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/ENTRA-CLIENT-ID/)', parameters('keyVaultUri'))]"
+            },
+            {
+              "name": "SWA_ROLES_SECRET",
+              "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/SWA-ROLES-SECRET/)', parameters('keyVaultUri'))]"
+            },
+            {
+              "name": "VECTOR_BACKUP_WINDOW_CRON",
+              "value": "0 0 3 * * *"
+            },
+            {
+              "name": "VECTOR_HEALTH_ALERT_CRON",
+              "value": "0 */15 * * * *"
+            },
+            {
+              "name": "VECTOR_HEALTH_FULLNESS_THRESHOLD",
+              "value": "0.80"
+            },
+            {
+              "name": "VECTOR_HEALTH_GROWTH_SPIKE_MULTIPLIER",
+              "value": "3"
+            },
+            {
+              "name": "VECTOR_HEALTH_DEDUP_WINDOW_MINUTES",
+              "value": "60"
+            },
+            {
+              "name": "GRAPH_API_CLIENT_ID",
+              "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/GRAPH-API-CLIENT-ID/)', parameters('keyVaultUri'))]"
+            },
+            {
+              "name": "GRAPH_API_CLIENT_SECRET",
+              "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/GRAPH-API-CLIENT-SECRET/)', parameters('keyVaultUri'))]"
+            },
+            {
+              "name": "GRAPH_API_TENANT_ID",
+              "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/GRAPH-API-TENANT-ID/)', parameters('keyVaultUri'))]"
+            },
+            {
+              "name": "AZURE_STORAGE_QUEUE_INGESTION",
+              "value": "[parameters('ingestionQueueName')]"
+            },
+            {
+              "name": "AZURE_STORAGE_QUEUE_NOTIFICATION",
+              "value": "[parameters('notificationQueueName')]"
+            },
+            {
+              "name": "AZURE_TABLE_USER_CONSENT",
+              "value": "[parameters('userConsentTableName')]"
+            },
+            {
+              "name": "AZURE_TABLE_CORRECTIONS",
+              "value": "[parameters('correctionsTableName')]"
+            },
+            {
+              "name": "AZURE_TABLE_CORRECTIONS_PENDING",
+              "value": "[parameters('correctionsPendingTableName')]"
+            },
+            {
+              "name": "AZURE_TABLE_CONVERSATIONS",
+              "value": "[parameters('conversationsTableName')]"
+            },
+            {
+              "name": "AZURE_TABLE_CONVERSATION_RATINGS",
+              "value": "[parameters('conversationRatingsTableName')]"
+            },
+            {
+              "name": "AZURE_TABLE_NOTIFICATION_PREFERENCES",
+              "value": "[parameters('notificationPreferencesTableName')]"
+            },
+            {
+              "name": "AZURE_TABLE_USER_EVENTS",
+              "value": "[parameters('userEventsTableName')]"
+            },
+            {
+              "name": "AZURE_TABLE_INTERVENTIONS",
+              "value": "[parameters('interventionsTableName')]"
+            },
+            {
+              "name": "AZURE_TABLE_RISK_THRESHOLDS",
+              "value": "[parameters('riskThresholdsTableName')]"
+            },
+            {
+              "name": "AZURE_STORAGE_CONTAINER_GLOSSARY",
+              "value": "[parameters('glossaryFilesContainerName')]"
+            },
+            {
+              "name": "AZURE_STORAGE_CONTAINER_SUMMARIES",
+              "value": "[parameters('summariesContainerName')]"
+            },
+            {
+              "name": "DIRECTOR_BUDGET_MONTHLY_USD",
+              "value": "10000"
+            },
+            {
+              "name": "CORS_ALLOWED_ORIGINS",
+              "value": "[variables('corsAllowedOrigins')]"
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/serverfarms', format('{0}-plan', parameters('functionAppName')))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "functionAppName": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the Function App."
+      },
+      "value": "[parameters('functionAppName')]"
+    },
+    "functionAppPrincipalId": {
+      "type": "string",
+      "metadata": {
+        "description": "The principal ID of the Function App Managed Identity."
+      },
+      "value": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-01-01', 'full').identity.principalId]"
+    },
+    "functionAppHostName": {
+      "type": "string",
+      "metadata": {
+        "description": "The default hostname of the Function App."
+      },
+      "value": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-01-01').defaultHostName]"
+    },
+    "functionAppUri": {
+      "type": "string",
+      "metadata": {
+        "description": "The full URI of the Function App."
+      },
+      "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-01-01').defaultHostName)]"
+    },
+    "functionAppId": {
+      "type": "string",
+      "metadata": {
+        "description": "The resource ID of the Function App."
+      },
+      "value": "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]"
+    }
+  }
+}

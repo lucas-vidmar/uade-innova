@@ -58,6 +58,15 @@ param keyVaultUri string
 @description('Resource ID of the Storage account.')
 param storageAccountId string
 
+@description('Use the Key Vault reference for storage credentials instead of the deploy-time plain connection string. Defaults to false until UADE grants the Key Vault Secrets User role (RBAC pending). When false, AZURE_STORAGE_CONNECTION_STRING/AZURE_STORAGE_ACCESS_KEY are injected as the plain values built from listKeys, which keeps Table/Blob access working via the account key without requiring the Function App identity to hold storage RBAC.')
+param storageUseKeyVaultRef bool = false
+
+@description('Storage account access key for the class-materials storage account.')
+var storageAccountKey = listKeys(storageAccountId, '2023-01-01').keys[0].value
+
+@description('Plain storage connection string (no Key Vault reference) so storage stays reachable while Key Vault Secrets User RBAC is pending.')
+var storagePlainConnectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${storageAccountKey};EndpointSuffix=${environment().suffixes.storage}'
+
 @description('Tags to apply to resources.')
 param tags object = {}
 
@@ -170,7 +179,7 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         // Runtime essentials
         {
           name: 'AzureWebJobsStorage'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${listKeys(storageAccountId, '2023-01-01').keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
+          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${storageAccountKey};EndpointSuffix=${environment().suffixes.storage}'
         }
         {
           name: 'FUNCTIONS_EXTENSION_VERSION'
@@ -195,7 +204,7 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         // Linux Consumption content share — required for V4 Node.js on Linux
         {
           name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${listKeys(storageAccountId, '2023-01-01').keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
+          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${storageAccountKey};EndpointSuffix=${environment().suffixes.storage}'
         }
         {
           name: 'WEBSITE_CONTENTSHARE'
@@ -241,12 +250,16 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           name: 'AZURE_RESOURCE_GROUP_NAME'
           value: resourceGroup().name
         }
-        // Storage — Connection string via Key Vault reference (story 10.13).
-        // Storage access switches to Managed Identity (DefaultAzureCredential) once
-        // 'Storage Blob Data Contributor' + 'Storage Table Data Contributor' are granted (RBAC, UADE).
+        // Storage — Connection string. Uses the deploy-time plain connection string
+        // (from listKeys) by default because the Key Vault Secrets User role is still
+        // pending (RBAC, UADE) and the Key Vault reference otherwise resolves empty,
+        // which drops login/storage to a hanging DefaultAzureCredential path. Flip
+        // storageUseKeyVaultRef=true and grant 'Storage Blob Data Contributor' +
+        // 'Storage Table Data Contributor' to switch to the Key Vault reference +
+        // Managed Identity (DefaultAzureCredential).
         {
           name: 'AZURE_STORAGE_CONNECTION_STRING'
-          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/AZURE-STORAGE-CONNECTION-STRING/)'
+          value: storageUseKeyVaultRef ? '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/AZURE-STORAGE-CONNECTION-STRING/)' : storagePlainConnectionString
         }
         {
           name: 'AZURE_STORAGE_ACCOUNT_NAME'
@@ -291,7 +304,7 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         }
         {
           name: 'AZURE_STORAGE_ACCESS_KEY'
-          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/AZURE-STORAGE-ACCESS-KEY/)'
+          value: storageUseKeyVaultRef ? '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/AZURE-STORAGE-ACCESS-KEY/)' : storageAccountKey
         }
         // DeepSeek V4 Flash via Azure AI Foundry (AIServices-kind). Key via Key Vault (AC #6);
         // AIServices-kind accounts reject Bearer tokens so MI is not an option here.
