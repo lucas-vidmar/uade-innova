@@ -15,6 +15,7 @@ const NAV_LABELS = {
   teacher: [
     'Mis Catedras',
     'Gestor de Clases',
+    'Estudiantes',
     'Cargar Materiales',
     'Gestión de Materiales',
     'Bandeja de Correcciones',
@@ -87,7 +88,7 @@ for (const [role, labels] of Object.entries(NAV_LABELS)) {
       await expect(helpBtn).toHaveCount(0);
     }
 
-    // 6 + 9 + 5 + 8 = 28 anchors across the 4 roles.
+    // 6 + 10 + 5 + 8 = 29 anchors across the 4 roles.
     await expect(nav.locator('a')).toHaveCount(labels.length);
   });
 }

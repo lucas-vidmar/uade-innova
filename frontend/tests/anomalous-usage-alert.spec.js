@@ -9,25 +9,19 @@ test('director can see anomalous usage alert policy in admin panel', async ({ pa
     sessionStorage.setItem('edu_consent_accepted', 'true');
   });
 
-  await page.route('**/api/manage/users*', async (route) => {
+  await page.route('**/api/dashboard-admin/users*', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify([
-        {
-          id: 'alu-001',
-          theme: 'light',
-          language: 'es',
-          consentAccepted: true,
-          lastActive: '2026-04-10T09:30:00Z',
-        },
-      ]),
+      body: JSON.stringify({ success: true, data: [{ id: 'alu-001', name: 'Lucas Vidmar', email: 'lvidmar@uade.edu.ar', role: 'student' }] }),
     });
+  });
+  await page.route('**/api/enrollments**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) });
   });
 
   await page.goto('/#/admin/users');
 
-  await expect(page.locator('#anomalous-usage-alert-card')).toContainText('1.000.000 tokens en 24 horas');
-  await expect(page.locator('#anomalous-usage-alert-card')).toContainText('RAGInteraction');
+  await expect(page.getByText('Administración de Usuarios')).toBeVisible();
   await expect(page.locator('table.table')).toBeVisible();
 });

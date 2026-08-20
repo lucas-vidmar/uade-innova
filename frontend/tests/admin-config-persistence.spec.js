@@ -58,7 +58,7 @@ async function setupApiMock(page, state = {}) {
     const url = route.request().url();
     const method = route.request().method();
 
-    if (url.includes('/admin/config/technical')) {
+    if (url.includes('config/technical')) {
       if (method === 'GET') {
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: store.technical || DEFAULT_TECH, defaults: !store.technical, updatedAt: store.technical ? '2026-01-01T00:00:00.000Z' : null }) });
       } else if (method === 'PUT') {
@@ -73,7 +73,7 @@ async function setupApiMock(page, state = {}) {
       return;
     }
 
-    if (url.includes('/admin/config/model')) {
+    if (url.includes('config/model')) {
       if (method === 'GET') {
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: store.model || DEFAULT_MODEL, defaults: !store.model, updatedAt: store.model ? '2026-01-01T00:00:00.000Z' : null }) });
       } else if (method === 'PUT') {
