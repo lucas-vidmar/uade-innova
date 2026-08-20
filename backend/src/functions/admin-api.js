@@ -106,7 +106,7 @@ app.http('admin-list-users', {
       context.error('[AdminAPI] Error listing users:', err);
       return errorResponse(err);
     }
-  }, { roles: ['Admin', 'Director', 'teacher'] })),
+  }, { roles: ['Admin', 'Director', 'Docente'] })),
 });
 
 // ── POST /api/admin/users (admin only) ──────────────────────────────
