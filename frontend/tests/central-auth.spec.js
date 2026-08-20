@@ -26,12 +26,16 @@ const USERS_FIXTURE = [
 test('admin sees the user directory and can create a user with a generated password', async ({ page }) => {
   await bootAs(page, 'admin', 'adm-001');
 
-  await page.route(/\/api\/admin\/users(?:\?|$)/, async (route) => {
+  await page.route(/\/api\/dashboard-admin\/users(?:\?|$)/, async (route) => {
     if (route.request().method() === 'POST') {
       await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ success: true, data: { userId: 'alu-010', name: 'Nuevo', surname: 'Alumno', email: 'nuevo@uade.edu.ar', role: 'student', status: 'active' }, generatedPassword: 'R4nd0m-P4ss' }) });
       return;
     }
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: USERS_FIXTURE }) });
+  });
+  // Enrollments for each user in the directory (added with admin read of enrollments #302)
+  await page.route(/\/api\/enrollments(?:\?|$)/, async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) });
   });
 
   await page.goto('/#/admin/users');
@@ -55,11 +59,14 @@ test('admin sees the user directory and can create a user with a generated passw
 test('admin can reset a user password (generated password shown once)', async ({ page }) => {
   await bootAs(page, 'admin', 'adm-001');
 
-  await page.route(/\/api\/admin\/users\/alu-001\/reset-password(?:\?|$)/, async (route) => {
+  await page.route(/\/api\/dashboard-admin\/users\/alu-001\/reset-password(?:\?|$)/, async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { userId: 'alu-001', mustChangePassword: true }, generatedPassword: 'Res3t-P4ss!' }) });
   });
-  await page.route(/\/api\/admin\/users(?:\?|$)/, async (route) => {
+  await page.route(/\/api\/dashboard-admin\/users(?:\?|$)/, async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: USERS_FIXTURE }) });
+  });
+  await page.route(/\/api\/enrollments(?:\?|$)/, async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) });
   });
 
   await page.goto('/#/admin/users');
@@ -74,12 +81,15 @@ test('admin can reset a user password (generated password shown once)', async ({
 test('non-UADE email rejected when admin creates a user', async ({ page }) => {
   await bootAs(page, 'admin', 'adm-001');
 
-  await page.route(/\/api\/admin\/users(?:\?|$)/, async (route) => {
+  await page.route(/\/api\/dashboard-admin\/users(?:\?|$)/, async (route) => {
     if (route.request().method() === 'POST') {
       await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ success: false, error: { code: 'EMAIL_DOMAIN_INVALID', message: 'El email debe pertenecer al dominio @uade.edu.ar.' } }) });
       return;
     }
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: USERS_FIXTURE }) });
+  });
+  await page.route(/\/api\/enrollments(?:\?|$)/, async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) });
   });
 
   await page.goto('/#/admin/users');
@@ -108,7 +118,7 @@ test('teacher can assign and remove a student in their subject', async ({ page }
   ];
   let enrollments = [{ subjectId: 'arq-software-2026', userId: 'alu-001', role: 'student', status: 'active' }];
 
-  await page.route(/\/api\/admin\/users(?:\?|$)/, async (route) => {
+  await page.route(/\/api\/dashboard-admin\/users(?:\?|$)/, async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: students }) });
   });
   await page.route(/\/api\/enrollments(?:\?|$)/, async (route) => {
@@ -130,12 +140,12 @@ test('teacher can assign and remove a student in their subject', async ({ page }
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
   });
 
-  await page.goto('/#/teacher/classes');
+  await page.goto('/#/teacher/students');
   await expect(page.getByText('Alumnos de la materia')).toBeVisible({ timeout: 15000 });
   await expect(page.getByText('Lucas Vidmar')).toBeVisible();
 
   // Add María.
-  await page.click('#btn-toggle-student-picker');
+  await page.click('#btn-toggle-picker');
   await page.locator('.teacher-student-add[data-student-id="alu-002"]').click();
   await expect(page.getByText('María González')).toBeVisible({ timeout: 15000 });
 });
