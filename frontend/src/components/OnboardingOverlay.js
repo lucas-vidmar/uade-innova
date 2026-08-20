@@ -8,8 +8,12 @@ export class OnboardingOverlay {
     this.engine = engine;
     this.steps = steps;
     this.backdropEl = null;
+    this.spotlightEl = null;
     this.tooltipEl = null;
-    this._onResize = () => this._reposition();
+    this._onResize = () => {
+      this._positionSpotlight(this.engine.currentStep);
+      this._reposition();
+    };
   }
 
   show() {
@@ -25,6 +29,7 @@ export class OnboardingOverlay {
     const step = this.steps[index];
     if (!step) return;
     this._removeHighlight();
+    this._positionSpotlight(step);
     this._highlightTarget(step);
     if (this.tooltipEl) this.tooltipEl.remove();
     this.tooltipEl = this._createTooltip(step, index);
@@ -37,6 +42,7 @@ export class OnboardingOverlay {
 
   destroy() {
     this._removeHighlight();
+    this._removeSpotlight();
     window.removeEventListener('resize', this._onResize);
     document.removeEventListener('keydown', this._handleKeyDown);
     if (this.tooltipEl) { this.tooltipEl.remove(); this.tooltipEl = null; }
@@ -47,7 +53,38 @@ export class OnboardingOverlay {
   _createBackdrop() {
     this.backdropEl = document.createElement('div');
     this.backdropEl.className = 'onboarding-overlay';
+    this.spotlightEl = document.createElement('div');
+    this.spotlightEl.className = 'onboarding-spotlight';
+    this.spotlightEl.setAttribute('aria-hidden', 'true');
+    this.backdropEl.appendChild(this.spotlightEl);
     document.body.appendChild(this.backdropEl);
+  }
+
+  /* ── Spotlight cutout ─────────────────────────────────── */
+  _positionSpotlight(step) {
+    if (!this.spotlightEl) return;
+    const isMobile = window.innerWidth < 640;
+    if (isMobile) {
+      this.spotlightEl.style.display = 'none';
+      return;
+    }
+    const sel = step?.targetSelector;
+    const target = sel ? document.querySelector(sel) : null;
+    if (!target) {
+      this.spotlightEl.style.display = 'none';
+      return;
+    }
+    const r = target.getBoundingClientRect();
+    const pad = 14;
+    this.spotlightEl.style.display = 'block';
+    this.spotlightEl.style.top = `${r.top + window.scrollY - pad}px`;
+    this.spotlightEl.style.left = `${r.left + window.scrollX - pad}px`;
+    this.spotlightEl.style.width = `${r.width + pad * 2}px`;
+    this.spotlightEl.style.height = `${r.height + pad * 2}px`;
+  }
+
+  _removeSpotlight() {
+    if (this.spotlightEl) { this.spotlightEl.remove(); this.spotlightEl = null; }
   }
 
   /* ── Tooltip DOM ───────────────────────────────────────── */
