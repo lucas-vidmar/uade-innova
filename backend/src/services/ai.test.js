@@ -47,4 +47,20 @@ describe('AI Service (DeepSeek Migration)', () => {
         // We mock the implementation inside the test if needed, but here we just check if it doesn't crash
         assert.ok(ai.chatCompletion, 'chatCompletion should exist');
     });
+
+    test('getClientForModel throws DEEPSEEK_NOT_CONFIGURED when a deepseek model is requested but the DeepSeek client cannot initialize', () => {
+        // Ensure no DeepSeek endpoint/key are present so getDeepSeekClient() returns null.
+        delete process.env.AI_FOUNDRY_DEEPSEEK_ENDPOINT;
+        delete process.env.AI_FOUNDRY_DEEPSEEK_KEY;
+
+        assert.throws(
+            () => ai.getClientForModel('deepseek-v4-flash'),
+            (err) => {
+                assert.equal(err.code, 'DEEPSEEK_NOT_CONFIGURED');
+                assert.equal(err.status, 500);
+                return true;
+            },
+            'should throw a CategorizedError signaling DeepSeek is not configured'
+        );
+    });
 });

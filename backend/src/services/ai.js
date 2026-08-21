@@ -130,6 +130,14 @@ export function getClientForModel(modelName) {
     if (isDeepSeekModel(modelName)) {
         const ds = getDeepSeekClient();
         if (ds) return ds;
+        throw new CategorizedError(
+            `El modelo "${modelName}" requiere un cliente DeepSeek (Azure AI Services), pero AI_FOUNDRY_DEEPSEEK_ENDPOINT y/o AI_FOUNDRY_DEEPSEEK_KEY no estan configurados. Configura ambos (endpoint apuntando a aiservices-dashboard) para habilitar la inferencia DeepSeek.`,
+            {
+                errorCategory: ErrorCategory.INTERNAL,
+                code: 'DEEPSEEK_NOT_CONFIGURED',
+                status: 500,
+            }
+        );
     }
     const azure = getAzureChatClient();
     if (azure) return azure;
