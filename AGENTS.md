@@ -50,6 +50,63 @@ gh issue view <issue-number> --repo lucas-vidmar/uade-innova
 
 ---
 
+## 3.5 Orca CLI/MCP: Herramientas Disponibles y Cómo Solicitar Push/Merge
+
+Este proyecto se opera a través de **Orca** (el CLI `orca`). Orca es la fuente de verdad del runtime: worktrees, terminales, navegador embebido, handoffs y orquestación. Usalo para todo lo que toque estado manejado por Orca; usá herramientas de shell solo cuando el estado de Orca no importe.
+
+**Cargar la guía exacta (no adivinar subcomandos):** cada vez que necesites operar Orca, cargá primero la guía versionada del binario activo:
+```bash
+orca skills get orca-cli        # worktrees, terminales, browser, artifacts, handoffs
+orca skills get orchestration   # coordinación multi-agente (task DAG, decision gates)
+orca skills get computer-use    # ventanas de escritorio fuera del browser embebido
+orca status --json              # confirmar que la app está corriendo (o: orca open --json)
+```
+Preferí siempre `--json` en llamadas de agente.
+
+### Navegador embebido de Orca (verificación de UI)
+
+El **único** mecanismo de testing de navegador es el browser embebido de Orca. Patrón snapshot → interact → snapshot:
+```bash
+orca goto --url <SWA_URL> --json
+orca snapshot --json              # devuelve refs de elementos (ej. @e3)
+orca click --element @e3 --json   # click / fill / type / select / scroll / wait / tab ...
+orca snapshot --json              # re-snapshot tras navegar o cambiar la página
+```
+Otros: `orca screenshot`, `orca full-screenshot`, `orca pdf`, `orca wait --text/--url/--selector`, `orca tab list/create/switch/close`, `orca eval --expression <js>`, `orca console`, `orca network`. Si un ref queda obsoleto (`browser_stale_ref`), re-correr `orca snapshot`. Si no hay tab (`browser_no_tab`), abrir con `orca tab create --url <url>`.
+
+### Worktrees, terminales y handoffs
+
+```bash
+orca worktree list --json
+orca worktree ps --json
+orca worktree create --name <task> --agent codex --prompt "<brief>" --json   # handoff a otro agente
+orca terminal list --json
+orca terminal read --terminal <handle> --json
+orca terminal wait --terminal <handle> --for tui-idle --timeout-ms 300000 --json
+orca terminal send --terminal <handle> --text "continue" --enter --json
+orca worktree set --worktree active --comment "estado actual" --json
+```
+Los `worktree.id` tienen formato `<repoId>::<worktreePath>`: copiar el id completo, no solo el repoId.
+
+### Cómo solicitar PUSH y MERGE (los agentes NO hacen push/merge por sí solos)
+
+* **Los agentes entregan commits locales y NO ejecutan `git push`, `git merge`, `gh pr create` ni `gh pr merge`.** Esas acciones quedan restringidas por permisos (`worker` las tiene `deny`; `integrator` las tiene `ask`) y requieren **autorización humana explícita**.
+* **Flujo de trabajo:** el `worker` implementa una historia y entrega un commit local (SHA, archivos, pruebas, riesgos) → el `integrator` verifica el conjunto y ejecuta la suite → para **push/merge/PR** el agente debe **solicitarlo al humano/Orca** describiendo exactamente la acción concreta (branch, commit/SHA, destino) y esperar autorización.
+* Los agentes **sí pueden commitear** localmente. No confundir: commit = permitido; push/merge/PR/deploy = requiere autorización humana vía Orca.
+* Nunca ejecutar `azd down`.
+
+### Otros recursos de Orca a mano
+
+```bash
+orca automations list --json                      # automatizaciones programadas
+orca artifacts share <file.html|.md> --json       # publicar artifact (requiere permiso humano en Settings → Artifacts)
+orca artifacts list --json
+orca orchestration task-create / dispatch / check  # coordinación multi-agente (ver skill orchestration)
+```
+Los cambios a la configuración (`.opencode/opencode.json`, `AGENTS.md`) se commitear y, para propagarse a worktrees, se pushean vía Orca (push no lo hace el agente).
+
+---
+
 ## 4. Trampas Conocidas (Known Pitfalls)
 
 * **Pitfall 1 — Testing de Navegador:** El **único** mecanismo de testing de navegador es el CLI de Orca (`orca goto`, `orca snapshot`, `orca click`). **No usar Playwright bajo ninguna circunstancia** a menos que el usuario lo autorice explícitamente para un caso puntual.
