@@ -120,4 +120,7 @@ local-*.png
 _bmad/
 
 # ─── opencode local config ───────────────────────────────────
-.opencode/
+# Commit the project opencode config (model + permissions) so worktrees inherit it,
+# but keep local-only artifacts (agents, commands, node_modules) out of the repo.
+.opencode/*
+!.opencode/opencode.json

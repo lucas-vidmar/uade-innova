@@ -1,0 +1,71 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "autoupdate": false,
+  "model": "azure-uade-flash/deepseek-v4-flash",
+  "plugin": [],
+  "provider": {
+    "azure-uade-flash": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Azure UADE Dev-Tools (Flash)",
+      "options": {
+        "baseURL": "https://aiservices-devtools.cognitiveservices.azure.com/openai/deployments/deepseek-v4-flash",
+        "queryParams": {
+          "api-version": "2024-10-21"
+        },
+        "headers": {
+          "api-key": "{env:AZURE_OPENAI_API_KEY}"
+        }
+      },
+      "models": {
+        "deepseek-v4-flash": {
+          "name": "DeepSeek V4 Flash (UADE Dev-Tools)",
+          "tool_call": true,
+          "limit": {
+            "context": 128000,
+            "output": 8192
+          },
+          "modalities": {
+            "input": ["text", "image"],
+            "output": ["text"]
+          }
+        }
+      }
+    }
+  },
+  "permission": {
+    "bash": {
+      "git status*": "allow",
+      "git diff*": "allow",
+      "git log*": "allow",
+      "git *": "ask",
+      "git commit*": "deny",
+      "git push*": "deny",
+      "*": "allow"
+    }
+  },
+  "server": {
+    "port": 4096
+  },
+  "mcp": {
+    "playwright": {
+      "type": "local",
+      "enabled": false,
+      "command": [
+        "npx",
+        "-y",
+        "@playwright/mcp@latest"
+      ]
+    },
+    "azure-mcp-server": {
+      "type": "local",
+      "enabled": true,
+      "command": [
+        "npx",
+        "-y",
+        "@azure/mcp@latest",
+        "server",
+        "start"
+      ]
+    }
+  }
+}
