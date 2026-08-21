@@ -9,7 +9,7 @@ Sistema RAG educativo serverless sobre Azure Cloud & AI.
 * **Tracking de Historias y Épicas (GitHub Issues):** La ÚNICA fuente de verdad es GitHub Issues en `lucas-vidmar/uade-innova` (`gh issue list`, `gh issue view`). **PROHIBIDO** crear o mantener réplicas locales de épicas, stories o walkthroughs en archivos `.md`.
 * **Despliegue y Verificación Mandatoria:** Tras cualquier cambio de código o funcionalidad:
   1. Desplegar a Azure con `azd deploy`.
-  2. Verificar manualmente en vivo en la Azure Static Web App utilizando **exclusivamente el navegador embebido de Orca** (`orca goto --url <SWA_URL> --json`, `orca snapshot --json`, `orca click --element <ref> --json`). **PROHIBIDO** usar Playwright MCP o Chrome MCP.
+  2. Verificar manualmente en vivo en la Azure Static Web App utilizando **exclusivamente el navegador embebido de Orca** (`orca goto --url <SWA_URL> --json`, `orca snapshot --json`, `orca click --element <ref> --json`). **PROHIBIDO** usar Playwright (MCP, CLI o scripts `*.spec.js`/`*.mjs`) o Chrome MCP, **salvo que el usuario indique expresamente lo contrario**.
 * **Seguridad de Secretos y Configuración:**
   * En **producción**, los secretos residen en Azure Key Vault y se inyectan en Functions mediante referencias `@Microsoft.KeyVault(SecretUri=...)`.
   * En **local**, usar `backend/local.settings.json` / `.env.local` (gitignored). **NUNCA** commitear credenciales, API keys ni emails reales al repositorio.
@@ -52,7 +52,7 @@ gh issue view <issue-number> --repo lucas-vidmar/uade-innova
 
 ## 4. Trampas Conocidas (Known Pitfalls)
 
-* **Pitfall 1 — Testing de Navegador:** No intentar lanzar Playwright o Chrome directamente si no están instalados en el entorno de testing; usar el CLI de Orca (`orca goto`, `orca snapshot`, `orca click`).
+* **Pitfall 1 — Testing de Navegador:** El **único** mecanismo de testing de navegador es el CLI de Orca (`orca goto`, `orca snapshot`, `orca click`). **No usar Playwright bajo ninguna circunstancia** a menos que el usuario lo autorice explícitamente para un caso puntual.
 * **Pitfall 2 — Modelos y Rutas:** No asumir la estructura de archivos ni interfaces desde memoria: leer directamente el código en `backend/src/` y `frontend/src/`.
 * **Pitfall 3 — Secretos en Commits:** Revisar siempre `git status` antes de commitear para evitar subir archivos de entorno locales o keys.
 
