@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.41.2.15936",
-      "templateHash": "14561819499798919071"
+      "templateHash": "8214768065420578375"
     }
   },
   "parameters": {
@@ -278,6 +278,28 @@
     "corsAllowedOrigins": "[join(parameters('allowedCorsOrigins'), ',')]"
   },
   "resources": [
+    {
+      "type": "Microsoft.Web/sites/basicPublishingCredentialsPolicies",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}', parameters('functionAppName'), 'scm')]",
+      "properties": {
+        "allow": true
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Web/sites/basicPublishingCredentialsPolicies",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}', parameters('functionAppName'), 'ftp')]",
+      "properties": {
+        "allow": true
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]"
+      ]
+    },
     {
       "type": "Microsoft.Web/serverfarms",
       "apiVersion": "2023-01-01",

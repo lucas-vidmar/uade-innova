@@ -452,6 +452,26 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
       ]
     }
   }
+
+  // ─── Publishing credentials policy — SCM/Kudu & FTP basic auth ─────
+  // Enables basic-auth publishing (publish-profile / zipdeploy via Kudu).
+  // Keep allow:true so deploy-production.yml (Azure/functions-action with
+  // AZURE_FUNCTIONAPP_PUBLISH_PROFILE) can deploy. When allow is false the
+  // site serves no valid publishing credential and Kudu returns 401 for ALL
+  // basic-auth attempts (see investigation 2026-08-20).
+  resource scmBasicAuthPolicy 'basicPublishingCredentialsPolicies@2023-01-01' = {
+    name: 'scm'
+    properties: {
+      allow: true
+    }
+  }
+
+  resource ftpBasicAuthPolicy 'basicPublishingCredentialsPolicies@2023-01-01' = {
+    name: 'ftp'
+    properties: {
+      allow: true
+    }
+  }
 }
 
 // ─── Outputs ───────────────────────────────────────────────────
