@@ -105,6 +105,15 @@ orca orchestration task-create / dispatch / check  # coordinación multi-agente 
 ```
 Los cambios a la configuración (`.opencode/opencode.json`, `AGENTS.md`) se commitear y, para propagarse a worktrees, se pushean vía Orca (push no lo hace el agente).
 
+### Cierre de tarea: dejar el browser de Orca listo para el usuario
+
+**Al terminar cualquier tarea/historia —siempre—** dejá el navegador embebido de Orca abierto en la SWA desplegada para que el usuario pueda retestear sin pasos extra:
+```bash
+orca goto --url https://agreeable-beach-002ff0c0f.6.azurestaticapps.net --json  # SWA: stapp-dashboard-q47bia47kk3na, RG_UADE_INNOVA_DEV
+orca snapshot --json
+```
+Si `SWA_URL` cambió, resolvela desde `infra/` o `docs/deployment-guide.md` y revalidá con `orca skills get orca-cli` antes de ejecutar. No omitas este paso aunque la tarea no haya tocado código de frontend — el usuario espera el browser listo para verificación inmediata.
+
 ---
 
 ## 4. Trampas Conocidas (Known Pitfalls)
