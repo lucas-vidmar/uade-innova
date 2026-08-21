@@ -389,7 +389,7 @@ body.top-nav-mobile-open .top-nav-mobile {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  background: rgba(241, 245, 249, 0.3);
+  background: var(--color-surface);
   overflow-y: auto;
   min-height: 0;
 }
