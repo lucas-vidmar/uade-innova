@@ -86,8 +86,22 @@ function isRetrievalSignal(err) {
     );
 }
 
+function isAiInfraSignal(err) {
+    const text = textFromError(err);
+    return (
+        text.includes('subscription key') ||
+        text.includes('invalid subscription') ||
+        text.includes('wrong api endpoint') ||
+        text.includes('access denied due to invalid subscription') ||
+        (text.includes('openai') && (text.includes('401') || text.includes('403') || text.includes('invalid') || text.includes('api key'))) ||
+        (text.includes('embedding') && text.includes('401'))
+    );
+}
+
 function isValidationSignal(err) {
     const text = textFromError(err);
+    // AI infra "invalid subscription key" must NOT be treated as client VALIDATION — it's a server config error (LLM).
+    if (isAiInfraSignal(err)) return false;
     return (
         text.includes('validation') ||
         text.includes('invalid') ||
@@ -99,6 +113,16 @@ function isValidationSignal(err) {
 
 function isAuthSignal(err) {
     const text = textFromError(err);
+    // AI infra 401s (Azure OpenAI / OpenAI) are NOT user auth — keep them as LLM/INTERNAL.
+    // Exclude infra key/endpoint signals so they fall through to fallbackCategory (LLM) or VALIDATION/INTERNAL as appropriate.
+    const isAiInfraAuth = text.includes('subscription key') ||
+        text.includes('invalid subscription') ||
+        text.includes('wrong api endpoint') ||
+        text.includes('access denied due to invalid subscription') ||
+        text.includes('api key') ||
+        text.includes('openai') ||
+        text.includes('embedding');
+    if (isAiInfraAuth) return false;
     return (
         err?.status === 401 ||
         err?.status === 403 ||
@@ -129,8 +153,8 @@ export function normalizeCategorizedError(err, fallbackCategory = ErrorCategory.
     if (isSafetySignal(err)) inferred = ErrorCategory.SAFETY;
     else if (isParsingSignal(err)) inferred = ErrorCategory.PARSING;
     else if (isRetrievalSignal(err)) inferred = ErrorCategory.RETRIEVAL_FAILURE;
-    else if (isValidationSignal(err)) inferred = ErrorCategory.VALIDATION;
     else if (isAuthSignal(err)) inferred = ErrorCategory.AUTH;
+    else if (isValidationSignal(err)) inferred = ErrorCategory.VALIDATION;
     else if (isStorageSignal(err)) inferred = ErrorCategory.STORAGE;
 
     return new CategorizedError(err?.message || 'Unexpected error', {
