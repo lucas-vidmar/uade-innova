@@ -7,9 +7,11 @@ Sistema RAG educativo serverless sobre Azure Cloud & AI.
 ## 1. Reglas y Políticas Inviolables (Non-Negotiables)
 
 * **Tracking de Historias y Épicas (GitHub Issues):** La ÚNICA fuente de verdad es GitHub Issues en `lucas-vidmar/uade-innova` (`gh issue list`, `gh issue view`). **PROHIBIDO** crear o mantener réplicas locales de épicas, stories o walkthroughs en archivos `.md`.
-* **Despliegue y Verificación Mandatoria:** Tras cualquier cambio de código o funcionalidad:
-  1. Desplegar a Azure con `azd deploy`.
-  2. Verificar manualmente en vivo en la Azure Static Web App utilizando **exclusivamente el navegador embebido de Orca** (`orca goto --url <SWA_URL> --json`, `orca snapshot --json`, `orca click --element <ref> --json`). **PROHIBIDO** usar Playwright (MCP, CLI o scripts `*.spec.js`/`*.mjs`) o Chrome MCP, **salvo que el usuario indique expresamente lo contrario**.
+* **Despliegue y Verificación Mandatoria (aislamiento por worktree):**
+  * **Regla por defecto (worktrees `worker`): NO desplegar a Azure compartido.** Verificar en local con `cd backend && npm test` + `npm start` (Azurite, puerto 7071) y `cd frontend && npm run dev` (Vite, puerto 5173). El navegador embebido de Orca contra `http://localhost:5173` es el mecanismo de verificación local. **PROHIBIDO** ejecutar `azd deploy` / `azd provision` contra el entorno compartido `uade-dev` desde un worktree paralelo — colisiona con otros agentes (último deploy gana, ver `azure.yaml:12` / `infra/main.bicep:144`).
+  * **Despliegue compartido solo vía `integrator` / rama `main`/`staging` / CI:** `azd deploy` al entorno `uade-dev` (`RG_UADE_INNOVA_DEV`) solo desde el worktree principal o GitHub Actions (`deploy-production.yml` / `staging.yml`). Requiere autorización humana explícita (ver §3.5).
+  * **Despliegue efímero opt-in por worktree (cuando se necesita Azure real):** `scripts/new-worktree-env.sh` crea un `azd env` aislado `wt-<slug>` → `azd provision` genera Function App + SWA + Storage propios en el mismo RG (token distinto vía `uniqueString(subscription.id, environmentName, location)`). Verificar contra ese SWA efímero con Orca (`orca goto --url $AZURE_STATIC_WEB_APP_URI`). Limpiar con `scripts/cleanup-worktree-env.sh`.
+  * **Verificación remota:** usar el navegador embebido de Orca contra el SWA objetivo (compartido o efímero) (`orca goto --url <SWA_URL> --json`, `orca snapshot --json`, `orca click --element <ref> --json`). **PROHIBIDO** usar Playwright (MCP, CLI o scripts `*.spec.js`/`*.mjs`) o Chrome MCP, **salvo que el usuario indique expresamente lo contrario**.
 * **Seguridad de Secretos y Configuración:**
   * En **producción**, los secretos residen en Azure Key Vault y se inyectan en Functions mediante referencias `@Microsoft.KeyVault(SecretUri=...)`.
   * En **local**, usar `backend/local.settings.json` / `.env.local` (gitignored). **NUNCA** commitear credenciales, API keys ni emails reales al repositorio.
@@ -47,7 +49,17 @@ node backend/scripts/canary-rag-source-isolation.js  # Canary de aislamiento RAG
 gh issue list --repo lucas-vidmar/uade-innova --limit 100 --state all
 gh issue view <issue-number> --repo lucas-vidmar/uade-innova
 
-# Nuevo worktree Orca — bootstrap de env ( .azure/ no se hereda, está gitignored )
+# Verificación local (worktrees worker — sin deploy)
+cd backend && npm test && npm start   # Functions + Azurite (7071)
+cd frontend && npm run dev            # Vite (5173) → orca goto --url http://localhost:5173
+
+# Deploy efímero por worktree (solo cuando se necesita Azure real)
+./scripts/new-worktree-env.sh         # crea azd env wt-<slug> + provision aislado
+azd env get-values                    # expone AZURE_STATIC_WEB_APP_URI del env efímero
+orca goto --url $AZURE_STATIC_WEB_APP_URI --json
+./scripts/cleanup-worktree-env.sh     # borra recursos efímeros del worktree
+
+# Entorno compartido uade-dev (solo integrator / CI)
 azd env select uade-dev        # o: azd env refresh  — recrea .azure/uade-dev/.env
 azd env get-values             # verifica RG_UADE_INNOVA_DEV y secretos inyectados desde Key Vault
 ```
@@ -111,12 +123,12 @@ Los cambios a la configuración (`.opencode/opencode.json`, `AGENTS.md`) se comm
 
 ### Cierre de tarea: dejar el browser de Orca listo para el usuario
 
-**Al terminar cualquier tarea/historia —siempre—** dejá el navegador embebido de Orca abierto en la SWA desplegada para que el usuario pueda retestear sin pasos extra:
-```bash
-orca goto --url https://agreeable-beach-002ff0c0f.6.azurestaticapps.net --json  # SWA: stapp-dashboard-q47bia47kk3na, RG_UADE_INNOVA_DEV
-orca snapshot --json
-```
-Si `SWA_URL` cambió, resolvela desde `infra/` o `docs/deployment-guide.md` y revalidá con `orca skills get orca-cli` antes de ejecutar. No omitas este paso aunque la tarea no haya tocado código de frontend — el usuario espera el browser listo para verificación inmediata.
+**Al terminar cualquier tarea/historia —siempre—** dejá el navegador embebido de Orca abierto en la SWA verificada para que el usuario pueda retestear sin pasos extra:
+* Si verificaste **en local** (regla por defecto): `orca goto --url http://localhost:5173 --json` + `orca snapshot --json`
+* Si desplegaste **efímero** (`wt-*`): `orca goto --url $AZURE_STATIC_WEB_APP_URI --json` (del `azd env` efímero)
+* Solo si sos `integrator` y desplegaste a `uade-dev`: `orca goto --url https://agreeable-beach-002ff0c0f.6.azurestaticapps.net --json` — SWA: `stapp-dashboard-q47bia47kk3na`, `RG_UADE_INNOVA_DEV`
+
+Si `SWA_URL` cambió, resolvela con `azd env get-values` o `infra/` y revalidá con `orca skills get orca-cli` antes de ejecutar. No omitas este paso aunque la tarea no haya tocado código de frontend — el usuario espera el browser listo para verificación inmediata.
 
 ---
 

@@ -2,7 +2,42 @@
 
 ## Infraestructura
 
-Todos los recursos se despliegan en `RG_UADE_INNOVA_DEV` usando Bicep + azd.
+Todos los recursos se despliegan en `RG_UADE_INNOVA_DEV` usando Bicep + azd (`azure.yaml:12`, `infra/main.bicep:144`).
+
+### Modelo de entornos y aislamiento por worktree (Orca)
+
+| Entorno | `azd env` | Cuándo usar | Comando |
+|---|---|---|---|
+| **Compartido `uade-dev`** | `uade-dev` | Solo `integrator`/`main`/`staging`/CI. Aislado por autorización humana. | `azd env select uade-dev && azd deploy` |
+| **Efímero por worktree** | `wt-<slug>` | Cuando un `worker` necesita Azure real sin colisionar con otros paralelos. Token distinto (`uniqueString(subId, envName, loc)`). | `./scripts/new-worktree-env.sh` |
+| **Local (default para workers)** | — | Desarrollo y verificación sin deploy. No consume Azure. | `cd backend && npm test && npm start` + `cd frontend && npm run dev` |
+
+**Regla:** los worktrees `worker` **no** ejecutan `azd deploy`/`azd provision` contra `uade-dev`. Ver `AGENTS.md:10-13` y `scripts/new-worktree-env.sh:1-30`.
+
+#### Worktree local (sin Azure) — flujo por defecto
+```bash
+cd backend && npm test && npm start   # Azurite + Functions en 7071
+cd frontend && npm run dev            # Vite en 5173
+# Verificación con Orca embebido (no Playwright):
+orca goto --url http://localhost:5173 --json && orca snapshot --json
+```
+
+#### Worktree con Azure real (opt-in efímero)
+```bash
+./scripts/new-worktree-env.sh              # o: ./scripts/new-worktree-env.sh my-feature
+# → crea azd env wt-<slug>, hereda AZURE_LOCATION/SUBSCRIPTION de uade-dev,
+#   provisiona Function App + SWA + Storage dedicados en el mismo RG
+azd env get-values                         # verificar AZURE_STATIC_WEB_APP_URI / AZURE_FUNCTION_APP_URI
+azd deploy                                 # deploya solo a wt-<slug>
+orca goto --url $AZURE_STATIC_WEB_APP_URI --json
+
+# Al terminar la historia — limpiar (no afecta uade-dev):
+./scripts/cleanup-worktree-env.sh          # o: ./scripts/cleanup-worktree-env.sh my-feature
+./scripts/cleanup-worktree-env.sh --list   # listar wt-* activos
+./scripts/cleanup-worktree-env.sh --all    # purgar todos (con confirmación)
+```
+
+> **Costo:** plan Y1 Consumption + SWA Free escalan a 0. Mantener efímeros solo lo necesario; el CI y `cleanup-worktree-env.sh` purgan `wt-*`. Pinecone `dashboard-edu-pilot` sigue compartido (namespace por env pendiente).
 
 ### Provisionar Infraestructura
 ```bash
@@ -21,9 +56,11 @@ Esto crea:
 azd deploy
 ```
 Esto ejecuta:
-1. `prepackage` hook: build frontend con variables de entorno
+1. `prepackage` hook: build frontend con variables de entorno (`azure.yaml:27-35`)
 2. Deploy `frontend/dist` → Static Web Apps
 3. Deploy `backend/` → Azure Functions
+
+> En worktrees `worker` este `azd deploy` aplica solo si estás en un env `wt-*` efímero. En el env `uade-dev` está reservado a `integrator`.
 
 ## CI/CD
 
@@ -255,10 +292,13 @@ azd deploy backend
 
 | Problema | Comando |
 |---|---|
-| Ver logs | `az functionapp logs tail -n func-dashboard-ingest-{token} -g RG_UADE_INNOVA_DEV` |
-| Listar recursos | `az resource list --resource-group RG_UADE_INNOVA_DEV --output table` |
+| Ver logs (env actual) | `az functionapp logs tail -n func-dashboard-ingest-{token} -g RG_UADE_INNOVA_DEV` (`azd env get-values` para el token del env activo) |
+| Listar recursos por env | `az resource list --resource-group RG_UADE_INNOVA_DEV --query "[?tags.\"azd-env-name\"=='$(azd env list --output json \| jq -r '.[] \| select(.isDefault==true) \| .name')']" --output table` |
+| Listar todos los recursos del RG | `az resource list --resource-group RG_UADE_INNOVA_DEV --output table` |
 | Obtener deployment token SWA | `az staticwebapp secrets list --name stapp-dashboard-{token} -g RG_UADE_INNOVA_DEV` |
 | Tests locales | `cd backend && npm test` |
+| Ver env activo | `azd env list` / `azd env get-values` |
+| Worktrees colisionan en uade-dev | Verificar que `AGENTS.md:10-13` se respete; usar `./scripts/new-worktree-env.sh` para aislar |
 
 ## Destruir Entorno
 ```bash
