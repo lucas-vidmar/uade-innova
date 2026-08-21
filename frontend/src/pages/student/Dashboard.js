@@ -371,7 +371,7 @@ export async function renderStudentDashboard(container) {
     const visibleCount = Math.min((historyPage + 1) * HISTORY_PAGE_SIZE, sessionSummariesCache.length);
     const visibleItems = sessionSummariesCache.slice(0, visibleCount);
     if (visibleItems.length === 0) {
-      return '<li class="flex flex-col items-center py-8 px-6 text-center"><div style="width:40px;height:40px;" class="bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('chat', 14) + '</div><p class="text-xs font-medium text-text-primary mb-1">Sin actividad reciente</p><p class="text-[10px] text-text-muted">Tus consultas en el chat aparecerán acá</p></li>';
+      return '<li class="flex flex-col items-center py-8 px-6 text-center"><div style="width:40px;height:40px;" class="bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('chat', 14) + '</div><p class="text-xs font-medium text-text-primary mb-1">Sin actividad reciente</p><p class="text-[10px] text-text-muted">Cuando hagas una consulta, aparecerá acá</p></li>';
     }
     return visibleItems.map(c => {
       const dateStr = new Date(c.lastAt || Date.now()).toLocaleDateString('es-AR', { day: 'numeric', month: 'numeric' });
@@ -607,7 +607,7 @@ export async function renderStudentDashboard(container) {
     const visibleCount = Math.min((classesPage + 1) * CLASSES_PAGE_SIZE, classesCache.length);
     const visibleItems = classesCache.slice(0, visibleCount);
     if (visibleItems.length === 0) {
-      return '<li class="flex flex-col items-center py-8 px-6 text-center"><div style="width:40px;height:40px;" class="bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('calendar', 14) + '</div><p class="text-xs font-medium text-text-primary mb-1">No hay clases programadas</p><p class="text-[10px] text-text-muted">Las clases aparecerán acá cuando el docente las publique</p></li>';
+      return '<li class="flex flex-col items-center py-8 px-6 text-center"><div style="width:40px;height:40px;" class="bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('calendar', 14) + '</div><p class="text-xs font-medium text-text-primary mb-1">No hay clases programadas</p><p class="text-[10px] text-text-muted">Cuando el docente publique contenido, lo verás acá</p></li>';
     }
     const localViews = api.getLocalClassViews();
     return visibleItems.map(c => {
