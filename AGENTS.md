@@ -46,6 +46,10 @@ node backend/scripts/canary-rag-source-isolation.js  # Canary de aislamiento RAG
 # GitHub Issues
 gh issue list --repo lucas-vidmar/uade-innova --limit 100 --state all
 gh issue view <issue-number> --repo lucas-vidmar/uade-innova
+
+# Nuevo worktree Orca — bootstrap de env ( .azure/ no se hereda, está gitignored )
+azd env select uade-dev        # o: azd env refresh  — recrea .azure/uade-dev/.env
+azd env get-values             # verifica RG_UADE_INNOVA_DEV y secretos inyectados desde Key Vault
 ```
 
 ---
