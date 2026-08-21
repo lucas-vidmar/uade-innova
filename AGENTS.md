@@ -54,14 +54,14 @@ gh issue view <issue-number> --repo lucas-vidmar/uade-innova
 
 Este proyecto se opera a través de **Orca** (el CLI `orca`). Orca es la fuente de verdad del runtime: worktrees, terminales, navegador embebido, handoffs y orquestación. Usalo para todo lo que toque estado manejado por Orca; usá herramientas de shell solo cuando el estado de Orca no importe.
 
-**Cargar la guía exacta (no adivinar subcomandos):** cada vez que necesites operar Orca, cargá primero la guía versionada del binario activo:
+**La guía NO se hardcodea — se carga en runtime (fuente de verdad versionada).** Los comandos listados abajo son **ejemplos ilustrativos**, no la referencia autoritativa. El CLI de Orca es un *discovery stub*: cada vez que necesites operar Orca, **cargá primero la guía versionada del binario activo y verificá los subcomandos/banderas actuales contra ella antes de ejecutar** (no asumas que los ejemplos de este archivo siguen vigentes tras un update de Orca):
 ```bash
 orca skills get orca-cli        # worktrees, terminales, browser, artifacts, handoffs
 orca skills get orchestration   # coordinación multi-agente (task DAG, decision gates)
 orca skills get computer-use    # ventanas de escritorio fuera del browser embebido
 orca status --json              # confirmar que la app está corriendo (o: orca open --json)
 ```
-Preferí siempre `--json` en llamadas de agente.
+Preferí siempre `--json` en llamadas de agente. Si un comando falla con un error de subcomando/bandera desconocido, **volvé a `orca skills get ...`** y usá la sintaxis vigente en vez de insistir con la obsoleta.
 
 ### Navegador embebido de Orca (verificación de UI)
 
