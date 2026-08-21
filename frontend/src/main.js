@@ -207,7 +207,7 @@ function renderLogin() {
                 <label class="form-label" for="login-password">Contraseña</label>
                 <input id="login-password" class="form-input" type="password" placeholder="••••••••" autocomplete="current-password" required />
               </div>
-              <p id="login-error" class="text-secondary" style="color:var(--color-error);font-size:0.85rem;margin:var(--space-3) 0;display:none"></p>
+              <p id="login-error" role="alert" aria-live="assertive" aria-atomic="true" style="color:var(--color-error);font-size:0.85rem;margin:var(--space-3) 0;display:none"></p>
               <button type="submit" id="login-submit" class="btn btn-primary" style="width:100%;margin-top:var(--space-2)">Ingresar</button>
             </form>
             <p style="color:var(--color-text-secondary);font-size:0.8rem;margin-top:var(--space-4)">¿No recordás tu contraseña? Contactá a administración para resetearla.</p>
@@ -219,10 +219,36 @@ function renderLogin() {
 
     const errorEl = document.getElementById('login-error');
     const submitBtn = document.getElementById('login-submit');
+    const emailInput = document.getElementById('login-email');
+    const passwordInput = document.getElementById('login-password');
     const showError = (message) => {
         if (!errorEl) return;
         errorEl.textContent = message;
         errorEl.style.display = 'block';
+    };
+    const clearError = () => {
+        if (!errorEl) return;
+        errorEl.textContent = '';
+        errorEl.style.display = 'none';
+    };
+    const resolveLoginErrorMessage = (err) => {
+        if (!err) return 'No se pudo iniciar sesión. Verificá tu email y contraseña.';
+        // Access denied is handled as a redirect above; keep here as guard.
+        if (err?.code === 'ACCESS_DENIED' || err?.status === 403) return 'Tu cuenta está deshabilitada. Contactá a administración.';
+        if (err?.code === 'INVALID_CREDENTIALS' || err?.status === 401) return 'Credenciales inválidas. Verificá tu email y contraseña.';
+        if (err?.code === 'TOO_MANY_ATTEMPTS' || err?.status === 429) return 'Demasiados intentos. Esperá unos minutos e intentá de nuevo.';
+        if (err?.code === 'MISSING_FIELDS' || err?.status === 400) return err?.message || 'Ingresá tu email y contraseña.';
+        if (err?.status >= 500 || err?.retryable) return 'Servicio no disponible. Intentá de nuevo en unos minutos.';
+        if (err?.status === 404 || err?.status === 405) return 'Servicio de autenticación no disponible. Verificá tu conexión e intentá de nuevo.';
+        // Network failure — fetch throws TypeError before a Response exists.
+        const msg = String(err?.message || '');
+        if (err?.name === 'TypeError' || /failed to fetch|networkerror|load failed/i.test(msg)) {
+            return 'No se pudo conectar con el servidor. Verificá tu conexión e intentá de nuevo.';
+        }
+        // Prefer a server-provided message when it is not the generic fallback.
+        if (msg && msg !== 'No se pudo iniciar sesión.') return msg;
+        // Generic unknown case: keep a more actionable fallback than the old one.
+        return 'No se pudo iniciar sesión. Verificá tu email y contraseña.';
     };
 
     const finishLogin = async (email, password) => {
@@ -248,12 +274,17 @@ function renderLogin() {
                 renderAccessDenied();
                 return;
             }
-            showError(err?.message || 'No se pudo iniciar sesión. Verificá tus credenciales.');
+            showError(resolveLoginErrorMessage(err));
         }
     };
 
+    // Clear stale error on typing so the old "what happened?" state doesn't linger.
+    emailInput?.addEventListener('input', clearError);
+    passwordInput?.addEventListener('input', clearError);
+
     document.getElementById('login-form')?.addEventListener('submit', async (event) => {
         event.preventDefault();
+        clearError();
         const email = String(document.getElementById('login-email')?.value || '').trim();
         const password = document.getElementById('login-password')?.value || '';
         if (!email || !password) {

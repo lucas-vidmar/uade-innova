@@ -117,25 +117,56 @@ export function delay(ms = 600) { return new Promise(r => setTimeout(r, ms)); }
  * and `errorCategory` so pages can distinguish auth/config denials (403) from
  * transient/5xx failures (Story 10.24). Handles both the shared contract
  * `{ error, errorCategory, code }` and the corrections shape
- * `{ success:false, error:{ code, message } }`.
+ * `{ success:false, error:{ code, message } }`. When the body is HTML
+ * (e.g. SWA without linked backend → 404/405) or empty, maps the HTTP
+ * status to an actionable fallback instead of bubbling the generic one.
  * @param {Response} res
  * @param {string} fallbackMessage
  * @returns {Promise<Error>}
  */
 export async function parseApiError(res, fallbackMessage = `Error ${res.status}`) {
     let payload = null;
-    try { payload = await res.json(); } catch { /* non-JSON body */ }
+    let rawText = '';
+    try {
+        // Clone so we can try json then text without consuming the stream twice.
+        const clone = typeof res.clone === 'function' ? res.clone() : res;
+        payload = await clone.json();
+    } catch {
+        try {
+            const clone2 = typeof res.clone === 'function' ? res.clone() : res;
+            rawText = await clone2.text();
+        } catch { /* ignore */ }
+    }
     const nested = payload?.error;
     const hasNestedShape = nested && typeof nested === 'object';
     const code = hasNestedShape ? nested.code : (payload?.code || 'UNKNOWN_ERROR');
-    const message = hasNestedShape ? nested.message : (nested || payload?.error || fallbackMessage);
+    let message = hasNestedShape ? nested.message : (nested || payload?.error || null);
+    // Fallback is HTML (SWA 404/405/502) — don't leak markup into the UI.
+    if (rawText && !message && /^\s*<!doctype|^\s*<html/i.test(rawText)) {
+        message = null;
+    }
     const errorCategory = hasNestedShape ? nested.errorCategory : (payload?.errorCategory || null);
 
-    const err = new Error(String(message || fallbackMessage));
-    err.status = Number(res?.status) || 500;
+    const status = Number(res?.status) || 500;
+    // Status-aware actionable fallback when the body carried no message
+    // (HTML, empty, or non-JSON). Keep a server-provided message when present.
+    const statusFallback = (() => {
+        if (status === 400) return 'Revisá los datos ingresados.';
+        if (status === 401) return 'Credenciales inválidas. Verificá tu email y contraseña.';
+        if (status === 403) return 'Tu cuenta está deshabilitada. Contactá a administración.';
+        if (status === 429) return 'Demasiados intentos. Intentá de nuevo en unos minutos.';
+        if (status === 404 || status === 405) return 'Servicio de autenticación no disponible. Verificá tu conexión e intentá de nuevo.';
+        if (status >= 500) return 'Servicio no disponible. Intentá de nuevo en unos minutos.';
+        return null;
+    })();
+    const resolvedMessage = String(message || statusFallback || fallbackMessage);
+
+    const err = new Error(resolvedMessage);
+    err.status = status;
     err.code = code;
     if (errorCategory) err.errorCategory = errorCategory;
     err.retryable = err.status >= 500;
+    if (rawText) err.rawBodyPreview = rawText.slice(0, 400);
     return err;
 }
 
