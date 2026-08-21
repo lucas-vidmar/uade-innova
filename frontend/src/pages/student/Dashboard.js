@@ -574,7 +574,7 @@ export async function renderStudentDashboard(container) {
               <span class="chat-history-title" style="overflow:hidden;font-size:13px;font-weight:500;color:var(--color-text-primary);"><span class="title-scroll" style="display:inline-block;white-space:nowrap;">${escapeHtml(t.title)}</span></span>
               <span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 8px;flex-shrink:0;color:${pillColor};background:${pillBg};border:1px solid ${pillBorder};">${pillLabel}</span>
             </li>`;
-          }).join('') : '<li class="flex flex-col items-center py-8 px-6 text-center"><div style="width:40px;height:40px;" class="bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('tasks', 14) + '</div><p class="text-xs font-medium text-text-primary mb-1">Todo al día</p><p class="text-[10px] text-text-muted">No tenés tareas pendientes</p></li>'}
+          }).join('') : '<li class="flex flex-col items-center py-8 px-6 text-center"><div style="width:40px;height:40px;" class="bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('tasks', 14) + '</div><p class="text-xs font-medium text-text-primary mb-1">Todo al día</p><p class="text-[10px] text-text-muted">Cuando el docente asigne tareas, aparecerán acá</p></li>'}
         </ul>
       </div>
     `;
