@@ -33,6 +33,7 @@
     }
   },
   "permission": {
+    "external_directory": "allow",
     "bash": {
       "git status*": "allow",
       "git diff*": "allow",
