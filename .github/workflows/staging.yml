@@ -133,8 +133,21 @@ jobs:
   deploy:
     needs: [backend-tests, frontend-tests]
     runs-on: ubuntu-latest
+    env:
+      # Vite reads VITE_* vars at BUILD time. The SWA GitHub Action forwards
+      # the job env into its build container, so Vite bakes the real Function
+      # App URI into the bundle instead of falling back to the SWA's /api.
+      VITE_API_BASE_URL: https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net/api
     steps:
       - uses: actions/checkout@v4
+      - name: Build-time Vite env vars (VITE_API_BASE_URL → Function App URI)
+        shell: bash
+        run: |
+          cat > frontend/.env <<EOF
+          VITE_API_BASE_URL=https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net/api
+          EOF
+          echo "Wrote frontend/.env:"
+          cat frontend/.env
       - name: Deploy Frontend to Azure Static Web Apps
         uses: Azure/static-web-apps-deploy@v1
         with:
