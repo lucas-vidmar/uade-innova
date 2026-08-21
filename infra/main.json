@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.41.2.15936",
-      "templateHash": "5840164531747796087"
+      "templateHash": "9660184509527107660"
     }
   },
   "parameters": {
@@ -247,6 +247,20 @@
       "defaultValue": "deepseek-v4-flash",
       "metadata": {
         "description": "DeepSeek V4 Flash model name (non-secret). Injected as AI_FOUNDRY_DEEPSEEK_MODEL app setting."
+      }
+    },
+    "devToolsAiName": {
+      "type": "string",
+      "defaultValue": "aiservices-devtools",
+      "metadata": {
+        "description": "Name of the SEPARATE AIServices resource for developer tooling (opencode). Kept distinct from aiservices-dashboard so budgets track independently."
+      }
+    },
+    "devToolsLocation": {
+      "type": "string",
+      "defaultValue": "eastus2",
+      "metadata": {
+        "description": "Region for the dev-tooling AIServices resource."
       }
     },
     "allowedCorsOrigins": {
@@ -818,6 +832,178 @@
     {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
+      "name": "devToolsAi",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('devToolsLocation')]"
+          },
+          "name": {
+            "value": "[parameters('devToolsAiName')]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.41.2.15936",
+              "templateHash": "9803540911141433473"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "defaultValue": "eastus2",
+              "metadata": {
+                "description": "Azure region for the dev-tooling AIServices resource."
+              }
+            },
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the AIServices resource (e.g. \"aiservices-devtools\")."
+              }
+            },
+            "skuName": {
+              "type": "string",
+              "defaultValue": "S0",
+              "metadata": {
+                "description": "SKU for the AIServices resource."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags to apply to the resource."
+              }
+            },
+            "flashDeploymentName": {
+              "type": "string",
+              "defaultValue": "deepseek-v4-flash",
+              "metadata": {
+                "description": "Flash deployment name (must match opencode model id)."
+              }
+            },
+            "flashModelName": {
+              "type": "string",
+              "defaultValue": "DeepSeek-V4-Flash-0731",
+              "metadata": {
+                "description": "Flash model name in the catalog."
+              }
+            },
+            "flashModelVersion": {
+              "type": "string",
+              "defaultValue": "2026-07-31",
+              "metadata": {
+                "description": "Flash model version."
+              }
+            },
+            "flashSkuName": {
+              "type": "string",
+              "defaultValue": "GlobalStandard",
+              "metadata": {
+                "description": "Flash deployment SKU (GlobalStandard for serverless MaaS)."
+              }
+            },
+            "flashCapacity": {
+              "type": "int",
+              "defaultValue": 500,
+              "metadata": {
+                "description": "Flash deployment capacity (in thousands of TPM)."
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.CognitiveServices/accounts",
+              "apiVersion": "2024-10-01",
+              "name": "[parameters('name')]",
+              "location": "[parameters('location')]",
+              "tags": "[union(parameters('tags'), createObject('purpose', 'dev-tooling'))]",
+              "kind": "AIServices",
+              "sku": {
+                "name": "[parameters('skuName')]"
+              },
+              "properties": {
+                "customSubDomainName": "[parameters('name')]",
+                "publicNetworkAccess": "Enabled",
+                "disableLocalAuth": false
+              }
+            },
+            {
+              "type": "Microsoft.CognitiveServices/accounts/deployments",
+              "apiVersion": "2024-10-01",
+              "name": "[format('{0}/{1}', parameters('name'), parameters('flashDeploymentName'))]",
+              "properties": {
+                "model": {
+                  "format": "DeepSeek",
+                  "name": "[parameters('flashModelName')]",
+                  "version": "[parameters('flashModelVersion')]"
+                },
+                "raiPolicyName": "Microsoft.Default"
+              },
+              "sku": {
+                "name": "[parameters('flashSkuName')]",
+                "capacity": "[parameters('flashCapacity')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "endpoint": {
+              "type": "string",
+              "metadata": {
+                "description": "The dev-tooling AIServices endpoint URL."
+              },
+              "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', parameters('name')), '2024-10-01').endpoint]"
+            },
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "The name of the dev-tooling AIServices resource."
+              },
+              "value": "[parameters('name')]"
+            },
+            "accountId": {
+              "type": "string",
+              "metadata": {
+                "description": "The resource ID of the dev-tooling AIServices resource."
+              },
+              "value": "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]"
+            },
+            "primaryKey": {
+              "type": "string",
+              "metadata": {
+                "description": "Primary API key of the dev-tooling AIServices account."
+              },
+              "value": "[listKeys(resourceId('Microsoft.CognitiveServices/accounts', parameters('name')), '2024-10-01').key1]"
+            },
+            "flashDeploymentName": {
+              "type": "string",
+              "metadata": {
+                "description": "Flash deployment name."
+              },
+              "value": "[parameters('flashDeploymentName')]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
       "name": "storage",
       "properties": {
         "expressionEvaluationOptions": {
@@ -842,7 +1028,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "15501287807204351975"
+              "templateHash": "2748820004337217193"
             }
           },
           "parameters": {
@@ -997,6 +1183,20 @@
             {
               "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
               "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'deleted')]",
+              "properties": {
+                "publicAccess": "None",
+                "metadata": {
+                  "purpose": "Soft-deleted material files and processed JSON, purged after 30 days"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('name'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2023-01-01",
               "name": "[format('{0}/{1}/{2}', parameters('name'), 'default', 'vector-snapshots')]",
               "properties": {
                 "publicAccess": "None",
@@ -1102,6 +1302,28 @@
                           "prefixMatch": [
                             "chat-logs/",
                             "vector-backups/"
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "enabled": true,
+                      "name": "DeleteDeletedMaterialsAfter30Days",
+                      "type": "Lifecycle",
+                      "definition": {
+                        "actions": {
+                          "baseBlob": {
+                            "delete": {
+                              "daysAfterModificationGreaterThan": 30
+                            }
+                          }
+                        },
+                        "filters": {
+                          "blobTypes": [
+                            "blockBlob"
+                          ],
+                          "prefixMatch": [
+                            "deleted/"
                           ]
                         }
                       }
@@ -1437,6 +1659,13 @@
                 "description": "The name of the vector-snapshots container."
               },
               "value": "vector-snapshots"
+            },
+            "deletedContainerName": {
+              "type": "string",
+              "metadata": {
+                "description": "The name of the deleted container."
+              },
+              "value": "deleted"
             },
             "ingestionQueueName": {
               "type": "string",
@@ -1834,6 +2063,13 @@
           "pineconeApiKeySecretName": {
             "value": "[parameters('pineconeApiKeySecretName')]"
           },
+          "pineconeApiKey": {
+            "value": "[parameters('pineconeApiKey')]"
+          },
+          "openAiApiKey": "[if(not(empty(parameters('azureOpenAiApiKey'))), createObject('value', parameters('azureOpenAiApiKey')), createObject('value', reference(resourceId('Microsoft.Resources/deployments', 'openAi'), '2025-04-01').outputs.primaryKey.value))]",
+          "aiFoundryDeepSeekKey": {
+            "value": "[parameters('aiFoundryDeepSeekKey')]"
+          },
           "keyVaultUri": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'keyVault'), '2025-04-01').outputs.keyVaultUri.value]"
           },
@@ -1911,7 +2147,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "11192694630188852539"
+              "templateHash": "17455592475199802458"
             }
           },
           "parameters": {
@@ -2011,6 +2247,27 @@
                 "description": "Key Vault secret name that stores the Pinecone API key."
               }
             },
+            "pineconeApiKey": {
+              "type": "securestring",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Plain Pinecone API key (fallback while Key Vault Secrets User RBAC is pending — same pattern as storage plain connection string). When non-empty, injected as plain value; otherwise uses Key Vault reference."
+              }
+            },
+            "openAiApiKey": {
+              "type": "securestring",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Plain Azure OpenAI API key (fallback while Key Vault RBAC is pending — ea780a0 pattern). When non-empty, injected as plain value; otherwise uses Key Vault reference."
+              }
+            },
+            "aiFoundryDeepSeekKey": {
+              "type": "securestring",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Plain AI Foundry DeepSeek key (fallback while Key Vault RBAC is pending — AIServices-kind rejects MI). When non-empty, injected as plain value; otherwise uses Key Vault reference."
+              }
+            },
             "keyVaultUri": {
               "type": "string",
               "metadata": {
@@ -2021,6 +2278,13 @@
               "type": "string",
               "metadata": {
                 "description": "Resource ID of the Storage account."
+              }
+            },
+            "storageUseKeyVaultRef": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Use the Key Vault reference for storage credentials instead of the deploy-time plain connection string. Defaults to false until UADE grants the Key Vault Secrets User role (RBAC pending). When false, AZURE_STORAGE_CONNECTION_STRING/AZURE_STORAGE_ACCESS_KEY are injected as the plain values built from listKeys, which keeps Table/Blob access working via the account key without requiring the Function App identity to hold storage RBAC."
               }
             },
             "tags": {
@@ -2178,6 +2442,28 @@
           },
           "resources": [
             {
+              "type": "Microsoft.Web/sites/basicPublishingCredentialsPolicies",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}', parameters('functionAppName'), 'scm')]",
+              "properties": {
+                "allow": true
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Web/sites/basicPublishingCredentialsPolicies",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}', parameters('functionAppName'), 'ftp')]",
+              "properties": {
+                "allow": true
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]"
+              ]
+            },
+            {
               "type": "Microsoft.Web/serverfarms",
               "apiVersion": "2023-01-01",
               "name": "[format('{0}-plan', parameters('functionAppName'))]",
@@ -2264,7 +2550,7 @@
                     },
                     {
                       "name": "AZURE_OPENAI_API_KEY",
-                      "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/AZURE-OPENAI-API-KEY/)', parameters('keyVaultUri'))]"
+                      "value": "[if(not(empty(parameters('openAiApiKey'))), parameters('openAiApiKey'), format('@Microsoft.KeyVault(SecretUri={0}secrets/AZURE-OPENAI-API-KEY/)', parameters('keyVaultUri')))]"
                     },
                     {
                       "name": "AZURE_OPENAI_CHAT_DEPLOYMENT",
@@ -2288,7 +2574,7 @@
                     },
                     {
                       "name": "AZURE_STORAGE_CONNECTION_STRING",
-                      "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/AZURE-STORAGE-CONNECTION-STRING/)', parameters('keyVaultUri'))]"
+                      "value": "[if(parameters('storageUseKeyVaultRef'), format('@Microsoft.KeyVault(SecretUri={0}secrets/AZURE-STORAGE-CONNECTION-STRING/)', parameters('keyVaultUri')), format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(parameters('storageAccountId'), '2023-01-01').keys[0].value, environment().suffixes.storage))]"
                     },
                     {
                       "name": "AZURE_STORAGE_ACCOUNT_NAME",
@@ -2328,11 +2614,11 @@
                     },
                     {
                       "name": "PINECONE_API_KEY",
-                      "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/{1}/)', parameters('keyVaultUri'), parameters('pineconeApiKeySecretName'))]"
+                      "value": "[if(not(empty(parameters('pineconeApiKey'))), parameters('pineconeApiKey'), format('@Microsoft.KeyVault(SecretUri={0}secrets/{1}/)', parameters('keyVaultUri'), parameters('pineconeApiKeySecretName')))]"
                     },
                     {
                       "name": "AZURE_STORAGE_ACCESS_KEY",
-                      "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/AZURE-STORAGE-ACCESS-KEY/)', parameters('keyVaultUri'))]"
+                      "value": "[if(parameters('storageUseKeyVaultRef'), format('@Microsoft.KeyVault(SecretUri={0}secrets/AZURE-STORAGE-ACCESS-KEY/)', parameters('keyVaultUri')), listKeys(parameters('storageAccountId'), '2023-01-01').keys[0].value)]"
                     },
                     {
                       "name": "AI_FOUNDRY_DEEPSEEK_ENDPOINT",
@@ -2344,7 +2630,7 @@
                     },
                     {
                       "name": "AI_FOUNDRY_DEEPSEEK_KEY",
-                      "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/AI-FOUNDRY-DEEPSEEK-KEY/)', parameters('keyVaultUri'))]"
+                      "value": "[if(not(empty(parameters('aiFoundryDeepSeekKey'))), parameters('aiFoundryDeepSeekKey'), format('@Microsoft.KeyVault(SecretUri={0}secrets/AI-FOUNDRY-DEEPSEEK-KEY/)', parameters('keyVaultUri')))]"
                     },
                     {
                       "name": "NODE_ENV",
@@ -4068,6 +4354,22 @@
     "AZURE_RESOURCE_GROUP": {
       "type": "string",
       "value": "[resourceGroup().name]"
+    },
+    "DEVTOOLS_AI_ENDPOINT": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'devToolsAi'), '2025-04-01').outputs.endpoint.value]"
+    },
+    "DEVTOOLS_AI_NAME": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'devToolsAi'), '2025-04-01').outputs.name.value]"
+    },
+    "DEVTOOLS_AI_FLASH_DEPLOYMENT": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'devToolsAi'), '2025-04-01').outputs.flashDeploymentName.value]"
+    },
+    "DEVTOOLS_AI_PRIMARY_KEY": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'devToolsAi'), '2025-04-01').outputs.primaryKey.value]"
     }
   }
 }

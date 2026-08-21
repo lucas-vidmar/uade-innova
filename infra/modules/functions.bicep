@@ -52,6 +52,18 @@ param pineconeHost string = ''
 @description('Key Vault secret name that stores the Pinecone API key.')
 param pineconeApiKeySecretName string = 'PINECONE-API-KEY'
 
+@secure()
+@description('Plain Pinecone API key (fallback while Key Vault Secrets User RBAC is pending — same pattern as storage plain connection string). When non-empty, injected as plain value; otherwise uses Key Vault reference.')
+param pineconeApiKey string = ''
+
+@secure()
+@description('Plain Azure OpenAI API key (fallback while Key Vault RBAC is pending — ea780a0 pattern). When non-empty, injected as plain value; otherwise uses Key Vault reference.')
+param openAiApiKey string = ''
+
+@secure()
+@description('Plain AI Foundry DeepSeek key (fallback while Key Vault RBAC is pending — AIServices-kind rejects MI). When non-empty, injected as plain value; otherwise uses Key Vault reference.')
+param aiFoundryDeepSeekKey string = ''
+
 @description('Key Vault URI.')
 param keyVaultUri string
 
@@ -219,15 +231,16 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
           name: 'LOG_LEVEL'
           value: 'info'
         }
-        // Azure OpenAI — API key via Key Vault reference (story 10.13).
-        // The Function identity needs 'Key Vault Secrets User' on the vault (RBAC, UADE).
+        // Azure OpenAI — plain API key while Key Vault Secrets User RBAC is pending (ea780a0, #306).
+        // Uses the deploy-time key (openAiApiKey = openAi.listKeys()) as plain value so embeddings work without KV RBAC.
+        // Falls back to Key Vault reference once UADE grants the role.
         {
           name: 'AZURE_OPENAI_ENDPOINT'
           value: openAiEndpoint
         }
         {
           name: 'AZURE_OPENAI_API_KEY'
-          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/AZURE-OPENAI-API-KEY/)'
+          value: !empty(openAiApiKey) ? openAiApiKey : '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/AZURE-OPENAI-API-KEY/)'
         }
         {
           name: 'AZURE_OPENAI_CHAT_DEPLOYMENT'
@@ -300,7 +313,7 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         }
         {
           name: 'PINECONE_API_KEY'
-          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/${pineconeApiKeySecretName}/)'
+          value: !empty(pineconeApiKey) ? pineconeApiKey : '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/${pineconeApiKeySecretName}/)'
         }
         {
           name: 'AZURE_STORAGE_ACCESS_KEY'
@@ -318,7 +331,7 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         }
         {
           name: 'AI_FOUNDRY_DEEPSEEK_KEY'
-          value: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/AI-FOUNDRY-DEEPSEEK-KEY/)'
+          value: !empty(aiFoundryDeepSeekKey) ? aiFoundryDeepSeekKey : '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/AI-FOUNDRY-DEEPSEEK-KEY/)'
         }
         {
           name: 'NODE_ENV'

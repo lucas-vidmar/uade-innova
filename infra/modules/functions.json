@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.41.2.15936",
-      "templateHash": "8214768065420578375"
+      "templateHash": "17455592475199802458"
     }
   },
   "parameters": {
@@ -103,6 +103,27 @@
       "defaultValue": "PINECONE-API-KEY",
       "metadata": {
         "description": "Key Vault secret name that stores the Pinecone API key."
+      }
+    },
+    "pineconeApiKey": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Plain Pinecone API key (fallback while Key Vault Secrets User RBAC is pending — same pattern as storage plain connection string). When non-empty, injected as plain value; otherwise uses Key Vault reference."
+      }
+    },
+    "openAiApiKey": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Plain Azure OpenAI API key (fallback while Key Vault RBAC is pending — ea780a0 pattern). When non-empty, injected as plain value; otherwise uses Key Vault reference."
+      }
+    },
+    "aiFoundryDeepSeekKey": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Plain AI Foundry DeepSeek key (fallback while Key Vault RBAC is pending — AIServices-kind rejects MI). When non-empty, injected as plain value; otherwise uses Key Vault reference."
       }
     },
     "keyVaultUri": {
@@ -387,7 +408,7 @@
             },
             {
               "name": "AZURE_OPENAI_API_KEY",
-              "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/AZURE-OPENAI-API-KEY/)', parameters('keyVaultUri'))]"
+              "value": "[if(not(empty(parameters('openAiApiKey'))), parameters('openAiApiKey'), format('@Microsoft.KeyVault(SecretUri={0}secrets/AZURE-OPENAI-API-KEY/)', parameters('keyVaultUri')))]"
             },
             {
               "name": "AZURE_OPENAI_CHAT_DEPLOYMENT",
@@ -451,7 +472,7 @@
             },
             {
               "name": "PINECONE_API_KEY",
-              "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/{1}/)', parameters('keyVaultUri'), parameters('pineconeApiKeySecretName'))]"
+              "value": "[if(not(empty(parameters('pineconeApiKey'))), parameters('pineconeApiKey'), format('@Microsoft.KeyVault(SecretUri={0}secrets/{1}/)', parameters('keyVaultUri'), parameters('pineconeApiKeySecretName')))]"
             },
             {
               "name": "AZURE_STORAGE_ACCESS_KEY",
@@ -467,7 +488,7 @@
             },
             {
               "name": "AI_FOUNDRY_DEEPSEEK_KEY",
-              "value": "[format('@Microsoft.KeyVault(SecretUri={0}secrets/AI-FOUNDRY-DEEPSEEK-KEY/)', parameters('keyVaultUri'))]"
+              "value": "[if(not(empty(parameters('aiFoundryDeepSeekKey'))), parameters('aiFoundryDeepSeekKey'), format('@Microsoft.KeyVault(SecretUri={0}secrets/AI-FOUNDRY-DEEPSEEK-KEY/)', parameters('keyVaultUri')))]"
             },
             {
               "name": "NODE_ENV",

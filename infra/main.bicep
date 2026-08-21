@@ -287,6 +287,9 @@ module functions './modules/functions.bicep' = {
     pineconeEnvironment: pineconeEnvironment
     pineconeHost: pineconeHost
     pineconeApiKeySecretName: pineconeApiKeySecretName
+    pineconeApiKey: pineconeApiKey
+    openAiApiKey: !empty(azureOpenAiApiKey) ? azureOpenAiApiKey : openAi.outputs.primaryKey
+    aiFoundryDeepSeekKey: aiFoundryDeepSeekKey
     keyVaultUri: keyVault.outputs.keyVaultUri
     classMaterialsContainerName: classMaterialsContainerName
     materialsTableName: storage.outputs.materialsTableName
