@@ -18,8 +18,49 @@ const ERROR_MESSAGES = {
   PARSING: 'Hay un problema con el formato de los materiales de la clase. El docente ya fue notificado.',
   LLM: 'El asistente no pudo generar una respuesta en este momento. Esperá unos segundos y volvé a intentar.',
   RATE_LIMIT: 'Se alcanzó el límite de consultas. Esperá unos segundos y volvé a intentar.',
+  VALIDATION: 'Revisá tu consulta e intentá de nuevo. Faltan datos o el formato no es válido.',
+  AUTH: 'No tenés permiso para consultar esta materia. Verificá tu inscripción o contactá a administración.',
+  STORAGE: 'No se pudo acceder a los materiales. Probá de nuevo en unos minutos.',
+  NOT_FOUND: 'No se encontró el recurso solicitado. Verificá las clases seleccionadas.',
+  INTERNAL: 'Ocurrió un error interno. Probá de nuevo en unos minutos.',
   UNKNOWN: 'Ocurrió un error inesperado. Por favor, intentá nuevamente.',
 };
+
+/**
+ * Resuelve un mensaje accionable a partir de la categoría/código/status
+ * del backend o de un error de red. Centraliza el mapping para SSE
+ * `event: error` y `catch` de `ragQueryStream` (evita el fallback genérico).
+ */
+function resolveChatErrorMessage(errOrData) {
+  if (!errOrData) return ERROR_MESSAGES.UNKNOWN;
+  const rawCategory = errOrData?.errorCategory || errOrData?.category;
+  if (rawCategory && ERROR_MESSAGES[rawCategory]) return ERROR_MESSAGES[rawCategory];
+
+  const code = String(errOrData?.code || errOrData?.error || '').toUpperCase();
+  const msg = String(errOrData?.message || errOrData?.error || '').toUpperCase();
+  const combined = `${code} ${msg}`;
+
+  if (combined.includes('ENROLLMENT')) return ERROR_MESSAGES.AUTH;
+  if (combined.includes('CONSENT')) return 'Debés aceptar los términos de uso antes de usar el chat.';
+  if (combined.includes('VALIDATION') || combined.includes('MISSING_FIELDS') || combined.includes('INVALID_JSON')) return ERROR_MESSAGES.VALIDATION;
+  if (combined.includes('FRONTDOOR') || combined.includes('FORBIDDEN')) return ERROR_MESSAGES.AUTH;
+
+  const status = Number(errOrData?.status);
+  if (Number.isFinite(status)) {
+    if (status === 400) return ERROR_MESSAGES.VALIDATION;
+    if (status === 401 || status === 403) return ERROR_MESSAGES.AUTH;
+    if (status === 404) return ERROR_MESSAGES.NOT_FOUND;
+    if (status === 429) return ERROR_MESSAGES.RATE_LIMIT;
+    if (status >= 500) return ERROR_MESSAGES.INTERNAL;
+  }
+
+  const rawMsg = String(errOrData?.message || '');
+  if (/failed to fetch|networkerror|load failed|aborted/i.test(rawMsg)) {
+    return 'No se pudo conectar con el asistente. Verificá tu conexión e intentá de nuevo.';
+  }
+
+  return ERROR_MESSAGES.UNKNOWN;
+}
 
 export function createChatWidget({ classes = [], subjectId = '', sessionId = null, initialMessages = [], highlightMessageId = null, transcriptFocus: initialTranscriptFocus = null, initialClassIds = [], preset = null, onNewChat, onMessageSent, onConsentAccepted }) {
   const user = auth.getUser();
@@ -440,12 +481,16 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
             }
           }
         } else if (type === 'error') {
-          const category = data?.errorCategory;
-          assistantMsg.content = ERROR_MESSAGES[category] || ERROR_MESSAGES.UNKNOWN;
+          const resolved = resolveChatErrorMessage({ ...data, status: data?.status });
+          assistantMsg.content = resolved;
+          // Preserve raw category for cooldown
+          const category = data?.errorCategory || data?.category;
           assistantMsg.streaming = false;
           const bubbleEl = msgEl.querySelector('.chat-bubble-assistant');
           if (bubbleEl) bubbleEl.textContent = assistantMsg.content;
           if (category === 'RATE_LIMIT' && data.retryAfterSec) {
+            startCooldown(data.retryAfterSec);
+          } else if (resolved === ERROR_MESSAGES.RATE_LIMIT && data?.retryAfterSec) {
             startCooldown(data.retryAfterSec);
           }
         } else if (type === 'delta') {
@@ -512,18 +557,20 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         }
       });
     } catch (err) {
-      if (err?.message?.includes('ENROLLMENT_REQUIRED') || err?.status === 403) {
-        assistantMsg.content = 'No estás matriculado en esta materia. Contactá a administración.';
+      // Use unified resolver — covers ENROLLMENT, CONSENT, VALIDATION, AUTH, network, etc.
+      // Keep early ENROLLMENT guard for exact legacy string but prefer resolver.
+      if (err?.message?.includes('ENROLLMENT_REQUIRED') || (err?.code === 'ENROLLMENT_REQUIRED')) {
+        assistantMsg.content = ERROR_MESSAGES.AUTH;
         assistantMsg.streaming = false;
         render();
         if (onMessageSent) onMessageSent({ sessionId: currentSessionId });
         return;
       }
-      const category = err?.errorCategory;
-      assistantMsg.content = ERROR_MESSAGES[category] || ERROR_MESSAGES.UNKNOWN;
+      assistantMsg.content = resolveChatErrorMessage(err);
       assistantMsg.streaming = false;
       render();
-      if (category === 'RATE_LIMIT' && err.retryAfterSec) {
+      const cat = err?.errorCategory || err?.category;
+      if ((cat === 'RATE_LIMIT' || assistantMsg.content === ERROR_MESSAGES.RATE_LIMIT) && err?.retryAfterSec) {
         startCooldown(err.retryAfterSec);
       }
       if (onMessageSent) onMessageSent({ sessionId: currentSessionId });

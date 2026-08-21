@@ -1,5 +1,5 @@
 import {
-    BASE_URL, apiFetch, fetchWithTimeout, delay
+    BASE_URL, apiFetch, fetchWithTimeout, delay, parseApiError
 } from './core.js';
 
 const parseRetryAfter = (res, fallback = 60) => {
@@ -52,22 +52,19 @@ export async function ragQueryStream({ question, classIds, subjectId, sessionId,
     }
 
     if (!response.ok) {
-        let errorMessage = `No se pudo iniciar el stream de respuesta`;
-        let errorCategory = null;
-        try {
-            const errorData = await response.json();
-            if (errorData && errorData.error) {
-                errorMessage = errorData.error;
-            }
-            if (errorData && errorData.errorCategory) {
-                errorCategory = errorData.errorCategory;
-            }
-        } catch (e) {
-            errorMessage = response.statusText || errorMessage;
+        // Use shared parser for HTML/JSON + status-aware fallback (fixes generic UNKNOWN)
+        const apiError = await parseApiError(response, `No se pudo iniciar el stream de respuesta`);
+        if (!apiError.errorCategory) {
+            if (response.status === 400) apiError.errorCategory = 'VALIDATION';
+            else if (response.status === 401 || response.status === 403) apiError.errorCategory = 'AUTH';
+            else if (response.status === 404) apiError.errorCategory = 'NOT_FOUND';
+            else if (response.status === 429) apiError.errorCategory = 'RATE_LIMIT';
+            else if (response.status >= 500) apiError.errorCategory = 'INTERNAL';
         }
-        const apiError = new Error(`Error ${response.status}: ${errorMessage}`);
-        apiError.status = response.status;
-        if (errorCategory) apiError.errorCategory = errorCategory;
+        if (response.status === 429) {
+            apiError.retryAfterSec = parseRetryAfter(response);
+            apiError.errorCategory = 'RATE_LIMIT';
+        }
         throw apiError;
     }
 
