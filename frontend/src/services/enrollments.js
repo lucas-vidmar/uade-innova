@@ -45,9 +45,7 @@ export const enrollments = {
     try {
       const data = await api.getEnrollments(uid);
       const enrollmentsList = Array.isArray(data) ? data : (data?.data || []);
-      if (enrollmentsList.length > 0) {
-        setCachedEnrollments(uid, enrollmentsList);
-      }
+      setCachedEnrollments(uid, enrollmentsList);
       return enrollmentsList;
     } catch (err) {
       console.error('[Enrollments] fetchMyEnrollments failed:', err);

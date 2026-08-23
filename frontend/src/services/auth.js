@@ -420,10 +420,13 @@ export const auth = {
         const enrollmentData = enrollmentService.getCachedEnrollments();
 
         if (!enrollmentData || enrollmentData.length === 0) {
-            return user.subjects || [];
+            // Fail-closed for scoped roles: without enrollments a student/teacher sees nothing,
+            // director/admin see all. Prevents the leak where a loading/failed fetch showed all 4 subjects.
+            if (role === 'director' || role === 'admin') return user.subjects || [];
+            return [];
         }
 
-        if (role === 'director') {
+        if (role === 'director' || role === 'admin') {
             return user.subjects || [];
         }
 
