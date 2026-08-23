@@ -36,6 +36,7 @@ const NAV = {
     { id: 'director-interventions', icon: 'alert', label: 'Intervenciones', path: '#/director/interventions' },
     { id: 'director-classes', icon: 'stack', label: 'Gestión de Clases', path: '#/director/classes' },
     { id: 'director-subjects', icon: 'settings', label: 'Gestión de Materias', path: '#/director/subjects' },
+    { id: 'director-students', icon: 'users', label: 'Alumnos', path: '#/director/students' },
   ],
   admin: [
     { id: 'admin-dashboard', icon: 'chart', label: 'Panel Técnico', path: '#/admin/dashboard' },

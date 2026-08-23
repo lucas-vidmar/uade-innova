@@ -26,7 +26,6 @@ export async function renderSubjectManagement(container) {
     let currentPage = 1;
     const PAGE_SIZE = 8;
     let activeProfessorPickerSubjectId = null;
-    let activeStudentPickerSubjectId = null;
     let columnFilters = {
         id: '',
         name: '',
@@ -77,11 +76,6 @@ export async function renderSubjectManagement(container) {
     const getTeacherUsers = () => users.filter((user) => {
         const role = String(user.role || '').toLowerCase();
         return role === 'teacher' || role === 'professor' || role === 'docente';
-    });
-
-    const getStudentUsers = () => users.filter((user) => {
-        const role = String(user.role || '').toLowerCase();
-        return role === 'student' || role === 'alumno';
     });
 
     const getEnrolledStudentIds = (subject) => {
@@ -163,26 +157,8 @@ export async function renderSubjectManagement(container) {
         };
     };
 
-    const saveStudentAssignments = async (subjectId, studentId, assign) => {
-        if (!subjectId || !studentId) return;
-        const student = getStudentUsers().find((u) => u.id === studentId);
-        if (assign) {
-            await api.createEnrollment(subjectId, studentId, 'student', 'active');
-            enrollmentService.clearCache(studentId);
-        } else {
-            await api.deleteEnrollment(subjectId, studentId);
-            enrollmentService.clearCache(studentId);
-        }
-        // Refresh the in-memory map without a full page re-render.
-        const enrollments = safeArray(await api.getEnrollmentsBySubject(subjectId));
-        subjectEnrollmentMap = {
-            ...subjectEnrollmentMap,
-            [subjectId]: enrollments,
-        };
-        toast('success', assign ? 'Alumno asignado' : 'Alumno desasignado',
-            assign ? `${student?.name || studentId} fue asignado a la materia.` : `${student?.name || studentId} fue desasignado de la materia.`);
-        render();
-    };
+    // La gestión de alumnos vive en #/director/students (StudentManagement.js);
+    // acá solo se muestra el conteo y el acceso directo por materia.
 
     const generateSubjectId = (name) => String(name || '')
         .toLowerCase()
@@ -483,62 +459,13 @@ export async function renderSubjectManagement(container) {
                                                     </div>
                                                 </td>
                                                 <td>
-                                                    <div class="subject-prof-pills-wrap">
-                                                        <div class="subject-prof-pills">
-                                                            ${(() => {
-                                                                const studentIds = getEnrolledStudentIds(subject);
-                                                                const assignedStudents = studentIds
-                                                                    .map((sid) => getStudentUsers().find((s) => s.id === sid || s.userId === sid))
-                                                                    .filter(Boolean);
-                                                                const pills = assignedStudents.map((s) => {
-                                                                    const sid = s.id || s.userId;
-                                                                    const displayName = String(s.name || s.surname ? `${s.name} ${s.surname || ''}`.trim() : s.email || '').trim() || 'Alumno';
-                                                                    return `
-                                                                    <span class="subject-prof-pill" style="max-width:100%;word-break:break-word;">
-                                                                        <span class="subject-prof-pill-name">${escapeHtml(displayName)}</span>
-                                                                        <button class="subject-student-remove" data-subject-id="${escapeHtml(subject.id)}" data-student-id="${escapeHtml(sid)}" title="Quitar alumno">×</button>
-                                                                    </span>
-                                                                `;
-                                                                });
-                                                                return pills.length > 0
-                                                                    ? pills.join('')
-                                                                    : '<span class="subject-prof-empty">Sin alumnos</span>';
-                                                            })()}
-
-                                                            <button class="subject-student-add" data-subject-id="${escapeHtml(subject.id)}" title="Agregar alumno">+</button>
-                                                        </div>
-
-                                                        ${activeStudentPickerSubjectId === subject.id ? `
-                                                            <div class="subject-prof-picker">
-                                                                <div class="subject-prof-picker-card">
-                                                                    <div class="subject-prof-picker-title">Agregar alumno</div>
-                                                                    <div class="subject-prof-picker-list">
-                                                                        ${(() => {
-                                                                            const studentIds = getEnrolledStudentIds(subject);
-                                                                            const availableStudents = getStudentUsers().filter((s) => {
-                                                                                const sid = s.id || s.userId;
-                                                                                return !studentIds.includes(sid);
-                                                                            });
-                                                                            if (availableStudents.length === 0) {
-                                                                                return '<div class="subject-prof-picker-empty">No hay más alumnos disponibles</div>';
-                                                                            }
-                                                                            return availableStudents.map((s) => {
-                                                                                const sid = s.id || s.userId;
-                                                                                const displayName = String(s.name || s.surname ? `${s.name} ${s.surname || ''}`.trim() : s.email || '').trim() || 'Alumno';
-                                                                                return `
-                                                                                <button class="subject-student-picker-item" data-subject-id="${escapeHtml(subject.id)}" data-student-id="${escapeHtml(sid)}">
-                                                                                    ${escapeHtml(displayName)}
-                                                                                </button>
-                                                                            `;
-                                                                            }).join('');
-                                                                        })()}
-                                                                    </div>
-                                                                    <div class="subject-prof-picker-actions">
-                                                                        <button class="btn btn-ghost btn-sm subject-student-picker-close" data-subject-id="${escapeHtml(subject.id)}">Cerrar</button>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        ` : ''}
+                                                    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+                                                        <span class="subject-enrolled-count" title="Alumnos inscriptos">${getEnrolledStudentIds(subject).length}</span>
+                                                        <a
+                                                            class="btn btn-ghost btn-sm subject-students-link"
+                                                            href="#/director/students?subjectId=${encodeURIComponent(subject.id)}"
+                                                            title="Gestionar alumnos de esta materia"
+                                                        >Gestionar</a>
                                                     </div>
                                                 </td>
                                                 <td style="text-align:center;">
@@ -692,48 +619,9 @@ export async function renderSubjectManagement(container) {
             });
         });
 
-        container.querySelectorAll('.subject-student-add').forEach((btn) => {
-            btn.addEventListener('click', () => {
-                const subjectId = btn.getAttribute('data-subject-id');
-                if (!subjectId) return;
-                activeStudentPickerSubjectId = activeStudentPickerSubjectId === subjectId ? null : subjectId;
-                render();
-            });
-        });
-
-        container.querySelectorAll('.subject-student-picker-close').forEach((btn) => {
-            btn.addEventListener('click', () => {
-                activeStudentPickerSubjectId = null;
-                render();
-            });
-        });
-
-        container.querySelectorAll('.subject-student-picker-item').forEach((btn) => {
-            btn.addEventListener('click', async () => {
-                const subjectId = btn.getAttribute('data-subject-id');
-                const studentId = btn.getAttribute('data-student-id');
-                if (!subjectId || !studentId) return;
-                try {
-                    await saveStudentAssignments(subjectId, studentId, true);
-                    activeStudentPickerSubjectId = null;
-                } catch (err) {
-                    toast('error', 'Error', err?.message || 'No se pudo asignar el alumno.');
-                }
-            });
-        });
-
-        container.querySelectorAll('.subject-student-remove').forEach((btn) => {
-            btn.addEventListener('click', async () => {
-                const subjectId = btn.getAttribute('data-subject-id');
-                const studentId = btn.getAttribute('data-student-id');
-                if (!subjectId || !studentId) return;
-                try {
-                    await saveStudentAssignments(subjectId, studentId, false);
-                } catch (err) {
-                    toast('error', 'Error', err?.message || 'No se pudo desasignar el alumno.');
-                }
-            });
-        });
+        // La gestión de alumnos vive en su propio tab (#/director/students).
+        // Los accesos directos de la columna "Alumnos" son <a href> y navegan
+        // por el hash router; no requieren handlers adicionales.
 
         if (pendingHighlight) {
             const target = container.querySelector(`.inline-edit-subject[data-subject-id="${pendingHighlight.subjectId}"][data-field="${pendingHighlight.field}"]`);
