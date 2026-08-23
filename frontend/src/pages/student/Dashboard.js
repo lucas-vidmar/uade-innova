@@ -371,7 +371,7 @@ export async function renderStudentDashboard(container) {
     const visibleCount = Math.min((historyPage + 1) * HISTORY_PAGE_SIZE, sessionSummariesCache.length);
     const visibleItems = sessionSummariesCache.slice(0, visibleCount);
     if (visibleItems.length === 0) {
-      return '<li class="flex flex-col items-center py-8 px-6 text-center"><div style="width:120px;height:120px;" class="bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('chat', 20) + '</div><p class="text-xs font-medium text-text-primary mb-1">Sin actividad reciente</p><p class="text-[10px] text-text-muted">Tus consultas en el chat aparecerán acá</p></li>';
+      return '<li class="flex flex-col items-center py-8 px-6 text-center"><div style="width:40px;height:40px;" class="bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('chat', 14) + '</div><p class="text-xs font-medium text-text-primary">Sin actividad reciente</p></li>';
     }
     return visibleItems.map(c => {
       const dateStr = new Date(c.lastAt || Date.now()).toLocaleDateString('es-AR', { day: 'numeric', month: 'numeric' });
@@ -574,7 +574,7 @@ export async function renderStudentDashboard(container) {
               <span class="chat-history-title" style="overflow:hidden;font-size:13px;font-weight:500;color:var(--color-text-primary);"><span class="title-scroll" style="display:inline-block;white-space:nowrap;">${escapeHtml(t.title)}</span></span>
               <span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 8px;flex-shrink:0;color:${pillColor};background:${pillBg};border:1px solid ${pillBorder};">${pillLabel}</span>
             </li>`;
-          }).join('') : '<li class="flex flex-col items-center py-8 px-6 text-center"><div style="width:60px;height:60px;" class="bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('tasks', 16) + '</div><p class="text-xs font-medium text-text-primary mb-1">Todo al día</p><p class="text-[10px] text-text-muted">No tenés tareas pendientes</p></li>'}
+          }).join('') : '<li class="flex flex-col items-center py-8 px-6 text-center"><div style="width:40px;height:40px;" class="bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('tasks', 14) + '</div><p class="text-xs font-medium text-text-primary">Todo al día</p></li>'}
         </ul>
       </div>
     `;
@@ -607,7 +607,7 @@ export async function renderStudentDashboard(container) {
     const visibleCount = Math.min((classesPage + 1) * CLASSES_PAGE_SIZE, classesCache.length);
     const visibleItems = classesCache.slice(0, visibleCount);
     if (visibleItems.length === 0) {
-      return '<li class="flex flex-col items-center py-8 px-6 text-center"><div style="width:60px;height:60px;" class="bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('calendar', 16) + '</div><p class="text-xs font-medium text-text-primary mb-1">No hay clases programadas</p><p class="text-[10px] text-text-muted">Las clases aparecerán acá cuando el docente las publique</p></li>';
+      return '<li class="flex flex-col items-center py-8 px-6 text-center"><div style="width:40px;height:40px;" class="bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('calendar', 14) + '</div><p class="text-xs font-medium text-text-primary">No hay clases programadas</p></li>';
     }
     const localViews = api.getLocalClassViews();
     return visibleItems.map(c => {
