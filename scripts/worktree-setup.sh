@@ -7,20 +7,23 @@
 # Corre automáticamente al crear cualquier worktree nuevo (setupRunPolicy:
 # run-by-default), en paralelo con el agente (--agent opencode/codex).
 #
-# Hace:
-#   1. Abre la página de credenciales en el browser embebido de Orca,
-#      SCOPED AL WORKTREE donde corre el script (cada workspace ve su propio
-#      tab; los tabs de un worktree no se ven desde otro workspace).
-#      - Si el worktree ya tiene tab → `goto` lo navega/enfoca (sin duplicar).
-#      - Si no tiene ninguno (`browser_no_tab`) → `tab create` primero.
-#   2. Deja comment en ese mismo worktree con login + credenciales.
+# Hace (todo scoped AL WORKTREE donde corre el script — cada workspace ve sus
+# propios tabs; los tabs de un worktree no se ven desde otro workspace):
+#   1. Abre UNA TAB con las credenciales de prueba.
+#   2. Abre OTRA TAB con la SWA de producción (login).
+#      - Si ya existe una tab con esa URL en este worktree → solo la enfoca
+#        (sin duplicar ni pisar las demás).
+#      - Si no existe → `tab create` scoped al worktree (nunca `goto` sobre
+#        la tab activa: pisaría la anterior).
+#   3. Deja comment en ese mismo worktree con login + credenciales.
 #
 # Es best-effort: nunca debe fallar el setup del worktree por acá.
 # =============================================================================
 set -uo pipefail
 
 CREDENCIAS_URL="https://share.onorca.dev/a/Z7HBFVzhGN7Z"
-LOGIN_URL="https://agreeable-beach-002ff0c0f.6.azurestaticapps.net/#/login"
+PROD_URL="https://agreeable-beach-002ff0c0f.6.azurestaticapps.net/#/login"
+LOGIN_URL="$PROD_URL"
 
 ORCA_BIN="$(command -v orca || true)"
 if [[ -z "$ORCA_BIN" ]]; then
@@ -37,39 +40,54 @@ try:
 except Exception:
     print('')" 2>/dev/null || true)"
 
-open_credentials_in_worktree() {
+# open_url_in_worktree <URL>
+#   Dedupe por (worktreeId, url-prefix): si ya hay tab → enfocar con --page;
+#   si no → `tab create` nueva scoped. Nunca navega la tab activa de otra URL.
+open_url_in_worktree() {
+  local URL="$1"
+
   # Sin worktree resuelto: fallback global (mejor que nada).
   if [[ -z "$WT_ID" ]]; then
-    "$ORCA_BIN" goto --url "$CREDENCIAS_URL" --json >/dev/null 2>&1
+    "$ORCA_BIN" goto --url "$URL" --json >/dev/null 2>&1
     return $?
   fi
 
-  local OUT CODE
-  OUT="$("$ORCA_BIN" goto --url "$CREDENCIAS_URL" --worktree "id:$WT_ID" --json 2>/dev/null)"
-  CODE=$?
-  if [[ $CODE -eq 0 ]]; then
-    return 0
-  fi
+  local PAGE_ID
+  PAGE_ID="$("$ORCA_BIN" tab list --json 2>/dev/null | WT_ID="$WT_ID" URL="$URL" python3 -c "
+import json,sys,os
+try:
+    d=json.load(sys.stdin)
+    wt=os.environ['WT_ID']; url=os.environ['URL']
+    hit=[t for t in d.get('result',{}).get('tabs',[])
+         if t.get('worktreeId')==wt and (t.get('url') or '').startswith(url)]
+    print(hit[0].get('browserPageId','') if hit else '')
+except Exception:
+    print('')" 2>/dev/null || true)"
 
-  # Sin tabs en este worktree todavía → crear uno scoped y navegarlo.
-  if printf '%s' "$OUT" | grep -q 'browser_no_tab'; then
-    "$ORCA_BIN" tab create --url "$CREDENCIAS_URL" --worktree "id:$WT_ID" --json >/dev/null 2>&1
+  if [[ -n "$PAGE_ID" ]]; then
+    "$ORCA_BIN" goto --url "$URL" --page "$PAGE_ID" --json >/dev/null 2>&1
     return $?
   fi
 
-  return "$CODE"
+  "$ORCA_BIN" tab create --url "$URL" --worktree "id:$WT_ID" --json >/dev/null 2>&1
 }
 
-echo "[worktree-setup] abriendo credenciales en el browser de Orca (worktree: ${WT_ID##*::}..."
-open_credentials_in_worktree \
+echo "[worktree-setup] abriendo tabs en el browser de Orca (worktree: ${WT_ID##*::}..."
+
+echo "  → credenciales"
+open_url_in_worktree "$CREDENCIAS_URL" \
   || echo "[worktree-setup] aviso: no se pudo abrir $CREDENCIAS_URL"
+
+echo "  → producción (SWA)"
+open_url_in_worktree "$PROD_URL" \
+  || echo "[worktree-setup] aviso: no se pudo abrir $PROD_URL"
 
 # Comentar EL MISMO worktree para trazabilidad (best-effort, no bloquea).
 if [[ -n "$WT_ID" ]]; then
   "$ORCA_BIN" worktree set --worktree "id:$WT_ID" \
-    --comment "bootstrap ok — credenciales: $CREDENCIAS_URL · login: $LOGIN_URL" \
+    --comment "bootstrap ok — prod: $PROD_URL · credenciales: $CREDENCIAS_URL" \
     --json >/dev/null 2>&1 || true
 fi
 
-echo "[worktree-setup] listo. Login: $LOGIN_URL · Credenciales abiertas para este workspace."
+echo "[worktree-setup] listo. Producción y credenciales abiertas para este workspace."
 exit 0
