@@ -124,3 +124,4 @@ _bmad/
 # but keep local-only artifacts (agents, commands, node_modules) out of the repo.
 .opencode/*
 !.opencode/opencode.json
+backend/seed-credentials.local.md
