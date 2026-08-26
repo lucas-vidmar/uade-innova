@@ -12,6 +12,9 @@ import 'katex/dist/katex.min.css';
 const FOLLOW_UP_HISTORY_WINDOW_SIZE = 4;
 const CLASS_SELECTION_WARN_THRESHOLD = 5;
 
+const ICON_REPORT_ISSUE = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+const ICON_REPORT_MISSING_KEYWORD = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>';
+
 const ERROR_MESSAGES = {
   RETRIEVAL_FAILURE: 'No se pudieron recuperar los materiales de referencia. Probá consultando de nuevo en unos minutos.',
   SAFETY: 'No se pudo procesar la consulta. Reformulá la pregunta e intentá de nuevo.',
@@ -234,11 +237,11 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.53l1.6-7A2 2 0 0 1 5.77 3H17a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-4l-.5 1c-.9 1.8-1.8 3-3.5 3-1.1 0-2-1.1-2-2.5 0-1 .3-1.5 1-2.38Z"/></svg>
                 </button>
               </div>
-              <button class="report-issue-btn ${msg.issueReported ? 'active' : ''}" data-message-id="${msg.id || ''}" title="Reportar problema" ${msg.issueReported ? 'disabled' : ''}>
-                ${msg.issueReported ? '✅ Reportado' : 'Reportar respuesta incorrecta'}
+              <button class="report-issue-btn ${msg.issueReported ? 'active' : ''}" data-message-id="${msg.id || ''}" title="Usalo si la respuesta es incorrecta o contradice lo visto en clase" aria-label="Reportar respuesta incorrecta" ${msg.issueReported ? 'disabled' : ''}>
+                ${msg.issueReported ? '✅ Reportado' : `${ICON_REPORT_ISSUE}<span>Respuesta incorrecta</span>`}
               </button>
-              <button class="report-missing-keyword-btn ${msg.missingKeywordReported ? 'active' : ''}" data-message-id="${msg.id || ''}" title="Reportar concepto faltante" ${msg.missingKeywordReported ? 'disabled' : ''}>
-                ${msg.missingKeywordReported ? '✅ Concepto reportado' : 'Reportar concepto faltante'}
+              <button class="report-missing-keyword-btn ${msg.missingKeywordReported ? 'active' : ''}" data-message-id="${msg.id || ''}" title="Usalo si esperabas encontrar un tema que no aparece en los materiales" aria-label="Reportar concepto faltante" ${msg.missingKeywordReported ? 'disabled' : ''}>
+                ${msg.missingKeywordReported ? '✅ Concepto reportado' : `${ICON_REPORT_MISSING_KEYWORD}<span>Falta un concepto</span>`}
               </button>
               ${isLowConfidence(msg.content) && !msg.missingInfoReported ? `
               <button class="report-missing-info-btn" data-message-id="${msg.id || ''}" title="Reportar información faltante">
@@ -453,8 +456,8 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.53l1.6-7A2 2 0 0 1 5.77 3H17a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-4l-.5 1c-.9 1.8-1.8 3-3.5 3-1.1 0-2-1.1-2-2.5 0-1 .3-1.5 1-2.38Z"/></svg>
                   </button>
                 </div>
-                <button class="report-issue-btn" data-message-id="${assistantMsg.id}" title="Reportar problema">Reportar respuesta incorrecta</button>
-                <button class="report-missing-keyword-btn" data-message-id="${assistantMsg.id}" title="Reportar concepto faltante">Reportar concepto faltante</button>
+                <button class="report-issue-btn" data-message-id="${assistantMsg.id}" title="Usalo si la respuesta es incorrecta o contradice lo visto en clase" aria-label="Reportar respuesta incorrecta">${ICON_REPORT_ISSUE}<span>Respuesta incorrecta</span></button>
+                <button class="report-missing-keyword-btn" data-message-id="${assistantMsg.id}" title="Usalo si esperabas encontrar un tema que no aparece en los materiales" aria-label="Reportar concepto faltante">${ICON_REPORT_MISSING_KEYWORD}<span>Falta un concepto</span></button>
               </div>
             `;
             bindFeedbackEvents(footerEl);

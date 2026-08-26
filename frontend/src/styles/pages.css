@@ -3223,6 +3223,13 @@
     text-decoration: underline;
     text-underline-offset: 2px;
     text-decoration-color: transparent;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.report-issue-btn svg {
+    flex-shrink: 0;
 }
 
 .report-issue-btn:hover {
@@ -3252,6 +3259,13 @@
     text-decoration: underline;
     text-underline-offset: 2px;
     text-decoration-color: transparent;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.report-missing-keyword-btn svg {
+    flex-shrink: 0;
 }
 
 .report-missing-keyword-btn:hover {

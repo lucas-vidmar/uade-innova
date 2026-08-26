@@ -20,6 +20,6 @@ app.http('cors-preflight', {
   handler: async (request) => {
     const origin = request.headers.get('origin') || '';
     const headers = buildCorsHeaders(origin);
-    return { status: 204, headers, body: '' };
+    return { status: 204, headers };
   }
 });
