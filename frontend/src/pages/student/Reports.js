@@ -94,7 +94,7 @@ export async function renderStudentReports(container) {
           <span class="badge badge-neutral">${reports.length}</span>
         </div>
         ${reports.length === 0
-          ? '<div class="empty-state" style="padding:32px">No enviaste reportes todavía. Si una respuesta del asistente no es correcta, podés reportarla usando el botón "Reportar respuesta incorrecta" en el chat.</div>'
+          ? '<div class="empty-state" style="padding:32px">No enviaste reportes todavía. Si una respuesta del asistente no es correcta, podés reportarla usando el botón "Respuesta incorrecta" debajo de la respuesta en el chat.</div>'
           : `<div class="class-list">
               ${reports.map(r => {
                 const date = r.createdAt
