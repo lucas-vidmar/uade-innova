@@ -67,7 +67,7 @@ function resolveChatErrorMessage(errOrData) {
 
 export function createChatWidget({ classes = [], subjectId = '', sessionId = null, initialMessages = [], highlightMessageId = null, transcriptFocus: initialTranscriptFocus = null, initialClassIds = [], preset = null, onNewChat, onMessageSent, onConsentAccepted }) {
   const user = auth.getUser();
-  const hasEnrollment = auth.isEnrolled(subjectId) !== false;
+  const hasEnrollment = auth.isEnrolled(subjectId) === true;
   let selectedClassIds = [...initialClassIds];
   let messages = [...initialMessages];
   let currentSessionId = sessionId || crypto.randomUUID();
