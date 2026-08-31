@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Class View Tracking', () => {
 
-  test('student dashboard shows class badges (Nuevo/Bloqueado)', async ({ page }) => {
+  test('student dashboard shows class badges (Nuevo/No listo)', async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('uade_use_mock', 'false');
       sessionStorage.setItem('edu_role', 'student');
@@ -17,7 +17,7 @@ test.describe('Class View Tracking', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ id: 'arq-software-2026', name: 'Arquitectura de Software 2026' }]) });
     });
     await page.route('**/api/enrollments**', async route => {
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) });
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [{ subjectId: 'arq-software-2026', status: 'active', role: 'student' }] }) });
     });
     await page.route('**/api/classes?**', async route => {
       await route.fulfill({
@@ -46,9 +46,11 @@ test.describe('Class View Tracking', () => {
     expect(content).toContain('Clases');
 
     const hasNuevo = content.includes('Nuevo');
+    const hasNoListo = content.includes('No listo');
+    // compat: viejo badge Bloqueado renombrado a No listo
     const hasBloqueado = content.includes('Bloqueado');
-    console.log(`Dashboard badges: Nuevo=${hasNuevo}, Bloqueado=${hasBloqueado}`);
-    expect(hasNuevo || hasBloqueado).toBe(true);
+    console.log(`Dashboard badges: Nuevo=${hasNuevo}, No listo=${hasNoListo}, Bloqueado=${hasBloqueado}`);
+    expect(hasNuevo || hasNoListo || hasBloqueado).toBe(true);
   });
 
   test('student can view a class and see updated badge', async ({ page }) => {
@@ -66,7 +68,7 @@ test.describe('Class View Tracking', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ id: 'arq-software-2026', name: 'Arquitectura de Software 2026' }]) });
     });
     await page.route('**/api/enrollments**', async route => {
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) });
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [{ subjectId: 'arq-software-2026', status: 'active', role: 'student' }] }) });
     });
     await page.route('**/api/classes?**', async route => {
       await route.fulfill({

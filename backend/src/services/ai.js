@@ -232,7 +232,7 @@ export function getChatModelName(taskType) {
     if (isChatUsingDeepSeek()) {
         return CONFIG.ai.deepSeekModel;
     }
-    return process.env.AZURE_OPENAI_CHAT_DEPLOYMENT || CONFIG.ai.chatModel || 'gpt-4o-mini';
+    return process.env.AZURE_OPENAI_CHAT_DEPLOYMENT || CONFIG.ai.chatModel || 'deepseek-v4-flash';
 }
 
 export async function getChatModelNameForTask(taskType) {
@@ -247,7 +247,7 @@ export async function getChatModelNameForTask(taskType) {
 export async function chatCompletion(messages, stream = false, overrides = {}) {
     const { headers, signal, model: overrideModel, ...modelOverrides } = overrides || {};
     const requestedModel = overrideModel || null;
-    const model = requestedModel || (isChatUsingDeepSeek() ? CONFIG.ai.deepSeekModel : (process.env.AZURE_OPENAI_CHAT_DEPLOYMENT || CONFIG.ai.chatModel || 'gpt-4o-mini'));
+    const model = requestedModel || (isChatUsingDeepSeek() ? CONFIG.ai.deepSeekModel : (process.env.AZURE_OPENAI_CHAT_DEPLOYMENT || CONFIG.ai.chatModel || 'deepseek-v4-flash'));
     const client = getClientForModel(model);
 
     const options = {

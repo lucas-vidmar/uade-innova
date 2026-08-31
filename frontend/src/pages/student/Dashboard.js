@@ -2,7 +2,7 @@
    Student Dashboard — Main landing page
    ============================================================ */
 import { api } from '../../services/api.js';
-import { auth } from '../../services/auth.js';
+import { auth, isDevMockEnabled } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
 import { renderBottomNav } from '../../components/BottomNav.js';
 import { createChatWidget } from '../../components/ChatWidget.js';
@@ -237,11 +237,23 @@ function applyTitleScroll() {
 
 export async function renderStudentDashboard(container) {
   const user = auth.getUser();
-  const activeSubjectId = auth.getActiveSubjectId();
-  
-  if (!activeSubjectId) {
-    container.innerHTML = `<div class="empty-state">No hay materias vinculadas a tu cuenta.</div>`;
-    return;
+  let activeSubjectId = auth.getActiveSubjectId();
+  // UX fix: si el usuario no tiene permiso sobre la materia activa, no mostrar
+  // el dashboard inconsistente (clases visibles pero chat con error AUTH). Fail-closed
+  // solo cuando el cache de enrollments es concluyente (=== false), no cuando es null/unknown.
+  const enrollmentStatus = auth.isEnrolled(activeSubjectId);
+  if (enrollmentStatus === false) {
+    const enrolled = auth.getEnrolledSubjects();
+    if (enrolled.length > 0) {
+      // auto-corregir materia activa a una donde sí está inscripto
+      activeSubjectId = enrolled[0].id;
+      auth.setActiveSubjectId(activeSubjectId);
+    } else if (!isDevMockEnabled()) {
+      // En producción: si no hay materias inscriptas, no mostrar dashboard inconsistente
+      container.innerHTML = `<div class="empty-state" style="padding:48px 24px;text-align:center;max-width:560px;margin:40px auto;"><h3 style="font-size:18px;font-weight:700;margin-bottom:8px;">No tenés materias asignadas</h3><p style="color:var(--color-text-secondary);font-size:14px;line-height:1.5;">No estás inscripto en ninguna materia activa. Si creés que es un error, verificá tu inscripción o contactá a administración.</p></div>`;
+      return;
+    }
+    // En dev mock sin enrollments, permitir render para desarrollo local (el chat se deshabilita vía hasEnrollment)
   }
 
   // 1. Initial Shell Render (Instant)
@@ -378,7 +390,7 @@ export async function renderStudentDashboard(container) {
       return `
       <li class="sidebar-list-item cursor-pointer hover:bg-surface-2 transition-colors group" data-chat-session-id="${escapeHtml(c.sessionId)}">
         <div class="chat-history-row">
-          <span class="chat-history-title" style="overflow:hidden;"><span class="title-scroll" style="display:inline-block;white-space:nowrap;">${escapeHtml(c.title)}</span></span>
+          <span class="chat-history-title" style="overflow:hidden;font-size:13px;font-weight:500;color:var(--color-text-primary);"><span class="title-scroll" style="display:inline-block;white-space:nowrap;">${escapeHtml(c.title)}</span></span>
           <div class="chat-history-actions">
             <span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 6px;flex-shrink:0;transition:margin 0.15s;color:#3b82f6;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.25);">${dateStr}</span>
             <button class="chat-history-delete-btn" style="width:0;overflow:hidden;opacity:0;padding:0;margin:0;border:none;transition:width 0.15s,opacity 0.15s,padding 0.15s,margin 0.15s;" data-delete-session-id="${escapeHtml(c.sessionId)}" title="Eliminar conversación">
@@ -615,7 +627,7 @@ export async function renderStudentDashboard(container) {
       const hasViewed = localViews[c.id] || c.studentViewedAt;
       let badgeHtml = '';
       if (!c.summaryReady) {
-        badgeHtml = '<span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 8px;flex-shrink:0;color:#6b7280;background:rgba(107,114,128,0.1);border:1px solid rgba(107,114,128,0.25);">Bloqueado</span>';
+        badgeHtml = '<span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 8px;flex-shrink:0;color:#6b7280;background:rgba(107,114,128,0.1);border:1px solid rgba(107,114,128,0.25);">No listo</span>';
       } else if (hasViewed) {
         badgeHtml = '<span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 8px;flex-shrink:0;color:#10b981;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.25);">Visto</span>';
       } else {

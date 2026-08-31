@@ -2,7 +2,7 @@
    ChatWidget — Full RAG chat UI with streaming effect
    ============================================================ */
 import { api } from '../services/api.js';
-import { auth } from '../services/auth.js';
+import { auth, isDevMockEnabled } from '../services/auth.js';
 import { showPromptDialog } from './Dialog.js';
 import { toast } from './Toast.js';
 import { renderPrivacyModal } from './PrivacyModal.js';
@@ -67,7 +67,10 @@ function resolveChatErrorMessage(errOrData) {
 
 export function createChatWidget({ classes = [], subjectId = '', sessionId = null, initialMessages = [], highlightMessageId = null, transcriptFocus: initialTranscriptFocus = null, initialClassIds = [], preset = null, onNewChat, onMessageSent, onConsentAccepted }) {
   const user = auth.getUser();
-  const hasEnrollment = auth.isEnrolled(subjectId) !== false;
+  const rawEnrollment = auth.isEnrolled(subjectId);
+  // En dev mock sin enrollments cacheados, permitir chat para desarrollo local;
+  // en producción fail-closed === true estricto.
+  const hasEnrollment = rawEnrollment === true || (isDevMockEnabled() && rawEnrollment === false && auth.getEnrolledSubjects().length === 0);
   let selectedClassIds = [...initialClassIds];
   let messages = [...initialMessages];
   let currentSessionId = sessionId || crypto.randomUUID();

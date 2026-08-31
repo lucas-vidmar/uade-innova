@@ -13,7 +13,7 @@
     "AZURE_TABLE_ENROLLMENTS": "Enrollments",
     "AZURE_OPENAI_ENDPOINT": "<endpoint del recurso RS-OPENAI-LLM>",
     "AZURE_OPENAI_API_KEY": "<az keyvault secret show --vault-name kv-edu-* --name AZURE-OPENAI-API-KEY --query value -o tsv>",
-    "AZURE_OPENAI_CHAT_DEPLOYMENT": "gpt-4o-mini",
+    "AZURE_OPENAI_CHAT_DEPLOYMENT": "deepseek-v4-flash",
     "AZURE_OPENAI_EMBEDDING_DEPLOYMENT": "text-embedding-3-small",
     "AI_FOUNDRY_DEEPSEEK_ENDPOINT": "<endpoint AIServices-kind>",
     "AI_FOUNDRY_DEEPSEEK_MODEL": "deepseek-v4-flash",
