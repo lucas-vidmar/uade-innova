@@ -69,6 +69,10 @@ export async function renderStudentNotifications(container) {
 
   function render() {
     const unreadCount = allNotifications.filter((n) => n.unread).length;
+    const prevActiveId = document.activeElement ? document.activeElement.id : null;
+    const prevWasSearch = prevActiveId === 'notif-search';
+    const prevSelStart = prevWasSearch ? document.activeElement.selectionStart : null;
+    const prevSelEnd = prevWasSearch ? document.activeElement.selectionEnd : null;
 
     container.innerHTML = `
       <div class="notifications-page">
@@ -109,6 +113,19 @@ export async function renderStudentNotifications(container) {
     `;
 
     attachEvents();
+
+    if (prevWasSearch) {
+      const restored = document.getElementById('notif-search');
+      if (restored) {
+        restored.focus();
+        try {
+          const len = restored.value.length;
+          const s = prevSelStart != null ? prevSelStart : len;
+          const e = prevSelEnd != null ? prevSelEnd : len;
+          restored.setSelectionRange(s, e);
+        } catch {}
+      }
+    }
   }
 
   function renderNotificationItems() {
