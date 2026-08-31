@@ -42,14 +42,7 @@ export async function renderAdminModelConfig(container) {
           <span class="badge badge-success" style="margin-left:auto">Activo</span>
         </label>
 
-        <label class="card" style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-4);cursor:not-allowed;border:2px solid ${config.model === 'gpt-4o-mini' ? 'var(--color-primary)' : 'transparent'};border-radius:var(--radius-md);opacity:0.6" id="model-gpt" title="Prototipo no disponible">
-          <input type="radio" name="ai-model" value="gpt-4o-mini" disabled ${config.model === 'gpt-4o-mini' ? 'checked' : ''}>
-          <div>
-            <strong>GPT-4o Mini</strong>
-            <p class="text-xs text-text-muted" style="margin:2px 0 0">Alternativa de OpenAI. Mayor precisión en tareas complejas pero mayor latencia.</p>
-          </div>
-          <span class="badge" style="margin-left:auto;background:var(--color-surface-3);color:var(--color-text-muted)">Prototipo</span>
-        </label>
+
       </div>
     </div>
 
