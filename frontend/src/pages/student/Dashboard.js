@@ -2,7 +2,7 @@
    Student Dashboard — Main landing page
    ============================================================ */
 import { api } from '../../services/api.js';
-import { auth } from '../../services/auth.js';
+import { auth, isDevMockEnabled } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
 import { renderBottomNav } from '../../components/BottomNav.js';
 import { createChatWidget } from '../../components/ChatWidget.js';
@@ -248,10 +248,12 @@ export async function renderStudentDashboard(container) {
       // auto-corregir materia activa a una donde sí está inscripto
       activeSubjectId = enrolled[0].id;
       auth.setActiveSubjectId(activeSubjectId);
-    } else {
+    } else if (!isDevMockEnabled()) {
+      // En producción: si no hay materias inscriptas, no mostrar dashboard inconsistente
       container.innerHTML = `<div class="empty-state" style="padding:48px 24px;text-align:center;max-width:560px;margin:40px auto;"><h3 style="font-size:18px;font-weight:700;margin-bottom:8px;">No tenés materias asignadas</h3><p style="color:var(--color-text-secondary);font-size:14px;line-height:1.5;">No estás inscripto en ninguna materia activa. Si creés que es un error, verificá tu inscripción o contactá a administración.</p></div>`;
       return;
     }
+    // En dev mock sin enrollments, permitir render para desarrollo local (el chat se deshabilita vía hasEnrollment)
   }
 
   // 1. Initial Shell Render (Instant)
