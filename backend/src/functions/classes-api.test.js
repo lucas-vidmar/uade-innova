@@ -702,7 +702,29 @@ test('classes-api get-director-session-metrics-history returns 403 for non-Direc
     assert.strictEqual(response.status, 403);
 
     const body = JSON.parse(response.body);
-    assert.strictEqual(body.error, 'Forbidden - Director access required');
+    assert.strictEqual(body.error, 'Forbidden - Director or Admin access required');
+
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+});
+
+test('classes-api get-director-stats allows Admin role (Panel Técnico)', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['authenticated', 'Admin'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: makeListEntitiesResult([])
+    }));
+
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
+    const mockRequest = { params: {}, query: new Map() };
+
+    const response = await handlers['get-director-stats'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    const payload = JSON.parse(response.body);
+    assert.ok(payload.budget, 'budget object should exist for Admin');
+    assert.strictEqual(payload.budget.monthlyLimit, Number(process.env.DIRECTOR_BUDGET_MONTHLY_USD) || 10000);
 
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
 });
