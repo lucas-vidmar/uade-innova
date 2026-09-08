@@ -28,8 +28,20 @@ export async function renderAdminDashboard(container) {
   const costPerActiveStudent = data.costPerActiveStudent || 0;
 
   const safePercentUsed = Number.isFinite(budget.percentUsed) ? budget.percentUsed : 0;
-  const safeMonthlyLimit = Number.isFinite(budget.monthlyLimit) ? budget.monthlyLimit : 0;
+  // Default 10000 matches backend CONFIG.budget.monthlyUsd / DIRECTOR_BUDGET_MONTHLY_USD
+  // (infra/modules/functions.bicep). Avoids showing $0.00 limit when /director/stats
+  // is unreachable (403/404) and budget={}.
+  const safeMonthlyLimit = Number.isFinite(budget.monthlyLimit) ? budget.monthlyLimit : 10000;
   const safeProjected = Number.isFinite(budget.projectedEndOfMonth) ? budget.projectedEndOfMonth : 0;
+
+  // Index fullness is a 0-1 fraction; with a pilot index (hundreds of vectors)
+  // the 2-decimal % rounds to 0%. Show higher precision instead of a misleading 0%.
+  const fullnessRaw = Number(vectorHealth?.stats?.indexFullness || 0);
+  const fullnessPct = fullnessRaw * 100;
+  const fullnessLabel = fullnessPct === 0 ? '0%' : fullnessPct < 0.01 ? `${fullnessPct.toFixed(4)}%` : `${(Math.round(fullnessPct * 100) / 100).toFixed(2)}%`;
+  const metricsSampleCount = Number(vectorHealth?.metricsSampleCount || 0);
+  const latencyP50 = vectorHealth?.latencyMs?.p50;
+  const latencyP95 = vectorHealth?.latencyMs?.p95;
 
   container.innerHTML = `
     <!-- Cost per subject -->
@@ -61,7 +73,7 @@ export async function renderAdminDashboard(container) {
       </div>
       <div style="position:relative">
         <canvas id="cost-line-chart" style="width:100%;height:300px;display:block"></canvas>
-        ${costBySubject.length === 0 ? '<div class="empty-state" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">Sin datos de costo por materia.</div>' : ''}
+        ${costBySubject.length === 0 ? '<div class="empty-state" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 24px">Sin actividad RAG con tokens en los últimos 30 días (SessionMetrics vacío). Los costos aparecen tras las primeras consultas.</div>' : ''}
       </div>
       <small style="display:block;margin-top:var(--space-3);color:var(--color-text-secondary)">
         Fuente: ${data.costSource?.method === 'azure-cost-api' ? 'Azure Cost Management API' : 'SessionMetrics (token-based)'}
@@ -82,14 +94,13 @@ export async function renderAdminDashboard(container) {
               <tr><td><strong>Provider</strong></td><td>${vectorHealth.provider || 'n/a'}</td></tr>
               <tr><td><strong>Index</strong></td><td>${vectorHealth.indexName || 'n/a'}</td></tr>
               <tr><td><strong>Total Documents</strong></td><td>${Number(vectorHealth?.stats?.totalVectorCount || 0).toLocaleString('es-AR')}</td></tr>
-              <tr><td><strong>Index Fullness</strong></td><td>${Math.round(Number(vectorHealth?.stats?.indexFullness || 0) * 10000) / 100}%</td></tr>
-              ${vectorHealth.latencyMs ? `
-              <tr><td><strong>Latency p50</strong></td><td>${vectorHealth.latencyMs.p50 != null ? vectorHealth.latencyMs.p50 + ' ms' : 'n/a'}</td></tr>
-              <tr><td><strong>Latency p95</strong></td><td>${vectorHealth.latencyMs.p95 != null ? vectorHealth.latencyMs.p95 + ' ms' : 'n/a'}</td></tr>
-              ` : ''}
+              <tr><td><strong>Index Fullness</strong></td><td>${fullnessLabel}</td></tr>
+              <tr><td><strong>Latency p50</strong></td><td>${latencyP50 != null ? latencyP50 + ' ms' : 'n/a (sin operaciones recientes)'}</td></tr>
+              <tr><td><strong>Latency p95</strong></td><td>${latencyP95 != null ? latencyP95 + ' ms' : 'n/a (sin operaciones recientes)'}</td></tr>
               ${vectorHealth.failureRatio != null ? `
               <tr><td><strong>Failure Ratio</strong></td><td>${(vectorHealth.failureRatio * 100).toFixed(1)}%</td></tr>
               ` : ''}
+              <tr><td><strong>Muestras (ventana ${vectorHealth.metricsWindow || 5} min)</strong></td><td>${metricsSampleCount}</td></tr>
             </tbody>
           </table>
         </div>

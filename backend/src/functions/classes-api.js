@@ -1588,9 +1588,9 @@ app.http('get-director-stats', {
     handler: withCorrelation(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         const principal = parseClientPrincipal(request);
-        const isAuthorized = principal?.userRoles?.some(role => ['Director'].includes(role)) || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
+        const isAuthorized = principal?.userRoles?.some(role => ['Director', 'Admin'].includes(role)) || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
         if (!isAuthorized) {
-            return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Director access required' }) };
+            return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Director or Admin access required' }) };
         }
 
         context.log('get-director-stats triggered');
@@ -1680,9 +1680,9 @@ app.http('get-director-powerbi-metrics', {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
 
         const principal = parseClientPrincipal(request);
-        const isAuthorized = principal?.userRoles?.some(role => ['Director'].includes(role)) || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
+        const isAuthorized = principal?.userRoles?.some(role => ['Director', 'Admin'].includes(role)) || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
         if (!isAuthorized) {
-            return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Director access required' }) };
+            return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Director or Admin access required' }) };
         }
 
         const days = request.query.get('days') || POWERBI_DEFAULT_DAYS;
@@ -2172,9 +2172,9 @@ app.http('get-director-session-metrics-history', {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
 
         const principal = parseClientPrincipal(request);
-        const isAuthorized = principal?.userRoles?.some(role => ['Director'].includes(role)) || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
+        const isAuthorized = principal?.userRoles?.some(role => ['Director', 'Admin'].includes(role)) || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
         if (!isAuthorized) {
-            return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Director access required' }) };
+            return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Director or Admin access required' }) };
         }
 
         const subjectId = (request.query.get('subjectId') || '').trim();
