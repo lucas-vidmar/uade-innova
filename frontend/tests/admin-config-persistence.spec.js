@@ -157,18 +157,22 @@ test('model config saves, read back and survive reload', async ({ page }) => {
   await expect(page.locator('#setting-max-tokens')).toHaveValue('4096');
 });
 
-test('persisted gpt-4o-mini model is reflected and not silently reverted on save', async ({ page }) => {
+test('persisted gpt-4o-mini model is not silently reverted on save (#318)', async ({ page }) => {
   await bootMock(page);
   const store = await setupApiMock(page, {
     model: { model: 'gpt-4o-mini', temperature: 0.3, maxTokens: 2048, topP: 0.95, embeddingModel: 'text-embedding-3-small' },
   });
   await page.goto('/#/admin/model-config');
 
-  const gptRadio = page.locator('input[name="ai-model"][value="gpt-4o-mini"]');
-  await expect(gptRadio).toBeChecked();
-  await expect(gptRadio).toBeDisabled();
+  // #318 removed the disabled gpt-4o-mini prototype radio: only deepseek is
+  // selectable, and it renders unchecked when the persisted model is gpt.
+  const deepseekRadio = page.locator('input[name="ai-model"][value="deepseek-v4-flash"]');
+  await expect(deepseekRadio).toBeVisible();
+  await expect(deepseekRadio).not.toBeChecked();
+  await expect(page.locator('input[name="ai-model"][value="gpt-4o-mini"]')).toHaveCount(0);
 
-  // Save must keep gpt-4o-mini instead of reverting to the hardcoded deepseek.
+  // Save must keep gpt-4o-mini (readValues falls back to config.model) instead
+  // of silently reverting to the hardcoded deepseek default.
   await page.click('#btn-model-save');
   await expect(page.locator('text=Configuración guardada').first()).toBeVisible();
   expect(store.model.model).toBe('gpt-4o-mini');
@@ -234,9 +238,11 @@ test('non-persistent controls are disabled or labeled prototype (AC #3)', async 
   await expect(page.locator('#setting-api-url')).toBeDisabled();
 
   await page.goto('/#/admin/model-config');
-  const gptRadio = page.locator('input[name="ai-model"][value="gpt-4o-mini"]');
-  await expect(gptRadio).toBeDisabled();
-  await expect(page.locator('#model-gpt')).toContainText('Prototipo');
+  // #318 removed the gpt-4o-mini prototype radio: the non-persistent control
+  // is now the fixed embeddings model, labeled "Prototipo · Fijo".
+  await expect(page.locator('input[name="ai-model"][value="gpt-4o-mini"]')).toHaveCount(0);
+  await expect(page.locator('#model-gpt')).toHaveCount(0);
+  await expect(page.getByText('Prototipo · Fijo')).toBeVisible();
 });
 
 test('settings page shows effective BASE_URL, not window.location.origin (AC #4)', async ({ page }) => {

@@ -29,7 +29,12 @@ test('teacher can create a deadline and student sees it on dashboard and calenda
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ id: 'arq-software-2026', name: 'Arquitectura de Software 2026' }]) });
   });
   await page.route('**/api/enrollments**', async route => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) });
+    // Fail-closed enrolled-subjects filtering: the teacher dashboard only
+    // renders when the Enrollments table carries an active enrollment.
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([
+      { userId: 'doc-001', subjectId: 'arq-software-2026', role: 'teacher', status: 'active' },
+      { userId: 'alu-001', subjectId: 'arq-software-2026', role: 'student', status: 'active' },
+    ]) });
   });
 
   await page.route('**/api/sga/tasks**', async route => {
