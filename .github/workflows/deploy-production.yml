@@ -127,6 +127,8 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - name: Install Playwright browsers with OS deps
+        run: npx playwright install --with-deps chromium
       - name: Run Playwright E2E tests
         run: npm run test:e2e
       - uses: actions/upload-artifact@v4
