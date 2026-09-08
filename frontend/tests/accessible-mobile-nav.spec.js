@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test.use({ channel: 'chrome' });
 
-// Mirrors the `NAV` data in frontend/src/components/Sidebar.js (28 anchors across the 4 roles).
+// Mirrors the `NAV` data in frontend/src/components/Sidebar.js (30 anchors across the 4 roles).
 const NAV_LABELS = {
   student: [
     'Inicio',
@@ -30,6 +30,7 @@ const NAV_LABELS = {
     'Intervenciones',
     'Gestión de Clases',
     'Gestión de Materias',
+    'Alumnos',
   ],
   admin: [
     'Panel Técnico',
@@ -88,7 +89,7 @@ for (const [role, labels] of Object.entries(NAV_LABELS)) {
       await expect(helpBtn).toHaveCount(0);
     }
 
-    // 6 + 10 + 5 + 8 = 29 anchors across the 4 roles.
+    // 6 + 10 + 6 + 8 = 30 anchors across the 4 roles.
     await expect(nav.locator('a')).toHaveCount(labels.length);
   });
 }

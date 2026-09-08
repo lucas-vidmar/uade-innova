@@ -51,7 +51,11 @@ test('teacher can link a task to multiple classes via "Vincular a clases"', asyn
   });
 
   await page.route('**/api/enrollments?**', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    // Fail-closed enrolled-subjects filtering: the teacher dashboard only
+    // renders when the Enrollments table carries an active enrollment.
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([
+      { userId: 'doc-001', subjectId: 'arq-software-2026', role: 'teacher', status: 'active' },
+    ]) });
   });
 
   await page.route('**/api/subject-weights/**', async (route) => {
@@ -117,7 +121,11 @@ test('teacher edit modal reveals pre-selected linked classes via "Vincular a cla
   });
 
   await page.route('**/api/enrollments?**', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    // Fail-closed enrolled-subjects filtering: the teacher dashboard only
+    // renders when the Enrollments table carries an active enrollment.
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([
+      { userId: 'doc-001', subjectId: 'arq-software-2026', role: 'teacher', status: 'active' },
+    ]) });
   });
 
   await page.route('**/api/subject-weights/**', async (route) => {
