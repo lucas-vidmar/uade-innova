@@ -34,11 +34,12 @@ export async function renderAdminDashboard(container) {
   const safeMonthlyLimit = Number.isFinite(budget.monthlyLimit) ? budget.monthlyLimit : 10000;
   const safeProjected = Number.isFinite(budget.projectedEndOfMonth) ? budget.projectedEndOfMonth : 0;
 
-  // Index fullness is a 0-1 fraction; with a pilot index (hundreds of vectors)
-  // the 2-decimal % rounds to 0%. Show higher precision instead of a misleading 0%.
+  // Index fullness is a 0-1 fraction; keep the historical minimal format
+  // (e.g. "8%") for normal values, but show 4 decimals when the value is
+  // nonzero yet rounds to 0% (pilot index) instead of a misleading "0%".
   const fullnessRaw = Number(vectorHealth?.stats?.indexFullness || 0);
   const fullnessPct = fullnessRaw * 100;
-  const fullnessLabel = fullnessPct === 0 ? '0%' : fullnessPct < 0.01 ? `${fullnessPct.toFixed(4)}%` : `${(Math.round(fullnessPct * 100) / 100).toFixed(2)}%`;
+  const fullnessLabel = fullnessPct === 0 ? '0%' : fullnessPct < 0.01 ? `${fullnessPct.toFixed(4)}%` : `${Math.round(fullnessPct * 100) / 100}%`;
   const metricsSampleCount = Number(vectorHealth?.metricsSampleCount || 0);
   const latencyP50 = vectorHealth?.latencyMs?.p50;
   const latencyP95 = vectorHealth?.latencyMs?.p95;
