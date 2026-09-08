@@ -150,6 +150,11 @@ jobs:
           action: upload
           app_location: frontend
           output_location: dist
+        env:
+          # Oryx remote build needs VITE_* as env vars — frontend/.env is
+          # gitignored (.gitignore: .env) and may not be uploaded, so inject
+          # here as well. Must match the frontend/.env value above.
+          VITE_API_BASE_URL: https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net/api
       - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
