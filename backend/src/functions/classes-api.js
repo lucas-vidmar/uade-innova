@@ -474,11 +474,19 @@ function slugifySubjectId(value) {
 }
 
 function normalizeSubject(subject = {}) {
+    const professorIds = Array.isArray(subject.professorIds)
+        ? subject.professorIds.filter(Boolean).map(String)
+        : (subject.professorId ? [String(subject.professorId)] : undefined);
+    const professors = Array.isArray(subject.professors)
+        ? subject.professors.filter(Boolean).map(String)
+        : undefined;
     return {
         ...subject,
         id: String(subject.id || '').trim(),
         name: String(subject.name || '').trim(),
-        group: String(subject.group || '').trim()
+        group: String(subject.group || '').trim(),
+        ...(professorIds !== undefined ? { professorIds } : {}),
+        ...(professors !== undefined ? { professors } : {}),
     };
 }
 
