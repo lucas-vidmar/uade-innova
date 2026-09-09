@@ -53,25 +53,26 @@ export async function renderTeacherStudents(container) {
         container.innerHTML = `
             <div class="page-container">
                 <div class="card" style="padding:var(--space-5);">
-                    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+                    <div>
                         <div>
                             <h3 style="margin:0 0 4px;">Alumnos de la materia</h3>
                             <p style="font-size:var(--fs-sm);color:var(--color-text-secondary);margin:0;">${escapeHtml(subjectName)} — ${visibleCount} alumno(s) asignado(s).</p>
                         </div>
-                        <button class="btn btn-secondary btn-sm" id="btn-toggle-picker">${showPicker ? 'Cerrar selector' : '+ Agregar alumno'}</button>
                     </div>
-                    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:var(--space-4);max-width:100%;overflow:visible;">
+                    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:var(--space-4);max-width:100%;overflow:visible;">
                         ${(() => {
                             const visible = subjectStudents.filter(enr => students.some(s => (s.id===enr.userId || s.userId===enr.userId)));
-                            if (visible.length===0) return '<span class="subject-prof-empty" style="color:var(--color-text-secondary);font-size:0.85rem;">Sin alumnos asignados todavía.</span>';
-                            return visible.map(enr => {
+                            const pills = visible.length===0
+                                ? '<span class="subject-prof-empty" style="color:var(--color-text-secondary);font-size:0.85rem;">Sin alumnos asignados todavía.</span>'
+                                : visible.map(enr => {
                                 const st = students.find(s=> s.id===enr.userId || s.userId===enr.userId);
                                 const name = String(st?.name || st?.surname ? `${st.name} ${st.surname||''}`.trim() : st?.email || '').trim() || 'Alumno';
                                 return `<span class="subject-prof-pill" style="max-width:100%;word-break:break-word;">
                                     <span class="subject-prof-pill-name">${escapeHtml(name)}</span>
-                                    <button class="teacher-student-remove" data-student-id="${escapeHtml(enr.userId)}" title="Quitar alumno">×</button>
+                                    <button class="subject-prof-remove teacher-student-remove" data-student-id="${escapeHtml(enr.userId)}" title="Quitar alumno">×</button>
                                 </span>`;
                             }).join('');
+                            return pills + `<button class="subject-prof-add" id="btn-toggle-picker" title="${showPicker ? 'Cerrar selector' : 'Agregar alumno'}" aria-label="${showPicker ? 'Cerrar selector' : 'Agregar alumno'}">${showPicker ? '×' : '+'}</button>`;
                         })()}
                     </div>
                     ${showPicker ? `
