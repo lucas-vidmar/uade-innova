@@ -45,11 +45,17 @@ export async function updateGlossary(subjectId, terms) {
   const data = {
     subjectId,
     updatedAt: new Date().toISOString(),
-    terms: terms.map((t) => ({
-      term: t.term,
-      aliases: Array.isArray(t.aliases) ? t.aliases : [],
-      definition: typeof t.definition === 'string' ? t.definition.trim() : '',
-    })),
+    terms: terms
+      .map((t) => ({
+        term: typeof t.term === 'string' ? t.term.trim() : '',
+        aliases: Array.isArray(t.aliases)
+          ? t.aliases.map((a) => String(a).trim()).filter(Boolean)
+          : typeof t.aliases === 'string'
+            ? t.aliases.split(',').map((a) => a.trim()).filter(Boolean)
+            : [],
+        definition: typeof t.definition === 'string' ? t.definition.trim() : '',
+      }))
+      .filter((t) => t.term),
   };
 
   await saveJson(GLOSSARY_CONTAINER, blobName(subjectId), data);

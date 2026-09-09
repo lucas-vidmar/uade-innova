@@ -1941,11 +1941,22 @@
     border-radius: 18px;
     background: transparent;
     box-shadow: 0 2px 8px rgba(17, 34, 68, 0.06);
-    overflow: visible;
+    /* Internal scroll: card is capped to the viewport so the page
+       itself never scrolls — only the table body does. */
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    max-height: calc(100vh - var(--top-nav-height) - var(--header-height) - 64px);
+    max-height: calc(100dvh - var(--top-nav-height) - var(--header-height) - 64px);
+    overflow: hidden;
 }
 
 .subject-directory-shell .table-responsive {
     width: 100%;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
 }
 
 .subject-directory-head {
@@ -1957,6 +1968,7 @@
     border-bottom: 1px solid #e6ebf2;
     flex-wrap: wrap;
     background: transparent;
+    flex-shrink: 0;
 }
 
 .subject-directory-title {
@@ -2059,6 +2071,13 @@
 }
 
 .subject-directory-table thead tr {
+    background: #dfe6f0;
+}
+
+.subject-directory-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
     background: #dfe6f0;
 }
 
@@ -2376,6 +2395,7 @@
     font-weight: 500;
     flex-wrap: wrap;
     background: transparent;
+    flex-shrink: 0;
 }
 
 .subject-directory-pagination {
@@ -2446,6 +2466,10 @@
 }
 
 [data-theme="dark"] .subject-directory-table thead tr {
+    background: #1a2332;
+}
+
+[data-theme="dark"] .subject-directory-table thead th {
     background: #1a2332;
 }
 
@@ -2581,8 +2605,12 @@
 }
 
 /* ── Transcription Corrections (Story 2.186) ─────────────── */
+/* NOTE: canonical .tc-* rules live near the end of this file; keep this
+   alias block in sync or remove it to avoid specificity drift. */
 .tc-filter-bar {
     display: flex;
+    align-items: center;
+    flex-wrap: wrap;
     gap: var(--space-2);
 }
 
@@ -4550,9 +4578,78 @@
 }
 
 /* ── Transcription Corrections (Story 2.186) ──────────────── */
+/* NOTE: design-system.css loads AFTER pages.css — use double-class
+   specificity so these beat the base `.page-header` rules. */
+.page-header.tc-page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-4);
+}
+
+.tc-title-block h1 {
+    margin: 0;
+}
+
 .tc-filter-bar {
     display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--color-border);
+}
+
+.tc-filter-group {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
     gap: var(--space-2);
+}
+
+#btn-apply-all {
+    flex-shrink: 0;
+}
+
+#tc-list .empty-state {
+    padding: var(--space-8);
+}
+
+.page-header.tc-page-header > .tc-title-block {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+@media (min-width: 900px) {
+    .page-header.tc-page-header {
+        flex-direction: row;
+        flex-wrap: nowrap;
+        align-items: flex-end;
+        justify-content: space-between;
+    }
+
+    .tc-filter-bar {
+        padding-top: 0;
+        border-top: none;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+        flex-shrink: 0;
+        max-width: 100%;
+    }
+}
+
+@media (max-width: 640px) {
+    .tc-filter-bar {
+        align-items: stretch;
+    }
+
+    .tc-filter-group {
+        width: 100%;
+    }
+
+    #btn-apply-all {
+        width: 100%;
+    }
 }
 
 .tc-filter-btn {

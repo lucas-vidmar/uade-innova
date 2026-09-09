@@ -162,15 +162,11 @@ export async function resolveGradeDispute({ disputeId, subjectId, decision, newG
 
 export async function getGlossary(subjectId) {
     if (!subjectId) return null;
-    try {
-        const res = await fetchWithTimeout(`${BASE_URL}/glossary?subjectId=${encodeURIComponent(subjectId)}`, { timeout: 4000 });
-        if (!res.ok) return null;
-        const json = await res.json();
-        return json?.data || null;
-    } catch (err) {
-        console.error('[API] getGlossary failed:', err);
-        return null;
-    }
+    const res = await fetchWithTimeout(`${BASE_URL}/glossary?subjectId=${encodeURIComponent(subjectId)}`, { timeout: 4000 });
+    if (res.status === 404) return null;
+    if (!res.ok) throw await parseApiError(res, `Error ${res.status}: no se pudo cargar el glosario.`);
+    const json = await res.json();
+    return json?.data || null;
 }
 
 export async function getGlossaryTerm(subjectId, term) {
