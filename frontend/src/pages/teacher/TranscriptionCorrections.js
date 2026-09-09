@@ -10,17 +10,19 @@ export async function renderTranscriptionCorrections(container) {
   }
 
   container.innerHTML = `
-    <div class="page-header">
-      <div>
+    <div class="page-header tc-page-header">
+      <div class="tc-title-block">
         <h1 class="h2">Correcciones de Transcripción</h1>
         <p class="page-subtitle">Sugerencias de corrección generadas por IA según el glosario de la materia</p>
       </div>
       <div class="tc-filter-bar">
-        <button class="btn btn-sm tc-filter-btn active" data-status="pending">Pendientes</button>
-        <button class="btn btn-sm tc-filter-btn" data-status="applied">Aplicadas</button>
-        <button class="btn btn-sm tc-filter-btn" data-status="rejected">Rechazadas</button>
-        <button class="btn btn-sm tc-filter-btn" data-status="all">Todas</button>
-        <button class="btn btn-sm btn-primary" id="btn-apply-all" style="margin-left:auto;">Aplicar todas</button>
+        <div class="tc-filter-group" role="tablist" aria-label="Filtrar por estado">
+          <button class="btn btn-sm tc-filter-btn active" data-status="pending">Pendientes</button>
+          <button class="btn btn-sm tc-filter-btn" data-status="applied">Aplicadas</button>
+          <button class="btn btn-sm tc-filter-btn" data-status="rejected">Rechazadas</button>
+          <button class="btn btn-sm tc-filter-btn" data-status="all">Todas</button>
+        </div>
+        <button class="btn btn-sm btn-primary" id="btn-apply-all">Aplicar todas</button>
       </div>
     </div>
     <div class="card" id="tc-list">

@@ -34,7 +34,27 @@
 
 .page-header {
   margin-top: 0 !important;
+  margin-bottom: var(--space-6);
   background: transparent;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.page-header h1.h2,
+.page-header h1,
+.page-header .h2 {
+  margin: 0;
+  font-size: var(--font-size-2xl);
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+
+.page-subtitle {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
 }
 
 /* Mobile Nav */

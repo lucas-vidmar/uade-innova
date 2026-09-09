@@ -2605,8 +2605,12 @@
 }
 
 /* ── Transcription Corrections (Story 2.186) ─────────────── */
+/* NOTE: canonical .tc-* rules live near the end of this file; keep this
+   alias block in sync or remove it to avoid specificity drift. */
 .tc-filter-bar {
     display: flex;
+    align-items: center;
+    flex-wrap: wrap;
     gap: var(--space-2);
 }
 
@@ -4574,9 +4578,68 @@
 }
 
 /* ── Transcription Corrections (Story 2.186) ──────────────── */
+.tc-page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-4);
+}
+
+.tc-title-block h1 {
+    margin: 0;
+}
+
 .tc-filter-bar {
     display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--color-border);
+}
+
+.tc-filter-group {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
     gap: var(--space-2);
+}
+
+#btn-apply-all {
+    flex-shrink: 0;
+}
+
+#tc-list .empty-state {
+    padding: var(--space-8);
+}
+
+@media (min-width: 900px) {
+    .tc-page-header {
+        flex-direction: row;
+        align-items: flex-end;
+        justify-content: space-between;
+    }
+
+    .tc-filter-bar {
+        padding-top: 0;
+        border-top: none;
+        justify-content: flex-end;
+        max-width: 60%;
+    }
+}
+
+@media (max-width: 640px) {
+    .tc-filter-bar {
+        align-items: stretch;
+    }
+
+    .tc-filter-group {
+        width: 100%;
+    }
+
+    #btn-apply-all {
+        width: 100%;
+    }
 }
 
 .tc-filter-btn {
