@@ -1941,11 +1941,22 @@
     border-radius: 18px;
     background: transparent;
     box-shadow: 0 2px 8px rgba(17, 34, 68, 0.06);
-    overflow: visible;
+    /* Internal scroll: card is capped to the viewport so the page
+       itself never scrolls — only the table body does. */
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    max-height: calc(100vh - var(--top-nav-height) - var(--header-height) - 64px);
+    max-height: calc(100dvh - var(--top-nav-height) - var(--header-height) - 64px);
+    overflow: hidden;
 }
 
 .subject-directory-shell .table-responsive {
     width: 100%;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
 }
 
 .subject-directory-head {
@@ -1957,6 +1968,7 @@
     border-bottom: 1px solid #e6ebf2;
     flex-wrap: wrap;
     background: transparent;
+    flex-shrink: 0;
 }
 
 .subject-directory-title {
@@ -2059,6 +2071,13 @@
 }
 
 .subject-directory-table thead tr {
+    background: #dfe6f0;
+}
+
+.subject-directory-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
     background: #dfe6f0;
 }
 
@@ -2376,6 +2395,7 @@
     font-weight: 500;
     flex-wrap: wrap;
     background: transparent;
+    flex-shrink: 0;
 }
 
 .subject-directory-pagination {
@@ -2446,6 +2466,10 @@
 }
 
 [data-theme="dark"] .subject-directory-table thead tr {
+    background: #1a2332;
+}
+
+[data-theme="dark"] .subject-directory-table thead th {
     background: #1a2332;
 }
 
