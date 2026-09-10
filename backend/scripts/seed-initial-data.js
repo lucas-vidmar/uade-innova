@@ -176,10 +176,10 @@ async function seedSubjects() {
   console.log(`  [=] Container "${CLASSES_CONFIG_CONTAINER}" listo`);
 
   const subjects = [
-    { id: 'arq-software-2026', name: 'Arquitectura de Software 2026', track: 'Tecnicatura', professors: ['Prof. Martín Ferreiro'], env: 'pilot' },
-    { id: 'diseno-sistemas-2026', name: 'Diseño de Sistemas 2026', track: 'Tecnicatura', professors: ['Prof. Laura Medina'], env: 'pilot' },
+    { id: 'arq-software-2026', name: 'Arquitectura de Software 2026', track: 'Tecnicatura', professorIds: ['doc-001'], professors: ['Prof. Martín Ferreiro'], env: 'pilot' },
+    { id: 'diseno-sistemas-2026', name: 'Diseño de Sistemas 2026', track: 'Tecnicatura', professorIds: ['doc-002'], professors: ['Prof. Laura Medina'], env: 'pilot' },
     // eco-internacional-2026 NO está en scripts/pilot-enrollments.csv → NO es piloto.
-    { id: 'eco-internacional-2026', name: 'Economía Internacional Monetaria 2026', track: 'Licenciatura', professors: ['Prof. Laura Medina'], env: 'dev' },
+    { id: 'eco-internacional-2026', name: 'Economía Internacional Monetaria 2026', track: 'Licenciatura', professorIds: ['doc-002'], professors: ['Prof. Laura Medina'], env: 'dev' },
   ];
 
   const blobClient = containerClient.getBlockBlobClient('subjects.json');

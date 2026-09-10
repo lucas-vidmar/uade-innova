@@ -44,17 +44,56 @@ export async function renderSubjectManagement(container) {
         users = safeArray(await api.getAdminUsers());
     };
 
+    const normalizePersonName = (value) => String(value || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/^(prof\.?|profe\.?|dr\.?|dra\.?|lic\.?)\s+/, '')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+
+    // Legacy `subjects.json` seeded `professors: ['Prof. Martín Ferreiro']`
+    // (display names) while access control keys off Enrollments by userId
+    // (`doc-001`). Resolve legacy entries to teacher IDs so the directory
+    // doesn't render "Sin profesores" for an assigned subject.
+    const resolveLegacyProfessorIds = (subject, teacherUsers) => {
+        const legacy = safeArray(subject.professors);
+        if (legacy.length === 0 || !Array.isArray(teacherUsers) || teacherUsers.length === 0) return [];
+        const byId = new Map(teacherUsers.map((t) => [String(t.id || t.userId || ''), t]));
+        return legacy
+            .map((entry) => {
+                const raw = String(entry || '').trim();
+                if (!raw) return null;
+                if (byId.has(raw)) return raw;
+                const wanted = normalizePersonName(raw);
+                if (!wanted) return null;
+                const match = teacherUsers.find((t) => {
+                    const full = normalizePersonName(`${t.name || ''} ${t.surname || ''}`.trim() || t.id);
+                    const short = normalizePersonName(t.name || '');
+                    return full === wanted || short === wanted || full.includes(wanted) || wanted.includes(full);
+                });
+                return match ? String(match.id || match.userId) : null;
+            })
+            .filter(Boolean);
+    };
+
     const refreshSubjectProfessorMap = async () => {
+        const teacherUsers = users.filter((user) => {
+            const role = String(user.role || '').toLowerCase();
+            return role === 'teacher' || role === 'professor' || role === 'docente';
+        });
         const entries = await Promise.all(subjects.map(async (subject) => {
             try {
                 const classes = safeArray(await api.getClasses(subject.id));
                 const classProfessorIds = Array.from(new Set(classes.flatMap((cls) => safeArray(cls.professorIds))));
-                // Merge class-level with subject-level professorIds
+                // Merge class-level with subject-level professorIds + legacy display names
                 const subjectProfessorIds = safeArray(subject.professorIds);
-                const merged = Array.from(new Set([...classProfessorIds, ...subjectProfessorIds]));
+                const legacyIds = resolveLegacyProfessorIds(subject, teacherUsers);
+                const merged = Array.from(new Set([...classProfessorIds, ...subjectProfessorIds, ...legacyIds]));
                 return [subject.id, merged];
             } catch {
-                return [subject.id, safeArray(subject.professorIds)];
+                const legacyIds = resolveLegacyProfessorIds(subject, teacherUsers);
+                return [subject.id, Array.from(new Set([...safeArray(subject.professorIds), ...legacyIds]))];
             }
         }));
         subjectProfessorMap = Object.fromEntries(entries);
@@ -90,7 +129,7 @@ export async function renderSubjectManagement(container) {
         if (Array.isArray(mapped)) return mapped;
         if (Array.isArray(subject.professorIds)) return subject.professorIds;
         if (subject.professorId) return [subject.professorId];
-        return [];
+        return resolveLegacyProfessorIds(subject, getTeacherUsers());
     };
 
     const getSubjectOneLiner = (subject) => {
@@ -103,7 +142,7 @@ export async function renderSubjectManagement(container) {
         if (Array.isArray(mapped)) return mapped;
         if (Array.isArray(subject.professorIds)) return subject.professorIds;
         if (subject.professorId) return [subject.professorId];
-        return [];
+        return resolveLegacyProfessorIds(subject, getTeacherUsers());
     };
 
     const saveSubjectProfessorIds = async (subjectId, selectedIds) => {
