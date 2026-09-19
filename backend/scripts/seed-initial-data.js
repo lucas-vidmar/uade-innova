@@ -111,6 +111,7 @@ async function seedUserProfiles() {
       theme: 'light',
       language: 'es',
       consentAccepted: false,
+      env: 'pilot',
     });
     console.log(`  [i] ${user.id} — ${user.name}`);
   }
@@ -121,40 +122,44 @@ async function seedEnrollments() {
   await ensureTable(ENROLLMENTS_TABLE);
 
   const now = new Date().toISOString();
+  // Etiqueta de entorno aditiva (Story 10.23 / #344): filas piloto = 'pilot',
+  // eco-internacional (no está en pilot-enrollments.csv) = 'dev'. El reseed
+  // (cleanup --reseed) corre seed-initial-data + seed-enrollments en ese orden;
+  // ambas escrituras llevan env para que ninguna borre la etiqueta de la otra.
   const enrollments = [
     // Director (ambas materias)
-    { subjectId: 'arq-software-2026', userId: 'dir-001', role: 'director', enrolledAt: now },
-    { subjectId: 'diseno-sistemas-2026', userId: 'dir-001', role: 'director', enrolledAt: now },
+    { subjectId: 'arq-software-2026', userId: 'dir-001', role: 'director', enrolledAt: now, env: 'pilot' },
+    { subjectId: 'diseno-sistemas-2026', userId: 'dir-001', role: 'director', enrolledAt: now, env: 'pilot' },
 
     // Teachers
-    { subjectId: 'arq-software-2026', userId: 'doc-001', role: 'teacher', enrolledAt: now },
-    { subjectId: 'diseno-sistemas-2026', userId: 'doc-002', role: 'teacher', enrolledAt: now },
+    { subjectId: 'arq-software-2026', userId: 'doc-001', role: 'teacher', enrolledAt: now, env: 'pilot' },
+    { subjectId: 'diseno-sistemas-2026', userId: 'doc-002', role: 'teacher', enrolledAt: now, env: 'pilot' },
 
     // Admin (Story 10.25 / #271): seed so the admin smoke identity passes
     // role-gated endpoints (admin is not teacher/director).
-    { subjectId: 'arq-software-2026', userId: 'adm-001', role: 'admin', enrolledAt: now },
-    { subjectId: 'diseno-sistemas-2026', userId: 'adm-001', role: 'admin', enrolledAt: now },
+    { subjectId: 'arq-software-2026', userId: 'adm-001', role: 'admin', enrolledAt: now, env: 'pilot' },
+    { subjectId: 'diseno-sistemas-2026', userId: 'adm-001', role: 'admin', enrolledAt: now, env: 'pilot' },
 
     // Students in Arquitectura de Software
-    { subjectId: 'arq-software-2026', userId: 'alu-001', role: 'student', enrolledAt: now },
-    { subjectId: 'arq-software-2026', userId: 'alu-002', role: 'student', enrolledAt: now },
-    { subjectId: 'arq-software-2026', userId: 'alu-003', role: 'student', enrolledAt: now },
+    { subjectId: 'arq-software-2026', userId: 'alu-001', role: 'student', enrolledAt: now, env: 'pilot' },
+    { subjectId: 'arq-software-2026', userId: 'alu-002', role: 'student', enrolledAt: now, env: 'pilot' },
+    { subjectId: 'arq-software-2026', userId: 'alu-003', role: 'student', enrolledAt: now, env: 'pilot' },
 
     // Students in Diseño de Sistemas
-    { subjectId: 'diseno-sistemas-2026', userId: 'alu-004', role: 'student', enrolledAt: now },
-    { subjectId: 'diseno-sistemas-2026', userId: 'alu-005', role: 'student', enrolledAt: now },
+    { subjectId: 'diseno-sistemas-2026', userId: 'alu-004', role: 'student', enrolledAt: now, env: 'pilot' },
+    { subjectId: 'diseno-sistemas-2026', userId: 'alu-005', role: 'student', enrolledAt: now, env: 'pilot' },
 
     // alu-004 también cursa Arq. de Software
-    { subjectId: 'arq-software-2026', userId: 'alu-004', role: 'student', enrolledAt: now },
+    { subjectId: 'arq-software-2026', userId: 'alu-004', role: 'student', enrolledAt: now, env: 'pilot' },
     // alu-003 también cursa Diseño de Sistemas
-    { subjectId: 'diseno-sistemas-2026', userId: 'alu-003', role: 'student', enrolledAt: now },
+    { subjectId: 'diseno-sistemas-2026', userId: 'alu-003', role: 'student', enrolledAt: now, env: 'pilot' },
 
     // Economía Internacional Monetaria
-    { subjectId: 'eco-internacional-2026', userId: 'dir-001', role: 'director', enrolledAt: now },
-    { subjectId: 'eco-internacional-2026', userId: 'doc-002', role: 'teacher', enrolledAt: now },
-    { subjectId: 'eco-internacional-2026', userId: 'alu-001', role: 'student', enrolledAt: now },
-    { subjectId: 'eco-internacional-2026', userId: 'alu-002', role: 'student', enrolledAt: now },
-    { subjectId: 'eco-internacional-2026', userId: 'alu-005', role: 'student', enrolledAt: now },
+    { subjectId: 'eco-internacional-2026', userId: 'dir-001', role: 'director', enrolledAt: now, env: 'dev' },
+    { subjectId: 'eco-internacional-2026', userId: 'doc-002', role: 'teacher', enrolledAt: now, env: 'dev' },
+    { subjectId: 'eco-internacional-2026', userId: 'alu-001', role: 'student', enrolledAt: now, env: 'dev' },
+    { subjectId: 'eco-internacional-2026', userId: 'alu-002', role: 'student', enrolledAt: now, env: 'dev' },
+    { subjectId: 'eco-internacional-2026', userId: 'alu-005', role: 'student', enrolledAt: now, env: 'dev' },
   ];
 
   for (const e of enrollments) {
@@ -164,6 +169,7 @@ async function seedEnrollments() {
       role: e.role,
       status: 'active',
       enrolledAt: e.enrolledAt,
+      env: e.env,
     });
     console.log(`  [i] ${e.userId} → ${e.subjectId} (${e.role})`);
   }

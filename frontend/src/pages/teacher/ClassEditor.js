@@ -29,9 +29,9 @@ export async function renderClassEditor(container) {
     try {
         const [classesData, summaryData, mapData, audioScriptData] = await Promise.all([
             api.getClasses(subjectId),
-            api.getClassSummary(classId),
-            api.getClassMap(classId),
-            api.getClassAudioScript(classId),
+            api.getClassSummary(classId, subjectId),
+            api.getClassMap(classId, subjectId),
+            api.getClassAudioScript(classId, subjectId),
         ]);
 
         const classInfo = classesData.find(c => c.id === classId);
@@ -486,7 +486,7 @@ export async function renderClassEditor(container) {
                     }
                     toast('success', 'Resumen', 'Resumen regenerado con IA.');
 
-                    const scriptData = await api.getClassAudioScript(classId);
+                    const scriptData = await api.getClassAudioScript(classId, subjectId);
                     if (scriptData?.script) {
                         localState.podcast = scriptData.script;
                         podcastValidated = false;
@@ -512,19 +512,19 @@ export async function renderClassEditor(container) {
                 saveCurrentTabToLocal();
 
                 const promises = [
-                    api.saveClassSummary(classId, { summary: localState.summary, validated }),
-                    api.saveClassMap ? api.saveClassMap(classId, { mapCode: localState.map || '' }) : Promise.resolve(),
+                    api.saveClassSummary(classId, { subjectId, summary: localState.summary, validated }),
+                    api.saveClassMap ? api.saveClassMap(classId, { subjectId, mapCode: localState.map || '' }) : Promise.resolve(),
                 ];
 
                     if (localState.podcast?.trim()) {
-                        promises.push(api.saveClassAudioScript(classId, { script: localState.podcast, validated }));
+                        promises.push(api.saveClassAudioScript(classId, { subjectId, script: localState.podcast, validated }));
                     }
 
                     await Promise.all(promises);
 
                     if (localState.podcast?.trim() && validated) {
                         podcastValidated = true;
-                        const audioCheck = await api.getClassAudioScript(classId);
+                        const audioCheck = await api.getClassAudioScript(classId, subjectId);
                         if (audioCheck?.ttsGeneratedAt) {
                             podcastTtsGenerated = true;
                         }
@@ -536,7 +536,7 @@ export async function renderClassEditor(container) {
                         classes[idx].sectionsEnabled = { ...sectionsEnabled };
                         if (validated) {
                             classes[idx].summaryReady = true;
-                            const audioScript = await api.getClassAudioScript(classId);
+                            const audioScript = await api.getClassAudioScript(classId, subjectId);
                             if (audioScript?.script) {
                                 classes[idx].audioScriptReady = audioScript.validated && !!audioScript.ttsGeneratedAt;
                             }

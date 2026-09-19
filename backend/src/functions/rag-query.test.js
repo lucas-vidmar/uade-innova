@@ -1483,3 +1483,29 @@ test('rag-query glossary fast-path falls back to RAG when no glossary configured
     assert.ok(body.answer);
     assert.ok(body.glossary === undefined, 'No glossary metadata when no glossary configured');
 });
+
+test('#328: rag-query drops matches with a mismatched subjectId (DASI leak)', async (t) => {
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter, topK) => {
+        if (filter?.materialType?.$eq === 'verified-answer') return [];
+        return [
+            { score: 0.95, metadata: { sourceFilename: 'DASI Cronograma.docx', text: 'DASI leak', materialType: 'notes', subjectId: 'dasi-1c2023', classIds: ['class-01'], chunkIndex: 0 } },
+            { score: 0.9, metadata: { sourceFilename: 'clase1.pdf', text: 'Contenido de la clase 1', materialType: 'notes', subjectId: 'materia1', classIds: ['class1'], chunkIndex: 0 } },
+        ];
+    });
+    t.after(() => {
+        vectorStoreMocks.querySimilar.mock.mockImplementation(defaultQuerySimilarImpl);
+    });
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = {
+        json: async () => ({ question: 'pregunta normal', subjectId: 'materia1', classIds: ['class1'] }),
+        user: { id: 'test-user' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+    const body = JSON.parse(response.body);
+    assert.ok(Array.isArray(body.sources) && body.sources.length > 0);
+    assert.ok(body.sources.every((s) => s.subjectId === 'materia1'), 'no debe llegar ningún source de otra materia');
+    assert.ok(!body.sources.some((s) => s.sourceFilename === 'DASI Cronograma.docx'));
+});

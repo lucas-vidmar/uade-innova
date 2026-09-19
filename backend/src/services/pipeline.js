@@ -186,9 +186,11 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
                 totalTokens += (mapResult.usage?.total_tokens || 0);
                 
                 // Guardar activos para cada clase asociada
+                // #328: scoped paths ({subjectId}/{classId}.json) para que un
+                // classId compartido entre materias no colisione.
                 for (const classId of classIds) {
                     // Guardar Resumen
-                    await saveJson(CONTAINER_SUMMARIES, `${classId}.json`, {
+                    await saveJson(CONTAINER_SUMMARIES, `${subjectId}/${classId}.json`, {
                         classId,
                         subjectId,
                         summary: summaryResult.content,
@@ -198,7 +200,7 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
                     });
 
                     // Guardar Mapa Conceptual (Nuevo en HU#61)
-                    await saveJson('class-maps', `${classId}.json`, {
+                    await saveJson('class-maps', `${subjectId}/${classId}.json`, {
                         classId,
                         subjectId,
                         mapCode: mapResult.code,
@@ -209,7 +211,7 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
                     try {
                         const podcastResult = await generatePodcastScript(summaryResult.content, '', classId, { headers: openAiHeaders });
                         totalTokens += (podcastResult.usage?.total_tokens || 0);
-                        await saveJson('class-audio-scripts', `${classId}.json`, {
+                        await saveJson('class-audio-scripts', `${subjectId}/${classId}.json`, {
                             classId,
                             subjectId,
                             script: podcastResult.content,
@@ -257,13 +259,21 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
 
         if (mt === 'transcript' && extractedTimeline) {
             for (const classId of classIds) {
-                const timelineBlob = `${classId}.json`;
-                const existingTimeline = await loadJson('class-timelines', timelineBlob) || {
-                    classId,
-                    subjectId,
-                    markers: [],
-                    sections: [],
-                };
+                // #328: scoped timeline path; merge against the scoped blob first,
+                // falling back to legacy only when it belongs to this subject.
+                const timelineBlob = `${subjectId}/${classId}.json`;
+                const legacyTimeline = await loadJson('class-timelines', `${classId}.json`).catch(() => null);
+                const legacyBelongs = !legacyTimeline
+                    || !legacyTimeline.subjectId
+                    || String(legacyTimeline.subjectId) === String(subjectId);
+                const existingTimeline = await loadJson('class-timelines', timelineBlob).catch(() => null)
+                    || (legacyBelongs ? legacyTimeline : null)
+                    || {
+                        classId,
+                        subjectId,
+                        markers: [],
+                        sections: [],
+                    };
 
                 const sections = extractedTimeline.sections.map(section => ({
                     ...section,

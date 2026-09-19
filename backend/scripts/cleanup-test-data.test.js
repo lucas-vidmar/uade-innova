@@ -34,6 +34,19 @@ mock.module('../src/services/vector-store.js', {
         getIndexStats: async () => ({ totalVectorCount: 0 }),
     },
 });
+// #344: el CLI importa notification-store/glossary-store (que a su vez
+// importan state-store con exports no mockeados acá). Se mockean para aislar.
+mock.module('../src/services/notification-store.js', {
+    namedExports: {
+        listNotificationsBySubject: async () => [],
+    },
+});
+mock.module('../src/services/glossary-store.js', {
+    namedExports: {
+        getGlossary: async () => null,
+        updateGlossary: async () => null,
+    },
+});
 
 const { main, parseArgs } = await import('../scripts/cleanup-test-data.js');
 

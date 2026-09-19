@@ -363,7 +363,7 @@ export async function renderClassManager(container) {
                 btn.addEventListener('click', async (e) => {
                     const idx = parseInt(e.currentTarget.getAttribute('data-idx'));
                     const classItem = classes[idx];
-                    const timeline = await api.getClassTimeline(classItem.id);
+                    const timeline = await api.getClassTimeline(classItem.id, subjectId);
                     const markers = Array.isArray(timeline.markers) ? [...timeline.markers] : [];
                     const sections = Array.isArray(timeline.sections) ? [...timeline.sections] : [];
 

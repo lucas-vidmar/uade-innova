@@ -306,6 +306,8 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
           await api.sendChatFeedback({ messageId, subjectId, isPositive: type === 'positive' });
         } catch (err) {
           console.error('Error sending feedback:', err);
+          // #330: explicit error toast instead of silently swallowing.
+          toast('error', 'No se pudo guardar tu valoración', err?.message || 'Intentá de nuevo.');
         }
       });
     });
@@ -618,7 +620,11 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
           if (type === 'positive') {
             toast('success', 'Respuesta calificada', '');
           }
-        } catch (err) { console.error('Error sending feedback:', err); }
+        } catch (err) {
+          console.error('Error sending feedback:', err);
+          // #330: explicit error toast instead of silently swallowing.
+          toast('error', 'No se pudo guardar tu valoración', err?.message || 'Intentá de nuevo.');
+        }
       });
     });
   };

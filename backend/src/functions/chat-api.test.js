@@ -249,3 +249,63 @@ test('teacher-ai-feedback-alerts should return sorted alerts by subject', async 
     assert.strictEqual(body[0].id, 'ai-issue-2');
     assert.strictEqual(body[1].id, 'ai-issue-1');
 });
+
+test('#330: chat-feedback persists positive feedback and returns JSON', async () => {
+    resetState();
+    storageState.chatLogs.set('teacher_oid/arq-software-2026/msg-1.json', {
+        id: 'msg-1',
+        question: '¿Qué es hexagonal?',
+        answer: 'Es un estilo.',
+    });
+    principalMock = { userRoles: ['Docente'], oid: 'teacher-oid' };
+
+    const response = await handlers['chat-feedback'](
+        {
+            json: async () => ({ messageId: 'msg-1', subjectId: 'arq-software-2026', isPositive: true }),
+        },
+        { log: () => {}, error: () => {} }
+    );
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(response.headers['Content-Type'], 'application/json');
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.success, true);
+    assert.strictEqual(body.feedback, 'positive');
+    assert.strictEqual(storageState.chatLogs.get('teacher_oid/arq-software-2026/msg-1.json').feedback, 'positive');
+});
+
+test('#330: chat-feedback returns JSON 404 (not plain text) when the message is missing', async () => {
+    resetState();
+    principalMock = { userRoles: ['Docente'], oid: 'teacher-oid' };
+
+    const response = await handlers['chat-feedback'](
+        {
+            json: async () => ({ messageId: 'missing', subjectId: 'arq-software-2026', isPositive: false }),
+        },
+        { log: () => {}, error: () => {} }
+    );
+
+    assert.strictEqual(response.status, 404);
+    assert.strictEqual(response.headers['Content-Type'], 'application/json');
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.code, 'MESSAGE_NOT_FOUND');
+});
+
+test('#330: chat-feedback returns JSON 400 on missing fields and invalid JSON', async () => {
+    resetState();
+    principalMock = { userRoles: ['Docente'], oid: 'teacher-oid' };
+
+    const missing = await handlers['chat-feedback'](
+        { json: async () => ({ messageId: '', subjectId: '' }) },
+        { log: () => {}, error: () => {} }
+    );
+    assert.strictEqual(missing.status, 400);
+    assert.doesNotThrow(() => JSON.parse(missing.body));
+
+    const invalid = await handlers['chat-feedback'](
+        { json: async () => { throw new Error('bad json'); } },
+        { log: () => {}, error: () => {} }
+    );
+    assert.strictEqual(invalid.status, 400);
+    assert.doesNotThrow(() => JSON.parse(invalid.body));
+});

@@ -975,3 +975,99 @@ test('classes-api get-director-session-metrics-history multi-page iteration with
     assert.strictEqual(body2.continuationToken, null);
     assert.strictEqual(body2.hasMore, false);
 });
+
+test('#328: get-class-summary requires subjectId (400 without it)', async (t) => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
+    const mockRequest = { params: { classId: 'class-01' }, query: new URLSearchParams() };
+
+    const response = await handlers['get-class-summary'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 400);
+
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+});
+
+test('#328: get-class-summary serves the scoped blob for (subjectId, classId)', async (t) => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+
+    const restoreLoadJson = async () => ({});
+    storageMocks.loadJson.mock.mockImplementation(async (container, blobName) => {
+        if (container === 'class-summaries' && blobName === 'arq-software-2026/class-01.json') {
+            return { classId: 'class-01', subjectId: 'arq-software-2026', summary: 'scoped' };
+        }
+        return null;
+    });
+
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
+    const mockRequest = { params: { classId: 'class-01' }, query: new URLSearchParams({ subjectId: 'arq-software-2026' }) };
+
+    try {
+        const response = await handlers['get-class-summary'](mockRequest, mockContext);
+        assert.strictEqual(response.status, 200);
+        const body = JSON.parse(response.body);
+        assert.strictEqual(body.summary, 'scoped');
+    } finally {
+        storageMocks.loadJson.mock.mockImplementation(restoreLoadJson);
+        process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+    }
+});
+
+test('#328: get-class-summary never serves a legacy blob of another subject', async (t) => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+
+    const restoreLoadJson = async () => ({});
+    storageMocks.loadJson.mock.mockImplementation(async (container, blobName) => {
+        if (container === 'class-summaries' && blobName === 'class-01.json') {
+            return { classId: 'class-01', subjectId: 'dasi-1c2023', summary: 'DASI leak' };
+        }
+        return null;
+    });
+
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
+    const mockRequest = { params: { classId: 'class-01' }, query: new URLSearchParams({ subjectId: 'arq-software-2026' }) };
+
+    try {
+        const response = await handlers['get-class-summary'](mockRequest, mockContext);
+        assert.strictEqual(response.status, 200);
+        const body = JSON.parse(response.body);
+        assert.strictEqual(body.summary, null, 'cross-subject legacy blob must not leak');
+    } finally {
+        storageMocks.loadJson.mock.mockImplementation(restoreLoadJson);
+        process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+    }
+});
+
+test('#328: save-class-summary writes to the scoped path and requires subjectId', async (t) => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
+
+    const noSubject = await handlers['save-class-summary'](
+        { params: { classId: 'class-01' }, json: async () => ({ summary: 'x' }) },
+        mockContext
+    );
+    assert.strictEqual(noSubject.status, 400);
+
+    storageMocks.saveJson.mock.resetCalls();
+    const ok = await handlers['save-class-summary'](
+        { params: { classId: 'class-01' }, json: async () => ({ subjectId: 'arq-software-2026', summary: 'x', validated: true }) },
+        mockContext
+    );
+    assert.strictEqual(ok.status, 200);
+    const saveCalls = storageMocks.saveJson.mock.calls;
+    assert.ok(
+        saveCalls.some((call) => call.arguments[0] === 'class-summaries' && call.arguments[1] === 'arq-software-2026/class-01.json'),
+        'must write to the scoped blob path'
+    );
+
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+});

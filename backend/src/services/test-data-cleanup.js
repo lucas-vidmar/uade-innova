@@ -32,6 +32,24 @@ export const TEST_QUESTION_NORMALIZED = 'que es un sistema';
 
 export const TEST_SNIPPET_PATTERNS = [/trigger\s*check/i, /retry\s*old\s*doc/i];
 export const DASI_FILE_PATTERNS = [/dasi/i, /econometr[ií]a/i];
+
+// #344: fixture filenames visibles en el piloto (student search 'hexagonal'
+// mostraba mock-*.txt/test.txt). Son nombres de archivo de fixtures E2E —
+// nunca contenido legítimo (los archivos piloto se llaman
+// clase*_transcripcion.*, apuntes_*, etc.). El match es sobre el filename,
+// no sobre el texto, para no borrar contenido que mencione "mock" (ej: mock
+// objects en Arquitectura de Software).
+export const TEST_FILENAME_PATTERNS = [/^mock[-_]/i, /^test\.txt$/i, /mock-transcript/i, /^e2e[-_]/i];
+
+// #344: términos basura de glosario visibles para estudiantes.
+export const TEST_GLOSSARY_TERMS = ['probando', 'asd'];
+
+// #344: notificaciones E2E visibles para estudiantes (origen/id/título de test).
+export const TEST_NOTIFICATION_PATTERNS = [/e2e/i, /\bmock\b/i];
+
+// #344: bytes crudos de PDF filtrados en timelines/hit-points de class-01
+// (una extracción legítima nunca contiene el marcador mágico %PDF).
+export const RAW_PDF_PATTERN = /%pdf/i;
 export const ZERO_SECOND = 0;
 
 export const CONTAINERS = {
@@ -41,6 +59,7 @@ export const CONTAINERS = {
   deadlines: 'deadlines',
   classesConfig: 'classes-config',
   subjectsBlob: 'subjects.json',
+  notifications: 'notifications',
 };
 
 function normalizeText(value = '') {
@@ -52,6 +71,15 @@ function normalizeText(value = '') {
 
 function hasTestSnippetText(text = '') {
   return TEST_SNIPPET_PATTERNS.some((pattern) => pattern.test(normalizeText(text)));
+}
+
+function hasTestFilename(filename = '') {
+  const name = String(filename || '').split('/').pop() || '';
+  return TEST_FILENAME_PATTERNS.some((pattern) => pattern.test(name.trim()));
+}
+
+function hasRawPdfBytes(text = '') {
+  return RAW_PDF_PATTERN.test(String(text || ''));
 }
 
 function hasDasiText(text = '') {
@@ -118,6 +146,7 @@ export function isZeroOnlyTimeline(timeline = {}) {
  * test (DASI/Econometría) en markers/secciones de un timeline. Para materias
  * piloto se ignoran los patrones DASI (contenido legítimo que mencione
  * "econometría" no se borra); los snippets de test sí aplican siempre.
+ * Los bytes crudos de PDF (%PDF) aplican siempre: nunca son contenido legítimo.
  */
 export function hasTestSnippet(timeline = {}) {
   const texts = [];
@@ -134,6 +163,8 @@ export function hasTestSnippet(timeline = {}) {
   }
   const joined = normalizeText(texts.filter(Boolean).join(' '));
   if (TEST_SNIPPET_PATTERNS.some((pattern) => pattern.test(joined))) return true;
+  // Bytes crudos de PDF en el timeline: artefacto de parseo fallido (#344).
+  if (hasRawPdfBytes(texts.filter(Boolean).join(' '))) return true;
   // Guard piloto: los patrones DASI/econometría solo aplican a subjects NO
   // piloto. Un label/section de una materia piloto que mencione "econometría"
   // o "DASI" es contenido legítimo y NO debe marcarse ni reescribirse.
@@ -143,6 +174,9 @@ export function hasTestSnippet(timeline = {}) {
 
 export function isTestMaterial(material = {}) {
   if (isTestSubjectId(material.subjectId)) return true;
+  // #344: fixtures E2E (mock-*.txt/test.txt) mal etiquetadas con subject
+  // piloto: el filename es de fixture aunque el subject sea piloto.
+  if (hasTestFilename(material.filename)) return true;
   // Contenido piloto legítimo nunca se marca por filename DASI/econometría.
   if (subjectIsPilot(material.subjectId)) return false;
   return hasDasiText(material.filename);
@@ -174,14 +208,40 @@ export function isTestProfile(profile = {}) {
 /**
  * Detecta blobs de `processed` que corresponden a material de prueba.
  * Para materias piloto no aplican los patrones DASI (solo subject test y
- * snippets de test).
+ * snippets de test), pero SÍ aplican los filenames de fixture E2E
+ * (mock-*.txt/test.txt) y los bytes crudos de PDF (#344): un blob piloto
+ * legítimo nunca se llama `mock-*.txt` ni contiene `%PDF` en el texto.
  */
 export function isTestProcessedPayload(payload = {}) {
   if (isTestSubjectId(payload.subjectId)) return true;
   const text = normalizeText(payload.extractedText);
   if (TEST_SNIPPET_PATTERNS.some((pattern) => pattern.test(text))) return true;
+  if (hasTestFilename(payload.filename)) return true;
+  if (hasRawPdfBytes(payload.extractedText)) return true;
   if (subjectIsPilot(payload.subjectId)) return false;
   return hasDasiText(payload.filename);
+}
+
+/**
+ * #344: término basura de glosario visible para estudiantes
+ * (comparación exacta normalizada, case-insensitive).
+ */
+export function isTestGlossaryTerm(term = {}) {
+  const name = normalizeText(term.term).trim();
+  return TEST_GLOSSARY_TERMS.includes(name);
+}
+
+/**
+ * #344: notificación E2E de prueba visible para estudiantes. Solo se marca
+ * por patrones de test en id/título/mensaje/origen — nunca por subject.
+ */
+export function isTestNotification(notification = {}) {
+  const haystack = [notification.id, notification.title, notification.message, notification.origin]
+    .filter(Boolean)
+    .map((v) => normalizeText(v))
+    .join(' ');
+  if (!haystack.trim()) return false;
+  return TEST_NOTIFICATION_PATTERNS.some((pattern) => pattern.test(haystack));
 }
 
 /**
@@ -225,17 +285,19 @@ export function classMaterialBlobBelongsToTest(
 
 /**
  * True si un marker del timeline debe eliminarse durante el strip parcial:
- * label con snippet de test, o (fuera de materias piloto) sourceFilename/label
- * DASI/econometría.
+ * label con snippet de test, bytes crudos de PDF (#344), o (fuera de materias
+ * piloto) sourceFilename/label DASI/econometría.
  */
 function markerIsOffending(marker = {}, subjectId) {
   if (hasTestSnippetText(marker?.label)) return true;
+  if (hasRawPdfBytes(marker?.label)) return true;
   if (subjectIsPilot(subjectId)) return false;
   return hasDasiText(marker?.sourceFilename) || hasDasiText(marker?.label);
 }
 
 function sectionIsOffending(section = {}, subjectId) {
   if (hasTestSnippetText(section?.text)) return true;
+  if (hasRawPdfBytes(section?.text)) return true;
   if (subjectIsPilot(subjectId)) return false;
   return hasDasiText(section?.sourceFilename) || hasDasiText(section?.text);
 }
@@ -259,6 +321,8 @@ export async function findTestArtifacts(stores) {
     classMaterialBlobs: [], // { blobName }
     processedBlobs: [],     // { blobName }
     subjectsConfig: [],     // entradas de subjects.json de materias de prueba
+    notifications: [],      // { subjectId, notificationId, title } (#344 E2E)
+    glossaryTerms: [],      // { subjectId, term } (#344 probando/asd)
     pineconeSubjectIds: TEST_SUBJECT_IDS.slice(),
   };
 
@@ -431,6 +495,38 @@ export async function findTestArtifacts(stores) {
     console.warn(`[Cleanup] No se pudo inspeccionar subjects.json: ${err.message}`);
   }
 
+  // 11. Notificaciones E2E (`notifications/{subjectId}.json`, #344).
+  try {
+    if (typeof stores.listNotifications === 'function') {
+      const notifications = await stores.listNotifications();
+      for (const notification of Array.isArray(notifications) ? notifications : []) {
+        if (isTestNotification(notification)) {
+          plan.notifications.push({
+            subjectId: notification.subjectId,
+            notificationId: notification.id,
+            title: notification.title,
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`[Cleanup] No se pudieron enumerar notificaciones: ${err.message}`);
+  }
+
+  // 12. Términos basura de glosario (#344: probando/asd).
+  try {
+    if (typeof stores.listGlossaryTerms === 'function') {
+      const terms = await stores.listGlossaryTerms();
+      for (const term of Array.isArray(terms) ? terms : []) {
+        if (isTestGlossaryTerm(term)) {
+          plan.glossaryTerms.push({ subjectId: term.subjectId, term: term.term });
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`[Cleanup] No se pudieron enumerar términos de glosario: ${err.message}`);
+  }
+
   return plan;
 }
 
@@ -451,6 +547,8 @@ export function summarizePlan(plan) {
     classMaterialBlobs: plan.classMaterialBlobs.length,
     processedBlobs: plan.processedBlobs.length,
     subjectsConfig: plan.subjectsConfig.length,
+    notifications: (plan.notifications || []).length,
+    glossaryTerms: (plan.glossaryTerms || []).length,
   };
 }
 
@@ -475,6 +573,8 @@ export async function applyCleanupPlan(stores, plan, { skipPinecone = false } = 
     classMaterialBlobs: 0,
     processedBlobs: 0,
     subjectsConfig: 0,
+    notifications: 0,
+    glossaryTerms: 0,
     pinecone: 0,
   };
   const failures = [];
@@ -634,6 +734,31 @@ export async function applyCleanupPlan(stores, plan, { skipPinecone = false } = 
     recordFailure('subjectsConfig', err.message);
   }
 
+  // #344: notificaciones E2E (reescribe el JSON del subject sin las de test,
+  // o borra el blob si queda vacío).
+  try {
+    if ((plan.notifications || []).length > 0 && typeof stores.deleteNotification === 'function') {
+      for (const notification of plan.notifications) {
+        await stores.deleteNotification(notification.subjectId, notification.notificationId);
+        deleted.notifications += 1;
+      }
+    }
+  } catch (err) {
+    recordFailure('notifications', err.message);
+  }
+
+  // #344: términos basura de glosario.
+  try {
+    if ((plan.glossaryTerms || []).length > 0 && typeof stores.deleteGlossaryTerm === 'function') {
+      for (const entry of plan.glossaryTerms) {
+        await stores.deleteGlossaryTerm(entry.subjectId, entry.term);
+        deleted.glossaryTerms += 1;
+      }
+    }
+  } catch (err) {
+    recordFailure('glossaryTerms', err.message);
+  }
+
   // Pinecone: coordinado con Story 10.17 (QA-002). Handoff explícito; por
   // defecto NO se borra salvo que el CLI pase `--with-pinecone`.
   try {
@@ -686,6 +811,8 @@ export async function verifyCleanup(stores, { skipPinecone = false } = {}) {
     'classMaterialBlobs',
     'processedBlobs',
     'subjectsConfig',
+    'notifications',
+    'glossaryTerms',
   ];
   const remaining = cleanCategories.filter((category) => plan[category].length > 0);
   const delegated = [];

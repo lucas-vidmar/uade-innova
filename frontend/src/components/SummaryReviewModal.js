@@ -247,9 +247,9 @@ export function createSummaryReviewModal(classId, className, subjectId, onSaved)
     });
 
     Promise.all([
-        api.getClassSummary(classId),
-        api.getClassMap(classId),
-        api.getClassAudioScript(classId),
+        api.getClassSummary(classId, subjectId),
+        api.getClassMap(classId, subjectId),
+        api.getClassAudioScript(classId, subjectId),
     ]).then(([summaryData, mapData, audioScriptData]) => {
         loading.style.display = 'none';
         switchTab('summary');
@@ -298,17 +298,19 @@ export function createSummaryReviewModal(classId, className, subjectId, onSaved)
 
             const promises = [
                 api.saveClassSummary(classId, {
+                    subjectId,
                     summary: getSummaryValue(),
                     validated,
                     summarySource: opts.summarySource,
                     suitable: opts.suitable,
                 }),
-                api.saveClassMap ? api.saveClassMap(classId, { mapCode: mapEditor.value }) : Promise.resolve()
+                api.saveClassMap ? api.saveClassMap(classId, { subjectId, mapCode: mapEditor.value }) : Promise.resolve()
             ];
 
             const podcastScript = podcastEditor.value.trim();
             if (podcastScript) {
                 promises.push(api.saveClassAudioScript(classId, {
+                    subjectId,
                     script: podcastScript,
                     validated
                 }));
@@ -365,7 +367,7 @@ export function createSummaryReviewModal(classId, className, subjectId, onSaved)
                 }
                 toast('success', 'Regenerado', 'Resumen y mapa conceptual regenerados con IA.');
 
-                const scriptData = await api.getClassAudioScript(classId);
+                const scriptData = await api.getClassAudioScript(classId, subjectId);
                 if (scriptData && scriptData.script) {
                     podcastEditor.value = scriptData.script;
                     podcastStatus.textContent = 'Estado: 📝 Regenerado — revisar antes de aprobar';

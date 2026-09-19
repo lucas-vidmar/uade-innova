@@ -335,3 +335,87 @@ test('readConfig: defaults align with pilot seed data', () => {
         Object.assign(process.env, prev);
     }
 });
+test('#328: querySubjectScope fails on DASI/test.txt/mock-transcript leaks into a pilot query', async () => {
+    const { querySubjectScope } = await import('./canary-rag-source-isolation.js');
+    const cfg = baseCfg();
+    const fetchImpl = stubFetch(async () => jsonResponse(200, { sources: [
+        { subjectId: SUBJECT, classIds: ['class-01'], sourceFilename: 'clase1_transcripcion.txt' },
+        { subjectId: 'dasi-1c2023', classIds: ['class-01'], sourceFilename: 'DASI Cronograma dia Jueves_1C2023_ejemplo.docx' },
+        { subjectId: SUBJECT, classIds: ['class-01'], sourceFilename: 'test.txt' },
+    ] }));
+    // NOTE: test.txt carries the pilot subjectId here, so only the DASI leak
+    // fails at canary level (mock/test.txt mislabeled with a pilot subjectId
+    // is quarantined server-side via vector-audit + the RAG subject post-filter).
+    const res = await querySubjectScope(cfg, {
+        label: 'rag-cross',
+        email: 's@example.com',
+        subjectId: SUBJECT,
+        classIds: ['class-01'],
+        question: 'q',
+    }, fetchImpl);
+    assert.strictEqual(res.ok, false);
+    assert.match(res.detail, /DASI/);
+});
+
+test('#328: querySubjectScope rejects cross-class leaks (class-01 source in a class-02 query)', async () => {
+    const { querySubjectScope } = await import('./canary-rag-source-isolation.js');
+    const cfg = baseCfg();
+    const fetchImpl = stubFetch(async () => jsonResponse(200, { sources: [
+        { subjectId: SUBJECT, classIds: ['class-01'], sourceFilename: 'clase1.txt' },
+    ] }));
+    const res = await querySubjectScope(cfg, {
+        label: 'rag-class-02',
+        email: 's@example.com',
+        subjectId: SUBJECT,
+        classIds: ['class-02'],
+        question: 'q',
+    }, fetchImpl);
+    assert.strictEqual(res.ok, false);
+    assert.match(res.detail, /class-01/);
+});
+
+test('#328: readConfig parses RAG_CANARY_EXTRA_SUBJECT_IDS with per-subject overrides', async () => {
+    const prev = { ...process.env };
+    try {
+        for (const key of Object.keys(process.env)) {
+            if (key.startsWith('RAG_CANARY_')) delete process.env[key];
+        }
+        process.env.RAG_CANARY_ENABLED = 'true';
+        process.env.RAG_CANARY_EXTRA_SUBJECT_IDS = 'diseno-sistemas-2026, dasi-1c2023';
+        process.env.RAG_CANARY_EXTRA_DISENO_SISTEMAS_2026_CLASS_IDS = 'class-ds-01';
+        const cfg = readConfig();
+        assert.strictEqual(cfg.extraSubjects.length, 2);
+        assert.deepStrictEqual(cfg.extraSubjects[0], {
+            subjectId: 'diseno-sistemas-2026',
+            classIds: ['class-ds-01'],
+            question: '¿Qué es la arquitectura de software?',
+        });
+        assert.deepStrictEqual(cfg.extraSubjects[1].classIds, ['class-01']);
+    } finally {
+        for (const key of Object.keys(process.env)) {
+            if (key.startsWith('RAG_CANARY_')) delete process.env[key];
+        }
+        Object.assign(process.env, prev);
+    }
+});
+
+test('#328: runCanary probes extra subjects per-subject and fails closed without student email', async () => {
+    const cfg = baseCfg();
+    cfg.extraSubjects = [{ subjectId: 'diseno-sistemas-2026', classIds: ['class-ds-01'], question: 'q' }];
+    const fetchImpl = stubFetch(async (url, init) => {
+        const body = JSON.parse(init.body);
+        if (body.subjectId === 'diseno-sistemas-2026') {
+            return jsonResponse(200, { sources: [{ subjectId: 'diseno-sistemas-2026', classIds: ['class-ds-01'], sourceFilename: 'ok.txt' }] });
+        }
+        return jsonResponse(200, { sources: [{ subjectId: SUBJECT, classIds: ['class-01'], sourceFilename: 'ok.txt' }] });
+    });
+    const outcome = await runCanary(cfg, { fetchImpl });
+    assert.strictEqual(outcome.failedCount, 0);
+    assert.ok(outcome.results.some((r) => r.name === 'rag-cross-diseno-sistemas-2026' && r.ok === true));
+
+    const noEmail = baseCfg();
+    noEmail.roles.student.email = '';
+    noEmail.extraSubjects = [{ subjectId: 'diseno-sistemas-2026', classIds: ['class-ds-01'], question: 'q' }];
+    const outcome2 = await runCanary(noEmail, { fetchImpl });
+    assert.ok(outcome2.results.some((r) => r.name === 'rag-cross-diseno-sistemas-2026' && r.ok === false));
+});

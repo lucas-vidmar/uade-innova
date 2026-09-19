@@ -135,9 +135,12 @@ app.http('global-search', {
                 const rawMatches = await querySimilar(embedding, materialFilter, MAX_GLOBAL_RESULTS, { correlationId });
                 // Post-filter de cuarentena: incluso si el filtro de Pinecone fallara,
                 // un source cuarentenado no debe aparecer en los resultados.
-                const matches = rawMatches.filter((match) => !isQuarantined(match.metadata));
+                // #328: además se descartan vectores con subjectId explícito de
+                // otra materia (mock-*.txt/test.txt mal etiquetados).
+                const matches = rawMatches.filter((match) => !isQuarantined(match.metadata)
+                    && (!match.metadata?.subjectId || String(match.metadata.subjectId) === String(subjectId)));
                 if (matches.length !== rawMatches.length) {
-                    context?.log?.(`[global-search] Quarantine post-filter descarto ${rawMatches.length - matches.length} matches cuarentenados (subjectId=${subjectId}, correlationId=${correlationId})`);
+                    context?.log?.(`[global-search] Isolation post-filter descarto ${rawMatches.length - matches.length} matches cuarentenados/fuera de subject (subjectId=${subjectId}, correlationId=${correlationId})`);
                 }
                 for (const match of matches) {
                     const text = match.metadata?.text || '';

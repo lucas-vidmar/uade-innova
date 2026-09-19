@@ -158,18 +158,27 @@ app.http('delete-chat-history', {
 });
 
 // ── POST /api/chat-feedback ──────────────────────────────────────────
+// #330: todas las respuestas son JSON con Content-Type explícito — el
+// frontend hace `res.json()` y un body de texto plano ('Mensaje no...')
+// rompía con `SyntaxError: Unexpected token 'M'` tragado en silencio.
 app.http('chat-feedback', {
     methods: ['POST'],
     authLevel: 'anonymous',
     route: 'chat-feedback',
     handler: withCorrelation(withAuth(async (request, context) => {
-        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+        if (!validateFrontDoorId(request)) return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+        let payload;
         try {
-            const { messageId, subjectId, isPositive } = await request.json();
+            payload = await request.json();
+        } catch {
+            return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Body JSON inválido', code: 'INVALID_JSON' }) };
+        }
+        try {
+            const { messageId, subjectId, isPositive } = payload || {};
             const { userId, sanitizedId } = getAuthenticatedUser(request);
 
             if (!messageId || !subjectId) {
-                return { status: 400, body: 'Faltan campos messageId o subjectId' };
+                return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Faltan campos messageId o subjectId', code: 'MISSING_FIELDS' }) };
             }
 
             // Security Check: Enrollment-based access control
@@ -181,10 +190,10 @@ app.http('chat-feedback', {
                 try {
                     const enrollment = await getEnrollment(subjectId, userId);
                     if (!enrollment || enrollment.status !== 'active') {
-                        return { status: 403, body: JSON.stringify({ error: 'No estás matriculado en esta materia.' }) };
+                        return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'No estás matriculado en esta materia.' }) };
                     }
                 } catch (err) {
-                    return { status: 500, body: JSON.stringify({ error: 'Error verificando permisos.' }) };
+                    return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Error verificando permisos.' }) };
                 }
             }
         
@@ -193,7 +202,7 @@ app.http('chat-feedback', {
             const log = await loadJson(CONTAINER_CHAT, blobPath);
 
             if (!log) {
-                return { status: 404, body: 'Mensaje no encontrado' };
+                return { status: 404, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Mensaje no encontrado', code: 'MESSAGE_NOT_FOUND' }) };
             }
 
             log.feedback = isPositive ? 'positive' : 'negative';
@@ -208,7 +217,7 @@ app.http('chat-feedback', {
             };
         } catch (err) {
             context.error('Error procesando feedback:', err);
-            return { status: 500, body: 'Error interno' };
+            return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Error interno' }) };
         }
     }))
 });

@@ -74,8 +74,12 @@ export async function deleteClass(subjectId, classId) {
     return saveClasses(subjectId, newClasses);
 }
 
-export async function getClassSummary(classId) {
-    const res = await apiFetch(`${BASE_URL}/class-summary/${classId}`);
+function scopedQuery(subjectId) {
+    return subjectId ? `?subjectId=${encodeURIComponent(subjectId)}` : '';
+}
+
+export async function getClassSummary(classId, subjectId) {
+    const res = await apiFetch(`${BASE_URL}/class-summary/${classId}${scopedQuery(subjectId)}`);
     if (!res.ok) return null;
     return res.json();
 }
@@ -108,8 +112,8 @@ export function getClassAudioUrl(classId, subjectId) {
     return `${BASE_URL}/class-audio/${classId}${query ? `?${query}` : ''}`;
 }
 
-export async function getClassMap(classId) {
-    const res = await apiFetch(`${BASE_URL}/class-map/${classId}`);
+export async function getClassMap(classId, subjectId) {
+    const res = await apiFetch(`${BASE_URL}/class-map/${classId}${scopedQuery(subjectId)}`);
     if (!res.ok) return null;
     return res.json();
 }
@@ -123,8 +127,8 @@ export async function saveClassMap(classId, data) {
     return res.json();
 }
 
-export async function getClassTimeline(classId) {
-    const res = await apiFetch(`${BASE_URL}/class-timeline/${classId}`);
+export async function getClassTimeline(classId, subjectId) {
+    const res = await apiFetch(`${BASE_URL}/class-timeline/${classId}${scopedQuery(subjectId)}`);
     if (!res.ok) return { classId, sections: [], markers: [] };
     return res.json();
 }
@@ -152,8 +156,8 @@ export async function generateClassMap(classId, subjectId) {
     return res.json();
 }
 
-export async function getClassAudioScript(classId) {
-    const res = await apiFetch(`${BASE_URL}/class-audio-script/${classId}`);
+export async function getClassAudioScript(classId, subjectId) {
+    const res = await apiFetch(`${BASE_URL}/class-audio-script/${classId}${scopedQuery(subjectId)}`);
     if (!res.ok) return null;
     return res.json();
 }

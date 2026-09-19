@@ -17,6 +17,43 @@ const CONTAINER_CLASSES = CONFIG.containers.classes;
 const CONTAINER_PROCESSED = 'processed';
 const SUBJECTS_BLOB = CONFIG.blobs.subjects;
 
+// ── #328: (subjectId, classId)-scoped class asset helpers ─────────────
+// Class AI assets (summaries, maps, audio scripts) were keyed only by classId
+// (`{classId}.json`), so `class-01`/`class-02` collided across subjects and
+// leaked cross-subject content. Scoped reads prefer
+// `{subjectId}/{classId}.json` and only honor a legacy `{classId}.json` blob
+// when its embedded subjectId matches the request (or is absent).
+async function loadSubjectScopedAsset(container, subjectId, classId) {
+    const scoped = await loadJson(container, `${subjectId}/${classId}.json`).catch(() => null);
+    if (scoped) return scoped;
+    const legacy = await loadJson(container, `${classId}.json`).catch(() => null);
+    if (!legacy) return null;
+    if (legacy.subjectId && String(legacy.subjectId) !== String(subjectId)) return null;
+    return legacy;
+}
+
+function scopedAssetResponse(status, payload) {
+    return { status, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) };
+}
+
+async function requireAssetSubjectAccess(request, context, subjectId) {
+    const principal = parseClientPrincipal(request);
+    const roles = principal?.userRoles || [];
+    if (roles.includes('Director') || roles.includes('Docente') || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development') {
+        return null;
+    }
+    const userId = principal?.userId || principal?.oid || 'anonymous';
+    try {
+        const enrollment = await getEnrollment(subjectId, userId);
+        if (!enrollment || enrollment.status !== 'active') {
+            return scopedAssetResponse(403, { error: 'No tienes acceso a esta materia.' });
+        }
+    } catch {
+        return scopedAssetResponse(500, { error: 'Error al verificar permisos de acceso.' });
+    }
+    return null;
+}
+
 import path from 'path';
 
 const SESSION_METRICS_TABLE = 'SessionMetrics';
@@ -634,7 +671,7 @@ app.http('delete-subject', {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
 
         const subjectId = request.params.subjectId;
-        const cascade = request.query.get('cascade') === 'true';
+        const cascade = request.query?.get?.('cascade') === 'true';
 
         const principal = parseClientPrincipal(request);
         if (!canManageSubjects(principal)) {
@@ -697,10 +734,18 @@ app.http('delete-subject', {
                 // 3. Limpiar clases (resúmenes, mapas y tablas)
                 for (const cls of classes) {
                     try {
+                        // #328: borrar tanto el blob legacy ({classId}.json) como el
+                        // scoped ({subjectId}/{classId}.json).
                         await deleteBlob('class-summaries', `${cls.id}.json`).catch(() => {});
+                        await deleteBlob('class-summaries', `${subjectId}/${cls.id}.json`).catch(() => {});
                         await deleteBlob('class-maps', `${cls.id}.json`).catch(() => {});
+                        await deleteBlob('class-maps', `${subjectId}/${cls.id}.json`).catch(() => {});
                         await deleteBlob('class-audio-scripts', `${cls.id}.json`).catch(() => {});
+                        await deleteBlob('class-audio-scripts', `${subjectId}/${cls.id}.json`).catch(() => {});
+                        await deleteBlob('class-timelines', `${cls.id}.json`).catch(() => {});
+                        await deleteBlob('class-timelines', `${subjectId}/${cls.id}.json`).catch(() => {});
                         await deleteBlob('class-audio', `${cls.id}.mp3`).catch(() => {});
+                        await deleteBlob('class-audio', `${subjectId}/${cls.id}.mp3`).catch(() => {});
                     } catch (cErr) {
                         context.error(`[CascadeDelete] Error borrando recursos de clase ${cls.id}:`, cErr);
                     }
@@ -739,7 +784,7 @@ app.http('get-classes', {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         log.info('get-classes triggered');
         
-        let subjectId = request.params.subjectId || request.query.get('subjectId');
+        let subjectId = request.params.subjectId || request.query?.get?.('subjectId');
         if (!subjectId || subjectId === 'undefined') return { status: 400, body: JSON.stringify({ error: 'Falta subjectId' }) };
 
         // Security Check: Enrollment-based access control
@@ -889,7 +934,7 @@ app.http('get-material-status', {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
 
         const materialId = request.params.materialId;
-        const subjectId = request.query.get('subjectId');
+        const subjectId = request.query?.get?.('subjectId');
 
         if (!materialId) {
             return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Falta materialId' }) };
@@ -970,7 +1015,7 @@ app.http('get-material-status-batch', {
     handler: withCorrelation(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
 
-        const subjectId = request.query.get('subjectId');
+        const subjectId = request.query?.get?.('subjectId');
         const materialIds = parseMaterialIdsQuery(request);
 
         if (!subjectId || subjectId === 'undefined') {
@@ -1171,7 +1216,7 @@ app.http('save-classes', {
 
         context.log('save-classes triggered');
 
-        let subjectId = request.params.subjectId || request.query.get('subjectId');
+        let subjectId = request.params.subjectId || request.query?.get?.('subjectId');
         if (!subjectId || subjectId === 'undefined') return { status: 400, body: JSON.stringify({ error: 'Falta subjectId' }) };
 
         // Security Check: Enrollment-based access control
@@ -1220,7 +1265,9 @@ app.http('save-classes', {
 });
 
 // ── GET /api/class-summary/{classId} ───────────────────────────────
-// Devuelve el resumen generado por IA para una clase
+// Devuelve el resumen generado por IA para una clase (scope #328:
+// requiere ?subjectId y verifica enrollment para no exponer resúmenes de
+// otra materia que comparta el classId).
 app.http('get-class-summary', {
     methods: ['GET'],
     authLevel: 'anonymous',
@@ -1228,20 +1275,27 @@ app.http('get-class-summary', {
     handler: withCorrelation(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         const classId = request.params.classId;
+        const subjectId = request.query?.get?.('subjectId');
+        if (!subjectId) {
+            return scopedAssetResponse(400, { error: 'Falta subjectId' });
+        }
+        const denied = await requireAssetSubjectAccess(request, context, subjectId);
+        if (denied) return denied;
         const CONTAINER_SUMMARIES = 'class-summaries';
         try {
-            const summaryData = await loadJson(CONTAINER_SUMMARIES, `${classId}.json`);
+            const summaryData = await loadSubjectScopedAsset(CONTAINER_SUMMARIES, subjectId, classId);
             // Retornamos 200 con { summary: null } en lugar de 404 para evitar que el frontend rompa
-            if (!summaryData) return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, summary: null }) };
+            if (!summaryData) return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, subjectId, summary: null }) };
             return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(summaryData) };
         } catch (err) {
-            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, summary: null, error: err.message }) };
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, subjectId, summary: null, error: err.message }) };
         }
     }))
 });
 
 // ── GET /api/class-map/{classId} ───────────────────────────────────
-// Devuelve el código Mermaid del mapa conceptual generado por IA
+// Devuelve el código Mermaid del mapa conceptual generado por IA (scope #328:
+// requiere ?subjectId + enrollment).
 app.http('get-class-map', {
     methods: ['GET'],
     authLevel: 'anonymous',
@@ -1249,13 +1303,19 @@ app.http('get-class-map', {
     handler: withCorrelation(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         const classId = request.params.classId;
+        const subjectId = request.query?.get?.('subjectId');
+        if (!subjectId) {
+            return scopedAssetResponse(400, { error: 'Falta subjectId' });
+        }
+        const denied = await requireAssetSubjectAccess(request, context, subjectId);
+        if (denied) return denied;
         const CONTAINER_MAPS = 'class-maps';
         try {
-            const mapData = await loadJson(CONTAINER_MAPS, `${classId}.json`);
-            if (!mapData) return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, mapCode: null }) };
+            const mapData = await loadSubjectScopedAsset(CONTAINER_MAPS, subjectId, classId);
+            if (!mapData) return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, subjectId, mapCode: null }) };
             return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mapData) };
         } catch (err) {
-            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, mapCode: null, error: err.message }) };
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, subjectId, mapCode: null, error: err.message }) };
         }
     }))
 });
@@ -1277,10 +1337,19 @@ app.http('save-class-map', {
         const classId = request.params.classId;
         const CONTAINER_MAPS = 'class-maps';
         try {
-            const body = await request.json(); // { mapCode: "..." }
-            const existingData = await loadJson(CONTAINER_MAPS, `${classId}.json`) || { classId };
+            const body = await request.json(); // { mapCode: "...", subjectId: "..." }
+            const subjectId = body.subjectId || request.query?.get?.('subjectId') || '';
+            const existingData = (subjectId
+                ? await loadSubjectScopedAsset(CONTAINER_MAPS, subjectId, classId)
+                : await loadJson(CONTAINER_MAPS, `${classId}.json`)) || { classId };
             const updatedData = { ...existingData, mapCode: body.mapCode, lastModifiedAt: new Date().toISOString() };
-            await saveJson(CONTAINER_MAPS, `${classId}.json`, updatedData);
+            if (subjectId) {
+                updatedData.subjectId = subjectId;
+                // #328: scoped write — never overwrite another subject's legacy blob.
+                await saveJson(CONTAINER_MAPS, `${subjectId}/${classId}.json`, updatedData);
+            } else {
+                await saveJson(CONTAINER_MAPS, `${classId}.json`, updatedData);
+            }
             return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updatedData) };
         } catch (err) {
             return { status: 500, body: JSON.stringify({ error: `Error guardando mapa: ${err.message}` }) };
@@ -1289,7 +1358,7 @@ app.http('save-class-map', {
 });
 
 // ── GET /api/class-audio-script/{classId} ──────────────────────────
-// Devuelve el guión de podcast generado por IA para una clase
+// Devuelve el guión de podcast generado por IA para una clase (scope #328).
 app.http('get-class-audio-script', {
     methods: ['GET'],
     authLevel: 'anonymous',
@@ -1297,12 +1366,18 @@ app.http('get-class-audio-script', {
     handler: withCorrelation(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         const classId = request.params.classId;
+        const subjectId = request.query?.get?.('subjectId');
+        if (!subjectId) {
+            return scopedAssetResponse(400, { error: 'Falta subjectId' });
+        }
+        const denied = await requireAssetSubjectAccess(request, context, subjectId);
+        if (denied) return denied;
         try {
-            const scriptData = await loadJson('class-audio-scripts', `${classId}.json`);
-            if (!scriptData) return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, script: null }) };
+            const scriptData = await loadSubjectScopedAsset('class-audio-scripts', subjectId, classId);
+            if (!scriptData) return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, subjectId, script: null }) };
             return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(scriptData) };
         } catch (err) {
-            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, script: null, error: err.message }) };
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, subjectId, script: null, error: err.message }) };
         }
     }))
 });
@@ -1325,26 +1400,33 @@ app.http('save-class-audio-script', {
 
         try {
             const body = await request.json();
-            const existingData = await loadJson('class-audio-scripts', `${classId}.json`) || { classId };
+            const subjectId = body.subjectId;
+            if (!subjectId) {
+                return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'subjectId es requerido' }) };
+            }
+            const existingData = await loadSubjectScopedAsset('class-audio-scripts', subjectId, classId) || { classId };
 
             const updatedData = {
                 ...existingData,
+                classId,
+                subjectId,
                 script: body.script,
                 lastModifiedAt: new Date().toISOString(),
                 lastModifiedBy: principal?.userDetails || 'docente',
                 validated: body.validated || false,
             };
 
-            await saveJson('class-audio-scripts', `${classId}.json`, updatedData);
+            // #328: scoped write.
+            await saveJson('class-audio-scripts', `${subjectId}/${classId}.json`, updatedData);
 
             // Si se validó, disparar TTS
             if (body.validated && body.script) {
                 context.log(`[AudioScript] Validado para ${classId}, generando TTS...`);
                 try {
                     const audioBuffer = await generateClassAudio(body.script, 'nova');
-                    await uploadFile('class-audio', `${classId}.mp3`, audioBuffer, 'audio/mpeg');
+                    await uploadFile('class-audio', `${subjectId}/${classId}.mp3`, audioBuffer, 'audio/mpeg');
                     updatedData.ttsGeneratedAt = new Date().toISOString();
-                    await saveJson('class-audio-scripts', `${classId}.json`, updatedData);
+                    await saveJson('class-audio-scripts', `${subjectId}/${classId}.json`, updatedData);
                     context.log(`[AudioScript] TTS generado para ${classId}`);
                 } catch (ttsErr) {
                     context.error(`[AudioScript] Error generando TTS para ${classId}:`, ttsErr);
@@ -1373,13 +1455,13 @@ app.http('generate-class-audio-script', {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         const classId = request.params.classId;
         const body = await request.json().catch(() => ({}));
-        const subjectId = body.subjectId || request.query.get('subjectId') || '';
+        const subjectId = body.subjectId || request.query?.get?.('subjectId') || '';
         if (!subjectId) {
             return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'subjectId es requerido' }) };
         }
 
         try {
-            const summaryData = await loadJson('class-summaries', `${classId}.json`);
+            const summaryData = await loadSubjectScopedAsset('class-summaries', subjectId, classId);
             const rawSummary = summaryData?.summary?.content || summaryData?.summary || '';
             if (!rawSummary) {
                 return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'No hay resumen disponible para regenerar el guión de podcast.' }) };
@@ -1396,7 +1478,8 @@ app.http('generate-class-audio-script', {
                 lastModifiedBy: 'AI',
                 validated: false,
             };
-            await saveJson('class-audio-scripts', `${classId}.json`, scriptData);
+            // #328: scoped write.
+            await saveJson('class-audio-scripts', `${subjectId}/${classId}.json`, scriptData);
 
             return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(scriptData) };
         } catch (err) {
@@ -1416,7 +1499,10 @@ app.http('generate-class-audio-tts', {
         const classId = request.params.classId;
 
         try {
-            const scriptData = await loadJson('class-audio-scripts', `${classId}.json`);
+            const querySubjectId = request.query?.get?.('subjectId') || '';
+            const scriptData = querySubjectId
+                ? await loadSubjectScopedAsset('class-audio-scripts', querySubjectId, classId)
+                : await loadJson('class-audio-scripts', `${classId}.json`).catch(() => null);
             if (!scriptData || !scriptData.script) {
                 return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'No hay guión de podcast disponible.' }) };
             }
@@ -1425,10 +1511,15 @@ app.http('generate-class-audio-tts', {
             }
 
             const audioBuffer = await generateClassAudio(scriptData.script, 'nova');
-            await uploadFile('class-audio', `${classId}.mp3`, audioBuffer, 'audio/mpeg');
+            const audioSubject = scriptData.subjectId || request.query?.get?.('subjectId') || '';
+            await uploadFile('class-audio', audioSubject ? `${audioSubject}/${classId}.mp3` : `${classId}.mp3`, audioBuffer, 'audio/mpeg');
 
             scriptData.ttsGeneratedAt = new Date().toISOString();
-            await saveJson('class-audio-scripts', `${classId}.json`, scriptData);
+            if (audioSubject) {
+                await saveJson('class-audio-scripts', `${audioSubject}/${classId}.json`, scriptData);
+            } else {
+                await saveJson('class-audio-scripts', `${classId}.json`, scriptData);
+            }
 
             return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: true, ttsGeneratedAt: scriptData.ttsGeneratedAt }) };
         } catch (err) {
@@ -1450,7 +1541,10 @@ app.http('generate-class-map', {
         const CONTAINER_MAPS = 'class-maps';
         const CONTAINER_SUMMARIES = 'class-summaries';
         try {
-            const summaryData = await loadJson(CONTAINER_SUMMARIES, `${classId}.json`);
+            const requestedSubjectId = request.query?.get?.('subjectId') || '';
+            const summaryData = requestedSubjectId
+                ? await loadSubjectScopedAsset(CONTAINER_SUMMARIES, requestedSubjectId, classId)
+                : await loadJson(CONTAINER_SUMMARIES, `${classId}.json`);
             const textToMap = typeof summaryData === 'string' ? summaryData : (summaryData?.summary?.content || summaryData?.summary || '');
             if (!textToMap) {
                 return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'No hay resumen disponible para generar el mapa conceptual.' }) };
@@ -1458,9 +1552,14 @@ app.http('generate-class-map', {
             const result = await generateClassMap(textToMap);
             const mapData = {
                 classId, generatedAt: result.generatedAt, mapCode: result.code,
-                generatedBy: userId, subjectId: request.query.get('subjectId') || '',
+                generatedBy: userId, subjectId: request.query?.get?.('subjectId') || summaryData?.subjectId || '',
             };
-            await saveJson(CONTAINER_MAPS, `${classId}.json`, mapData);
+            // #328: scoped write.
+            if (mapData.subjectId) {
+                await saveJson(CONTAINER_MAPS, `${mapData.subjectId}/${classId}.json`, mapData);
+            } else {
+                await saveJson(CONTAINER_MAPS, `${classId}.json`, mapData);
+            }
             return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mapData) };
         } catch (err) {
             return { status: 500, body: JSON.stringify({ error: `Error generando mapa: ${err.message}` }) };
@@ -1478,7 +1577,7 @@ app.http('generate-class-assets', {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         const classId = request.params.classId;
         const body = await request.json().catch(() => ({}));
-        const subjectId = body.subjectId || request.query.get('subjectId') || '';
+        const subjectId = body.subjectId || request.query?.get?.('subjectId') || '';
         if (!subjectId) {
             return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'subjectId es requerido' }) };
         }
@@ -1524,7 +1623,8 @@ app.http('generate-class-assets', {
                 lastModifiedBy: 'AI',
                 validated: false,
             };
-            await saveJson('class-summaries', `${classId}.json`, summaryData);
+            // #328: scoped writes — never overwrite another subject's legacy blob.
+            await saveJson('class-summaries', `${subjectId}/${classId}.json`, summaryData);
 
             const mapData = {
                 classId, subjectId,
@@ -1532,7 +1632,7 @@ app.http('generate-class-assets', {
                 generatedAt: mapResult.generatedAt,
                 generatedFrom: 'regenerate',
             };
-            await saveJson('class-maps', `${classId}.json`, mapData);
+            await saveJson('class-maps', `${subjectId}/${classId}.json`, mapData);
 
             return {
                 status: 200,
@@ -1563,11 +1663,17 @@ app.http('save-class-summary', {
         }
         
         try {
-            const body = await request.json(); // { summary: "...", validated: true }
-            const existingData = await loadJson(CONTAINER_SUMMARIES, `${classId}.json`) || { classId };
+            const body = await request.json(); // { summary: "...", validated: true, subjectId: "..." }
+            const subjectId = body.subjectId;
+            if (!subjectId) {
+                return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'subjectId es requerido' }) };
+            }
+            const existingData = await loadSubjectScopedAsset(CONTAINER_SUMMARIES, subjectId, classId) || { classId };
             
             const updatedData = {
                 ...existingData,
+                classId,
+                subjectId,
                 summary: body.summary,
                 lastModifiedAt: new Date().toISOString(),
                 lastModifiedBy: principal?.userDetails || 'docente',
@@ -1578,7 +1684,8 @@ app.http('save-class-summary', {
                 suitable: typeof body.suitable === 'boolean' ? body.suitable : existingData.suitable,
             };
 
-            await saveJson(CONTAINER_SUMMARIES, `${classId}.json`, updatedData);
+            // #328: scoped write.
+            await saveJson(CONTAINER_SUMMARIES, `${subjectId}/${classId}.json`, updatedData);
 
             return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updatedData) };
         } catch (err) {
@@ -1693,8 +1800,8 @@ app.http('get-director-powerbi-metrics', {
             return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Director or Admin access required' }) };
         }
 
-        const days = request.query.get('days') || POWERBI_DEFAULT_DAYS;
-        const subjectId = request.query.get('subjectId') || '';
+        const days = request.query?.get?.('days') || POWERBI_DEFAULT_DAYS;
+        const subjectId = request.query?.get?.('subjectId') || '';
         const metrics = await computeDirectorMetrics(context, days);
 
         const azureCost = await getAzureCostForBudget(context);
@@ -1901,7 +2008,7 @@ app.http('reprocess-material', {
         if (!materialId || typeof materialId !== 'string' || !materialId.trim()) {
             return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'materialId es requerido' }) };
         }
-        const subjectId = request.query.get('subjectId');
+        const subjectId = request.query?.get?.('subjectId');
         if (!subjectId) {
             return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'subjectId es requerido' }) };
         }
@@ -2042,7 +2149,7 @@ app.http('get-material-text', {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden' }) };
 
         const materialId = request.params.materialId;
-        const subjectId = request.query.get('subjectId');
+        const subjectId = request.query?.get?.('subjectId');
 
         try {
             const processed = await loadJson(CONTAINER_PROCESSED, `${materialId}.json`);
@@ -2185,9 +2292,9 @@ app.http('get-director-session-metrics-history', {
             return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Director or Admin access required' }) };
         }
 
-        const subjectId = (request.query.get('subjectId') || '').trim();
-        const limit = normalizeLimit(request.query.get('limit'), 1000);
-        const rawToken = request.query.get('continuationToken') || '';
+        const subjectId = (request.query?.get?.('subjectId') || '').trim();
+        const limit = normalizeLimit(request.query?.get?.('limit'), 1000);
+        const rawToken = request.query?.get?.('continuationToken') || '';
         let continuationToken = null;
         if (rawToken) {
             try {

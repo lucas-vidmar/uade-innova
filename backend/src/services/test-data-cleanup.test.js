@@ -17,6 +17,8 @@ import {
     isTestProfile,
     isTestProcessedPayload,
     isTestBlobName,
+    isTestGlossaryTerm,
+    isTestNotification,
     classMaterialBlobBelongsToTest,
     findTestArtifacts,
     runCleanup,
@@ -517,4 +519,75 @@ test('applyCleanupPlan: timeline zeroOnly de subject test se borra entero', asyn
 
     assert.ok(calls.mutations.some((c) => c.name === 'deleteBlob' && c.args[0] === CONTAINERS.classTimelines));
     assert.ok(result.deleted.timelineBlobs >= 1);
+});
+
+// ─── #344: fixtures E2E / glosario basura / notificaciones / PDF crudo ───
+
+test('#344: isTestProcessedPayload marca mock-*.txt y test.txt aunque el subject sea piloto', () => {
+    assert.strictEqual(isTestProcessedPayload({ subjectId: 'arq-software-2026', filename: 'mock-transcript.txt', extractedText: 'contenido normal' }), true);
+    assert.strictEqual(isTestProcessedPayload({ subjectId: 'arq-software-2026', filename: 'test.txt', extractedText: 'contenido normal' }), true);
+    assert.strictEqual(isTestProcessedPayload({ subjectId: 'arq-software-2026', filename: 'clase1_transcripcion.txt', extractedText: 'contenido normal' }), false);
+});
+
+test('#344: isTestProcessedPayload marca bytes crudos de PDF en el texto extraído', () => {
+    assert.strictEqual(isTestProcessedPayload({ subjectId: 'arq-software-2026', filename: 'slides.pdf', extractedText: '%PDF-1.4 raw bytes...' }), true);
+});
+
+test('#344: isTestMaterial marca fixtures E2E con subject piloto', () => {
+    assert.strictEqual(isTestMaterial({ subjectId: 'arq-software-2026', filename: 'mock-clase.txt' }), true);
+    assert.strictEqual(isTestMaterial({ subjectId: 'arq-software-2026', filename: 'clase1_transcripcion.txt' }), false);
+    // Contenido legítimo que menciona "mock" en el texto NO se marca por filename.
+    assert.strictEqual(isTestMaterial({ subjectId: 'arq-software-2026', filename: 'apuntes.pdf' }), false);
+});
+
+test('#344: isTestGlossaryTerm detecta probando/asd (exacto, case-insensitive)', () => {
+    assert.strictEqual(isTestGlossaryTerm({ term: 'probando' }), true);
+    assert.strictEqual(isTestGlossaryTerm({ term: 'ASD' }), true);
+    assert.strictEqual(isTestGlossaryTerm({ term: 'Arquitectura hexagonal' }), false);
+    assert.strictEqual(isTestGlossaryTerm({ term: 'probando cosas nuevas' }), false);
+});
+
+test('#344: isTestNotification detecta notificaciones E2E sin borrar las legítimas', () => {
+    assert.strictEqual(isTestNotification({ id: 'e2e-notif-1', title: 'Hola', message: 'x', subjectId: 'arq-software-2026' }), true);
+    assert.strictEqual(isTestNotification({ id: 'n-1', title: 'Mock de prueba', message: 'x' }), true);
+    assert.strictEqual(isTestNotification({ id: 'notif-auto-summary-arq-class-01', title: 'Resumen validado por docente', message: 'Clase 1 ya tiene resumen validado.' }), false);
+});
+
+test('#344: hasTestSnippet detecta bytes crudos de PDF en timelines piloto', () => {
+    assert.strictEqual(hasTestSnippet({
+        classId: 'class-01',
+        subjectId: 'arq-software-2026',
+        markers: [{ label: '%PDF-1.7 binario crudo' }],
+        sections: [],
+    }), true);
+});
+
+test('#344: enrollment piloto alu-002 nunca se marca como test', async () => {
+    const data = {
+        enrollments: [
+            { subjectId: 'arq-software-2026', userId: 'alu-002', role: 'student' },
+            { subjectId: 'arq-software-2026', userId: 'test-alu-001', role: 'student' },
+        ],
+    };
+    const { stores } = createFakeStores({ data });
+    const plan = await findTestArtifacts(stores);
+    assert.ok(!plan.enrollments.some((e) => e.userId === 'alu-002'), 'alu-002 no debe marcarse');
+    assert.ok(plan.enrollments.some((e) => e.userId === 'test-alu-001'), 'test-alu-001 sí debe marcarse');
+});
+
+test('#344: findTestArtifacts enumera notificaciones E2E y términos de glosario basura', async () => {
+    const { stores } = createFakeStores({ data: {} });
+    stores.listNotifications = async () => [
+        { id: 'e2e-1', title: 'E2E check', message: 'x', subjectId: 'arq-software-2026' },
+        { id: 'ok-1', title: 'Resumen validado por docente', message: 'Clase lista.', subjectId: 'arq-software-2026' },
+    ];
+    stores.listGlossaryTerms = async () => [
+        { subjectId: 'arq-software-2026', term: 'probando' },
+        { subjectId: 'arq-software-2026', term: 'Hexagonal' },
+    ];
+    const plan = await findTestArtifacts(stores);
+    assert.strictEqual(plan.notifications.length, 1);
+    assert.strictEqual(plan.notifications[0].notificationId, 'e2e-1');
+    assert.strictEqual(plan.glossaryTerms.length, 1);
+    assert.strictEqual(plan.glossaryTerms[0].term, 'probando');
 });

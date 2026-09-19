@@ -88,10 +88,10 @@ export async function renderClassDetail(container) {
         const activeSubjectId = auth.getActiveSubjectId();
         const [classes, summaryData, mapData, timelineData, audioScriptData] = await Promise.all([
             api.getClasses(activeSubjectId),
-            api.getClassSummary(classId),
-            api.getClassMap(classId),
-            api.getClassTimeline(classId),
-            api.getClassAudioScript(classId),
+            api.getClassSummary(classId, activeSubjectId),
+            api.getClassMap(classId, activeSubjectId),
+            api.getClassTimeline(classId, activeSubjectId),
+            api.getClassAudioScript(classId, activeSubjectId),
         ]);
 
         const classInfo = classes.find(c => c.id === classId);

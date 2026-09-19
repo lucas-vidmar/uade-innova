@@ -485,6 +485,19 @@ app.http('rag-query', {
             context.log(`[RAG] Quarantine post-filter: se descartaron ${dropped} matches cuarentenados (subjectId=${subjectId}, correlationId=${correlationId})`);
         }
 
+        // ── 4a2. Post-filter de subjectId (#328, mismatch-only) ────
+        // Vectores mal etiquetados (ej: DASI/test.txt con subjectId de otra
+        // materia) no deben llegar al LLM aunque el filtro Pinecone los haya
+        // devuelto. Solo se descartan los que traen un subjectId explícito
+        // distinto; los que no traen subjectId quedan sujetos al runner de
+        // cuarentena (vector-audit metadata-incomplete) sin romper el recall.
+        const preSubjectCount = matches.length;
+        matches = matches.filter((m) => !m.metadata?.subjectId || String(m.metadata.subjectId) === String(subjectId));
+        if (matches.length !== preSubjectCount) {
+            const dropped = preSubjectCount - matches.length;
+            context.log(`[RAG] Subject post-filter: se descartaron ${dropped} matches fuera de subjectId=${subjectId} (correlationId=${correlationId})`);
+        }
+
         // ── 4b. Filtrar materiales no revisados ───────────────────
         let priorityMap = {};
         try {

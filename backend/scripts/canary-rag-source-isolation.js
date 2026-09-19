@@ -40,6 +40,12 @@
  *   RAG_CANARY_ADMIN_EMAIL       allowlisted admin identity
  *   RAG_CANARY_<ROLE>_SUBJECT_ID / _CLASS_IDS / _QUESTION
  *       optional per-role scope/question overrides (default to the shared ones)
+ *   RAG_CANARY_EXTRA_SUBJECT_IDS
+ *       optional comma-separated extra pilot subjects to probe per-subject
+ *       (#328, e.g. 'diseno-sistemas-2026') with the student identity.
+ *       Per-subject overrides: RAG_CANARY_EXTRA_<SUBJECT>_CLASS_IDS /
+ *       RAG_CANARY_EXTRA_<SUBJECT>_QUESTION (<SUBJECT> uppercased, non
+ *       alphanumerics as '_').
  *
  * Run (repo root):
  *   RAG_CANARY_ENABLED=true \
@@ -88,6 +94,23 @@ export function readConfig() {
         };
     }
 
+    // #328: per-subject extension — extra pilot subjects to probe with the
+    // student identity (comma-separated). Each extra subject runs the same
+    // source-isolation assertion, so a mislabeled vector (ej: DASI docx with
+    // a pilot subjectId, or class-01 content served to a class-02 query) fails
+    // the gate no matter which subject it leaks into.
+    // Per-subject scope overrides: RAG_CANARY_EXTRA_<SUBJECT>_CLASS_IDS /
+    // RAG_CANARY_EXTRA_<SUBJECT>_QUESTION, where <SUBJECT> is the subjectId
+    // uppercased with non-alphanumerics replaced by '_'.
+    const extraSubjects = parseClassIds(env('RAG_CANARY_EXTRA_SUBJECT_IDS', '')).map((extraSubjectId) => {
+        const key = extraSubjectId.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+        return {
+            subjectId: extraSubjectId,
+            classIds: parseClassIds(env(`RAG_CANARY_EXTRA_${key}_CLASS_IDS`, env('RAG_CANARY_CLASS_IDS', DEFAULT_CLASS_IDS))),
+            question: env(`RAG_CANARY_EXTRA_${key}_QUESTION`, question),
+        };
+    });
+
     return {
         // Accept case-insensitive 'true'/'1'; anything else non-empty is NOT
         // enabled (matches CI semantics where an unset secret means "off"),
@@ -100,6 +123,7 @@ export function readConfig() {
         subjectId,
         classIds,
         roles,
+        extraSubjects,
     };
 }
 
@@ -181,28 +205,44 @@ export function assertSourceInScope(source, expectedSubjectId, expectedClassIds)
  */
 export async function queryScope(cfg, role, fetchImpl = fetch) {
     const roleCfg = cfg.roles[role];
+    return querySubjectScope(cfg, {
+        label: `rag-${role}`,
+        email: roleCfg?.email,
+        subjectId: roleCfg?.subjectId,
+        classIds: roleCfg?.classIds,
+        question: roleCfg?.question,
+    }, fetchImpl);
+}
+
+/**
+ * Core scoped-query probe (#328): POSTs one blocking RAG query for an explicit
+ * (subjectId, classIds) scope with the given identity email and asserts every
+ * returned source belongs to that scope. Shared by the per-role checks and the
+ * per-subject extension probes.
+ */
+export async function querySubjectScope(cfg, { label, email, subjectId, classIds, question }, fetchImpl = fetch) {
     const url = `${cfg.functionUrl}/api/rag-query`;
     const payload = {
-        question: roleCfg.question,
-        subjectId: roleCfg.subjectId,
-        classIds: roleCfg.classIds,
+        question,
+        subjectId,
+        classIds,
         stream: false,
     };
     const headers = {
         'Content-Type': 'application/json',
         'x-azure-fdid': cfg.frontDoorId,
-        'x-ms-client-principal-name': roleCfg.email,
+        'x-ms-client-principal-name': email,
     };
 
     let res;
     try {
         res = await withTimeout(fetchImpl, url, { method: 'POST', headers, body: JSON.stringify(payload) }, cfg.timeoutMs);
     } catch (err) {
-        return fail(`rag-${role}`, `request failed: ${err.message}`);
+        return fail(label, `request failed: ${err.message}`);
     }
 
     if (HARD_FAIL_STATUSES.includes(res.status)) {
-        return fail(`rag-${role}`, `HTTP ${res.status} — hard failure (auth/rate-limit blocks the scope)`);
+        return fail(label, `HTTP ${res.status} — hard failure (auth/rate-limit blocks the scope)`);
     }
     if (res.status !== 200) {
         let detail = `HTTP ${res.status}`;
@@ -210,7 +250,7 @@ export async function queryScope(cfg, role, fetchImpl = fetch) {
             const text = await readBodyWithTimeout(res, cfg.timeoutMs);
             if (text) detail += ` — ${text.slice(0, 300)}`;
         } catch { /* body unreadable — keep status only */ }
-        return fail(`rag-${role}`, detail);
+        return fail(label, detail);
     }
 
     let body;
@@ -218,25 +258,25 @@ export async function queryScope(cfg, role, fetchImpl = fetch) {
         const text = await readBodyWithTimeout(res, cfg.timeoutMs);
         body = JSON.parse(text);
     } catch (err) {
-        return fail(`rag-${role}`, `non-JSON/aborted body: ${err.message}`);
+        return fail(label, `non-JSON/aborted body: ${err.message}`);
     }
 
     const sources = Array.isArray(body?.sources) ? body.sources : null;
     if (!sources || sources.length === 0) {
-        return fail(`rag-${role}`, 'sources[] is empty — isolation unverifiable (0 sources returned)');
+        return fail(label, 'sources[] is empty — isolation unverifiable (0 sources returned)');
     }
 
     const violations = [];
     for (const source of sources) {
-        const verdict = assertSourceInScope(source, roleCfg.subjectId, roleCfg.classIds);
+        const verdict = assertSourceInScope(source, subjectId, classIds);
         if (!verdict.ok) {
             violations.push(`"${source?.sourceFilename ?? source?.materialId ?? '(unknown)'}": ${verdict.reason}`);
         }
     }
     if (violations.length > 0) {
-        return fail(`rag-${role}`, violations.join(' | '));
+        return fail(label, violations.join(' | '));
     }
-    return ok(`rag-${role}`, `${sources.length} source(s) — all match subjectId=${roleCfg.subjectId} and classIds=[${roleCfg.classIds.join(',')}]`);
+    return ok(label, `${sources.length} source(s) — all match subjectId=${subjectId} and classIds=[${(classIds || []).join(',')}]`);
 }
 
 /**
@@ -286,6 +326,32 @@ export async function runCanary(cfg, deps = {}) {
         results.push(await queryScope(cfg, role, fetchImpl));
     }
 
+    // #328: per-subject extension probes — one blocking query per extra pilot
+    // subject with the student identity. Fail closed on missing identity/scope.
+    for (const extra of cfg.extraSubjects || []) {
+        const label = `rag-cross-${extra.subjectId}`;
+        const studentEmail = cfg.roles?.student?.email;
+        if (!studentEmail || !studentEmail.trim()) {
+            results.push(fail(label, 'missing student email for cross-subject probe — fail closed'));
+            continue;
+        }
+        if (!extra.subjectId || !Array.isArray(extra.classIds) || extra.classIds.length === 0) {
+            results.push(fail(label, `missing scope for extra subject ${extra.subjectId} — fail closed`));
+            continue;
+        }
+        if (!configValid) {
+            results.push(fail(label, 'skipped — canary config invalid (RAG_CANARY_FUNCTION_URL / RAG_CANARY_FRONT_DOOR_ID)'));
+            continue;
+        }
+        results.push(await querySubjectScope(cfg, {
+            label,
+            email: studentEmail,
+            subjectId: extra.subjectId,
+            classIds: extra.classIds,
+            question: extra.question,
+        }, fetchImpl));
+    }
+
     const failedCount = results.filter((r) => r.ok === false).length;
     const skippedCount = results.filter((r) => r.ok === null).length;
     return { results, failedCount, skippedCount };
@@ -321,4 +387,4 @@ if (isMainModule) {
 }
 
 // Exports kept at the end so importing this module (tests) does not run the probe.
-export default { readConfig, runCanary, queryScope, assertSourceInScope, sourceClassSet, ok, fail, skip };
+export default { readConfig, runCanary, queryScope, querySubjectScope, assertSourceInScope, sourceClassSet, ok, fail, skip };

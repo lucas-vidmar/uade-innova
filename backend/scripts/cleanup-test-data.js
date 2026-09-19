@@ -64,6 +64,8 @@ import {
     deleteEnrollment,
     deleteUserProfile,
 } from '../src/services/state-store.js';
+import { listNotificationsBySubject } from '../src/services/notification-store.js';
+import { getGlossary, updateGlossary } from '../src/services/glossary-store.js';
 import { deleteVectorsByFilter, getIndexStats } from '../src/services/vector-store.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -125,6 +127,54 @@ function buildStores() {
         listClasses: () => listAllClasses(),
         listEnrollments: () => listAllEnrollments(),
         listUserProfiles: () => listAllUserProfiles(),
+        // #344: notificaciones E2E (notifications/{subjectId}.json) y términos
+        // basura de glosario (class-materials/glossary/{subjectId}.json).
+        listNotifications: async () => {
+            const subjects = (await loadJson('classes-config', 'subjects.json').catch(() => null)) || [];
+            const ids = new Set([
+                ...PILOT_SUBJECT_IDS,
+                ...TEST_SUBJECT_IDS,
+                ...(Array.isArray(subjects) ? subjects.map((s) => s?.id).filter(Boolean) : []),
+            ]);
+            const all = [];
+            for (const subjectId of ids) {
+                const items = await listNotificationsBySubject(subjectId).catch(() => []);
+                for (const item of items) all.push({ ...item, subjectId });
+            }
+            return all;
+        },
+        deleteNotification: async (subjectId, notificationId) => {
+            const items = await listNotificationsBySubject(subjectId).catch(() => []);
+            const next = items.filter((n) => String(n.id) !== String(notificationId));
+            if (next.length === 0) {
+                await deleteBlob('notifications', `${subjectId}.json`);
+            } else {
+                await saveJson('notifications', `${subjectId}.json`, next);
+            }
+        },
+        listGlossaryTerms: async () => {
+            const subjects = (await loadJson('classes-config', 'subjects.json').catch(() => null)) || [];
+            const ids = new Set([
+                ...PILOT_SUBJECT_IDS,
+                ...TEST_SUBJECT_IDS,
+                ...(Array.isArray(subjects) ? subjects.map((s) => s?.id).filter(Boolean) : []),
+            ]);
+            const all = [];
+            for (const subjectId of ids) {
+                const glossary = await getGlossary(subjectId).catch(() => null);
+                for (const term of glossary?.terms || []) {
+                    all.push({ subjectId, term: term.term, definition: term.definition, aliases: term.aliases });
+                }
+            }
+            return all;
+        },
+        deleteGlossaryTerm: async (subjectId, term) => {
+            const glossary = await getGlossary(subjectId).catch(() => null);
+            if (!glossary) return;
+            const norm = String(term || '').trim().toLowerCase();
+            const next = (glossary.terms || []).filter((t) => String(t.term || '').trim().toLowerCase() !== norm);
+            await updateGlossary(subjectId, next);
+        },
         // mutación
         saveDeadlines: (subjectId, deadlines) => saveJson('deadlines', `${subjectId}.json`, deadlines),
         saveTimeline: (classId, timeline) => saveJson('class-timelines', `${classId}.json`, timeline),
@@ -180,6 +230,8 @@ function printCleanupReport(result) {
     console.log(`Blobs class-materials:      ${summary.classMaterialBlobs}`);
     console.log(`Blobs processed:            ${summary.processedBlobs}`);
     console.log(`Entradas subjects.json:     ${summary.subjectsConfig}`);
+    console.log(`Notificaciones E2E:         ${summary.notifications}`);
+    console.log(`Términos glosario basura:   ${summary.glossaryTerms}`);
     console.log(`Subjects Pinecone (handoff 10.17): ${pineconeCount} (no se borran salvo --with-pinecone)`);
 
     if (!dryRun && result.deleted) {

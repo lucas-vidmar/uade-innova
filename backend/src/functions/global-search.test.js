@@ -217,3 +217,53 @@ test('global-search material filter includes quarantined exclusion and drops qua
     assert.ok(!body.results.some((r) => r.sourceFilename === 'leaked-cross-subject.pdf'));
     assert.strictEqual(body.results[0].sourceFilename, 'clean-transcript.txt');
 });
+
+test('#328: global-search drops material matches with a mismatched subjectId', async (t) => {
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async () => [
+        {
+            score: 0.9,
+            metadata: {
+                materialId: 'm-dasi', classIds: ['class-01'], materialType: 'transcript',
+                sourceFilename: 'DASI Cronograma.docx', text: 'DASI leak', subjectId: 'dasi-1c2023',
+            },
+        },
+        {
+            score: 0.8,
+            metadata: {
+                materialId: 'm-1', classIds: ['class-01'], materialType: 'transcript',
+                sourceFilename: 'hexagonal.txt', text: 'hexagonal content', subjectId: 'arq-software-2026',
+            },
+        },
+    ]);
+    t.after(() => {
+        vectorStoreMocks.querySimilar.mock.mockImplementation(async () => [
+            {
+                score: 0.81,
+                metadata: {
+                    materialId: 'm-1', classIds: ['class-01'], materialType: 'transcript',
+                    materialPriority: 'primary', sourceFilename: 'class-01-transcript.txt',
+                    chunkIndex: 0, text: 'Architecture decisions are tied to quality attributes and trade-offs.',
+                },
+            },
+            {
+                score: 0.79,
+                metadata: {
+                    materialId: 'm-2', classIds: ['class-03'], materialType: 'bibliography',
+                    materialPriority: 'secondary', sourceFilename: 'clean-architecture.pdf',
+                    chunkIndex: 4, text: 'Architecture should protect business rules from framework details.',
+                },
+            },
+        ]);
+    });
+
+    const response = await capturedHandler(
+        mockRequest({ query: 'hexagonal', subjectId: 'arq-software-2026' }),
+        { error: mock.fn(), warn: mock.fn(), log: mock.fn() }
+    );
+
+    assert.strictEqual(response.status, 200);
+    const body = JSON.parse(response.body);
+    const materialResults = body.results.filter((r) => r.category === 'material');
+    assert.ok(materialResults.length > 0);
+    assert.ok(!materialResults.some((r) => r.sourceFilename === 'DASI Cronograma.docx'));
+});
