@@ -144,10 +144,13 @@ test('unauthenticated session renders the email/password login form (no Microsof
 
   await stubDashboardBoot(page);
 
-  // Boot once under the dev-mock session, then move to the public #/login route
-  // where handleRoute() renders the sign-in card (see file header note).
+  // Unauthenticated: any role deep-link redirects to the public #/login
+  // route where handleRoute() renders the sign-in card (see file header note).
   await page.goto('/#/student/dashboard');
-  await page.waitForSelector('#section-classes', { timeout: 15000 });
+
+  // Fix #342: unauthenticated deep-links must land on #/login — the role
+  // shell must never render for a logged-out session.
+  await expect(page).toHaveURL(/#\/login/);
   await page.evaluate(() => { window.location.hash = '#/login'; });
 
   await expect(page.getByText('Iniciá sesión')).toBeVisible();

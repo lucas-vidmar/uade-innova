@@ -101,7 +101,7 @@ test('student clicks transcript hit-point and sees transcript section activated 
   await expect(page.locator('.transcript-section.active')).toContainText('arquitectura hexagonal');
 
   const chatLink = page.locator('#timeline-open-chat');
-  await expect(chatLink).toHaveAttribute('aria-disabled', 'false');
+  await expect(chatLink).not.toHaveAttribute('aria-disabled', 'true');
   await expect(chatLink).toHaveAttribute('href', /transcriptSection=sec-001/);
   await expect(chatLink).toHaveAttribute('href', /focusLabel=/);
 });

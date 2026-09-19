@@ -110,14 +110,14 @@ test('director can configure risk thresholds from the interventions page', async
     (req) => req.method() === 'POST' && req.url().includes('/api/risk-thresholds')
   );
 
-  await modal.locator('#th-noLoginDaysHigh').fill('10');
+  await modal.locator('#th-noLoginDaysHigh').fill('30');
   await modal.locator('#th-attendanceWarning').fill('75');
   await modal.locator('#thresholds-save').click();
 
   const postRequest = await postPromise;
   const payload = JSON.parse(postRequest.postData());
-  expect(payload.subjectId).toBe('default');
-  expect(payload.thresholds.noLoginDaysHigh).toBe(10);
+  expect(payload.subjectId).toBe('arq-software-2026');
+  expect(payload.thresholds.noLoginDaysHigh).toBe(30);
   expect(payload.thresholds.attendanceWarning).toBe(75);
   expect(payload.thresholds.noLoginDaysLow).toBe(7);
   expect(payload.thresholds.minQueriesMedium).toBe(2);

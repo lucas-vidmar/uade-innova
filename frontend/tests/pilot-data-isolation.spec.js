@@ -133,7 +133,7 @@ test('pilot student dashboard renders no test-artifact markers', async ({ page }
   await page.waitForSelector('.timeline-hit', { timeout: 10000 });
 
   await expect(page.locator('.timeline-hit')).toHaveCount(2);
-  await expect(page.locator('.timeline-hit-time').first()).toHaveText('600s');
+  await expect(page.locator('.timeline-hit-time').first()).toHaveText('10:00');
   const timelineTimes = await page.locator('.timeline-hit-time').allTextContents();
   expect(timelineTimes.includes('0s')).toBe(false);
   const markerLabels = await page.locator('.timeline-hit').evaluateAll((els) => els.map((el) => el.getAttribute('title') || ''));
