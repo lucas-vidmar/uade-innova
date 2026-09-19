@@ -164,20 +164,46 @@ app.http('get-director-kpi-export', {
         return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: "Unsupported format. Use 'csv' or 'pdf'" }) };
       }
 
-      const { computeDirectorMetrics, computeBudgetProjection, computeCostSpikeAlert, loadEarlyAlertSummary, POWERBI_DEFAULT_DAYS } = await import('./classes-api.js');
+      const { computeDirectorMetrics, computeBudgetProjection, loadEarlyAlertSummary, POWERBI_DEFAULT_DAYS } = await import('./classes-api.js');
       const { getAzureCostForBudget, computeBudgetProjection: computeBudgetProjectionV2 } = await import('../services/azure-cost.js');
 
-      const metrics = await computeDirectorMetrics(context, POWERBI_DEFAULT_DAYS);
-      const azureCost = await getAzureCostForBudget(context);
-      const useAzureCost = azureCost?.success;
-      const budget = useAzureCost
-          ? computeBudgetProjectionV2(azureCost.daily, {
-              currentMonthSpend: azureCost.currentMonthSpend,
-              costSource: 'azure-cost-api',
+      // #341: each data source degrades independently. An authorized export
+      // must never 500 because one source (cost API, subjects, classes
+      // count) is empty or unavailable — fall back to safe defaults.
+      let metrics = null;
+      try {
+        metrics = await computeDirectorMetrics(context, POWERBI_DEFAULT_DAYS);
+      } catch (err) {
+        context.log.warn(`[KpiExport] computeDirectorMetrics failed, using empty metrics: ${err.message}`);
+        metrics = null;
+      }
+      const safeMetrics = metrics || {};
+      const latest = safeMetrics.latest || { dau: 0, ragInteractions: 0 };
+      const totals = safeMetrics.totals || { uniqueActiveUsers: 0, totalCost: 0 };
+      const daily = Array.isArray(safeMetrics.daily) ? safeMetrics.daily : [];
+
+      let azureCost = null;
+      try {
+        azureCost = await getAzureCostForBudget(context);
+      } catch (err) {
+        context.log.warn(`[KpiExport] Azure Cost query failed, using token-based fallback: ${err.message}`);
+        azureCost = null;
+      }
+      const useAzureCost = azureCost?.success === true;
+      let budget;
+      try {
+        budget = useAzureCost
+          ? computeBudgetProjectionV2(azureCost.daily || [], {
+            currentMonthSpend: azureCost.currentMonthSpend,
+            costSource: 'azure-cost-api',
           })
-          : computeBudgetProjection(metrics.daily);
-      const uniqueActiveUsers = metrics.totals.uniqueActiveUsers;
-      const effectiveTotalCost = useAzureCost ? azureCost.currentMonthSpend : metrics.totals.totalCost;
+          : computeBudgetProjection(daily);
+      } catch (err) {
+        context.log.warn(`[KpiExport] Budget projection failed, using empty budget: ${err.message}`);
+        budget = { monthlyLimit: 0, currentSpend: 0, projectedEndOfMonth: 0, percentUsed: 0, warningLevel: 'none' };
+      }
+      const uniqueActiveUsers = totals.uniqueActiveUsers || 0;
+      const effectiveTotalCost = useAzureCost ? (azureCost.currentMonthSpend || 0) : (totals.totalCost || 0);
       const costPerActiveStudent = uniqueActiveUsers > 0 ? Number((effectiveTotalCost / uniqueActiveUsers).toFixed(6)) : 0;
 
       let classesCount = 0;
@@ -201,19 +227,26 @@ app.http('get-director-kpi-export', {
       }
       const adoptionRate = uniqueActiveUsers > 0 ? Math.min(100, Math.round(uniqueActiveUsers / totalEnrolled * 100)) : 0;
 
-      const earlyAlertSummary = await loadEarlyAlertSummary(context);
+      const earlyAlertSummary = await loadEarlyAlertSummary(context).catch((err) => {
+        context.log.warn(`[KpiExport] Could not load early-alert summary: ${err.message}`);
+        return {
+          totalStudentsAtRisk: 0, highRiskCount: 0, mediumRiskCount: 0,
+          lowAttendanceCount: 0, lowGradeCount: 0,
+          attendanceBelow60Count: 0, attendance60To75Count: 0, attendanceAbove75Count: 0,
+        };
+      });
 
       const data = {
-        dau: metrics.latest.dau,
+        dau: latest.dau || 0,
         classesProcessed: classesCount,
-        ragInteractions: metrics.latest.ragInteractions,
+        ragInteractions: latest.ragInteractions || 0,
         adoptionRate,
         costPerActiveStudent,
-        earlyAlertSummary,
-        budget,
-        costBySubject: metrics.costBySubject,
-        wausBySubject: metrics.wausBySubject,
-        materialUploads: metrics.materialUploads,
+        earlyAlertSummary: earlyAlertSummary || {},
+        budget: budget || {},
+        costBySubject: Array.isArray(safeMetrics.costBySubject) ? safeMetrics.costBySubject : [],
+        wausBySubject: Array.isArray(safeMetrics.wausBySubject) ? safeMetrics.wausBySubject : [],
+        materialUploads: safeMetrics.materialUploads || { byTeacher: [] },
         costSource: useAzureCost ? 'azure-cost-api' : 'token-based-fallback',
       };
 

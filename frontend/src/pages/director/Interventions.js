@@ -1,14 +1,20 @@
 import { api } from '../../services/api.js';
+import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
 import { toast } from '../../components/Toast.js';
+import { renderRiskBreakdownHTML } from '../../components/risk-breakdown.js';
 
 export async function renderDirectorInterventions(container) {
   renderHeader('Intervenciones');
   container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando intervenciones...</div>`;
 
+  // #341: thresholds are per-subject. Scope reads/saves to the active
+  // subject instead of the hardcoded 'default' partition.
+  const activeSubjectId = auth.getActiveSubjectId() || 'default';
+
   const [interventions = [], thresholdsData = null] = await Promise.all([
     api.getInterventions({}),
-    api.getRiskThresholds('default'),
+    api.getRiskThresholds(activeSubjectId),
   ]);
 
   const thresholds = thresholdsData?.success ? thresholdsData.data : null;
@@ -118,81 +124,7 @@ export async function renderDirectorInterventions(container) {
             <h3 style="margin:0">¿C&oacute;mo se calcula el Riesgo Acad&eacute;mico?</h3>
             <button class="modal-close" id="risk-breakdown-close">&times;</button>
           </div>
-          <div class="modal-body">
-            <p style="color:var(--color-text-secondary);margin-bottom:var(--space-4);font-size:0.875rem">
-              El puntaje de riesgo se calcula combinando cuatro factores ponderados. Cada factor se normaliza de 0 a 100 y se multiplica por su peso.
-            </p>
-
-            <div class="card" style="padding:var(--space-4);margin-bottom:var(--space-4)">
-              <h4 style="margin:0 0 var(--space-2);font-size:0.95rem;display:flex;align-items:center;gap:var(--space-2)">
-                <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--color-primary);color:#fff;font-size:0.8rem;font-weight:700">1</span>
-                Promedio de notas
-                <span class="badge badge-info" style="margin-left:auto">Peso: 40%</span>
-              </h4>
-              <p style="margin:0;font-size:0.85rem;color:var(--color-text-secondary)">
-                Si el promedio de notas del alumno es menor al umbral configurado (default: 4), se considera riesgo alto en este factor.
-                <br><strong>F&oacute;rmula:</strong> <code>promedio &lt; umbral_nota ? 100 : 0</code>
-              </p>
-            </div>
-
-            <div class="card" style="padding:var(--space-4);margin-bottom:var(--space-4)">
-              <h4 style="margin:0 0 var(--space-2);font-size:0.95rem;display:flex;align-items:center;gap:var(--space-2)">
-                <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--color-primary);color:#fff;font-size:0.8rem;font-weight:700">2</span>
-                Asistencia
-                <span class="badge badge-info" style="margin-left:auto">Peso: 30%</span>
-              </h4>
-              <p style="margin:0;font-size:0.85rem;color:var(--color-text-secondary)">
-                Si la asistencia del alumno es menor al 60%, se considera riesgo en este factor.
-                <br><strong>F&oacute;rmula:</strong> <code>asistencia &lt; 60% ? 100 : 0</code>
-              </p>
-            </div>
-
-            <div class="card" style="padding:var(--space-4);margin-bottom:var(--space-4)">
-              <h4 style="margin:0 0 var(--space-2);font-size:0.95rem;display:flex;align-items:center;gap:var(--space-2)">
-                <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--color-primary);color:#fff;font-size:0.8rem;font-weight:700">3</span>
-                Inactividad en plataforma
-                <span class="badge badge-info" style="margin-left:auto">Peso: 20%</span>
-              </h4>
-              <p style="margin:0;font-size:0.85rem;color:var(--color-text-secondary)">
-                Se mide la cantidad de d&iacute;as desde el &uacute;ltimo login. Los umbrales (bajo/medio/alto) se configuran en "Umbrales".
-                <br><strong>F&oacute;rmula:</strong> <code>d&iacute;as_sin_login / umbral_alto * 100</code>
-              </p>
-            </div>
-
-            <div class="card" style="padding:var(--space-4);margin-bottom:var(--space-4)">
-              <h4 style="margin:0 0 var(--space-2);font-size:0.95rem;display:flex;align-items:center;gap:var(--space-2)">
-                <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--color-primary);color:#fff;font-size:0.8rem;font-weight:700">4</span>
-                Tareas vencidas
-                <span class="badge badge-info" style="margin-left:auto">Peso: 10%</span>
-              </h4>
-              <p style="margin:0;font-size:0.85rem;color:var(--color-text-secondary)">
-                Cantidad de tareas vencidas sin entregar. A m&aacute;s tareas vencidas, mayor riesgo.
-                <br><strong>F&oacute;rmula:</strong> <code>min(tareas_vencidas / 5, 1) * 100</code>
-              </p>
-            </div>
-
-            <div style="background:var(--color-surface-2);border-radius:var(--radius-md);padding:var(--space-4);margin-bottom:var(--space-3)">
-              <h4 style="margin:0 0 var(--space-2);font-size:0.95rem">Puntaje final</h4>
-              <p style="margin:0;font-size:0.85rem;color:var(--color-text-secondary);font-family:monospace">
-                score = (nota &times; 0.40) + (asistencia &times; 0.30) + (inactividad &times; 0.20) + (tareas &times; 0.10)
-              </p>
-            </div>
-
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--space-3)">
-              <div class="card" style="padding:var(--space-3);text-align:center;border-left:4px solid var(--color-error)">
-                <p style="margin:0;font-weight:700;color:var(--color-error)">Alto</p>
-                <p style="margin:var(--space-1) 0 0;font-size:0.8rem;color:var(--color-text-muted)">score &ge; 70</p>
-              </div>
-              <div class="card" style="padding:var(--space-3);text-align:center;border-left:4px solid var(--color-warning)">
-                <p style="margin:0;font-weight:700;color:var(--color-warning)">Medio</p>
-                <p style="margin:var(--space-1) 0 0;font-size:0.8rem;color:var(--color-text-muted)">score 40 - 69</p>
-              </div>
-              <div class="card" style="padding:var(--space-3);text-align:center;border-left:4px solid var(--color-success)">
-                <p style="margin:0;font-weight:700;color:var(--color-success)">Bajo</p>
-                <p style="margin:var(--space-1) 0 0;font-size:0.8rem;color:var(--color-text-muted)">score &lt; 40</p>
-              </div>
-            </div>
-          </div>
+          <div class="modal-body" id="risk-breakdown-body"></div>
           <div class="modal-footer">
             <button class="btn btn-secondary" id="risk-breakdown-cancel">Cerrar</button>
           </div>
@@ -336,7 +268,19 @@ export async function renderDirectorInterventions(container) {
 
   document.getElementById('btn-thresholds-config').onclick = () => renderThresholdsModal(thresholds);
 
+  // #341: risk help renders the real backend scoring formula with the
+  // active subject's configured thresholds — no hardcoded 60%/4.
+  function renderRiskBreakdown() {
+    const body = document.getElementById('risk-breakdown-body');
+    if (!body) return;
+    const values = thresholds?.thresholds || {};
+    const label = thresholds?.subjectId || activeSubjectId;
+    const scopeLabel = thresholds?.source === 'default' && label ? `${label} (valores por defecto)` : label;
+    body.innerHTML = renderRiskBreakdownHTML(values, scopeLabel);
+  }
+
   document.getElementById('btn-risk-breakdown').onclick = () => {
+    renderRiskBreakdown();
     const modal = document.getElementById('risk-breakdown-modal');
     modal.style.display = 'flex';
   };
@@ -373,13 +317,18 @@ export async function renderDirectorInterventions(container) {
     };
 
     body.innerHTML = `
-      <p style="color:var(--color-text-secondary);margin-bottom:var(--space-4);font-size:0.875rem">
-        Configurar los umbrales que determinan los niveles de riesgo. Los cambios se aplican inmediatamente al pr&oacute;ximo c&aacute;lculo.
+      <p style="color:var(--color-text-secondary);margin-bottom:var(--space-2);font-size:0.875rem">
+        Configurar los umbrales que determinan los niveles de riesgo para la materia
+        <strong>${escapeHtml(thresholds?.subjectId || activeSubjectId)}</strong>.
+        Los cambios se aplican al pr&oacute;ximo c&aacute;lculo de esta materia.
       </p>
-      ${data?.source === 'override' ? '<p style="color:var(--color-warning);font-size:0.8rem;margin-bottom:var(--space-3)">Esta materia tiene configuraci&oacute;n personalizada.</p>' : ''}
+      ${data?.source === 'override'
+        ? '<p style="color:var(--color-warning);font-size:0.8rem;margin-bottom:var(--space-3)">Esta materia tiene configuraci&oacute;n personalizada.</p>'
+        : '<p style="color:var(--color-text-muted);font-size:0.8rem;margin-bottom:var(--space-3)">Esta materia usa los valores por defecto. Guardar crea una configuraci&oacute;n propia para la materia.</p>'}
+      <div id="thresholds-errors" role="alert" style="display:none;color:var(--color-error);font-size:0.85rem;margin-bottom:var(--space-3)"></div>
       <div style="display:grid;gap:var(--space-3)">
         ${fields.map(f => `
-          <label style="font-size:0.875rem;color:var(--color-text-secondary)">${f.label}
+          <label style="font-size:0.875rem;color:var(--color-text-secondary)">${f.label} <span style="color:var(--color-text-muted)">(vac&iacute;o = ${f.defaultValue})</span>
             <input id="th-${f.key}" class="input" type="number" value="${valueOf(f.key, f.defaultValue)}" min="${f.min}" max="${f.max}" step="${f.step}" style="width:100%;margin-top:var(--space-1);padding:var(--space-2);border-radius:var(--radius-md);background:var(--color-surface-1);color:var(--color-text-primary);border:1px solid var(--color-border)"></label>
         `).join('')}
       </div>
@@ -391,31 +340,52 @@ export async function renderDirectorInterventions(container) {
     modal.onclick = (e) => { if (e.target === modal) modal.style.display = 'none'; };
 
     document.getElementById('thresholds-save').onclick = async () => {
+      // #341: validate inline — never clamp silently. Out-of-range or
+      // non-numeric values block the save with an explicit message.
+      const errors = [];
       const newConfig = {};
       for (const f of fields) {
-        const raw = document.getElementById(`th-${f.key}`).value;
-        if (String(raw).trim() === '') {
+        const raw = String(document.getElementById(`th-${f.key}`).value ?? '').trim();
+        if (raw === '') {
           newConfig[f.key] = f.defaultValue;
           continue;
         }
-        let value = Number(raw);
+        const value = Number(raw);
         if (!Number.isFinite(value)) {
-          newConfig[f.key] = f.defaultValue;
+          errors.push(`"${f.label}" debe ser un n&uacute;mero (recibido: ${escapeHtml(raw)}).`);
           continue;
         }
-        if (value < f.min) value = f.min;
-        if (value > f.max) value = f.max;
+        if (value < f.min || value > f.max) {
+          errors.push(`"${f.label}" debe estar entre ${f.min} y ${f.max} (recibido: ${value}).`);
+          continue;
+        }
         newConfig[f.key] = value;
       }
+      if (newConfig.noLoginDaysLow > newConfig.noLoginDaysMedium
+        || newConfig.noLoginDaysMedium > newConfig.noLoginDaysHigh) {
+        errors.push('Los d&iacute;as de inactividad deben cumplir: bajo &le; medio &le; alto.');
+      }
+      const errorsEl = document.getElementById('thresholds-errors');
+      if (errors.length > 0) {
+        if (errorsEl) {
+          errorsEl.innerHTML = `<strong>Revis&aacute; los valores:</strong><ul style="margin:var(--space-1) 0 0;padding-left:20px;">${errors.map(e => `<li>${e}</li>`).join('')}</ul>`;
+          errorsEl.style.display = 'block';
+        }
+        toast('warning', 'Valores inv&aacute;lidos', 'Correg&iacute; los campos marcados antes de guardar.');
+        return;
+      }
+      if (errorsEl) { errorsEl.style.display = 'none'; errorsEl.innerHTML = ''; }
       try {
-        const result = await api.updateRiskThresholds('default', newConfig);
+        const result = await api.updateRiskThresholds(activeSubjectId, newConfig);
         if (result?.success) {
           modal.style.display = 'none';
           if (thresholds) {
             thresholds.thresholds = { ...thresholds.thresholds, ...(result.data?.thresholds || newConfig) };
+            thresholds.subjectId = result.data?.subjectId || activeSubjectId;
             thresholds.source = 'override';
           }
-          toast('success', 'Umbrales guardados', 'Los nuevos umbrales se aplicarán al próximo cálculo de riesgo.');
+          renderRiskBreakdown();
+          toast('success', 'Umbrales guardados', `Nuevos umbrales para ${activeSubjectId}; se aplicar&aacute;n al pr&oacute;ximo c&aacute;lculo de riesgo.`);
         } else {
           toast('error', 'Error al guardar', result?.error || 'No se pudieron guardar los umbrales.');
         }

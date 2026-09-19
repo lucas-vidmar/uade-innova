@@ -4,6 +4,7 @@
 import { api } from '../../services/api.js';
 import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
+import { renderRiskBreakdownHTML } from '../../components/risk-breakdown.js';
 
 let _ragChartWindow = 30;
 
@@ -271,7 +272,8 @@ export async function renderDirectorDashboard(container) {
         });
     }
 
-    // Risk breakdown modal
+    // Risk breakdown modal (#341): populated with the real scoring formula
+    // and the active subject's configured thresholds — never a placeholder.
     const riskModal = document.createElement('div');
     riskModal.className = 'modal-overlay';
     riskModal.id = 'risk-breakdown-dashboard-modal';
@@ -282,7 +284,7 @@ export async function renderDirectorDashboard(container) {
           <h3 style="margin:0">¿C&oacute;mo se calcula el Riesgo Acad&eacute;mico?</h3>
           <button type="button" class="btn btn-ghost btn-sm risk-breakdown-dashboard-close" aria-label="Cerrar">&times;</button>
         </div>
-        <div class="modal-body">...</div>
+        <div class="modal-body" id="risk-breakdown-dashboard-body"><div class="animate-pulse">Cargando umbrales...</div></div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary risk-breakdown-dashboard-close">Cerrar</button>
         </div>
@@ -290,8 +292,38 @@ export async function renderDirectorDashboard(container) {
     `;
     document.body.appendChild(riskModal);
 
+    const closeRiskModal = () => { riskModal.style.display = 'none'; };
+    riskModal.querySelectorAll('.risk-breakdown-dashboard-close').forEach(btn => {
+      btn.addEventListener('click', closeRiskModal);
+    });
+    riskModal.addEventListener('click', (e) => { if (e.target === riskModal) closeRiskModal(); });
+
+    async function refreshRiskBreakdownBody() {
+      const body = document.getElementById('risk-breakdown-dashboard-body');
+      if (!body) return;
+      let thresholds = {};
+      let scopeLabel = null;
+      try {
+        const activeSubjectId = auth.getActiveSubjectId();
+        const res = await api.getRiskThresholds(activeSubjectId || undefined);
+        const payload = res?.success ? res.data : null;
+        // getRiskThresholds returns { subjectId, thresholds, source } when a
+        // subjectId is given, or { thresholds: {...all}, defaults } without it.
+        thresholds = payload?.thresholds && !Array.isArray(payload.thresholds)
+          && typeof payload.thresholds === 'object' && !payload.defaults
+          ? payload.thresholds
+          : (payload?.defaults || {});
+        scopeLabel = payload?.subjectId || activeSubjectId || null;
+        if (payload?.source === 'default' && scopeLabel) scopeLabel += ' (valores por defecto)';
+      } catch {
+        thresholds = {};
+      }
+      body.innerHTML = renderRiskBreakdownHTML(thresholds, scopeLabel);
+    }
+
     document.getElementById('btn-risk-breakdown-dashboard')?.addEventListener('click', () => {
       document.getElementById('risk-breakdown-dashboard-modal').style.display = 'flex';
+      refreshRiskBreakdownBody();
     });
 
     // RAG chart filter buttons
@@ -528,25 +560,28 @@ async function handleExportPdf(data) {
   if (!btn) return;
   btn.disabled = true;
   btn.innerHTML = '<span>&#x21bb;</span> Exportando...';
+  const filename = `kpi-snapshot-${new Date().toISOString().slice(0, 10)}.html`;
   try {
+    // #341: never use window.open + print() here — popup blockers and the
+    // Orca embedded browser hang on the orphaned tab. The backend answers
+    // format=pdf with a printable HTML report, so download it as a file
+    // (the user prints it to PDF from the browser) instead of opening a tab.
     const blob = await api.getDirectorKpiExport('pdf');
     if (blob) {
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
-      URL.revokeObjectURL(url);
+      downloadBlob(blob, filename);
     } else {
-      openPrintView(data);
+      downloadBlob(new Blob([buildPrintHtml(data)], { type: 'text/html;charset=utf-8' }), filename);
     }
   } catch (err) {
     console.error('[Dashboard] PDF export error:', err);
-    openPrintView(data);
+    downloadBlob(new Blob([buildPrintHtml(data)], { type: 'text/html;charset=utf-8' }), filename);
   } finally {
     btn.disabled = false;
     btn.innerHTML = '<span>&#x2193;</span> Exportar PDF';
   }
 }
 
-function openPrintView(data) {
+function buildPrintHtml(data) {
   const t = (v) => String(v ?? '');
   const ea = data.earlyAlertSummary || {};
   const wausRows = (data.wausBySubject || []).map(s =>
@@ -556,9 +591,10 @@ function openPrintView(data) {
     `<tr><td>${t(tm.teacherId)}</td><td>${tm.transcripts||0}</td><td>${tm.presentations||0}</td><td>${tm.notes||0}</td><td>${tm.bibliography||0}</td><td>${tm.total||0}</td></tr>`
   ).join('');
 
-  const printWin = window.open('', '_blank', 'width=800,height=600');
-  if (!printWin) return;
-  printWin.document.write(`<!DOCTYPE html>
+  // Client-side printable report (#341 fallback): returned as a string so the
+  // caller downloads it as a file. No window.open — popup-based printing
+  // hangs the Orca embedded browser.
+  return `<!DOCTYPE html>
 <html lang="es">
 <head><meta charset="utf-8"><title>KPIs - Dashboard Directivo</title>
 <style>
@@ -597,9 +633,7 @@ function openPrintView(data) {
     <tr><td>Asistencia 60-75%</td><td>${t(ea.attendance60To75Count)}</td></tr>
   </tbody></table>
   <div class="footer">Datos anonimizados, sin PII.</div>
-</body></html>`);
-  printWin.document.close();
-  setTimeout(() => { printWin.focus(); printWin.print(); }, 500);
+</body></html>`;
 }
 
 function renderWausBarChart(wausBySubject) {

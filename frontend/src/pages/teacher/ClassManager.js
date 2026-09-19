@@ -96,7 +96,7 @@ export async function renderClassManager(container) {
                             <h3 style="margin:0 0 4px;">Alumnos de la materia</h3>
                             <p style="font-size:var(--fs-sm);color:var(--color-text-secondary);margin:0;">${subjectStudents.length} alumno(s) asignado(s) — gestioná en la sección Estudiantes.</p>
                         </div>
-                        <a href="#/teacher/students" class="btn btn-secondary btn-sm">Ir a Estudiantes →</a>
+                        <a href="#/teacher/students" class="btn btn-secondary btn-sm" data-students-link>Ir a Estudiantes →</a>
                     </div>
 
                     ${Array.isArray(classes) && classes.length === 0 ? `
@@ -355,9 +355,20 @@ export async function renderClassManager(container) {
             container.querySelectorAll('.btn-review-summary, .btn-review-podcast').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     const idx = parseInt(e.currentTarget.getAttribute('data-idx'));
-                    window.location.hash = `#/teacher/class/${classes[idx].id}`;
+                    // Guard-aware navigation (#340): directors cannot access
+                    // /teacher/* routes, so route them to the director-scoped
+                    // class review instead of the teacher-only editor.
+                    const base = auth.getRole() === 'director' ? '#/director/class' : '#/teacher/class';
+                    window.location.hash = `${base}/${classes[idx].id}`;
                 });
             });
+
+            // Guard-aware students link (#340): director role has its own
+            // students route (/director/students), not /teacher/students.
+            const studentsLink = container.querySelector('[data-students-link]');
+            if (studentsLink && auth.getRole() === 'director') {
+                studentsLink.setAttribute('href', '#/director/students');
+            }
 
             container.querySelectorAll('.btn-edit-timeline').forEach(btn => {
                 btn.addEventListener('click', async (e) => {

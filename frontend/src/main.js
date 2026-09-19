@@ -39,6 +39,7 @@ const ROUTES = {
     '/director/dashboard': () => import('./pages/director/Dashboard.js').then(m => m.renderDirectorDashboard),
     '/director/sat-analytics': () => import('./pages/director/SatAnalytics.js').then(m => m.renderDirectorSatAnalytics),
     '/director/classes': () => import('./pages/director/ClassManagement.js').then(m => m.renderClassManagement),
+    '/director/class': () => import('./pages/teacher/ClassEditor.js').then(m => m.renderClassEditor),
     '/director/subjects': () => import('./pages/director/SubjectManagement.js').then(m => m.renderSubjectManagement),
     '/director/students': () => import('./pages/director/StudentManagement.js').then(m => m.renderDirectorStudentManagement),
     '/director/interventions': () => import('./pages/director/Interventions.js').then(m => m.renderDirectorInterventions),
@@ -129,6 +130,9 @@ async function handleRoute() {
     }
     if (fullPath.startsWith('/teacher/class/')) {
         matchedPath = '/teacher/class';
+    }
+    if (fullPath.startsWith('/director/class/')) {
+        matchedPath = '/director/class';
     }
 
     buildShell();

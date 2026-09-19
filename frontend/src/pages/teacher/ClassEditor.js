@@ -17,9 +17,12 @@ export async function renderClassEditor(container) {
     const parts = hash.split('/');
     const classId = parts[parts.length - 1];
     const subjectId = auth.getActiveSubjectId();
+    // Guard-aware back navigation (#340): the editor is shared by the
+    // teacher (/teacher/class) and director (/director/class) routes.
+    const backHash = auth.getRole() === 'director' ? '#/director/classes' : '#/teacher/classes';
 
     if (!classId || !subjectId) {
-        window.location.hash = '#/teacher/classes';
+        window.location.hash = backHash;
         return;
     }
 
@@ -182,7 +185,7 @@ export async function renderClassEditor(container) {
             container.innerHTML = `
                 <div class="page-container" style="max-width:1200px; margin:0 auto;">
                     <div style="margin-bottom:var(--space-4);">
-                        <a href="#/teacher/classes" class="btn btn-ghost btn-sm" style="padding:4px 8px; margin-bottom:4px;">← Volver</a>
+                        <a href="${backHash}" class="btn btn-ghost btn-sm" style="padding:4px 8px; margin-bottom:4px;">← Volver</a>
                         <h2 class="h3" style="margin:4px 0 0;">${classInfo.title}</h2>
                         <div style="display:flex; align-items:center; gap:8px; margin-top:6px; flex-wrap:wrap;">
                             <span style="font-size:0.8rem; color:var(--color-text-secondary);">${classInfo.date || 'Sin fecha'}</span>
@@ -554,7 +557,7 @@ export async function renderClassEditor(container) {
                     api.dispatchClassPublishNotification({ subjectId, classId }).catch((err) => {
                         console.warn('[ClassEditor] Publish notification dispatch failed (non-critical):', err?.message);
                     });
-                    window.location.hash = '#/teacher/classes';
+                    window.location.hash = backHash;
                 }
             } catch (e) {
                 toast('error', 'Error', 'No se pudo guardar el contenido.');
@@ -572,7 +575,7 @@ export async function renderClassEditor(container) {
                 <div style="font-size:48px; margin-bottom:16px;">⚠️</div>
                 <h3>Error al cargar el editor</h3>
                 <p style="color:var(--color-text-secondary);">${err.message}</p>
-                <a href="#/teacher/classes" class="btn btn-primary" style="margin-top:20px;">Volver a Clases</a>
+                <a href="${backHash}" class="btn btn-primary" style="margin-top:20px;">Volver a Clases</a>
             </div>
         `;
     }
