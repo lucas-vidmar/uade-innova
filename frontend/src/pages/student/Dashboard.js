@@ -599,7 +599,7 @@ export async function renderStudentDashboard(container) {
     if (metricsContainer) {
       metricsContainer.innerHTML = `
         <div class="bg-transparent p-2 flex flex-col items-center transition-all min-w-[100px]">
-          <span class="block text-3xl font-extrabold text-primary">${avgGrade > 0 ? avgGrade.toFixed(1) : '-'}</span>
+          <span class="block text-3xl font-extrabold text-primary">${avgGrade > 0 ? avgGrade.toFixed(1) : 's/d'}</span>
           <span class="text-[10px] uppercase font-bold text-text-muted mt-1.5 tracking-widest text-center">Promedio</span>
         </div>
         <div class="bg-transparent p-2 flex flex-col items-center transition-all min-w-[100px]">
@@ -614,10 +614,21 @@ export async function renderStudentDashboard(container) {
   const CLASSES_PAGE_SIZE = 8;
   let classesPage = 0;
   let classesCache = [];
+  // Fix #346: header search box filters the class list in place (Enter still
+  // navigates to the full search-results page, bound below).
+  let classesFilter = '';
+
+  const getVisibleClasses = () => {
+    const base = (classesCache || []).filter(c => c.date || c.title);
+    const q = classesFilter.trim().toLowerCase();
+    if (!q) return base;
+    return base.filter(c => `${c.title || ''} ${c.id || ''}`.toLowerCase().includes(q));
+  };
 
   const renderClassesList = () => {
-    const visibleCount = Math.min((classesPage + 1) * CLASSES_PAGE_SIZE, classesCache.length);
-    const visibleItems = classesCache.slice(0, visibleCount);
+    const filtered = getVisibleClasses();
+    const visibleCount = Math.min((classesPage + 1) * CLASSES_PAGE_SIZE, filtered.length);
+    const visibleItems = filtered.slice(0, visibleCount);
     if (visibleItems.length === 0) {
       return '<li class="flex flex-col items-center py-8 px-6 text-center"><div style="width:40px;height:40px;" class="bg-surface-2 rounded-full flex items-center justify-center mb-3 text-text-muted">' + icon('calendar', 14) + '</div><p class="text-xs font-medium text-text-primary">No hay clases programadas</p></li>';
     }
@@ -670,7 +681,7 @@ export async function renderStudentDashboard(container) {
       classesScroll.onscroll = () => {
         const nearBottom = classesScroll.scrollTop + classesScroll.clientHeight >= classesScroll.scrollHeight - 20;
         if (!nearBottom) return;
-        if ((classesPage + 1) * CLASSES_PAGE_SIZE >= classesCache.length) return;
+        if ((classesPage + 1) * CLASSES_PAGE_SIZE >= getVisibleClasses().length) return;
         classesPage += 1;
         const list = classesScroll.querySelector('.sidebar-list');
         if (list) {
@@ -724,9 +735,19 @@ export async function renderStudentDashboard(container) {
     }
   });
 
-  // Bind global search bar: Enter → navigate to search results page
+  // Bind global search bar: typing filters the class list; Enter → search results page
   const searchInput = document.getElementById('global-search-header');
   if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      classesFilter = searchInput.value || '';
+      classesPage = 0;
+      const sectionClasses = document.getElementById('section-classes');
+      const list = sectionClasses?.querySelector('.sidebar-list');
+      if (list) {
+        list.innerHTML = renderClassesList();
+        requestAnimationFrame(applyTitleScroll);
+      }
+    });
     searchInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();

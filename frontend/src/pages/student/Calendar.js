@@ -1,6 +1,7 @@
 import { api } from '../../services/api.js';
 import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
+import { toast } from '../../components/Toast.js';
 
 const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const DAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
@@ -325,11 +326,21 @@ export async function renderStudentCalendar(container) {
           downloadIcs();
           return;
         }
-        const encoded = encodeURIComponent(buildIcs());
+        // Fix #339: the old bulk URLs embedded the whole ICS text in
+        // outlook.live.com/calendar/0/import/<ics> (HTTP 400) and in Google's
+        // ?cid= (which expects a feed URL, not ICS text). Export a per-event
+        // compose/deeplink for the next upcoming event instead; with no
+        // upcoming events fall back to the working .ics download.
+        const next = nextUpcomingEvent();
+        if (!next) {
+          downloadIcs();
+          toast('info', 'Sin próximos eventos', 'No hay eventos futuros: se descargó el calendario completo en .ics.');
+          return;
+        }
         if (target === 'google') {
-          window.open(`https://calendar.google.com/calendar/render?cid=${encoded}`, '_blank');
+          window.open(buildGoogleTemplateUrl(next), '_blank', 'noopener');
         } else if (target === 'outlook') {
-          window.open(`https://outlook.live.com/calendar/0/import/${encoded}`, '_blank');
+          window.open(buildOutlookComposeUrl(next), '_blank', 'noopener');
         }
       });
     });
@@ -341,30 +352,85 @@ export async function renderStudentCalendar(container) {
     });
   };
 
+  // ── Calendar export helpers (fix #339: RFC 5545 + valid provider URLs) ──
+  const dtStamp = () => new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+  // RFC 5545 TEXT escaping: backslash, semicolon, comma, newline.
+  const escapeIcsText = (s) => String(s ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/;/g, '\\;')
+    .replace(/,/g, '\\,')
+    .replace(/\r?\n/g, '\\n');
+  const toIcsDate = (iso) => String(iso).slice(0, 10).replace(/-/g, '');
+  // All-day VEVENTs use exclusive DTEND, so DTEND is the day AFTER DTSTART.
+  const nextDayIcsDate = (iso) => {
+    const d = new Date(String(iso).slice(0, 10) + 'T12:00:00');
+    d.setDate(d.getDate() + 1);
+    return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+  };
+  const stableUid = (prefix, id, date) => {
+    const seed = `${prefix}-${id || date || 'event'}`;
+    let h = 0;
+    for (let i = 0; i < seed.length; i++) h = ((h * 31) + seed.charCodeAt(i)) >>> 0;
+    return `${h.toString(16)}-${toIcsDate(date || '') || 'nodate'}@uade-innova`;
+  };
+
   const buildIcs = () => {
+    const stamp = dtStamp();
     const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//UADE Innova//Dashboard//ES'];
     classes.forEach(c => {
       if (!c.date) return;
-      const d = c.date.slice(0, 10).replace(/-/g, '');
       lines.push('BEGIN:VEVENT');
-      lines.push('DTSTART;VALUE=DATE:' + d);
-      lines.push('DTEND;VALUE=DATE:' + d);
-      lines.push('SUMMARY:' + (c.title || 'Clase').replace(/[;,\n]/g, ' '));
-      lines.push('DESCRIPTION:Clase de ' + (c.subjectId || '') + '. Temas: ' + (c.topics || []).join(', '));
+      lines.push(`UID:${stableUid('class', c.id, c.date)}`);
+      lines.push(`DTSTAMP:${stamp}`);
+      lines.push('DTSTART;VALUE=DATE:' + toIcsDate(c.date));
+      lines.push('DTEND;VALUE=DATE:' + nextDayIcsDate(c.date));
+      lines.push('SUMMARY:' + escapeIcsText(c.title || 'Clase'));
+      lines.push('DESCRIPTION:' + escapeIcsText('Clase de ' + (c.subjectId || '') + '. Temas: ' + (c.topics || []).join(', ')));
       lines.push('END:VEVENT');
     });
     deadlines.forEach(d => {
       if (!d.dueDate) return;
-      const dd = d.dueDate.slice(0, 10).replace(/-/g, '');
       lines.push('BEGIN:VEVENT');
-      lines.push('DTSTART;VALUE=DATE:' + dd);
-      lines.push('DTEND;VALUE=DATE:' + dd);
-      lines.push('SUMMARY:Entrega: ' + (d.title || 'Tarea').replace(/[;,\n]/g, ' '));
-      lines.push('DESCRIPTION:' + (d.description || 'Entrega de ' + (d.title || '')));
+      lines.push(`UID:${stableUid('deadline', d.id, d.dueDate)}`);
+      lines.push(`DTSTAMP:${stamp}`);
+      lines.push('DTSTART;VALUE=DATE:' + toIcsDate(d.dueDate));
+      lines.push('DTEND;VALUE=DATE:' + nextDayIcsDate(d.dueDate));
+      lines.push('SUMMARY:' + escapeIcsText('Entrega: ' + (d.title || 'Tarea')));
+      lines.push('DESCRIPTION:' + escapeIcsText(d.description || 'Entrega de ' + (d.title || '')));
       lines.push('END:VEVENT');
     });
     lines.push('END:VCALENDAR');
     return lines.join('\r\n');
+  };
+
+  // Next upcoming event across classes + deadlines (today or later).
+  const nextUpcomingEvent = () => {
+    const today = formatDateStr(new Date());
+    const candidates = [
+      ...classes.filter(c => c.date).map(c => ({ kind: 'class', date: String(c.date).slice(0, 10), title: c.title || 'Clase', detail: 'Clase de ' + (c.subjectId || '') + '. Temas: ' + (c.topics || []).join(', ') })),
+      ...deadlines.filter(d => d.dueDate).map(d => ({ kind: 'deadline', date: String(d.dueDate).slice(0, 10), title: 'Entrega: ' + (d.title || 'Tarea'), detail: d.description || '' })),
+    ].filter(e => e.date >= today).sort((a, b) => a.date.localeCompare(b.date));
+    return candidates[0] || null;
+  };
+
+  const buildGoogleTemplateUrl = (ev) => {
+    const params = new URLSearchParams({
+      action: 'TEMPLATE',
+      text: ev.title,
+      dates: `${toIcsDate(ev.date)}/${nextDayIcsDate(ev.date)}`,
+      details: ev.detail || '',
+    });
+    return `https://calendar.google.com/calendar/render?${params.toString()}`;
+  };
+  const buildOutlookComposeUrl = (ev) => {
+    const params = new URLSearchParams({
+      subject: ev.title,
+      startdt: `${ev.date}T09:00:00`,
+      enddt: `${ev.date}T10:00:00`,
+      body: ev.detail || '',
+      allday: 'true',
+    });
+    return `https://outlook.live.com/calendar/0/deeplink/compose?${params.toString()}`;
   };
 
   const downloadIcs = () => {
@@ -380,6 +446,12 @@ export async function renderStudentCalendar(container) {
   document.addEventListener('click', (e) => {
     const menu = document.getElementById('cal-export-menu');
     if (menu && !e.target.closest('.cal-export-wrap')) menu.style.display = 'none';
+  });
+
+  // Fix #346 (modal leak): navigating away must not leave the class-detail
+  // slide-panel overlay mounted over the next route.
+  window.addEventListener('hashchange', () => {
+    document.getElementById('class-detail-overlay')?.remove();
   });
 
   render();

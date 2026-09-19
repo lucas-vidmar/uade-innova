@@ -1,4 +1,5 @@
 import { api } from './api.js';
+import { isAbortError } from './core.js';
 
 const INITIAL_RETRY_MS = 1000;
 const MAX_RETRY_MS = 30000;
@@ -77,14 +78,16 @@ export function createNotificationStream() {
       if (!isRunning) return;
       retryDelay = INITIAL_RETRY_MS;
     } catch (err) {
-      if (!isRunning || signal.aborted) return;
+      if (!isRunning || signal.aborted || isAbortError(err)) return;
       if (isHardAuthFailure(err)) {
         console.warn('[NotificationStream] Hard authorization failure, stopping reconnects:', err.status, err.code);
         stop();
         notifyError(err);
         return;
       }
-      console.warn('[NotificationStream] Connection lost, reconnecting in', retryDelay, 'ms:', err.message);
+      // Fix #346: transient reconnects are routine (route change, timeout) —
+      // debug-level, not a warning.
+      console.debug('[NotificationStream] Connection lost, reconnecting in', retryDelay, 'ms:', err.message);
     }
 
     if (!isRunning) return;

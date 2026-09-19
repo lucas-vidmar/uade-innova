@@ -136,11 +136,24 @@ async function handleRoute() {
     }
 
     buildShell();
-    renderSidebar();
 
-    // Route Guard: Role-based access control
+    // Route Guard: authentication first, then role-based access control
+    // (fix #342). A logged-out session deep-linking to any role route must
+    // land on #/login — never render the role shell. getRole() is fail-closed
+    // (null when unset), so a missing role also routes to login. This check
+    // runs BEFORE renderSidebar() so no role shell ever flashes.
+    if (!auth.isAuthenticated()) {
+        window.location.hash = '#/login';
+        return;
+    }
     const expectedRole = matchedPath.split('/')[1]; // "student", "teacher", "director", "admin"
     const actualRole = auth.getRole();
+    if (!actualRole) {
+        window.location.hash = '#/login';
+        return;
+    }
+
+    renderSidebar();
 
     const rolePrefixMap = {
         student: ['student'],
@@ -150,8 +163,12 @@ async function handleRoute() {
     };
 
     const allowedPrefixes = rolePrefixMap[actualRole] || ['student'];
-    if (!allowedPrefixes.includes(expectedRole)) {
+    if (!actualRole || !allowedPrefixes.includes(expectedRole)) {
         console.warn(`[Router] Access Denied: ${actualRole} cannot access ${matchedPath}`);
+        if (!auth.isAuthenticated() || !actualRole) {
+            window.location.hash = '#/login';
+            return;
+        }
         window.location.hash = `#/${actualRole}/dashboard`;
         return;
     }
@@ -186,8 +203,12 @@ async function handleRoute() {
             pageContent.innerHTML = `<div class="card" style="max-width:480px;margin:var(--space-10) auto;text-align:center"><div class="empty-state-icon" aria-hidden="true">⚠️</div><h2 class="h3">Error al cargar la página</h2><p style="color:var(--color-text-secondary)">${err.message}</p><button class="btn btn-secondary" onclick="window.location.reload()" aria-label="Reintentar cargar la página">Reintentar</button></div>`;
         }
     } else {
-        // Default redirect based on role
+        // Default redirect based on role (fail closed: roleless → login)
         const role = auth.getRole();
+        if (!auth.isAuthenticated() || !role) {
+            window.location.hash = '#/login';
+            return;
+        }
         window.location.hash = `#/${role}/dashboard`;
     }
 }
@@ -368,8 +389,10 @@ async function bootstrap() {
     inactivityMonitor.init();
     
     // Default hash on first load — or redirect if hash doesn't match role
+    // (fail closed: a missing role lands on login, never #/null/dashboard).
     if (!window.location.hash) {
-        window.location.hash = `#/${auth.getRole()}/dashboard`;
+        const bootRole = auth.getRole();
+        window.location.hash = bootRole ? `#/${bootRole}/dashboard` : '#/login';
     } else {
         // Verify the current hash path matches the authenticated role
         const hashPath = window.location.hash.replace(/^#/, '').split('?')[0];
@@ -391,10 +414,10 @@ async function bootstrap() {
             director: ['director'],
             admin: ['admin'],
         };
-        const allowedPrefixes = rolePrefixMap[actualRole] || ['student'];
+        const allowedPrefixes = (actualRole && rolePrefixMap[actualRole]) || null;
 
-        if (!allowedPrefixes.includes(hashRole)) {
-            window.location.hash = `#/${actualRole}/dashboard`;
+        if (!allowedPrefixes || !allowedPrefixes.includes(hashRole)) {
+            window.location.hash = !actualRole ? '#/login' : `#/${actualRole}/dashboard`;
         } else {
             handleRoute();
         }

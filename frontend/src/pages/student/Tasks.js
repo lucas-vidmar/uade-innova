@@ -215,6 +215,8 @@ function bindDisputeEvents(container) {
       overlay.querySelector('.dialog-close')?.addEventListener('click', cleanup);
       overlay.querySelector('.dialog-cancel')?.addEventListener('click', cleanup);
       overlay.addEventListener('click', (event) => { if (event.target === overlay) cleanup(); });
+      // Fix #346: same route-leak cleanup as the detail modal.
+      window.addEventListener('hashchange', cleanup, { once: true });
 
       submitBtn.addEventListener('click', async () => {
         const val = (textarea.value || '').trim();
@@ -329,5 +331,8 @@ function showTaskDetailModal(task, classes) {
   overlay.querySelectorAll('.dialog-close').forEach(el => el.addEventListener('click', cleanup));
   overlay.addEventListener('click', (event) => { if (event.target === overlay) cleanup(); });
   overlay.addEventListener('keydown', (event) => { if (event.key === 'Escape') cleanup(); });
+  // Fix #346: the "Ver detalle" modal leaked across routes (it mounts on
+  // document.body, outside the page container that the router replaces).
+  window.addEventListener('hashchange', cleanup, { once: true });
   document.body.appendChild(overlay);
 }

@@ -81,8 +81,13 @@ const MAX_VISIBLE_SECTIONS = 50;
 
 export async function renderClassDetail(container) {
     const hash = window.location.hash || '';
-    const parts = hash.split('/');
-    const classId = parts[parts.length - 1];
+    // Fix #346: strip any query string before extracting the id — client nav
+    // can append ?params, which previously poisoned the lookup and rendered
+    // the not-found state until a hard reload.
+    const hashPath = hash.split('?')[0];
+    const parts = hashPath.split('/');
+    const rawClassId = parts[parts.length - 1];
+    const classId = decodeURIComponent(rawClassId || '');
 
     if (!classId || classId === 'class') {
         window.location.hash = '#/student/dashboard';

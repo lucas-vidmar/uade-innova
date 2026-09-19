@@ -557,7 +557,22 @@ app.http('get-subjects', {
         const roles = principal?.userRoles || [];
         const isTeacher = roles.includes('Docente');
         const isDirector = roles.includes('Director');
+        const isAdmin = roles.includes('Admin');
+        // Admin is a global/unscoped role like Director (fix #343): it must see
+        // the full catalog, never the group-filtered student subset.
+        const isUnscoped = isDirector || isAdmin;
         const userId = principal?.userId || principal?.oid || request.headers.get('x-mock-role') || 'anonymous';
+
+        // Fail closed for anonymous callers (fix #343): without any principal
+        // there is no scope to resolve, so return nothing instead of the full
+        // catalog (which previously leaked subject + professor names).
+        if (!principal) {
+            return {
+                status: 401,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ error: 'Se requiere autenticación para ver las materias.', code: 'AUTH_REQUIRED' })
+            };
+        }
 
         const allSubjects = await loadSubjects();
 
@@ -577,7 +592,7 @@ app.http('get-subjects', {
 
             if (userEnrollments.length > 0) {
                 // Primary: enrollment table filtering
-                if (isDirector) {
+                if (isUnscoped) {
                     filteredSubjects = allSubjects;
                 } else if (isTeacher) {
                     const assignedSubjectIds = userEnrollments
@@ -590,14 +605,14 @@ app.http('get-subjects', {
                         .map(e => e.subjectId);
                     filteredSubjects = allSubjects.filter(s => enrolledSubjectIds.includes(s.id));
                 }
-            } else if (principal && !isTeacher && !isDirector) {
+            } else if (principal && !isTeacher && !isUnscoped) {
                 // Fallback: group-based filtering for students without enrollment records
                 filteredSubjects = allSubjects.filter(s => !s.group || groups.includes(s.group));
             }
         } catch (enrollmentErr) {
             context.log.warn(`[get-subjects] Enrollment lookup failed, falling back to group filtering: ${enrollmentErr.message}`);
             // Fallback: group-based filtering
-            if (principal && !isTeacher && !isDirector) {
+            if (principal && !isTeacher && !isUnscoped) {
                 filteredSubjects = allSubjects.filter(s => !s.group || groups.includes(s.group));
             }
         }

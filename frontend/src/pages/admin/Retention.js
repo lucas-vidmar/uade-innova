@@ -12,6 +12,10 @@ export async function renderAdminRetention(container) {
     notifyTeachers: true,
     autoDelete: true,
   };
+  // Fix #343: whether the values above came from the persisted API policy or
+  // are local defaults. The "Políticas Activas" table binds to this so it
+  // reflects the API instead of hardcoded periods.
+  let policyConfigured = false;
 
   async function loadPolicy() {
     try {
@@ -26,6 +30,7 @@ export async function renderAdminRetention(container) {
           notifyTeachers: policy.notifyTeachers ?? config.notifyTeachers,
           autoDelete: policy.autoDelete ?? config.autoDelete,
         };
+        policyConfigured = policy.configured !== false;
       }
     } catch (err) {
       console.warn('[Retention] No se pudo cargar la política de retención:', err);
@@ -33,6 +38,26 @@ export async function renderAdminRetention(container) {
   }
 
   await loadPolicy();
+
+  // Fix #343: derive the summary table from the loaded API policy so the
+  // retention view matches the compliance view instead of hardcoded values.
+  const fmtDays = (days) => {
+    if (days >= 365 && days % 365 === 0) {
+      const years = days / 365;
+      return `${years} ${years === 1 ? 'año' : 'años'}`;
+    }
+    if (days >= 30 && days % 30 === 0) {
+      const months = days / 30;
+      return `${months} ${months === 1 ? 'mes' : 'meses'}`;
+    }
+    return `${days} días`;
+  };
+  const archiveBadge = (enabled) => policyConfigured && enabled
+    ? '<span class="badge badge-success">Activo</span>'
+    : '<span class="badge badge-warning">Pendiente</span>';
+  const deleteBadge = () => policyConfigured && config.deleteEnabled
+    ? '<span class="badge badge-success">Activo</span>'
+    : '<span class="badge badge-warning">Pendiente</span>';
 
   container.innerHTML = `
     <div class="page-header">
@@ -55,39 +80,39 @@ export async function renderAdminRetention(container) {
           <tbody>
             <tr>
               <td><strong>Transcripciones de clase</strong></td>
-              <td>2 años</td>
+              <td>${fmtDays(config.archiveDays)}</td>
               <td>Archivo en frío (Cold Storage)</td>
-              <td><span class="badge badge-success">Activo</span></td>
+              <td>${archiveBadge(config.archiveEnabled)}</td>
             </tr>
             <tr>
               <td><strong>Presentaciones</strong></td>
-              <td>2 años</td>
+              <td>${fmtDays(config.archiveDays)}</td>
               <td>Archivo en frío (Cold Storage)</td>
-              <td><span class="badge badge-success">Activo</span></td>
+              <td>${archiveBadge(config.archiveEnabled)}</td>
             </tr>
             <tr>
               <td><strong>Apuntes y bibliografía</strong></td>
-              <td>2 años</td>
+              <td>${fmtDays(config.archiveDays)}</td>
               <td>Archivo en frío (Cold Storage)</td>
-              <td><span class="badge badge-success">Activo</span></td>
+              <td>${archiveBadge(config.archiveEnabled)}</td>
             </tr>
             <tr>
               <td><strong>Historial de chat</strong></td>
-              <td>1 año</td>
+              <td>${fmtDays(config.deleteDays)}</td>
               <td>Eliminación permanente</td>
-              <td><span class="badge badge-warning">Pendiente</span></td>
+              <td>${deleteBadge()}</td>
             </tr>
             <tr>
               <td><strong>Logs de interacción</strong></td>
-              <td>90 días</td>
+              <td>${fmtDays(config.deleteDays)}</td>
               <td>Eliminación permanente</td>
-              <td><span class="badge badge-success">Activo</span></td>
+              <td>${deleteBadge()}</td>
             </tr>
             <tr>
               <td><strong>Notifications</strong></td>
-              <td>6 meses</td>
+              <td>${fmtDays(config.deleteDays)}</td>
               <td>Eliminación permanente</td>
-              <td><span class="badge badge-success">Activo</span></td>
+              <td>${deleteBadge()}</td>
             </tr>
           </tbody>
         </table>
@@ -190,7 +215,10 @@ export async function renderAdminRetention(container) {
     btn.textContent = 'Guardando...';
     try {
       const result = await api.saveRetentionPolicy(values);
-      if (result) config = { ...config, ...result };
+      if (result) {
+        config = { ...config, ...result };
+        if (result.configured !== false) policyConfigured = true;
+      }
       renderValues();
       toast('success', 'Políticas actualizadas', 'Los cambios en retención se aplicarán en las próximas horas.');
     } catch (err) {

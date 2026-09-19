@@ -26,7 +26,10 @@ export function renderHeader(containerOrTitle, titleOrStats = 'Dashboard', showM
   const user = auth.getUser();
   const activeSubjectId = auth.getActiveSubjectId();
   const subjects = auth.getEnrolledSubjects();
-  const currentSubject = subjects.find(s => s.id === activeSubjectId) || subjects[0] || { name: 'Materia' };
+  // Fix #346: same active-subject fallback as the sidebar — prefer the session
+  // subject list when the enrollment cache is empty.
+  const displayPool = subjects.length > 0 ? subjects : (user.subjects || []);
+  const currentSubject = displayPool.find(s => s.id === activeSubjectId) || subjects[0] || displayPool[0] || { name: 'Materia' };
 
   container.innerHTML = `
     <div class="header-container flex justify-between items-center w-full px-6 py-4 bg-surface-2 border-b border-border">
@@ -55,11 +58,11 @@ export function renderHeader(containerOrTitle, titleOrStats = 'Dashboard', showM
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
           </button>
           <div class="custom-dropdown-menu">
-            ${subjects.map(s => `
+            ${displayPool.map(s => `
               <div class="custom-dropdown-option ${s.id === activeSubjectId ? 'selected' : ''}" data-value="${s.id}">
                 ${s.name}
               </div>
-            `).join('')}
+            `).join('') || '<div class="custom-dropdown-option" aria-disabled="true">Sin materias disponibles</div>'}
           </div>
         </div>
       </div>

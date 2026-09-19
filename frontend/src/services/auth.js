@@ -180,11 +180,16 @@ export const auth = {
     },
 
     getRole() {
-        return sessionStorage.getItem('edu_role') || 'student';
+        // Fail closed (fix #342): no default role. Callers (router) must treat
+        // a missing role as unauthenticated and land on #/login instead of
+        // rendering the student shell by default.
+        return sessionStorage.getItem('edu_role') || null;
     },
 
     isLoggedIn() {
-        return sessionStorage.getItem('edu_logged_in') !== 'false';
+        // Fail closed (fix #342): a missing flag means logged OUT. The old
+        // `!== 'false'` check treated a fresh tab (no flag) as authenticated.
+        return sessionStorage.getItem('edu_logged_in') === 'true';
     },
 
     getBotPreferences() {
@@ -330,9 +335,9 @@ export const auth = {
     },
 
     isAuthenticated() {
-        const loggedIn = sessionStorage.getItem('edu_logged_in');
-        if (loggedIn === 'false') return false;
-        return true;
+        // Fail closed (fix #342): only an explicit 'true' counts. A missing
+        // flag (fresh tab, cleared storage) is unauthenticated.
+        return sessionStorage.getItem('edu_logged_in') === 'true';
     },
 
     isAccessDenied() {
@@ -542,7 +547,7 @@ export const auth = {
             if (Array.isArray(subjects)) {
                 _subjectsCache = subjects;
                 const currentRole = this.getRole();
-                if (isDevMockEnabled()) {
+                if (isDevMockEnabled() && currentRole && USERS[currentRole]) {
                     USERS[currentRole].subjects = subjects;
                 }
                 const activeId = this.getActiveSubjectId();

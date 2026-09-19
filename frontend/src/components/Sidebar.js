@@ -64,7 +64,11 @@ export function renderSidebar() {
 
   const activeSubjectId = auth.getActiveSubjectId();
   const subjects = auth.getEnrolledSubjects();
-  const activeSubject = subjects.find(s => s.id === activeSubjectId) || subjects[0] || { name: 'Sin materias asignadas', id: null };
+  // Fix #346: when the enrollment cache is empty but the session still has an
+  // active subject (e.g. enrollments not yet loaded), show the active subject
+  // name instead of "Sin materias asignadas".
+  const displayPool = subjects.length > 0 ? subjects : (user.subjects || []);
+  const activeSubject = displayPool.find(s => s.id === activeSubjectId) || subjects[0] || displayPool[0] || { name: 'Sin materias asignadas', id: null };
   const displaySubjectName = subjects.length === 0
     ? 'Sin materias asignadas'
     : (activeSubject.name.includes('(2026-1)')
@@ -122,11 +126,11 @@ export function renderSidebar() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
           </button>
           <div class="custom-dropdown-menu">
-            ${subjects.map(s => `
+            ${displayPool.map(s => `
               <div class="custom-dropdown-option ${s.id === activeSubjectId ? 'selected' : ''}" data-value="${s.id}">
                 ${s.name} ${s.name.includes('(2026-1)') ? '' : '(2026-1)'}
               </div>
-            `).join('')}
+            `).join('') || '<div class="custom-dropdown-option" aria-disabled="true">Sin materias disponibles</div>'}
           </div>
         </div>
       </div>

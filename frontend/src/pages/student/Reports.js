@@ -9,12 +9,16 @@ const STATUS_LABELS = {
   pending: 'Pendiente',
   resolved: 'Resuelto',
   verified: 'Verificado',
+  // Fix #346: the API also emits `reviewed` — map it to a human label instead
+  // of rendering the raw status string.
+  reviewed: 'Revisado',
 };
 
 const STATUS_BADGE = {
   pending: 'badge-error',
   resolved: 'badge-success',
   verified: 'badge-primary',
+  reviewed: 'badge-info',
 };
 
 function escapeHtml(value = '') {
@@ -68,7 +72,7 @@ export async function renderStudentReports(container) {
   }
 
   const pendingCount = reports.filter(r => r.status === 'pending').length;
-  const resolvedCount = reports.filter(r => r.status === 'resolved' || r.status === 'verified').length;
+  const resolvedCount = reports.filter(r => ['resolved', 'verified', 'reviewed'].includes(r.status)).length;
 
   container.innerHTML = `
     <div class="settings-page" style="max-width:800px;margin:0 auto;padding:var(--space-6)">
@@ -100,7 +104,7 @@ export async function renderStudentReports(container) {
                 const date = r.createdAt
                   ? new Date(r.createdAt).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
                   : '---';
-                const isResolved = r.status === 'resolved' || r.status === 'verified';
+                const isResolved = r.status === 'resolved' || r.status === 'verified' || r.status === 'reviewed';
 
                 return `
                   <div class="class-list-item" style="align-items:flex-start">

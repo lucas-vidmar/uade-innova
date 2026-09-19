@@ -1,6 +1,6 @@
 import {
     BASE_URL, apiFetch, fetchWithTimeout, readLocalJson, writeLocalJson,
-    LOCAL_CLASSES_KEY
+    LOCAL_CLASSES_KEY, isAbortError
 } from './core.js';
 
 function getLocalClasses(subjectId) {
@@ -29,6 +29,8 @@ export async function getClasses(subjectId) {
         setLocalClasses(subjectId, classes);
         return classes;
     } catch (err) {
+        // Fix #346: cancellations (subject switch / navigation) are not errors.
+        if (isAbortError(err)) return localClasses;
         console.error('[API] getClasses failed:', err);
         return localClasses;
     }

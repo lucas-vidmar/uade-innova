@@ -136,9 +136,21 @@ export async function getArchiveUsage(subjectId, semester) {
         const qs = params.toString();
         const url = `${BASE_URL}/archive-usage${qs ? '?' + qs : ''}`;
         const res = await fetchWithTimeout(url, { timeout: 10000 });
+        // Fix #343: a 403/401 (e.g. role not granted on the endpoint) is an
+        // actionable auth failure — throw so the page surfaces it instead of
+        // rendering a silent empty state. Other non-ok statuses keep the
+        // legacy null fallback.
+        if (res.status === 401 || res.status === 403) {
+            const err = await parseApiError(res, 'No tenés permisos para ver el archivo en frío.');
+            console.warn('[API] getArchiveUsage denied:', err.status, err.code);
+            throw err;
+        }
         if (!res.ok) return null;
         return await res.json();
     } catch (err) {
+        // Preserve AbortError identity for callers that silence cancellations.
+        if (err?.name === 'AbortError') throw err;
+        if (err?.status === 401 || err?.status === 403) throw err;
         console.error('[API] getArchiveUsage failed:', err);
         return null;
     }

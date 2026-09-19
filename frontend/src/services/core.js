@@ -113,6 +113,16 @@ export async function apiFetch(resource, options = {}) {
 export function delay(ms = 600) { return new Promise(r => setTimeout(r, ms)); }
 
 /**
+ * True for request cancellations (timeout aborts, SSE stream stops on route
+ * change). Callers should silence these instead of logging console errors
+ * (fix #346: AbortError noise on subject switch / navigation).
+ * @param {*} err
+ */
+export function isAbortError(err) {
+    return !!err && (err.name === 'AbortError' || err.code === 'ABORT_ERR' || err.code === 20);
+}
+
+/**
  * Parses a non-ok response into a structured Error carrying `status`, `code`
  * and `errorCategory` so pages can distinguish auth/config denials (403) from
  * transient/5xx failures (Story 10.24). Handles both the shared contract

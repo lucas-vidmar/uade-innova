@@ -41,5 +41,5 @@ app.http('archive-usage', {
                 }),
             };
         }
-    }, { roles: ['Director'] }))
+    }, { roles: ['Director', 'Admin'] }))
 });

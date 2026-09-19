@@ -211,18 +211,23 @@ export async function renderStudentSettings(container) {
     });
 
     container.querySelector('#save-settings-btn')?.addEventListener('click', async () => {
+      // Fix #346: never leave the form locked in "Guardando..." — the old
+      // toast.success()/toast.error() calls don't exist (toast is a plain
+      // function), so the TypeError skipped the reset and the form stayed
+      // disabled until reload.
       state.saving = true;
       render();
       try {
         await api.saveReminderPreferences({ enabled: state.enabled, cadence: state.cadence });
         auth.setReminderPreferences({ enabled: state.enabled, cadence: state.cadence });
-        toast.success('Preferencias guardadas correctamente.');
+        toast('success', 'Preferencias guardadas', 'Preferencias guardadas correctamente.');
       } catch (err) {
-        toast.error('Error al guardar preferencias.');
+        toast('error', 'Error al guardar', 'Error al guardar preferencias.');
         console.error('[Settings] Error saving reminder preferences:', err);
+      } finally {
+        state.saving = false;
+        render();
       }
-      state.saving = false;
-      render();
     });
   }
 

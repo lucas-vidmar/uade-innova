@@ -12,7 +12,24 @@ async function loadAndRender(container) {
     const subjFilter = document.getElementById('filter-subject')?.value || '';
     const semFilter = document.getElementById('filter-semester')?.value || '';
 
-    const data = await api.getArchiveUsage(subjFilter || undefined, semFilter || undefined);
+    // Fix #343: surface a 403 (role not granted) as an actionable card instead
+    // of the silent empty state the old swallowed-null produced.
+    let data = null;
+    try {
+        data = await api.getArchiveUsage(subjFilter || undefined, semFilter || undefined);
+    } catch (err) {
+        const denied = err?.status === 401 || err?.status === 403;
+        container.innerHTML = `
+        <div style="padding:var(--space-6);max-width:800px;margin:0 auto">
+          <div class="card" style="max-width:560px;margin:var(--space-10) auto;text-align:center">
+            <div class="empty-state-icon" aria-hidden="true">${denied ? '🔒' : '⚠️'}</div>
+            <h2 class="h3">${denied ? 'Sin permisos para ver el archivo en frío' : 'No se pudo cargar el archivo en frío'}</h2>
+            <p style="color:var(--color-text-secondary)">${denied ? 'Tu rol no tiene acceso a este recurso. Si creés que es un error, contactá a administración.' : 'Ocurrió un error al cargar los datos. Intentá nuevamente.'}</p>
+            <button class="btn btn-secondary" onclick="window.location.reload()" aria-label="Reintentar">Reintentar</button>
+          </div>
+        </div>`;
+        return;
+    }
 
     const totalBlobs = data?.totalArchiveBlobs ?? 0;
     const totalGB = data?.totalArchiveSizeGB ?? 0;
