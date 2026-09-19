@@ -44,8 +44,9 @@ const storageMocks = {
         return null;
     }),
     listBlobs: mock.fn(async (container, prefix) => {
-        if (container !== 'teacher-alerts') return [];
-        return Array.from(storageState.alerts.keys()).filter((key) => key.startsWith(prefix));
+        if (container === 'teacher-alerts') return Array.from(storageState.alerts.keys()).filter((key) => key.startsWith(prefix));
+        if (container === 'chat-logs') return Array.from(storageState.chatLogs.keys()).filter((key) => key.startsWith(prefix));
+        return [];
     }),
     deleteBlob: mock.fn(async () => {}),
     getTableClient: mock.fn(() => ({})),
@@ -57,6 +58,7 @@ const stateStoreMocks = {
     listCorrections: mock.fn(async () => []),
     getCorrection: mock.fn(async () => null),
     getConversation: mock.fn(async () => null),
+    listConversationsByUser: mock.fn(async () => []),
     RATINGS_TABLE: 'ConversationRatings',
 };
 
@@ -308,4 +310,81 @@ test('#330: chat-feedback returns JSON 400 on missing fields and invalid JSON', 
     );
     assert.strictEqual(invalid.status, 400);
     assert.doesNotThrow(() => JSON.parse(invalid.body));
+});
+// ── #331 regression: Conversations-table entries surface in chat-history ──
+// Chats saved via PUT /api/conversations/{id} (ChatWidget auto-save) live in
+// the Conversations table, not chat-logs blobs. GET /api/chat-history must
+// merge them so just-created conversations appear in Chats recientes.
+test('get-chat-history merges Conversations-table entries (#331)', async () => {
+    resetState();
+    principalMock = { userRoles: ['Alumno'], oid: 'student-1' };
+    stateStoreMocks.listConversationsByUser.mock.mockImplementation(async () => ([
+        {
+            conversationId: 'conv-new-1',
+            subjectId: 'arq-software-2026',
+            firstQuestion: '¿Qué es un microservicio?',
+            messages: [
+                { role: 'user', content: '¿Qué es un microservicio?' },
+                { role: 'assistant', content: 'Es un estilo de arquitectura...' },
+            ],
+            messageCount: 2,
+            createdAt: '2026-09-18T10:00:00.000Z',
+            lastMessageAt: '2026-09-18T10:01:00.000Z',
+        },
+    ]));
+
+    try {
+        const response = await handlers['get-chat-history'](
+            { query: new URLSearchParams({ subjectId: 'arq-software-2026' }) },
+            { log: () => {}, error: () => {}, warn: () => {} }
+        );
+
+        assert.strictEqual(response.status, 200);
+        const body = JSON.parse(response.body);
+        const sessions = body.map((item) => item.sessionId || item.id);
+        assert.ok(sessions.includes('conv-new-1'), 'new conversation must surface in chat-history');
+        const merged = body.find((item) => (item.sessionId || item.id) === 'conv-new-1');
+        assert.strictEqual(merged.question, '¿Qué es un microservicio?');
+    } finally {
+        stateStoreMocks.listConversationsByUser.mock.mockImplementation(async () => []);
+    }
+});
+
+test('get-chat-history dedupes sessions present in both stores (#331)', async () => {
+    resetState();
+    principalMock = { userRoles: ['Alumno'], oid: 'student-1' };
+    storageState.chatLogs.set('student_1/arq-software-2026/inter-1.json', {
+        id: 'inter-1',
+        sessionId: 'conv-dup',
+        subjectId: 'arq-software-2026',
+        question: '¿Qué es CQRS?',
+        answer: 'Separación de comandos y consultas.',
+        timestamp: '2026-09-18T10:00:00.000Z',
+    });
+    stateStoreMocks.listConversationsByUser.mock.mockImplementation(async () => ([
+        {
+            conversationId: 'conv-dup',
+            subjectId: 'arq-software-2026',
+            firstQuestion: '¿Qué es CQRS?',
+            messages: [{ role: 'user', content: '¿Qué es CQRS?' }],
+            messageCount: 1,
+            createdAt: '2026-09-18T10:00:00.000Z',
+            lastMessageAt: '2026-09-18T10:00:00.000Z',
+        },
+    ]));
+
+    try {
+        const response = await handlers['get-chat-history'](
+            { query: new URLSearchParams({ subjectId: 'arq-software-2026' }) },
+            { log: () => {}, error: () => {}, warn: () => {} }
+        );
+
+        assert.strictEqual(response.status, 200);
+        const body = JSON.parse(response.body);
+        const dupes = body.filter((item) => (item.sessionId || item.id) === 'conv-dup');
+        assert.strictEqual(dupes.length, 1, 'session present in both stores must appear once');
+        assert.strictEqual(dupes[0].answer, 'Separación de comandos y consultas.', 'chat-log (richer) entry wins');
+    } finally {
+        stateStoreMocks.listConversationsByUser.mock.mockImplementation(async () => []);
+    }
 });

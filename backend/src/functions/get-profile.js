@@ -1,6 +1,6 @@
 import { app } from '@azure/functions';
 import { withAuth } from '../middleware/with-auth.js';
-import { parseClientPrincipal, validateFrontDoorId, getAuthenticatedUser } from '../services/auth-utils.js';
+import { parseClientPrincipal, validateFrontDoorId, getAuthenticatedUser, resolveIdentityKey } from '../services/auth-utils.js';
 import { toFrontendRole } from '../services/allowlist.js';
 import { trackUserLogin } from '../services/telemetry.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
@@ -22,7 +22,8 @@ app.http('get-profile', {
             }
             const principal = user?.principal || parseClientPrincipal(request);
 
-            const userId = user?.userId || principal?.oid || "pilot-user";
+            // Single per-user identity (#329): same key save-profile writes.
+            const userId = resolveIdentityKey(request, context);
 
             // Emit UserLogin telemetry event for login-frequency analysis (Issue #69)
             if (principal) {

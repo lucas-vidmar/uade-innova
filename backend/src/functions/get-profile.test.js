@@ -29,6 +29,8 @@ const authUtilsMocks = {
   validateFrontDoorId: mock.fn(() => true),
   parseClientPrincipal: mock.fn(() => null),
   getAuthenticatedUser: mock.fn(() => null),
+  // Mirrors the real resolveIdentityKey: session identity first.
+  resolveIdentityKey: mock.fn((request, context) => context?.user?.userId || 'pilot-user'),
 };
 mock.module('../services/auth-utils.js', { namedExports: authUtilsMocks });
 mock.module('../services/telemetry.js', {
@@ -36,9 +38,11 @@ mock.module('../services/telemetry.js', {
 });
 
 let entityToReturn = null;
+let lastGetEntityArgs = null;
 const storageMocks = {
   getTableClient: mock.fn(() => ({
-    getEntity: mock.fn(async () => {
+    getEntity: mock.fn(async (pk, rk) => {
+      lastGetEntityArgs = [pk, rk];
       if (entityToReturn) return entityToReturn;
       const err = new Error('Not Found');
       err.statusCode = 404;
@@ -135,5 +139,18 @@ test('get-profile normalizes invalid stored bot preferences to defaults (11-5-1)
   assert.equal(body.botLength, 'detailed');
   assert.equal(body.includeSources, true);
   assert.equal(body.consentAccepted, false);
+  entityToReturn = null;
+});
+
+// #329: the read key is the session identity — the same row save-profile
+// writes — even when no oid-bearing principal exists.
+test('get-profile reads the session-identity row (#329)', async () => {
+  entityToReturn = { botTone: 'didactic' };
+  lastGetEntityArgs = null;
+  const context = makeContext();
+  context.user = { userId: 'alu-009', role: 'Alumno', email: 'alu09@uade.edu.ar', scope: undefined, principal: null };
+  const res = await handlers['get-profile']({}, context);
+  assert.deepEqual(lastGetEntityArgs, ['Profiles', 'alu-009']);
+  assert.equal(res.jsonBody.botTone, 'didactic');
   entityToReturn = null;
 });

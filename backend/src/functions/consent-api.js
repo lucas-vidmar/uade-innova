@@ -1,6 +1,6 @@
 import { app } from '@azure/functions';
 import { withAuth } from '../middleware/with-auth.js';
-import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
+import { validateFrontDoorId, resolveIdentityKey } from '../services/auth-utils.js';
 import { getTableClient } from '../services/storage.js';
 import { downloadFile } from '../services/storage.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
@@ -52,8 +52,9 @@ app.http('consent-get', {
         const correlationId = context.correlationId;
         if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
 
-        const principal = parseClientPrincipal(request);
-        const userId = principal?.oid || request.headers.get('x-edu-uid') || 'pilot-user';
+        // Single per-user identity (#327): session-token principals have no
+        // oid, so key by the resolved session identity — never principal.oid.
+        const userId = resolveIdentityKey(request, context);
         context.log(`[Consent] GET consent for userId=${userId}`);
 
         try {
@@ -97,8 +98,8 @@ app.http('consent-post', {
         const correlationId = context.correlationId;
         if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
 
-        const principal = parseClientPrincipal(request);
-        const userId = principal?.oid || request.headers.get('x-edu-uid') || 'pilot-user';
+        // Single per-user identity (#327): see GET handler above.
+        const userId = resolveIdentityKey(request, context);
         const ipAddress = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || request.headers.get('x-azure-client-ip') || '';
 
         context.log(`[Consent] POST consent for userId=${userId}`);

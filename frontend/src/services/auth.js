@@ -541,18 +541,15 @@ export const auth = {
         try {
             const consent = await api.getConsent();
             if (consent) {
-                const localValue = (() => {
-                    try { return localStorage.getItem(AI_CONSENT_KEY); } catch { return null; }
-                })();
-                if (consent.accepted === false && localValue === 'true') {
-                    console.warn(`[Auth] Consent local difiere del backend — se usó valor local: backend=${consent.accepted}, local=${localValue}`);
-                } else {
-                    const accepted = consent.accepted ? 'true' : 'false';
-                    try {
-                        localStorage.setItem(AI_CONSENT_KEY, accepted);
-                    } catch {
-                        sessionStorage.setItem(AI_CONSENT_KEY, accepted);
-                    }
+                // #327 fail-closed sync, backend wins: the local cache must
+                // never claim "accepted" while the backend gate says 403.
+                // Previously a local-true shadowed backend-false (the exact
+                // "Settings shows Aceptado but RAG 403s" symptom).
+                const accepted = consent.accepted ? 'true' : 'false';
+                try {
+                    localStorage.setItem(AI_CONSENT_KEY, accepted);
+                } catch {
+                    sessionStorage.setItem(AI_CONSENT_KEY, accepted);
                 }
             }
         } catch (err) {

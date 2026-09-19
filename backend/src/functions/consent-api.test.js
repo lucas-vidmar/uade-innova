@@ -5,6 +5,9 @@ const authUtilsMocks = {
     validateFrontDoorId: mock.fn(() => true),
     setStashedIdentity: mock.fn(() => {}),
     parseClientPrincipal: mock.fn(() => ({ oid: 'test-user', userRoles: ['Alumno'] })),
+    getAuthenticatedUser: mock.fn(() => null),
+    // Mirrors the real resolveIdentityKey: session identity first, then headers.
+    resolveIdentityKey: mock.fn((request, context) => context?.user?.userId || request.headers.get('x-edu-uid') || 'pilot-user'),
 };
 
 let consentStore = {};
@@ -149,4 +152,38 @@ test('post-consent returns 400 when body missing accepted field', async () => {
     const body = JSON.parse(res.body);
     assert.strictEqual(body.success, false);
     assert.strictEqual(body.error.code, 'INVALID_CONSENT');
+});
+
+// ── #327 regression: session-token identity (no oid) ──────────────
+// Session principals resolved by withAuth carry userId but NO oid. Consent
+// must be keyed by that session identity — previously `principal?.oid`
+// collapsed every session user onto the literal 'pilot-user' row, so
+// rag-query/quiz gates (which check the session userId) 403'd despite
+// GET /api/consent showing accepted:true.
+test('consent is keyed by session identity, not principal oid (#327)', async () => {
+    const defaultPrincipal = () => ({ oid: 'test-user', userRoles: ['Alumno'] });
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation((request) => {
+        if (request?.headers?.get?.('x-session-user')) {
+            const uid = request.headers.get('x-session-user');
+            return { userId: uid, userDetails: `${uid}@uade.edu.ar`, userRoles: ['authenticated', 'Alumno'] };
+        }
+        return defaultPrincipal();
+    });
+
+    try {
+        const ctx = makeContext();
+        const postReq = makeRequest({ 'x-session-user': 'alu-005', 'content-type': 'application/json' }, { accepted: true });
+        const postRes = await handlers['consent-post'](postReq, ctx);
+        assert.strictEqual(postRes.status, 200);
+
+        assert.ok(consentStore['alu-005:consent'], 'consent must be stored under the session userId');
+        assert.strictEqual(consentStore['alu-005:consent'].accepted, 'true');
+        assert.ok(!consentStore['pilot-user:consent'], 'consent must NOT collapse onto the pilot-user row');
+
+        const getRes = await handlers['consent-get'](makeRequest({ 'x-session-user': 'alu-005' }), makeContext());
+        assert.strictEqual(getRes.status, 200);
+        assert.strictEqual(JSON.parse(getRes.body).data.accepted, true);
+    } finally {
+        authUtilsMocks.parseClientPrincipal.mock.mockImplementation(defaultPrincipal);
+    }
 });

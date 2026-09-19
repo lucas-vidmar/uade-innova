@@ -5,6 +5,9 @@ const authUtilsMocks = {
     validateFrontDoorId: mock.fn(() => true),
     setStashedIdentity: mock.fn(() => {}),
     parseClientPrincipal: mock.fn(() => ({ oid: 'alu-001', userDetails: 'alu@uade.edu.ar' })),
+    getAuthenticatedUser: mock.fn(() => null),
+    // Mirrors the real resolveIdentityKey: session identity first.
+    resolveIdentityKey: mock.fn((request, context) => context?.user?.userId || 'pilot-user'),
 };
 
 let profileStore = {};
@@ -142,4 +145,29 @@ test('save-profile tolerates a null body (11-5-1)', async () => {
     const entity = profileStore['Profiles:alu-001'];
     assert.ok(entity, 'profile row should still be created');
     assert.strictEqual(entity.botTone, undefined);
+});
+
+// ── #329 regression: save key must equal get-profile read key ─────
+// get-profile reads `Profiles/{sessionUserId}`. A session principal has no
+// oid, so keying the write by `principal?.oid` landed on 'pilot-user' and
+// every save was silently lost on reload.
+test('save-profile writes under the session identity, not pilot-user (#329)', async () => {
+    const defaultPrincipal = () => ({ oid: 'alu-001', userDetails: 'alu@uade.edu.ar' });
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({
+        userId: 'alu-009',
+        userDetails: 'alu09@uade.edu.ar',
+        userRoles: ['authenticated', 'Alumno'],
+    }));
+    try {
+        const ctx = makeContext();
+        const req = makeRequest({ botTone: 'didactic', botLength: 'concise' });
+        const res = await handlers['save-profile'](req, ctx);
+        assert.strictEqual(res.status, 200);
+        const entity = profileStore['Profiles:alu-009'];
+        assert.ok(entity, 'profile must be stored under the session userId (get-profile read key)');
+        assert.strictEqual(entity.botTone, 'didactic');
+        assert.ok(!profileStore['Profiles:pilot-user'], 'profile must NOT fall back to pilot-user');
+    } finally {
+        authUtilsMocks.parseClientPrincipal.mock.mockImplementation(defaultPrincipal);
+    }
 });

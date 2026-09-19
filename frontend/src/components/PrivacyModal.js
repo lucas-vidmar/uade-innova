@@ -6,8 +6,9 @@ import { auth } from '../services/auth.js';
 import { api } from '../services/api.js';
 import { toast } from './Toast.js';
 
-export async function renderPrivacyModal(onAccepted) {
-    if (auth.getAIConsentAccepted()) return;
+export async function renderPrivacyModal(onAccepted, options = {}) {
+    const force = options?.force === true;
+    if (!force && auth.getAIConsentAccepted()) return;
     if (document.getElementById('privacy-modal')) return;
 
     const modalOverlay = document.createElement('div');

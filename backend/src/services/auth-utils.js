@@ -136,9 +136,9 @@ export function parseClientPrincipal(request) {
 }
 
 /**
- * Unifies user identification across functions, respecting both real SWA principals 
+ * Unifies user identification across functions, respecting both real SWA principals
  * and the x-mock-role header for pilot/demo modes.
- * @param {Request} request 
+ * @param {Request} request
  */
 export function getAuthenticatedUser(request) {
     // 0. User already resolved by the withAuth middleware (validated OIDC
@@ -186,6 +186,30 @@ export function getAuthenticatedUser(request) {
         email: email || undefined,
         scope: scope || undefined,
     };
+}
+
+/**
+ * Single per-user identity key end-to-end (#327/#329).
+ *
+ * Session-token principals (withAuth) carry NO `oid` — only `userId` — so any
+ * caller keying storage rows by `principal?.oid` silently collapses every
+ * session user onto the literal 'pilot-user' row (consent) or splits
+ * read vs write rows (profiles). This helper prefers the session-resolved
+ * identity (`context.user`, then the withAuth stash), falls back to the
+ * allowlist/SWA/mock resolution, then `x-edu-uid`, and only lastly the
+ * legacy 'pilot-user' dev fallback.
+ *
+ * @param {Request} request
+ * @param {Object} [context] Azure Functions context (carries `.user` when withAuth ran)
+ * @returns {string} Stable per-user storage key. Never null/undefined.
+ */
+export function resolveIdentityKey(request, context) {
+    if (context?.user?.userId) return context.user.userId;
+    const stashed = getStashedIdentity(request);
+    if (stashed?.user?.userId) return stashed.user.userId;
+    const authUser = getAuthenticatedUser(request);
+    if (authUser?.userId && authUser.userId !== 'anonymous') return authUser.userId;
+    return request?.headers?.get?.('x-edu-uid') || 'pilot-user';
 }
 
 /**

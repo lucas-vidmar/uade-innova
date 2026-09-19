@@ -366,7 +366,9 @@ export async function getConsentStatus(userId) {
     await ensureTable(table);
     const client = getTableClient(table);
     const entity = await client.getEntity(userId, 'consent');
-    return entity?.acceptedAt ? true : false;
+    // Accepted when the v1 `accepted` flag is set OR a timestamp exists
+    // (legacy rows may carry only acceptedAt).
+    return entity?.accepted === true || entity?.accepted === 'true' || !!entity?.acceptedAt;
   } catch {
     return false;
   }

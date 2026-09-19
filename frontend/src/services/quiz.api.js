@@ -17,14 +17,20 @@ export async function generateQuiz({ subjectId, classId, questionCount, subjectN
     if (!res.ok) {
         let message = `Error ${res.status}: No se pudo generar el cuestionario`;
         let errorCategory = null;
+        let code = null;
         try {
             const data = await res.json();
             if (data?.error) message = typeof data.error === 'string' ? data.error : data.error?.message || message;
             if (data?.errorCategory) errorCategory = data.errorCategory;
+            // #338: preserve the machine-readable code (CONSENT_REQUIRED)
+            // so the quiz UI can offer the terms CTA instead of failing silently.
+            code = typeof data?.error === 'object' ? data.error?.code : data?.code;
+            if (!errorCategory && typeof data?.error === 'object') errorCategory = data.error?.errorCategory || null;
         } catch {}
         const apiError = new Error(message);
         apiError.status = res.status;
         if (errorCategory) apiError.errorCategory = errorCategory;
+        if (code) apiError.code = code;
         throw apiError;
     }
 

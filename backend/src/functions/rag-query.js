@@ -195,12 +195,18 @@ function buildPineconeFilter(subjectId, classIds, disableBibliographyFallback = 
     };
 }
 
-function handleErrorResponse(status, message, category, isStream) {
+function handleErrorResponse(status, message, category, isStream, code = null) {
     if (isStream) {
         const encoder = new TextEncoder();
+        // #338: propagate the machine-readable error code through the SSE
+        // path so the UI can distinguish CONSENT_REQUIRED (terms CTA) from
+        // generic AUTH denials instead of falling back to the wrong copy.
+        const payload = { error: message, errorCategory: category };
+        if (code) payload.code = code;
+        const body = JSON.stringify(payload);
         const responseStream = new ReadableStream({
             start(controller) {
-                controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ error: message, errorCategory: category })}\n\n`));
+                controller.enqueue(encoder.encode(`event: error\ndata: ${body}\n\n`));
                 controller.close();
             }
         });
@@ -213,7 +219,9 @@ function handleErrorResponse(status, message, category, isStream) {
             body: responseStream
         };
     }
-    return jsonResponse(status, { error: message, errorCategory: category });
+    const payload = { error: message, errorCategory: category };
+    if (code) payload.code = code;
+    return jsonResponse(status, payload);
 }
 
 app.http('rag-query', {
@@ -298,7 +306,7 @@ app.http('rag-query', {
                 context.log(`[Consent] Consent required: userId=${userId}`);
                 return jsonResponse(403, {
                     success: false,
-                    error: { code: 'CONSENT_REQUIRED', message: 'Debés aceptar los términos de uso antes de usar el chat.' },
+                    error: { code: 'CONSENT_REQUIRED', message: 'Debés aceptar los términos de uso antes de usar el chat.', errorCategory: 'AUTH' },
                     meta: { timestamp: new Date().toISOString(), requestId: correlationId },
                 });
             }
@@ -372,7 +380,7 @@ app.http('rag-query', {
                 correlationId,
                 stackTrace: err?.stack,
             }).catch(e => context.error('[Telemetry] Error emitting RAGErrorCategorized (embedding):', e));
-            return handleErrorResponse(categorizedError.status, `Error procesando la pregunta (embedding): ${categorizedError.message}`, categorizedError.errorCategory, stream);
+            return handleErrorResponse(categorizedError.status, `Error procesando la pregunta (embedding): ${categorizedError.message}`, categorizedError.errorCategory, stream, categorizedError.code);
         }
 
         // ── 3. Filtro Pinecone por subjectId y classIds ───────────
@@ -470,7 +478,7 @@ app.http('rag-query', {
                 correlationId,
                 stackTrace: err?.stack,
             }).catch(e => context.error('[Telemetry] Error emitting RAGErrorCategorized (Pinecone):', e));
-            return handleErrorResponse(categorizedError.status, `Error buscando en la base de conocimiento: ${categorizedError.message}`, categorizedError.errorCategory, stream);
+            return handleErrorResponse(categorizedError.status, `Error buscando en la base de conocimiento: ${categorizedError.message}`, categorizedError.errorCategory, stream, categorizedError.code);
         }
 
         matches = filterMatchesByTranscriptFocus(matches, transcriptFocus);
@@ -882,7 +890,7 @@ ${contextText}
                             correlationId,
                             stackTrace: err?.stack,
                         }).catch(e => context.error('[Telemetry] Error emitting RAGErrorCategorized (stream):', e));
-                        controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ error: categorizedError.message, errorCategory: categorizedError.errorCategory })}\n\n`));
+                        controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ error: categorizedError.message, errorCategory: categorizedError.errorCategory, code: categorizedError.code })}\n\n`));
                         controller.close();
                     }
                 }
@@ -938,6 +946,7 @@ ${contextText}
             return jsonResponse(categorizedError.status, {
                 error: `Error generando respuesta (chat): ${categorizedError.message}`,
                 errorCategory: categorizedError.errorCategory,
+                code: categorizedError.code,
             });
         }
 

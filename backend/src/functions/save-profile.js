@@ -1,7 +1,7 @@
 import { app } from '@azure/functions';
 import { withAuth } from '../middleware/with-auth.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
-import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
+import { parseClientPrincipal, validateFrontDoorId, resolveIdentityKey } from '../services/auth-utils.js';
 
 const tableName = "UserProfiles";
 const storageAccountUrl = `https://${process.env.AZURE_STORAGE_ACCOUNT_NAME}.table.core.windows.net`;
@@ -27,7 +27,9 @@ app.http('save-profile', {
         try {
             const principal = parseClientPrincipal(request);
 
-            const userId = principal?.oid || "pilot-user";
+            // Single per-user identity (#329): must match get-profile's
+            // `user?.userId` read key. Session principals have no oid.
+            const userId = resolveIdentityKey(request, context);
 
             const reqBody = await request.json();
 

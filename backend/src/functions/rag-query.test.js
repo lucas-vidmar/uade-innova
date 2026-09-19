@@ -1509,3 +1509,59 @@ test('#328: rag-query drops matches with a mismatched subjectId (DASI leak)', as
     assert.ok(body.sources.every((s) => s.subjectId === 'materia1'), 'no debe llegar ningún source de otra materia');
     assert.ok(!body.sources.some((s) => s.sourceFilename === 'DASI Cronograma.docx'));
 });
+// ── #327/#338 regression: consent gate shape + SSE error code ──────
+test('rag-query consent gate returns machine-readable CONSENT_REQUIRED (#327/#338)', async () => {
+    stateStoreMocks.getConsentStatus.mock.mockImplementationOnce(async () => false);
+
+    const mockRequest = {
+        json: async () => ({
+            question: '¿Qué es la UADE?',
+            subjectId: 'materia1',
+            classIds: ['class1'],
+        }),
+    };
+
+    const response = await capturedHandler(mockRequest, { log: mock.fn(), error: mock.fn() });
+    assert.strictEqual(response.status, 403);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body?.error?.code, 'CONSENT_REQUIRED');
+    assert.strictEqual(body?.error?.errorCategory, 'AUTH');
+});
+
+test('rag-query stream error event propagates the error code (#338)', async () => {
+    const llmErr = new Error('Upstream timeout');
+    llmErr.code = 'LLM_TIMEOUT';
+    openaiMocks.chatCompletion.mock.mockImplementationOnce(async (messages, stream) => {
+        if (!stream) return { content: 'sync', usage: { total_tokens: 10 } };
+        throw llmErr;
+    });
+
+    const mockRequest = {
+        json: async () => ({
+            question: 'Pregunta con fallo LLM',
+            subjectId: 'materia1',
+            stream: true,
+        }),
+    };
+
+    const response = await capturedHandler(mockRequest, { log: mock.fn(), error: mock.fn() });
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(response.headers['Content-Type'], 'text/event-stream');
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let allText = '';
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        allText += decoder.decode(value);
+    }
+
+    assert.ok(allText.includes('event: error'), 'stream must emit an error event');
+    const errorBlock = allText.split('\n\n').find((block) => block.includes('event: error'));
+    assert.ok(errorBlock, 'error event block must exist');
+    const dataLine = errorBlock.split('\n').find((line) => line.startsWith('data: '));
+    assert.ok(dataLine, 'error event must carry a data payload');
+    const payload = JSON.parse(dataLine.slice('data: '.length));
+    assert.ok(payload.code, 'SSE error payload must propagate the machine-readable code');
+});

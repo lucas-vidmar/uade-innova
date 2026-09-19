@@ -1,7 +1,7 @@
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { withAuth } from '../middleware/with-auth.js';
 import { validateFrontDoorId, parseClientPrincipal, getAuthenticatedUser } from '../services/auth-utils.js';
-import { getEnrollment, upsertCorrection, listCorrections, getCorrection, getConversation, RATINGS_TABLE } from '../services/state-store.js';
+import { getEnrollment, upsertCorrection, listCorrections, getCorrection, getConversation, listConversationsByUser, RATINGS_TABLE } from '../services/state-store.js';
 import { CONFIG } from '../services/config.js';
 import { v4 as uuidv4 } from 'uuid';
 /**
@@ -93,6 +93,37 @@ app.http('get-chat-history', {
                     item.sessionId = item.id || null;
                 }
             });
+
+            // #331: conversations saved via PUT /api/conversations/{id}
+            // (ChatWidget auto-save) live in the Conversations table, not in
+            // chat-logs blobs. Merge them so just-created chats surface in
+            // Chats recientes instead of vanishing until the next RAG turn
+            // writes a chat-log. Dedupe by sessionId: a session already
+            // present from chat-logs keeps the richer (sourced) blob entry.
+            try {
+                const conversations = await listConversationsByUser(userId, subjectId);
+                const knownSessions = new Set(history.map((h) => h.sessionId || h.id).filter(Boolean));
+                for (const c of conversations || []) {
+                    const sessionId = c.conversationId;
+                    if (!sessionId || knownSessions.has(sessionId)) continue;
+                    knownSessions.add(sessionId);
+                    const msgs = Array.isArray(c.messages) ? c.messages : [];
+                    const lastAssistant = [...msgs].reverse().find((m) => m?.role === 'assistant');
+                    history.push({
+                        id: sessionId,
+                        sessionId,
+                        subjectId: c.subjectId || subjectId,
+                        question: c.firstQuestion || msgs.find((m) => m?.role === 'user')?.content || '',
+                        answer: lastAssistant?.content || '',
+                        sources: lastAssistant?.sources || [],
+                        messageCount: c.messageCount || msgs.length,
+                        timestamp: c.lastMessageAt || c.createdAt || new Date().toISOString(),
+                        createdAt: c.createdAt || c.lastMessageAt || new Date().toISOString(),
+                    });
+                }
+            } catch (mergeErr) {
+                context.warn?.('[chat-history] Could not merge conversations table (non-blocking):', mergeErr?.message || mergeErr);
+            }
 
             // Ordenar cronológicamente por timestamp (más antiguo primero)
             history.sort((a, b) => new Date(a.timestamp || a.createdAt || 0) - new Date(b.timestamp || b.createdAt || 0));

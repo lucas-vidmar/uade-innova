@@ -33,9 +33,24 @@ const ERROR_MESSAGES = {
  * Resuelve un mensaje accionable a partir de la categoría/código/status
  * del backend o de un error de red. Centraliza el mapping para SSE
  * `event: error` y `catch` de `ragQueryStream` (evita el fallback genérico).
+ *
+ * #338: el código CONSENT_REQUIRED se chequea ANTES que la categoría —
+ * el backend lo etiqueta errorCategory AUTH (y rag.api.js mapea 403→AUTH),
+ * así que un chequeo de categoría-primero lo enterraba bajo el copy
+ * genérico de "permiso/inscripción" en vez del CTA de términos.
  */
+export const CONSENT_MESSAGE = 'Debés aceptar los términos de uso antes de usar el chat.';
+
+export function isConsentError(errOrData) {
+  if (!errOrData) return false;
+  const code = String(errOrData?.code || errOrData?.error?.code || '').toUpperCase();
+  const msg = String(errOrData?.message || errOrData?.error?.message || errOrData?.error || '').toUpperCase();
+  return code.includes('CONSENT') || msg.includes('CONSENT');
+}
+
 function resolveChatErrorMessage(errOrData) {
   if (!errOrData) return ERROR_MESSAGES.UNKNOWN;
+  if (isConsentError(errOrData)) return CONSENT_MESSAGE;
   const rawCategory = errOrData?.errorCategory || errOrData?.category;
   if (rawCategory && ERROR_MESSAGES[rawCategory]) return ERROR_MESSAGES[rawCategory];
 
@@ -44,7 +59,6 @@ function resolveChatErrorMessage(errOrData) {
   const combined = `${code} ${msg}`;
 
   if (combined.includes('ENROLLMENT')) return ERROR_MESSAGES.AUTH;
-  if (combined.includes('CONSENT')) return 'Debés aceptar los términos de uso antes de usar el chat.';
   if (combined.includes('VALIDATION') || combined.includes('MISSING_FIELDS') || combined.includes('INVALID_JSON')) return ERROR_MESSAGES.VALIDATION;
   if (combined.includes('FRONTDOOR') || combined.includes('FORBIDDEN')) return ERROR_MESSAGES.AUTH;
 
@@ -383,6 +397,15 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
     update();
   };
 
+  // #338: consent CTA — re-open the terms modal even when the local cache
+  // still says accepted (backend wins; the cache syncs on next load).
+  const openConsentCTA = () => {
+    renderPrivacyModal(() => {
+      toast('success', 'Términos aceptados', 'Ya podés usar el chat.');
+      if (onConsentAccepted) onConsentAccepted();
+    }, { force: true });
+  };
+
     const sendMessage = async () => {
     const input = container.querySelector('#chat-input');
     const question = input?.value?.trim();
@@ -496,6 +519,8 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
           assistantMsg.streaming = false;
           const bubbleEl = msgEl.querySelector('.chat-bubble-assistant');
           if (bubbleEl) bubbleEl.textContent = assistantMsg.content;
+          // #338: consent denial gets the terms CTA, not just copy.
+          if (isConsentError(data)) openConsentCTA();
           if (category === 'RATE_LIMIT' && data.retryAfterSec) {
             startCooldown(data.retryAfterSec);
           } else if (resolved === ERROR_MESSAGES.RATE_LIMIT && data?.retryAfterSec) {
@@ -576,6 +601,8 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
       }
       assistantMsg.content = resolveChatErrorMessage(err);
       assistantMsg.streaming = false;
+      // #338: consent denial gets the terms CTA, not just copy.
+      if (isConsentError(err)) openConsentCTA();
       render();
       const cat = err?.errorCategory || err?.category;
       if ((cat === 'RATE_LIMIT' || assistantMsg.content === ERROR_MESSAGES.RATE_LIMIT) && err?.retryAfterSec) {

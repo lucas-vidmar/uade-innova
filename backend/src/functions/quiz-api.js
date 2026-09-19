@@ -167,7 +167,7 @@ app.http('generate-quiz', {
             if (!consentAccepted) {
                 return jsonResponse(403, {
                     success: false,
-                    error: { code: 'CONSENT_REQUIRED', message: 'Debés aceptar los términos de uso antes de generar un cuestionario.' },
+                    error: { code: 'CONSENT_REQUIRED', message: 'Debés aceptar los términos de uso antes de generar un cuestionario.', errorCategory: 'AUTH' },
                 });
             }
         }

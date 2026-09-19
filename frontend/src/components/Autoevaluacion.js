@@ -4,6 +4,7 @@
    ============================================================ */
 import { api } from '../services/api.js';
 import { toast } from './Toast.js';
+import { renderPrivacyModal } from './PrivacyModal.js';
 
 const QUIZ_STYLE = `
 <style>
@@ -46,6 +47,13 @@ function jsonResponseError(err, fallbackMsg) {
         return { message: err.message || 'Límite de intentos alcanzado.', rateLimited: true };
     }
     return { message: err?.message || fallbackMsg, rateLimited: false };
+}
+
+function isConsentError(err) {
+    if (!err) return false;
+    const code = String(err?.code || err?.error?.code || '').toUpperCase();
+    const msg = String(err?.message || '').toUpperCase();
+    return code.includes('CONSENT') || msg.includes('CONSENT');
 }
 
 /**
@@ -155,8 +163,17 @@ function renderIdle(mount, { classId, subjectId, className, latestResult }) {
             }
             renderQuestion(mount, { classId, subjectId, className });
         } catch (err) {
-            const { message, rateLimited } = jsonResponseError(err, 'No se pudo generar el cuestionario.');
-            toast(rateLimited ? 'warning' : 'error', rateLimited ? 'Esperá un momento' : 'Error', message);
+            // #338: quiz failures always surface a toast (never silent); a
+            // consent denial additionally offers the terms CTA.
+            if (isConsentError(err)) {
+                toast('error', 'Aceptá los términos', 'Debés aceptar los términos de uso antes de generar un cuestionario.');
+                renderPrivacyModal(() => {
+                    toast('success', 'Términos aceptados', 'Ya podés generar el cuestionario.');
+                }, { force: true });
+            } else {
+                const { message, rateLimited } = jsonResponseError(err, 'No se pudo generar el cuestionario.');
+                toast(rateLimited ? 'warning' : 'error', rateLimited ? 'Esperá un momento' : 'Error', message);
+            }
             btn.disabled = false;
             btn.textContent = 'Generar cuestionario';
         }
