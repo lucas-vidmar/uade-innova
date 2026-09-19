@@ -42,6 +42,24 @@ export async function renderTeacherUpload(container) {
   let isMasterSource = false;
   const activeSubjectIdSafe = activeSubjectId;
 
+  // Stored-summary cache for the AI-validation preview (#333): classId ->
+  // { status: 'loading' | 'ready' | 'error', text: string }. Fetched once per
+  // class so the preview shows the real stored summary, never a placeholder.
+  let summaryCache = {};
+
+  const ensureStoredSummary = (classId) => {
+    if (!classId || summaryCache[classId]) return;
+    summaryCache[classId] = { status: 'loading', text: '' };
+    api.getClassSummary(classId).then(data => {
+      const raw = data?.summary?.content || data?.summary || '';
+      summaryCache[classId] = { status: 'ready', text: typeof raw === 'string' ? raw : '' };
+      if (selectedClassIds[0] === classId) render();
+    }).catch(() => {
+      summaryCache[classId] = { status: 'error', text: '' };
+      if (selectedClassIds[0] === classId) render();
+    });
+  };
+
   const unsubscribeProcessing = processingNotifications.subscribe((event) => {
     if (!event || event.type !== 'material-status-terminal') return;
     if (event.subjectId !== activeSubjectIdSafe) return;
@@ -79,6 +97,24 @@ export async function renderTeacherUpload(container) {
   };
 
   window.addEventListener('hashchange', teardown, { once: true });
+
+  const renderStoredSummaryPreview = (primaryClass) => {
+    if (!primaryClass) return '';
+    ensureStoredSummary(primaryClass.id);
+    const state = summaryCache[primaryClass.id];
+    if (!state || state.status === 'loading') {
+      return `<div class="ai-summary-box" aria-live="polite"><span class="animate-pulse">Cargando resumen almacenado…</span></div>`;
+    }
+    if (state.status === 'ready' && state.text) {
+      const preview = state.text.length > 1500 ? `${state.text.slice(0, 1500)}…` : state.text;
+      return `<div class="ai-summary-box">
+        <strong>Resumen de ${escapeHtml(primaryClass.title)}:</strong>
+        <br/><br/>
+        <span style="white-space:pre-wrap">${escapeHtml(preview)}</span>
+      </div>`;
+    }
+    return `<div class="ai-summary-box">No se pudo cargar el resumen almacenado de esta clase. Probá actualizar con el botón de refresco.</div>`;
+  };
 
   const render = () => {
     // Info preview for the FIRST selected class just as visual feedback
@@ -160,13 +196,9 @@ export async function renderTeacherUpload(container) {
             <h3 style="margin-bottom:var(--space-4)">🤖 Validación de Resumen IA</h3>
             <div class="ai-summary-preview">
               <p style="color:var(--color-text-secondary);font-size:var(--font-size-sm);line-height:1.7">
-                La IA generó el siguiente resumen basado en los materiales cargados para esta clase. Podés aprobarlo, editarlo o rechazarlo para regenerarlo.
+                Este es el resumen almacenado actualmente para esta clase. Podés aprobarlo, editarlo o rechazarlo para regenerarlo.
               </p>
-              <div class="ai-summary-box">
-                <strong>Resumen de ${primaryClass.title}:</strong>
-                <br/><br/>
-                Esta clase introdujo los fundamentos de las <strong>arquitecturas de software</strong>, cubriendo los principales estilos arquitectónicos (monolítico, en capas, microservicios, event-driven) y sus atributos de calidad (disponibilidad, escalabilidad, mantenibilidad, seguridad). Se discutieron los trade-offs entre acoplamiento y cohesión, y se presentó el modelo C4 como herramienta de documentación arquitectónica.
-              </div>
+              ${renderStoredSummaryPreview(primaryClass)}
               <div class="ai-validation-actions">
                 <button class="btn btn-primary" id="approve-summary">✅ Aprobar resumen</button>
                 <button class="btn btn-secondary" id="edit-summary">✏️ Editar</button>
@@ -234,6 +266,7 @@ export async function renderTeacherUpload(container) {
         const freshClasses = await api.getClasses(activeSubjectId, true); // true for skipCache
         // Update local classes array in place
         classes.splice(0, classes.length, ...freshClasses);
+        summaryCache = {};
         toast('success', 'Datos actualizados', 'Se sincronizaron las clases y materiales con el servidor.');
         render();
       } catch (err) {

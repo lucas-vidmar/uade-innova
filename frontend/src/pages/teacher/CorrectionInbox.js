@@ -194,8 +194,8 @@ export async function renderCorrectionInbox(container) {
         const count = corrections.filter(x => x.classId === c.id).length;
         const label = count > 0 ? `${escapeHtml(c.title)} (${count})` : escapeHtml(c.title);
         return `<option value="${escapeHtml(c.id)}"${c.id === selectedClassId ? ' selected' : ''}>${label}</option>`;
-      }).join(''),
-    ];
+      }),
+    ].join('');
 
     container.innerHTML = `
       <div class="section-title"><h2>Reportes de Calidad IA</h2><div class="line"></div></div>

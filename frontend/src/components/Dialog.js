@@ -11,7 +11,7 @@ export function showConfirmDialog({
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
         overlay.innerHTML = `
-            <div class="modal-content" style="max-width: 460px; width: 92%;">
+            <div class="modal-content" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}" style="max-width: 460px; width: 92%;">
                 <div class="modal-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
                     <h3 class="h4" style="margin:0;">${escapeHtml(title)}</h3>
                     <button type="button" class="btn btn-ghost btn-sm dialog-close" aria-label="Cerrar">✕</button>

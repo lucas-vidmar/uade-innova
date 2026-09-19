@@ -5,7 +5,7 @@ import { api } from '../../services/api.js';
 import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
 import { toast } from '../../components/Toast.js';
-import { showPromptDialog } from '../../components/Dialog.js';
+import { showPromptDialog, showConfirmDialog } from '../../components/Dialog.js';
 import { OnboardingEngine, isOnboardingCompleted } from '../../services/onboarding.js';
 import { TEACHER_ONBOARDING_STEPS } from './OnboardingSteps.js';
 import { renderSubjectWeights } from './SubjectWeights.js';
@@ -14,9 +14,33 @@ export async function renderTeacherDashboard(container) {
   renderHeader('Mis Cátedras');
   container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando cátedras...</div>`;
 
+  // #346: Dashboard-owned modals must not persist across routes. A single
+  // hashchange teardown (re-registered per render) closes any open modal
+  // overlay when the user navigates away, mirroring UploadMaterials.
+  if (window.__teacherDashboardHashTeardown) {
+    window.removeEventListener('hashchange', window.__teacherDashboardHashTeardown);
+  }
+  window.__teacherDashboardHashTeardown = () => {
+    document.querySelectorAll('.modal-overlay').forEach(el => el.remove());
+  };
+  window.addEventListener('hashchange', window.__teacherDashboardHashTeardown);
+
   const user = auth.getUser();
-  const enrolledSubjects = auth.getEnrolledSubjects();
-  const activeSubjectId = auth.getActiveSubjectId();
+  let enrolledSubjects = auth.getEnrolledSubjects();
+  let activeSubjectId = auth.getActiveSubjectId();
+
+  // #332: after a reload the in-memory subject/enrollment caches are cold and
+  // getEnrolledSubjects fail-closes to []. Rehydrate once from the server
+  // before the gate so a valid teacher session renders its catedra.
+  if (enrolledSubjects.length === 0) {
+    try {
+      await auth.hydrateSession();
+    } catch {
+      // Fall through to the gate with whatever the caches hold.
+    }
+    enrolledSubjects = auth.getEnrolledSubjects();
+    activeSubjectId = auth.getActiveSubjectId();
+  }
 
   const isValidSubject = activeSubjectId && enrolledSubjects.some(s => s.id === activeSubjectId);
 
@@ -65,7 +89,7 @@ export async function renderTeacherDashboard(container) {
       <div class="class-list-info">
         <div class="class-list-title">${deadline.title}</div>
         <div class="class-list-topics">${deadline.description || 'Sin descripción'}</div>
-        <div class="class-list-files">Vence ${new Date(deadline.dueDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })} · Clase ${cls?.title || deadline.classId}</div>
+        <div class="class-list-files">Vence ${formatDueDate(deadline.dueDate)} · Clase ${cls?.title || deadline.classId}</div>
       </div>
       <div class="class-list-actions">
         <span class="badge badge-primary">${deadline.notifyOnDayBefore ? '1 día antes' : 'Solo el día'}</span>
@@ -356,7 +380,16 @@ export async function renderTeacherDashboard(container) {
       e.stopPropagation();
       const deadline = deadlines.find(d => d.id === btn.dataset.deadlineId);
       if (!deadline) return;
-      if (!confirm(`¿Eliminar el deadline "${deadline.title}"?`)) return;
+      // Custom modal (not native confirm): visible to assistive tech and to
+      // automation, consistent with the class-delete flow (#335).
+      const shouldDelete = await showConfirmDialog({
+        title: 'Eliminar deadline',
+        message: `¿Eliminar el deadline "${deadline.title}"? Esta acción no se puede deshacer.`,
+        confirmText: 'Eliminar',
+        cancelText: 'Cancelar',
+        danger: true,
+      });
+      if (!shouldDelete) return;
       try {
         await api.deleteDeadline(activeSubjectId, deadline.id);
         toast('success', 'Deadline eliminado', 'El deadline fue eliminado correctamente.');
@@ -849,4 +882,20 @@ function escapeHtml(value = '') {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+/**
+ * Formats a deadline dueDate without the UTC off-by-one (#335).
+ * Date-only values ("2026-12-15") parsed with `new Date()` land on midnight
+ * UTC and render the previous day in es-AR (UTC-3); parsing them as local
+ * noon keeps the calendar day the teacher picked. Full ISO datetimes pass
+ * through unchanged.
+ */
+export function formatDueDate(dueDate) {
+  if (!dueDate) return '—';
+  const raw = String(dueDate);
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(raw);
+  const parsed = new Date(dateOnly ? `${raw}T12:00:00` : raw);
+  if (isNaN(parsed.getTime())) return '—';
+  return parsed.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' });
 }

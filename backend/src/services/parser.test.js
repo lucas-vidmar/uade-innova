@@ -136,6 +136,47 @@ Proximos pasos y entregables.
     assert.ok(result.sections[0].timestampLabel.includes('00:00:'), 'Should include timestamp label');
 });
 
+test('extractTranscriptTimeline parses pilot MM:SS.mmm cues with real timestamps (#345)', () => {
+    const vtt = `WEBVTT - Clase 02: Procesos de Negocio
+
+1
+00:00:05.000 --> 00:00:20.000
+<v Profesor>Buenas tardes. Hoy nos enfocamos en los Procesos de Negocio.</v>
+
+2
+00:00:21.000 --> 00:00:40.000
+<v Profesor>Un proceso de negocio es un conjunto ordenado de actividades.</v>
+
+3
+00:00:41.000 --> 00:01:00.000
+<v Alumno>¿Cómo clasificamos los sistemas?</v>
+
+4
+00:01:01.000 --> 00:01:25.000
+<v Profesor>En el nivel operacional tenemos los TPS.</v>
+
+5
+00:01:26.000 --> 00:01:50.000
+<v Profesor>En el nivel gerencial tenemos los MIS y DSS.</v>
+
+6
+00:01:51.000 --> 00:02:10.000
+<v Alumno>¿Qué es un ERP?</v>
+
+7
+00:02:11.000 --> 00:02:40.000
+<v Profesor>Cierre de la clase de hoy.</v>
+`;
+
+    const result = extractTranscriptTimeline(Buffer.from(vtt, 'utf-8'), 'text/vtt', 'clase2_transcripcion.vtt');
+    assert.ok(result.sections.length >= 7, `Should parse pilot cues, got ${result.sections.length}`);
+    assert.equal(result.sections[0].startSecond, 5, 'First cue starts at 5s, not 0s');
+    assert.equal(result.sections[2].startSecond, 41, 'Third cue starts at 41s');
+    assert.ok(result.markers.length >= 1, 'Should create timeline markers');
+    assert.ok(result.markers.every((m) => m.startSecond > 0 || m.endSecond > 1), 'No marker stuck at 0s');
+    assert.match(result.sections[0].timestampLabel, /00:00:05/, 'Label carries real timestamp');
+});
+
 function buildPptxBuffer(slides) {
     const zip = new AdmZip();
     slides.forEach(({ slideNumber, xml }) => {

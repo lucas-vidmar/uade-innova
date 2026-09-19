@@ -202,7 +202,13 @@ export function extractTranscriptTimeline(buffer, mimeType = '', filename = '') 
     const isVtt = mimeType === 'text/vtt' || ext === 'vtt';
 
     if (isVtt) {
-        const cueRegex = /(\d{2}:\d{2}:\d{2}\.\d{3})\s+-->\s+(\d{2}:\d{2}:\d{2}\.\d{3})([^\n]*\n)((?:.+(?:\n|$))+?)(?=\n\d{2}:\d{2}:\d{2}\.\d{3}\s+-->|$)/g;
+        // Pilot VTTs use MM:SS.mmm (e.g. 00:00:05.000); classic VTT/SRT use
+        // HH:MM:SS,mmm. Accept hours as optional and both decimal separators.
+        const ts = '\\d{2}:\\d{2}(?::\\d{2})?[\\.,]\\d{3}';
+        const cueRegex = new RegExp(
+            `(${ts})\\s+-->\\s+(${ts})([^\\n]*\\n)((?:.+(?:\\n|$))+?)(?=\\n(?:\\d+\\n)?${ts}\\s+-->|\\s*$)`,
+            'g'
+        );
         const sections = [];
         let match;
         let index = 0;
@@ -274,8 +280,16 @@ export function extractTranscriptTimeline(buffer, mimeType = '', filename = '') 
 }
 
 function timestampToSeconds(value) {
-    const [hh, mm, ssMs] = value.split(':');
-    const [ss, ms] = ssMs.split('.');
+    const parts = String(value).trim().split(':');
+    let hh = 0;
+    let mm = 0;
+    let ssMs;
+    if (parts.length === 3) {
+        [hh, mm, ssMs] = parts;
+    } else {
+        [mm, ssMs] = parts;
+    }
+    const [ss, ms] = String(ssMs).split(/[.,]/);
     return Number(hh) * 3600 + Number(mm) * 60 + Number(ss) + Number(ms) / 1000;
 }
 

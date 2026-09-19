@@ -195,12 +195,13 @@ export async function renderTeacherAnalytics(container) {
   }
 
   try {
-    const [data, alerts, classes, classViews, enrollments, safetyRate] = await Promise.all([
+    const [data, alerts, classes, classViews, enrollments, users, safetyRate] = await Promise.all([
       api.getTeacherAnalytics(activeSubjectId),
       api.getTeacherAlerts(activeSubjectId),
       api.getClasses(activeSubjectId).catch(() => []),
       api.getClassViews(activeSubjectId).catch(() => []),
-      api.getEnrollments(activeSubjectId).catch(() => []),
+      api.getEnrollmentsBySubject(activeSubjectId).catch(() => []),
+      api.getAdminUsers().catch(() => []),
       api.getSafetyRate(activeSubjectId, 30).catch(() => null),
     ]);
     if (!data || !data.topQuestions || !data.frictionTopics) {
@@ -282,12 +283,14 @@ export async function renderTeacherAnalytics(container) {
           <span class="card-title">💬 Consultas más frecuentes</span>
           <span class="badge badge-info">Últimos 30 días</span>
         </div>
-        <div class="word-cloud">
-          ${data.topQuestions.map(q => {
-    const size = 11 + Math.round((q.count / maxCount) * 14);
-    const opacity = 0.5 + (q.count / maxCount) * 0.5;
-    return `<span class="word-cloud-word" style="font-size:${size}px;opacity:${opacity}">${q.text}</span>`;
-  }).join('')}
+        <div style="display:flex;flex-direction:column;gap:var(--space-2);padding:var(--space-2) 0">
+          ${data.topQuestions.map((q, i) => `
+            <div style="display:flex;align-items:baseline;gap:var(--space-2);padding:var(--space-2) var(--space-3);border-radius:var(--radius-md);background:var(--color-surface-2)">
+              <span style="font-size:var(--font-size-xs);font-weight:700;color:var(--color-text-muted);min-width:20px">${i + 1}.</span>
+              <span style="flex:1;font-size:var(--font-size-sm);line-height:1.4">${escapeHtml(q.text)}</span>
+              <span class="badge badge-info" title="${q.count} consultas">${q.count}</span>
+            </div>
+          `).join('')}
         </div>
       </div>
 
@@ -325,19 +328,22 @@ export async function renderTeacherAnalytics(container) {
         <span class="card-title">📈 Frecuencia de consultas por tema</span>
       </div>
       <div class="bar-chart">
-        ${data.topQuestions.map(q => `
+        ${data.topQuestions.map(q => {
+    const shortLabel = q.text.length > 28 ? `${q.text.slice(0, 28)}…` : q.text;
+    return `
           <div class="bar-chart-item">
             <div class="bar-chart-bar-wrap">
-              <div class="bar-chart-bar" style="--bar-height:${Math.round((q.count / maxCount) * 100)}%" title="${q.count} consultas"></div>
+              <div class="bar-chart-bar" style="--bar-height:${Math.round((q.count / maxCount) * 100)}%" title="${escapeHtml(q.text)}: ${q.count} consultas"></div>
             </div>
-            <div class="bar-chart-label">${q.text.split(' ')[0]}</div>
+            <div class="bar-chart-label" title="${escapeHtml(q.text)}">${escapeHtml(shortLabel)}</div>
             <div class="bar-chart-val">${q.count}</div>
           </div>
-        `).join('')}
+        `;
+  }).join('')}
       </div>
     </div>
 
-    ${renderStudentProgress(classes, classViews, enrollments, escapeHtml)}
+    ${renderStudentProgress(classes, classViews, enrollments, users, escapeHtml)}
   `;
 
     container.querySelectorAll('.gap-expand-toggle').forEach((btn) => {
@@ -374,9 +380,12 @@ export async function renderTeacherAnalytics(container) {
   }
 }
 
-function renderStudentProgress(classes, classViews, enrollments, escapeHtml) {
+function renderStudentProgress(classes, classViews, enrollments, users, escapeHtml) {
   const studentEnrollments = (enrollments || []).filter(e => e.role === 'student' && e.status === 'active');
-  const studentIds = [...new Set([...studentEnrollments.map(e => e.userId), ...classViews.map(v => v.studentId)])];
+  // Only enrolled students: never leak raw ids from stale classViews and
+  // never render the "anonymous" row (#336).
+  const studentIds = [...new Set(studentEnrollments.map(e => e.userId).filter(Boolean))]
+    .filter(sid => String(sid).toLowerCase() !== 'anonymous');
 
   if (studentIds.length === 0 || !classes || classes.length === 0) {
     return `
@@ -389,9 +398,11 @@ function renderStudentProgress(classes, classViews, enrollments, escapeHtml) {
     `;
   }
 
+  const usersById = new Map((users || []).map(u => [u.id || u.userId, u]));
   const studentNames = {};
-  for (const e of studentEnrollments) {
-    studentNames[e.userId] = e.userId;
+  for (const sid of studentIds) {
+    const u = usersById.get(sid);
+    studentNames[sid] = u ? (u.name ? `${u.name} ${u.surname || ''}`.trim() : u.email) : sid;
   }
 
   const viewsByStudent = {};

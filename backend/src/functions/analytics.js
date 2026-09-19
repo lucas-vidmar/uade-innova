@@ -10,17 +10,13 @@ import { resolveSafetyStatus, structuredErrorResponse, ErrorCategory } from '../
 const CONTAINER_CHAT = 'chat-logs';
 
 /**
- * Normaliza y limpia una cadena para extraccion de keywords
+ * Normaliza una pregunta para agrupar consultas idénticas sin romperla en
+ * tokens: la analítica docente debe mostrar preguntas accionables, no palabras
+ * sueltas (#336).
  */
-function tokenize(text) {
-    if (!text) return [];
-    return text.toLowerCase()
-        .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "")
-        .split(/\s+/)
-        .filter(word => word.length > 3); // Solo palabras significativas
+function normalizeQuestion(text) {
+    return String(text || '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
-
-const STOP_WORDS = new Set(['para', 'como', 'esto', 'esta', 'este', 'pero', 'cuando', 'sobre', 'entre', 'donde', 'quien', 'cual', 'cuanto', 'hasta', 'desde', 'hacia']);
 
 /**
  * GET /api/analytics?subjectId={id}
@@ -79,32 +75,28 @@ app.http('get-teacher-analytics', {
                 const log = await loadJson(CONTAINER_CHAT, blobName);
                 if (!log || !log.question) continue;
 
-                // Procesar Top Questions (usando frases o palabras clave)
-                const tokens = tokenize(log.question);
-                tokens.forEach(token => {
-                    if (STOP_WORDS.has(token)) return;
-                    questionMap.set(token, (questionMap.get(token) || 0) + 1);
-                });
+                // Top Questions: agrupar por pregunta completa normalizada para
+                // mostrar cadenas accionables en vez de tokens sueltos (#336).
+                const rawQuestion = String(log.question).trim();
+                if (!rawQuestion) continue;
+                const key = normalizeQuestion(rawQuestion);
+                const display = rawQuestion.length > 140 ? `${rawQuestion.slice(0, 140)}…` : rawQuestion;
+                const questionEntry = questionMap.get(key) || { text: display, count: 0 };
+                questionEntry.count++;
+                questionMap.set(key, questionEntry);
 
-                // Procesar Friction Topics (mensajes con feedback negativo)
-                if (log.feedback === 'negative') {
-                    // Usamos la primera palabra clave significativa como "tópico" simplificado
-                    const topic = tokens.slice(0, 2).join(' ') || 'General';
-                    const stats = frictionMap.get(topic) || { topic, queries: 0, unresolved: 0 };
+                // Friction Topics: la pregunta completa con feedback es el tópico.
+                if (log.feedback === 'negative' || log.feedback === 'positive') {
+                    const topicDisplay = rawQuestion.length > 80 ? `${rawQuestion.slice(0, 80)}…` : rawQuestion;
+                    const stats = frictionMap.get(key) || { topic: topicDisplay, queries: 0, unresolved: 0 };
                     stats.queries++;
-                    stats.unresolved++;
-                    frictionMap.set(topic, stats);
-                } else if (log.feedback === 'positive') {
-                    const topic = tokens.slice(0, 2).join(' ') || 'General';
-                    const stats = frictionMap.get(topic) || { topic, queries: 0, unresolved: 0 };
-                    stats.queries++;
-                    frictionMap.set(topic, stats);
+                    if (log.feedback === 'negative') stats.unresolved++;
+                    frictionMap.set(key, stats);
                 }
             }
 
             // Formatear resultados para el frontend
-            const topQuestions = Array.from(questionMap.entries())
-                .map(([text, count]) => ({ text, count }))
+            const topQuestions = Array.from(questionMap.values())
                 .sort((a, b) => b.count - a.count)
                 .slice(0, 10);
 

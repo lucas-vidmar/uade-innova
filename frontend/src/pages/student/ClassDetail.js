@@ -55,6 +55,14 @@ function cleanMarkers(markers) {
     });
 }
 
+function formatHitTime(seconds) {
+    const total = Math.max(0, Math.floor(Number(seconds) || 0));
+    const hh = Math.floor(total / 3600);
+    const mm = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
+    const ss = String(total % 60).padStart(2, '0');
+    return hh > 0 ? `${String(hh).padStart(2, '0')}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
 const MATERIAL_ICONS = {
     transcript: '🎙️',
     presentation: '📊',
@@ -230,20 +238,23 @@ export async function renderClassDetail(container) {
         }
 
         if (markers.length > 0) {
+            const firstMarker = markers[0];
+            const firstSection = encodeURIComponent(firstMarker.sectionId || '');
+            const firstLabel = encodeURIComponent(firstMarker.label || 'Seccion de transcripcion');
             html += `
                 ${SECTION_TITLE('⏱️', 'Timeline de Transcripción')}
                 <div class="card" style="margin-bottom:var(--space-6)">
                     <div style="padding:var(--space-6)">
                         <div class="timeline-track" id="transcript-timeline-markers">
                             ${markers.map(marker => `
-                                <button class="timeline-hit" data-section-id="${marker.sectionId}" data-focus-label="${escapeHtml(marker.label || '')}" title="${escapeHtml(marker.label || '')}">
+                                <button class="timeline-hit" data-section-id="${marker.sectionId}" data-focus-label="${escapeHtml(marker.label || '')}" title="${escapeHtml(marker.label || '')} (${formatHitTime(marker.startSecond)})">
                                     <span class="timeline-hit-icon">${marker.iconType === 'assignment' ? '📌' : '❓'}</span>
-                                    <span class="timeline-hit-time">${Math.floor(marker.startSecond || 0)}s</span>
+                                    <span class="timeline-hit-time">${formatHitTime(marker.startSecond)}</span>
                                 </button>
                             `).join('')}
                         </div>
                         <div style="margin-top:var(--space-4)">
-                            <a id="timeline-open-chat" class="btn btn-primary btn-sm" href="#/student/chat?classId=${classId}" aria-disabled="true">Consultar este hit-point en el chat</a>
+                            <a id="timeline-open-chat" class="btn btn-primary btn-sm" href="#/student/chat?classId=${classId}&transcriptSection=${firstSection}&focusLabel=${firstLabel}">Consultar en el chat (${markers.length} hit-point${markers.length === 1 ? '' : 's'})</a>
                         </div>
                     </div>
                 </div>
@@ -349,15 +360,17 @@ export async function renderClassDetail(container) {
         const generateProgress = container.querySelector('#audio-generation-progress');
 
         generateAudioBtn?.addEventListener('click', async () => {
+            if (generateAudioBtn.disabled) return;
             if (generateAudioBtn) generateAudioBtn.disabled = true;
             if (generateProgress) generateProgress.style.display = 'flex';
             try {
+                const { toast } = await import('../../components/Toast.js');
                 await api.generateClassAudio(classId);
-                renderClassDetail(container);
+                toast('success', 'Audio generado', 'El podcast de la clase está listo.');
+                await renderClassDetail(container);
             } catch (err) {
                 if (generateProgress) {
                     generateProgress.style.display = 'none';
-                    generateProgress.textContent = '';
                 }
                 if (generateAudioBtn) generateAudioBtn.disabled = false;
                 const { toast } = await import('../../components/Toast.js');
@@ -479,7 +492,6 @@ export async function renderClassDetail(container) {
                 const chatLink = container.querySelector('#timeline-open-chat');
                 if (chatLink) {
                     chatLink.setAttribute('href', `#/student/chat?classId=${classId}&transcriptSection=${encodeURIComponent(sectionId)}&focusLabel=${encodeURIComponent(focusLabel)}`);
-                    chatLink.setAttribute('aria-disabled', 'false');
                     chatLink.textContent = 'Consultar este hit-point en el chat';
                 }
 

@@ -413,13 +413,40 @@ export const auth = {
         return sessionStorage.getItem('edu_student_key') || 'student';
     },
 
+    /**
+     * Server-resolved subject scope cached at login/profile time (#332).
+     * Survives reloads (sessionStorage) unlike the in-memory subject cache,
+     * and unlike the enrollment cache it does not depend on a fresh fetch.
+     * @returns {string[]} subject ids from the last server-resolved scope.
+     */
+    getScopeSubjectIds() {
+        try {
+            const raw = sessionStorage.getItem('edu_scope_subjects');
+            const parsed = raw ? JSON.parse(raw) : [];
+            return Array.isArray(parsed) ? parsed.filter(s => typeof s === 'string' && s.length > 0) : [];
+        } catch {
+            return [];
+        }
+    },
+
     getEnrolledSubjects() {
         const role = this.getRole();
         const user = this.getUser();
-        const userId = user.id;
         const enrollmentData = enrollmentService.getCachedEnrollments();
 
         if (!enrollmentData || enrollmentData.length === 0) {
+            // #332: after a reload the enrollment cache may still be cold while
+            // the server-resolved scope from login()/resolveServerProfile sits
+            // in sessionStorage. Fall back to that scope intersected with the
+            // known subjects — never to the full subject list — so a valid
+            // session rehydrates instead of fail-closing to an empty dashboard.
+            if (role === 'teacher' || role === 'student') {
+                const scoped = this.getScopeSubjectIds();
+                if (scoped.length > 0) {
+                    const scopedSubjects = (user.subjects || []).filter(s => scoped.includes(s.id));
+                    if (scopedSubjects.length > 0) return scopedSubjects;
+                }
+            }
             // Fail-closed for scoped roles: without enrollments a student/teacher sees nothing,
             // director/admin see all. Prevents the leak where a loading/failed fetch showed all 4 subjects.
             if (role === 'director' || role === 'admin') return user.subjects || [];
