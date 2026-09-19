@@ -274,6 +274,10 @@ export async function renderDirectorDashboard(container) {
 
     // Risk breakdown modal (#341): populated with the real scoring formula
     // and the active subject's configured thresholds — never a placeholder.
+    // Idempotent: renderDirectorDashboard runs on every data refresh, so drop
+    // any previous instance first — otherwise duplicate IDs pile up and the
+    // open-button listener ends up bound to a detached node (dead button).
+    document.getElementById('risk-breakdown-dashboard-modal')?.remove();
     const riskModal = document.createElement('div');
     riskModal.className = 'modal-overlay';
     riskModal.id = 'risk-breakdown-dashboard-modal';
@@ -321,10 +325,17 @@ export async function renderDirectorDashboard(container) {
       body.innerHTML = renderRiskBreakdownHTML(thresholds, scopeLabel);
     }
 
-    document.getElementById('btn-risk-breakdown-dashboard')?.addEventListener('click', () => {
-      document.getElementById('risk-breakdown-dashboard-modal').style.display = 'flex';
-      refreshRiskBreakdownBody();
-    });
+    // Delegated (registered once): the dashboard container re-renders on data
+    // refresh, which would detach a directly-bound button listener.
+    if (!window.__riskBreakdownDashboardDelegated) {
+      window.__riskBreakdownDashboardDelegated = true;
+      document.addEventListener('click', (e) => {
+        if (e.target?.closest?.('#btn-risk-breakdown-dashboard')) {
+          document.getElementById('risk-breakdown-dashboard-modal').style.display = 'flex';
+          refreshRiskBreakdownBody();
+        }
+      });
+    }
 
     // RAG chart filter buttons
     document.querySelectorAll('[data-rag-window]').forEach(btn => {
