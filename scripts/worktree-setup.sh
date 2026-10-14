@@ -22,7 +22,7 @@
 # =============================================================================
 set -uo pipefail
 
-CREDENCIALES_SHARE_URL="https://share.onorca.dev/a/Z7HBFVzhGN7Z"
+CREDENCIALES_SHARE_URL="https://share.onorca.dev/a/DRWofj2Z_DOE"
 CREDENCIALES_URL="https://content.orcausercontent.dev/usercontent/Z7HBFVzhGN7Z/artifact.html"
 PROD_URL="https://agreeable-beach-002ff0c0f.6.azurestaticapps.net/#/login"
 LOGIN_URL="$PROD_URL"

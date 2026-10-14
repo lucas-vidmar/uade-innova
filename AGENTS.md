@@ -104,7 +104,7 @@ orca worktree set --worktree active --comment "estado actual" --json
 ```
 Los `worktree.id` tienen formato `<repoId>::<worktreePath>`: copiar el id completo, no solo el repoId.
 
-**Bootstrap automático de worktrees nuevos:** el repo tiene configurado (Orca → Settings del repo → Setup script) `bash scripts/worktree-setup.sh`, que corre en cada `worktree create` (política `run-by-default`) y abre en el browser de Orca la página de credenciales (`https://share.onorca.dev/a/Z7HBFVzhGN7Z`) + deja comment en el worktree. Para que el agente arranque junto al setup, crear con `--agent opencode` (o el agente deseado): `orca worktree create --name <task> --agent opencode --prompt "<brief>" --json`.
+**Bootstrap automático de worktrees nuevos:** el repo tiene configurado (Orca → Settings del repo → Setup script) `bash scripts/worktree-setup.sh`, que corre en cada `worktree create` (política `run-by-default`) y abre en el browser de Orca la página de credenciales (`https://share.onorca.dev/a/DRWofj2Z_DOE`) + deja comment en el worktree. Para que el agente arranque junto al setup, crear con `--agent opencode` (o el agente deseado): `orca worktree create --name <task> --agent opencode --prompt "<brief>" --json`.
 
 ### Cómo solicitar PUSH y MERGE (los agentes NO hacen push/merge por sí solos)
 
