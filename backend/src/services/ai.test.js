@@ -63,4 +63,21 @@ describe('AI Service (DeepSeek Migration)', () => {
             'should throw a CategorizedError signaling DeepSeek is not configured'
         );
     });
+
+    test('getModelDisplayName returns the configured catalog name when set', () => {
+        process.env.AI_FOUNDRY_DEEPSEEK_DISPLAY_NAME = 'DeepSeek-V4.1-Flash';
+        assert.equal(ai.getModelDisplayName('deepseek-v4-flash'), 'DeepSeek-V4.1-Flash');
+    });
+
+    test('getModelDisplayName falls back to the deployment name when unconfigured', () => {
+        delete process.env.AI_FOUNDRY_DEEPSEEK_DISPLAY_NAME;
+        assert.equal(ai.getModelDisplayName('deepseek-v4-flash'), 'deepseek-v4-flash');
+    });
+
+    test('getChatModelName surfaces the display name for the Powered-by label', () => {
+        process.env.AI_FOUNDRY_DEEPSEEK_ENDPOINT = 'https://deepseek.models.ai.azure.com';
+        process.env.AI_FOUNDRY_DEEPSEEK_KEY = 'ds-key';
+        process.env.AI_FOUNDRY_DEEPSEEK_DISPLAY_NAME = 'DeepSeek-V4.1-Flash';
+        assert.equal(ai.getChatModelName(), 'DeepSeek-V4.1-Flash');
+    });
 });

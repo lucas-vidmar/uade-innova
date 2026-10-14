@@ -37,6 +37,9 @@ param aiFoundryDeepSeekEndpoint string = ''
 @description('DeepSeek V4 Flash model name (non-secret). Injected as AI_FOUNDRY_DEEPSEEK_MODEL.')
 param aiFoundryDeepSeekModel string = 'deepseek-v4-flash'
 
+@description('DeepSeek catalog display name for the chat Powered-by label (non-secret). Injected as AI_FOUNDRY_DEEPSEEK_DISPLAY_NAME.')
+param aiFoundryDeepSeekDisplayName string = 'DeepSeek-V4.1-Flash'
+
 @description('Azure Storage account name for class materials.')
 param classMaterialsStorageAccount string
 
@@ -328,6 +331,10 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         {
           name: 'AI_FOUNDRY_DEEPSEEK_MODEL'
           value: aiFoundryDeepSeekModel
+        }
+        {
+          name: 'AI_FOUNDRY_DEEPSEEK_DISPLAY_NAME'
+          value: aiFoundryDeepSeekDisplayName
         }
         {
           name: 'AI_FOUNDRY_DEEPSEEK_KEY'

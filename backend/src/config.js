@@ -50,6 +50,10 @@ export const CONFIG = {
     embeddingModel: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT || 'text-embedding-3-small',
     chatModel: process.env.AZURE_OPENAI_CHAT_DEPLOYMENT,
     deepSeekModel: process.env.AI_FOUNDRY_DEEPSEEK_MODEL || 'deepseek-v4-flash',
+    // Display label for the chat "Powered by …" indicator. Tracks the real
+    // catalog model behind the deployment alias (e.g. DeepSeek-V4.1-Flash).
+    // Update on each model bump — no code change needed elsewhere.
+    deepSeekDisplayName: process.env.AI_FOUNDRY_DEEPSEEK_DISPLAY_NAME || '',
     deepSeekEndpoint: process.env.AI_FOUNDRY_DEEPSEEK_ENDPOINT || '',
     ttsModel: process.env.AZURE_OPENAI_TTS_DEPLOYMENT || 'tts-1',
     temperature: {

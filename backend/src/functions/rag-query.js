@@ -3,7 +3,7 @@
  * Motor RAG: embedding de la pregunta → similitud Pinecone → chat con contexto
  */
 import { app } from '@azure/functions';
-import { generateEmbedding, chatCompletion, getChatModelName, resolveModelForTask } from '../services/ai.js';
+import { generateEmbedding, chatCompletion, getChatModelName, getModelDisplayName, resolveModelForTask } from '../services/ai.js';
 import { querySimilar } from '../services/vector-store.js';
 import { saveJson, loadJson, saveMetricsToTable } from '../services/storage.js';
 import { getShadowPrompt, getActivePrompt } from '../services/prompts.js';
@@ -761,7 +761,7 @@ ${contextText}
                     const encoder = new TextEncoder();
 
                     // Enviar metadatos iniciales
-                    controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ interactionId, sources, model: ragModel })}\n\n`));
+                    controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ interactionId, sources, model: getModelDisplayName(ragModel) })}\n\n`));
 
                     let fullAnswer = '';
                     let finalUsage = null;

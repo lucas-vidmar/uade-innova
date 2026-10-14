@@ -133,6 +133,9 @@ param aiFoundryDeepSeekEndpoint string = ''
 @description('DeepSeek V4 Flash model name (non-secret). Injected as AI_FOUNDRY_DEEPSEEK_MODEL app setting.')
 param aiFoundryDeepSeekModel string = 'deepseek-v4-flash'
 
+@description('DeepSeek catalog display name for the chat Powered-by label (non-secret). Injected as AI_FOUNDRY_DEEPSEEK_DISPLAY_NAME app setting.')
+param aiFoundryDeepSeekDisplayName string = 'DeepSeek-V4.1-Flash'
+
 @description('Name of the SEPARATE AIServices resource for developer tooling (opencode). Kept distinct from aiservices-dashboard so budgets track independently.')
 param devToolsAiName string = 'aiservices-devtools'
 
@@ -282,6 +285,7 @@ module functions './modules/functions.bicep' = {
     openAiTtsDeployment: openAi.outputs.ttsDeploymentName
     aiFoundryDeepSeekEndpoint: aiFoundryDeepSeekEndpoint
     aiFoundryDeepSeekModel: aiFoundryDeepSeekModel
+    aiFoundryDeepSeekDisplayName: aiFoundryDeepSeekDisplayName
     classMaterialsStorageAccount: safeStorageName
     pineconeIndexName: vectorIndexName
     pineconeEnvironment: pineconeEnvironment

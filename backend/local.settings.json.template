@@ -17,6 +17,7 @@
     "AZURE_OPENAI_EMBEDDING_DEPLOYMENT": "text-embedding-3-small",
     "AI_FOUNDRY_DEEPSEEK_ENDPOINT": "<endpoint AIServices-kind>",
     "AI_FOUNDRY_DEEPSEEK_MODEL": "deepseek-v4-flash",
+    "AI_FOUNDRY_DEEPSEEK_DISPLAY_NAME": "DeepSeek-V4.1-Flash",
     "AI_FOUNDRY_DEEPSEEK_KEY": "<az keyvault secret show --vault-name kv-edu-* --name AI-FOUNDRY-DEEPSEEK-KEY --query value -o tsv>",
     "PINECONE_HOST": "<host del índice Pinecone>",
     "PINECONE_INDEX_NAME": "dashboard-edu-pilot",

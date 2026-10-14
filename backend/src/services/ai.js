@@ -227,12 +227,24 @@ export function isChatUsingDeepSeek() {
 
 export function getChatModelName(taskType) {
     if (taskType && CONFIG.ai.models?.[taskType]) {
-        return CONFIG.ai.models[taskType];
+        return getModelDisplayName(CONFIG.ai.models[taskType]);
     }
     if (isChatUsingDeepSeek()) {
-        return CONFIG.ai.deepSeekModel;
+        return getModelDisplayName(CONFIG.ai.deepSeekModel);
     }
     return process.env.AZURE_OPENAI_CHAT_DEPLOYMENT || CONFIG.ai.chatModel || 'deepseek-v4-flash';
+}
+
+/**
+ * Display label for the chat "Powered by …" indicator. Returns the real
+ * catalog model name (AI_FOUNDRY_DEEPSEEK_DISPLAY_NAME) instead of the
+ * deployment alias, so the UI tracks model bumps with no code change.
+ * Falls back to the deployment name when unconfigured.
+ */
+export function getModelDisplayName(deploymentName) {
+    const configured = process.env.AI_FOUNDRY_DEEPSEEK_DISPLAY_NAME || CONFIG.ai.deepSeekDisplayName;
+    if (configured) return configured;
+    return deploymentName || CONFIG.ai.deepSeekModel || 'deepseek-v4-flash';
 }
 
 export async function getChatModelNameForTask(taskType) {

@@ -7,7 +7,7 @@
 import { app } from '@azure/functions';
 import { withAuth } from '../middleware/with-auth.js';
 import { v4 as uuidv4 } from 'uuid';
-import { chatCompletion, getChatModelName, resolveModelForTask } from '../services/ai.js';
+import { chatCompletion, getChatModelName, getModelDisplayName, resolveModelForTask } from '../services/ai.js';
 import { loadJson } from '../services/storage.js';
 import { getActivePrompt } from '../services/prompts.js';
 import {
@@ -210,7 +210,7 @@ app.http('generate-quiz', {
                 classId,
                 questionCount: questions.length,
                 questions,
-                model: quizModel,
+                model: getModelDisplayName(quizModel),
                 generatedAt: new Date().toISOString(),
                 durationMs: Date.now() - startTime,
             };

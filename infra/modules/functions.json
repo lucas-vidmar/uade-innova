@@ -71,6 +71,13 @@
         "description": "DeepSeek V4 Flash model name (non-secret). Injected as AI_FOUNDRY_DEEPSEEK_MODEL."
       }
     },
+    "aiFoundryDeepSeekDisplayName": {
+      "type": "string",
+      "defaultValue": "DeepSeek-V4.1-Flash",
+      "metadata": {
+        "description": "DeepSeek catalog display name for the chat Powered-by label (non-secret). Injected as AI_FOUNDRY_DEEPSEEK_DISPLAY_NAME."
+      }
+    },
     "classMaterialsStorageAccount": {
       "type": "string",
       "metadata": {
@@ -485,6 +492,10 @@
             {
               "name": "AI_FOUNDRY_DEEPSEEK_MODEL",
               "value": "[parameters('aiFoundryDeepSeekModel')]"
+            },
+            {
+              "name": "AI_FOUNDRY_DEEPSEEK_DISPLAY_NAME",
+              "value": "[parameters('aiFoundryDeepSeekDisplayName')]"
             },
             {
               "name": "AI_FOUNDRY_DEEPSEEK_KEY",
