@@ -49,32 +49,38 @@
     "port": 4096
   },
   "mcp": {
-    "playwright": {
-      "type": "local",
-      "enabled": false,
-      "command": [
-        "npx",
-        "-y",
-        "@playwright/mcp@latest"
-      ]
+    "timeout": {
+      "startup": 45000
     },
-    "azure-mcp-server": {
-      "type": "local",
-      "enabled": true,
-      "command": [
-        "npx",
-        "-y",
-        "@azure/mcp@latest",
-        "server",
-        "start"
-      ]
-    },
-    "stitch": {
-      "type": "remote",
-      "url": "https://stitch.googleapis.com/mcp",
-      "enabled": true,
-      "headers": {
-        "X-Goog-Api-Key": "{env:STITCH_API_KEY}"
+    "servers": {
+      "playwright": {
+        "type": "local",
+        "disabled": true,
+        "command": [
+          "npx",
+          "-y",
+          "@playwright/mcp@latest"
+        ]
+      },
+      "azure-mcp-server": {
+        "type": "local",
+        "command": [
+          "npx",
+          "-y",
+          "@azure/mcp@2.0.5",
+          "server",
+          "start"
+        ],
+        "timeout": {
+          "startup": 120000
+        }
+      },
+      "stitch": {
+        "type": "remote",
+        "url": "https://stitch.googleapis.com/mcp",
+        "headers": {
+          "X-Goog-Api-Key": "{env:STITCH_API_KEY}"
+        }
       }
     }
   }
