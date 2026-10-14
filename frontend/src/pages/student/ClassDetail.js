@@ -370,7 +370,10 @@ export async function renderClassDetail(container) {
             if (generateProgress) generateProgress.style.display = 'flex';
             try {
                 const { toast } = await import('../../components/Toast.js');
-                await api.generateClassAudio(classId);
+                // #337: forward the active subject so the backend loads the
+                // subject-scoped podcast script ({subjectId}/{classId}.json);
+                // without it scoped deployments 400 with "No hay guión".
+                await api.generateClassAudio(classId, activeSubjectId);
                 toast('success', 'Audio generado', 'El podcast de la clase está listo.');
                 await renderClassDetail(container);
             } catch (err) {

@@ -50,7 +50,7 @@ export async function renderTeacherUpload(container) {
   const ensureStoredSummary = (classId) => {
     if (!classId || summaryCache[classId]) return;
     summaryCache[classId] = { status: 'loading', text: '' };
-    api.getClassSummary(classId).then(data => {
+    api.getClassSummary(classId, activeSubjectIdSafe).then(data => {
       const raw = data?.summary?.content || data?.summary || '';
       summaryCache[classId] = { status: 'ready', text: typeof raw === 'string' ? raw : '' };
       if (selectedClassIds[0] === classId) render();

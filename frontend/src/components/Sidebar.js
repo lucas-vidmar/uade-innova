@@ -257,7 +257,11 @@ export function renderSidebar() {
 
     courseDropdown.querySelectorAll('.custom-dropdown-option').forEach(option => {
       option.addEventListener('click', () => {
+        // #346: the "Sin materias disponibles" fallback has no data-value —
+        // ignore it instead of clearing the active subject + reload-looping.
+        if (option.getAttribute('aria-disabled') === 'true') return;
         const val = option.getAttribute('data-value');
+        if (!val) return;
         auth.setActiveSubjectId(val);
         window.location.reload();
       });

@@ -9,9 +9,14 @@ export async function renderStudentSettings(container) {
   container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando configuración...</div>`;
 
   const prefs = await api.getReminderPreferences();
-  const [consent] = await Promise.all([
+  const [consent, serverProfile] = await Promise.all([
     api.getConsent().catch(() => ({ accepted: false })),
+    // #329: hydrate bot prefs from the server profile before first render
+    // so a cleared localStorage (or another device) shows saved values
+    // instead of silently reverting to Formal/Detallada.
+    api.getProfile().catch(() => null),
   ]);
+  if (serverProfile) auth.hydrateBotPreferences(serverProfile);
   const botPrefs = auth.getBotPreferences();
   const state = {
     enabled: prefs?.enabled !== false,

@@ -187,8 +187,9 @@ export async function generateClassAudioScript(classId, subjectId) {
     return res.json();
 }
 
-export async function generateClassAudio(classId) {
-    const res = await apiFetch(`${BASE_URL}/class-audio/${classId}/generate`, { method: 'POST' });
+export async function generateClassAudio(classId, subjectId) {
+    const query = subjectId ? `?subjectId=${encodeURIComponent(subjectId)}` : '';
+    const res = await apiFetch(`${BASE_URL}/class-audio/${classId}/generate${query}`, { method: 'POST' });
     if (!res.ok) {
         let message = `Error ${res.status}: No se pudo generar el audio`;
         try { const err = await res.json(); if (err?.error) message = err.error; } catch {}

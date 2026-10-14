@@ -19,6 +19,7 @@ function mergeEntity(existing, incoming) {
 const storageMocks = {
     getTableClient: mock.fn(() => {
         return {
+            createTable: mock.fn(async () => {}),
             getEntity: mock.fn(async (pk, rk) => {
                 const key = `${pk}:${rk}`;
                 if (!profileStore[key]) {

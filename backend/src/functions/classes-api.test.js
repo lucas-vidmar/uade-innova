@@ -1071,3 +1071,45 @@ test('#328: save-class-summary writes to the scoped path and requires subjectId'
 
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
 });
+
+test('#343: get-subjects fails closed for anonymous callers (401, no catalog leak)', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => null);
+    const restoreLoadJson = storageMocks.loadJson.mock.mockImplementation;
+    storageMocks.loadJson.mock.mockImplementation(async () => ([
+        { id: 'arq-software-2026', name: 'Arquitectura', professors: ['Prof A'] },
+    ]));
+    const mockContext = { log: makeMockLog(), error: mock.fn(), warn: mock.fn() };
+    try {
+        const response = await handlers['get-subjects']({ headers: new Map() }, mockContext);
+        assert.strictEqual(response.status, 401);
+        const body = JSON.parse(response.body);
+        assert.strictEqual(body.code, 'AUTH_REQUIRED');
+    } finally {
+        storageMocks.loadJson.mock.mockImplementation(async () => ({}));
+        authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: [] }));
+    }
+});
+
+test('#343: get-subjects treats Admin as unscoped (full catalog)', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({
+        userId: 'admin-1', userRoles: ['authenticated', 'Admin'], groups: [],
+    }));
+    stateStoreMocks.getEnrollmentsByUser.mock.mockImplementation(async () => []);
+    storageMocks.loadJson.mock.mockImplementation(async () => ([
+        { id: 's1', name: 'S1', group: 'g1' },
+        { id: 's2', name: 'S2', group: 'g2' },
+        { id: 'dasi-1c2023', name: 'DASI', group: 'g3' },
+        { id: 's4', name: 'S4', group: '' },
+    ]));
+    const mockContext = { log: makeMockLog(), error: mock.fn(), warn: mock.fn() };
+    try {
+        const response = await handlers['get-subjects']({ headers: new Map() }, mockContext);
+        assert.strictEqual(response.status, 200);
+        const body = JSON.parse(response.body);
+        assert.strictEqual(body.length, 4, 'Admin must see the full catalog');
+    } finally {
+        storageMocks.loadJson.mock.mockImplementation(async () => ({}));
+        stateStoreMocks.getEnrollmentsByUser.mock.mockImplementation(async () => []);
+        authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: [] }));
+    }
+});

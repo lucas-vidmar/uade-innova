@@ -194,7 +194,21 @@ export async function sendChatRating({ sessionId, messageId, subjectId, classId,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId, messageId, subjectId, classId, rating, comment: comment || '' })
     });
-    return res.json();
+    // #330: same hardening as sendChatFeedback — never throw a raw
+    // SyntaxError on a non-JSON body; surface an actionable Error instead.
+    let data = null;
+    try {
+        data = await res.json();
+    } catch {
+        throw new Error(`Error ${res.status}: no se pudo guardar tu calificación. Intentá de nuevo.`);
+    }
+    if (!res.ok) {
+        const message = data?.error || `Error ${res.status}: no se pudo guardar tu calificación. Intentá de nuevo.`;
+        const err = new Error(message);
+        err.status = res.status;
+        throw err;
+    }
+    return data;
 }
 
 export async function getSatAnalytics({ subjectId, classId, days }) {

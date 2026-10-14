@@ -55,6 +55,10 @@ app.http('save-profile', {
             const { getTableClient } = await import('../services/storage.js');
             const tableClient = getTableClient(tableName);
 
+            // Fresh stores (local Azurite, new envs) may not have the table
+            // yet — create idempotently before the first upsert (#329).
+            await tableClient.createTable().catch(() => {});
+
             // Upsert the data seamlessly handling initial creation or subsequent updates
             await tableClient.upsertEntity(entity, "Merge");
 
