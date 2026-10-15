@@ -189,3 +189,48 @@ test('kpi-export returns 403 for non-director outside Development', async () => 
     const res = await handlers['get-director-kpi-export'](getRequest('csv'), makeContext());
     assert.strictEqual(res.status, 403);
 });
+
+// #341: buildCsv/buildHtml threw on null entries, non-array dailyCost and
+// string costs (string concat has no .toFixed) -> outer 500. The export must
+// degrade to 200 for adversarial metric shapes in both formats.
+test('kpi-export returns 200 CSV with null/malformed metric entries (no 500)', async () => {
+    classesApiMocks.computeDirectorMetrics.mock.mockImplementation(async () => ({
+        ...structuredClone(EMPTY_METRICS),
+        costBySubject: [
+            null,
+            { subjectId: 's1', dailyCost: 'oops' },
+            { subjectId: '__proto__', subjectName: { nested: true }, dailyCost: [{ cost: '0.5' }, null] },
+        ],
+        wausBySubject: [null, 'oops'],
+        materialUploads: { byTeacher: [null, { teacherId: 't,1"x' }] },
+    }));
+    const res = await handlers['get-director-kpi-export'](getRequest('csv'), makeContext());
+    assert.strictEqual(res.status, 200);
+    assert.match(res.headers['Content-Type'], /text\/csv/);
+    assert.match(res.body, /seccion,metrica,valor/);
+});
+
+test('kpi-export returns 200 printable HTML with null/malformed metric entries (no 500)', async () => {
+    classesApiMocks.computeDirectorMetrics.mock.mockImplementation(async () => ({
+        ...structuredClone(EMPTY_METRICS),
+        costBySubject: [null, { subjectId: 's1', dailyCost: 42 }],
+        wausBySubject: null,
+        materialUploads: null,
+        budget: undefined,
+    }));
+    const res = await handlers['get-director-kpi-export'](getRequest('pdf'), makeContext());
+    assert.strictEqual(res.status, 200);
+    assert.match(res.headers['Content-Type'], /text\/html/);
+});
+
+test('kpi-export quotes CSV cells with commas/quotes and coerces string costs', async () => {
+    classesApiMocks.computeDirectorMetrics.mock.mockImplementation(async () => ({
+        ...structuredClone(EMPTY_METRICS),
+        costBySubject: [
+            { subjectId: 'arq', subjectName: 'Arq, "Plan 2026"', dailyCost: [{ cost: '0.001' }] },
+        ],
+    }));
+    const res = await handlers['get-director-kpi-export'](getRequest('csv'), makeContext());
+    assert.strictEqual(res.status, 200);
+    assert.match(res.body, /"Arq, ""Plan 2026""",0\.001000/);
+});
