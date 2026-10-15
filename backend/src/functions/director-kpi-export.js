@@ -8,6 +8,37 @@ import { CONFIG } from '../services/config.js';
 
 const DIRECTOR_ROLES = ['Director'];
 
+// #341: serialization guards. buildCsv/buildHtml run AFTER every data-source
+// fallback, so any throw here escapes as a 500 with zero prior logging.
+// Coerce defensively: skip null entries, accept only real arrays, coerce
+// costs with Number() (string costs concatenate instead of adding, leaving
+// a string without .toFixed), and quote CSV cells per RFC 4180.
+function toNum(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function csvCell(value) {
+  const s = String(value ?? '');
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function escHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function isRecord(value) {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
 function isAuthorized(request) {
   if (process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development') return true;
   if (!validateFrontDoorId(request)) return false;
@@ -16,69 +47,81 @@ function isAuthorized(request) {
 }
 
 function buildCsv(data) {
+  const d = isRecord(data) ? data : {};
   const lines = [];
 
   lines.push('seccion,metrica,valor');
-  lines.push(`General,Usuarios activos (hoy),${data.dau || 0}`);
-  lines.push(`General,Clases procesadas,${data.classesProcessed || 0}`);
-  lines.push(`General,Interacciones RAG,${data.ragInteractions || 0}`);
-  lines.push(`General,Adopcion global,${data.adoptionRate || 0}%`);
-  lines.push(`General,Costo por alumno activo,$${Number(data.costPerActiveStudent || 0).toFixed(4)}`);
+  lines.push(`General,Usuarios activos (hoy),${toNum(d.dau)}`);
+  lines.push(`General,Clases procesadas,${toNum(d.classesProcessed)}`);
+  lines.push(`General,Interacciones RAG,${toNum(d.ragInteractions)}`);
+  lines.push(`General,Adopcion global,${toNum(d.adoptionRate)}%`);
+  lines.push(`General,Costo por alumno activo,$${toNum(d.costPerActiveStudent).toFixed(4)}`);
   lines.push('');
 
+  const budget = isRecord(d.budget) ? d.budget : {};
   lines.push('seccion,metrica,valor');
-  lines.push('Budget,Presupuesto mensual,$' + Number(data.budget?.monthlyLimit || 0).toFixed(2));
-  lines.push('Budget,Gasto actual,$' + Number(data.budget?.currentSpend || 0).toFixed(2));
-  lines.push('Budget,Proyectado fin de mes,$' + Number(data.budget?.projectedEndOfMonth || 0).toFixed(2));
-  lines.push('Budget,Porcentaje usado,' + Number(data.budget?.percentUsed || 0).toFixed(1) + '%');
-  lines.push('Budget,Nivel de alerta,' + (data.budget?.warningLevel || 'none'));
+  lines.push('Budget,Presupuesto mensual,$' + toNum(budget.monthlyLimit).toFixed(2));
+  lines.push('Budget,Gasto actual,$' + toNum(budget.currentSpend).toFixed(2));
+  lines.push('Budget,Proyectado fin de mes,$' + toNum(budget.projectedEndOfMonth).toFixed(2));
+  lines.push('Budget,Porcentaje usado,' + toNum(budget.percentUsed).toFixed(1) + '%');
+  lines.push('Budget,Nivel de alerta,' + (budget.warningLevel || 'none'));
   lines.push('');
 
+  const early = isRecord(d.earlyAlertSummary) ? d.earlyAlertSummary : {};
   lines.push('seccion,metrica,valor');
-  lines.push('Alertas tempranas,Total en riesgo,' + (data.earlyAlertSummary?.totalStudentsAtRisk || 0));
-  lines.push('Alertas tempranas,Riesgo alto,' + (data.earlyAlertSummary?.highRiskCount || 0));
-  lines.push('Alertas tempranas,Riesgo medio,' + (data.earlyAlertSummary?.mediumRiskCount || 0));
-  lines.push('Alertas tempranas,Asistencia < 60%,' + (data.earlyAlertSummary?.attendanceBelow60Count || 0));
-  lines.push('Alertas tempranas,Asistencia 60-75%,' + (data.earlyAlertSummary?.attendance60To75Count || 0));
+  lines.push('Alertas tempranas,Total en riesgo,' + toNum(early.totalStudentsAtRisk));
+  lines.push('Alertas tempranas,Riesgo alto,' + toNum(early.highRiskCount));
+  lines.push('Alertas tempranas,Riesgo medio,' + toNum(early.mediumRiskCount));
+  lines.push('Alertas tempranas,Asistencia < 60%,' + toNum(early.attendanceBelow60Count));
+  lines.push('Alertas tempranas,Asistencia 60-75%,' + toNum(early.attendance60To75Count));
   lines.push('');
 
   lines.push('seccion,materia,costo_usd');
-  (data.costBySubject || []).forEach(s => {
-    const totalCost = (s.dailyCost || []).reduce((sum, d) => sum + (d.cost || 0), 0);
-    lines.push(`Costo por materia,${s.subjectName || s.subjectId},${totalCost.toFixed(6)}`);
-  });
+  for (const s of asArray(d.costBySubject)) {
+    if (!isRecord(s)) continue;
+    const costs = asArray(s.dailyCost);
+    const totalCost = costs.reduce((sum, entry) => sum + toNum(isRecord(entry) ? entry.cost : entry), 0);
+    lines.push(`Costo por materia,${csvCell(s.subjectName || s.subjectId)},${totalCost.toFixed(6)}`);
+  }
   lines.push('');
 
   lines.push('seccion,materia,usuarios_semana_actual');
-  (data.wausBySubject || []).forEach(s => {
-    lines.push(`WAUS por materia,${s.subjectName || s.subjectId},${s.currentWeek || 0}`);
-  });
+  for (const s of asArray(d.wausBySubject)) {
+    if (!isRecord(s)) continue;
+    lines.push(`WAUS por materia,${csvCell(s.subjectName || s.subjectId)},${toNum(s.currentWeek)}`);
+  }
   lines.push('');
 
   lines.push('seccion,docente,transcripciones,presentaciones,apuntes,bibliografia,total');
-  (data.materialUploads?.byTeacher || []).forEach(t => {
-    lines.push(`Carga de materiales,${t.teacherId},${t.transcripts || 0},${t.presentations || 0},${t.notes || 0},${t.bibliography || 0},${t.total || 0}`);
-  });
+  const byTeacher = asArray(isRecord(d.materialUploads) ? d.materialUploads.byTeacher : []);
+  for (const t of byTeacher) {
+    if (!isRecord(t)) continue;
+    lines.push(`Carga de materiales,${csvCell(t.teacherId)},${toNum(t.transcripts)},${toNum(t.presentations)},${toNum(t.notes)},${toNum(t.bibliography)},${toNum(t.total)}`);
+  }
 
   lines.push('');
-  lines.push(`cost_source,${data.costSource || 'token-based-fallback'}`);
+  lines.push(`cost_source,${csvCell(d.costSource || 'token-based-fallback')}`);
   lines.push(`generado_en,${new Date().toISOString()}`);
   return lines.join('\n');
 }
 
 function buildHtml(data) {
-  const t = (v) => String(v ?? '');
-  const budget = data.budget || {};
-  const earlyAlert = data.earlyAlertSummary || {};
-  const costRows = (data.costBySubject || []).map(s => {
-    const totalCost = (s.dailyCost || []).reduce((sum, d) => sum + (d.cost || 0), 0);
+  const d = isRecord(data) ? data : {};
+  const t = (v) => escHtml(v ?? '');
+  const num = (v, digits) => toNum(v).toFixed(digits);
+  const budget = isRecord(d.budget) ? d.budget : {};
+  const earlyAlert = isRecord(d.earlyAlertSummary) ? d.earlyAlertSummary : {};
+  const costRows = asArray(d.costBySubject).filter(isRecord).map(s => {
+    const costs = asArray(s.dailyCost);
+    const totalCost = costs.reduce((sum, entry) => sum + toNum(isRecord(entry) ? entry.cost : entry), 0);
     return `<tr><td>${t(s.subjectName || s.subjectId)}</td><td>$${totalCost.toFixed(6)}</td></tr>`;
   }).join('');
-  const wausRows = (data.wausBySubject || []).map(s =>
-    `<tr><td>${t(s.subjectName || s.subjectId)}</td><td>${s.currentWeek || 0}</td></tr>`
+  const wausRows = asArray(d.wausBySubject).filter(isRecord).map(s =>
+    `<tr><td>${t(s.subjectName || s.subjectId)}</td><td>${toNum(s.currentWeek)}</td></tr>`
   ).join('');
-  const materialRows = (data.materialUploads?.byTeacher || []).map(tm =>
-    `<tr><td>${t(tm.teacherId)}</td><td>${tm.transcripts || 0}</td><td>${tm.presentations || 0}</td><td>${tm.notes || 0}</td><td>${tm.bibliography || 0}</td><td>${tm.total || 0}</td></tr>`
+  const byTeacher = asArray(isRecord(d.materialUploads) ? d.materialUploads.byTeacher : []);
+  const materialRows = byTeacher.filter(isRecord).map(tm =>
+    `<tr><td>${t(tm.teacherId)}</td><td>${toNum(tm.transcripts)}</td><td>${toNum(tm.presentations)}</td><td>${toNum(tm.notes)}</td><td>${toNum(tm.bibliography)}</td><td>${toNum(tm.total)}</td></tr>`
   ).join('');
 
   return `<!DOCTYPE html>
@@ -105,20 +148,20 @@ function buildHtml(data) {
 
   <h2>M&eacute;tricas Generales</h2>
   <div class="kpi-grid">
-    <div class="kpi-item"><div class="kpi-value">${t(data.dau)}</div><div class="kpi-label">Usuarios activos (hoy)</div></div>
-    <div class="kpi-item"><div class="kpi-value">${t(data.classesProcessed)}</div><div class="kpi-label">Clases procesadas</div></div>
-    <div class="kpi-item"><div class="kpi-value">${t(data.ragInteractions)}</div><div class="kpi-label">Interacciones RAG</div></div>
-    <div class="kpi-item"><div class="kpi-value">${t(data.adoptionRate)}%</div><div class="kpi-label">Adopci&oacute;n global</div></div>
-    <div class="kpi-item"><div class="kpi-value">$${Number(data.costPerActiveStudent || 0).toFixed(4)}</div><div class="kpi-label">Costo por alumno activo</div></div>
+    <div class="kpi-item"><div class="kpi-value">${t(d.dau)}</div><div class="kpi-label">Usuarios activos (hoy)</div></div>
+    <div class="kpi-item"><div class="kpi-value">${t(d.classesProcessed)}</div><div class="kpi-label">Clases procesadas</div></div>
+    <div class="kpi-item"><div class="kpi-value">${t(d.ragInteractions)}</div><div class="kpi-label">Interacciones RAG</div></div>
+    <div class="kpi-item"><div class="kpi-value">${t(d.adoptionRate)}%</div><div class="kpi-label">Adopci&oacute;n global</div></div>
+    <div class="kpi-item"><div class="kpi-value">$${num(d.costPerActiveStudent, 4)}</div><div class="kpi-label">Costo por alumno activo</div></div>
   </div>
 
   <h2>Presupuesto</h2>
   <table><thead><tr><th>M&eacute;trica</th><th>Valor</th></tr></thead>
   <tbody>
-    <tr><td>Presupuesto mensual</td><td>$${Number(budget.monthlyLimit || 0).toFixed(2)}</td></tr>
-    <tr><td>Gasto actual</td><td>$${Number(budget.currentSpend || 0).toFixed(2)}</td></tr>
-    <tr><td>Proyectado fin de mes</td><td>$${Number(budget.projectedEndOfMonth || 0).toFixed(2)}</td></tr>
-    <tr><td>Porcentaje usado</td><td>${Number(budget.percentUsed || 0).toFixed(1)}%</td></tr>
+    <tr><td>Presupuesto mensual</td><td>$${num(budget.monthlyLimit, 2)}</td></tr>
+    <tr><td>Gasto actual</td><td>$${num(budget.currentSpend, 2)}</td></tr>
+    <tr><td>Proyectado fin de mes</td><td>$${num(budget.projectedEndOfMonth, 2)}</td></tr>
+    <tr><td>Porcentaje usado</td><td>${num(budget.percentUsed, 1)}%</td></tr>
   </tbody></table>
 
   <h2>Alertas Tempranas</h2>
@@ -216,11 +259,17 @@ app.http('get-director-kpi-export', {
         context.log.warn(`[KpiExport] Could not count classes: ${err.message}`);
       }
 
+      // #341: loadSubjects is module-private inside classes-api.js (not
+      // exported), so resolve it defensively instead of throwing a TypeError
+      // on every export. Falls back to the 60-student default when absent.
       let totalEnrolled = 0;
       try {
-        const { loadSubjects } = await import('./classes-api.js');
-        const allSubjects = (await loadSubjects()) || [];
-        totalEnrolled = allSubjects.reduce((sum, s) => sum + (s.enrolledCount || 60), 60);
+        const classesApi = await import('./classes-api.js');
+        const allSubjects = typeof classesApi.loadSubjects === 'function'
+          ? ((await classesApi.loadSubjects()) || [])
+          : [];
+        totalEnrolled = allSubjects.reduce((sum, s) => sum + (toNum(s?.enrolledCount, 60) || 60), 60);
+        if (totalEnrolled <= 0) totalEnrolled = 60;
       } catch (err) {
         context.log.warn(`[KpiExport] Could not load subjects: ${err.message}`);
         totalEnrolled = 60;
@@ -261,8 +310,16 @@ app.http('get-director-kpi-export', {
 
       const generatedAt = new Date().toISOString();
 
+      // #341: serialization is the last unguarded step — a malformed row must
+      // degrade to a minimal report, never to the 500 above.
       if (format === 'csv') {
-        const csv = buildCsv(data);
+        let csv;
+        try {
+          csv = buildCsv(data);
+        } catch (err) {
+          context.log.warn(`[KpiExport] CSV build failed, using minimal fallback: ${err.message}`);
+          csv = `seccion,metrica,valor\nGeneral,Usuarios activos (hoy),${toNum(data?.dau)}\ncost_source,${data?.costSource || 'token-based-fallback'}\ngenerado_en,${generatedAt}`;
+        }
         return {
           status: 200,
           headers: {
@@ -273,7 +330,13 @@ app.http('get-director-kpi-export', {
         };
       }
 
-      const html = buildHtml(data);
+      let html;
+      try {
+        html = buildHtml(data);
+      } catch (err) {
+        context.log.warn(`[KpiExport] HTML build failed, using minimal fallback: ${err.message}`);
+        html = `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>KPIs - Dashboard Directivo</title></head><body><h1>Dashboard Directivo — KPIs</h1><p>Generado: ${generatedAt}</p><p>Informe parcial: detalle no disponible.</p></body></html>`;
+      }
       return {
         status: 200,
         headers: {
