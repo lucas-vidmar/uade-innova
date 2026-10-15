@@ -1,0 +1,129 @@
+name: Pilot Telemetry (read-only)
+
+# Telemetría de solo lectura contra Azure para el cierre del piloto:
+# inventario de recursos, uso real desde Application Insights, consumo/costos
+# y estado de RBAC. NO despliega ni modifica nada. Se dispara a mano.
+#
+# Los resultados se suben como artefacto `pilot-telemetry` (JSON crudo).
+# Nunca imprime secretos: no toca app settings ni Key Vault secrets.
+
+on:
+  workflow_dispatch:
+    inputs:
+      resource_group:
+        description: Resource group a inspeccionar
+        required: false
+        default: RG_UADE_INNOVA_DEV
+      days:
+        description: Ventana de telemetría en días
+        required: false
+        default: "180"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  telemetry:
+    runs-on: ubuntu-latest
+    env:
+      RG: ${{ github.event.inputs.resource_group || 'RG_UADE_INNOVA_DEV' }}
+      DAYS: ${{ github.event.inputs.days || '180' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Identidad, suscripción y versión de az
+        run: |
+          mkdir -p out
+          az account show -o json > out/account.json 2> out/account.err || true
+          az --version | head -1 > out/az-version.txt
+
+      - name: Inventario de recursos del resource group
+        run: |
+          az resource list -g "$RG" -o json > out/resources.json 2> out/resources.err \
+            || echo '{"error":"resource list failed"}' > out/resources.json
+
+      - name: Application Insights (componente + consultas KQL)
+        run: |
+          APPID=$(az monitor app-insights component list -g "$RG" --query "[0].appId" -o tsv 2> out/ai-list.err || true)
+          echo "Application Insights appId: ${APPID:-<no encontrado>}"
+          if [ -z "$APPID" ]; then
+            echo '{"error":"no app insights component found in RG"}' > out/ai-error.json
+            exit 0
+          fi
+          az monitor app-insights component show --app "$APPID" \
+            --query "{name:name,appId:appId,retentionInDays:retentionInDays,workspaceResourceId:workspaceResourceId,ingestionMode:ingestionMode}" \
+            -o json > out/ai-component.json 2> out/ai-component.err || true
+          q() {
+            az monitor app-insights query --app "$APPID" --offset "${DAYS}d" \
+              --analytics-query "$2" -o json > "out/q-$1.json" 2> "out/q-$1.err" || true
+          }
+          q requests-by-name "requests | summarize total=count(), ok=countif(success==true), failed=countif(success==false) by name | order by total desc"
+          q requests-daily "requests | summarize requests=count(), failures=countif(success==false) by bin(timestamp, 1d) | order by timestamp asc"
+          q pageviews-daily "pageViews | summarize views=count(), users=dcount(user_Id) by bin(timestamp, 1d) | order by timestamp asc"
+          q pageviews-by-name "pageViews | summarize views=count(), users=dcount(user_Id) by name | order by views desc"
+          q custom-events "customEvents | summarize events=count(), users=dcount(user_Id) by name | order by events desc"
+          q users-daily "union pageViews, customEvents | summarize acciones=count(), usuarios=dcount(user_Id) by bin(timestamp, 1d) | order by timestamp asc"
+          q exceptions "exceptions | summarize count() by type, outerMessage | order by count_ desc"
+          q traces-severity "traces | summarize count() by severityLevel"
+          q latency-p95 "requests | summarize p50=percentile(duration,50), p95=percentile(duration,95), p99=percentile(duration,99) by name | order by p95 desc"
+
+      - name: Consumo y costos (Cost Management)
+        run: |
+          SUB=$(az account show --query id -o tsv 2>/dev/null || echo "")
+          if [ -z "$SUB" ]; then
+            echo '{"error":"no subscription resolved"}' > out/cost-error.json
+            exit 0
+          fi
+          az costmanagement query --type ActualCost --timeframe MonthToDate \
+            --scope "/subscriptions/$SUB" -o json > out/cost-mtd.json 2> out/cost-mtd.err || true
+          az costmanagement query --type ActualCost --timeframe TheLastMonth \
+            --scope "/subscriptions/$SUB" -o json > out/cost-lastmonth.json 2> out/cost-lastmonth.err || true
+          az consumption usage list --top 1 -o json > out/consumption-probe.json 2> out/consumption-probe.err || true
+
+      - name: RBAC y accesos del entorno
+        run: |
+          az role assignment list -g "$RG" --include-inherited -o json > out/role-assignments.json 2> out/role-assignments.err || true
+          az keyvault list -g "$RG" --query "[].{name:name,uri:properties.vaultUri}" -o json > out/keyvaults.json 2> out/keyvaults.err || true
+          az functionapp list -g "$RG" --query "[].{name:name,state:state,kind:kind}" -o json > out/functionapps.json 2> out/functionapps.err || true
+          az staticwebapp list -g "$RG" --query "[].{name:name,defaultHostname:defaultHostname}" -o json > out/staticwebapps.json 2> out/staticwebapps.err || true
+
+      - name: Resumen legible
+        run: |
+          {
+            echo "# Pilot Telemetry — resumen"
+            echo
+            echo "Resource group: $RG"
+            echo "Ventana: ${DAYS}d"
+            echo
+            echo "## Recursos"
+            echo "Total: $(jq 'length' out/resources.json 2>/dev/null || echo '?')"
+            jq -r '.[] | "- \(.type) :: \(.name)"' out/resources.json 2>/dev/null | sort || true
+            echo
+            echo "## Costos (MTD)"
+            jq -r '.properties.rows[]? | @tsv' out/cost-mtd.json 2>/dev/null | head -20 || true
+            echo
+            echo "## Errores registrados"
+            for f in out/*.err; do
+              [ -s "$f" ] && echo "--- $f" && head -3 "$f"
+            done
+            echo
+            echo "## Archivos generados"
+            ls -la out || true
+          } > out/SUMMARY.md
+          cat out/SUMMARY.md
+
+      - name: Publicar artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: pilot-telemetry
+          path: out/
+          if-no-files-found: warn
+          retention-days: 30
