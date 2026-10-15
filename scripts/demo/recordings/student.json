@@ -1,0 +1,152 @@
+{
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "cursor": {
+    "style": "default",
+    "size": 48
+  },
+  "chrome": {
+    "title": "UADE Innova — Dashboard Educativo"
+  },
+  "background": {
+    "padding": 48,
+    "gradient": [
+      "#00405C",
+      "#0A7EA4"
+    ]
+  },
+  "speed": 1.0,
+  "outputFormat": "mp4",
+  "waitForSelector": "#login-email",
+  "url": "${DEMO_BASE_URL}/#/login",
+  "steps": [
+    {
+      "action": "wait",
+      "ms": 2500
+    },
+    {
+      "action": "hover",
+      "selector": "#login-email"
+    },
+    {
+      "action": "type",
+      "selector": "#login-email",
+      "text": "${DEMO_STUDENT_EMAIL}",
+      "delay": 45
+    },
+    {
+      "action": "wait",
+      "ms": 300
+    },
+    {
+      "action": "type",
+      "selector": "#login-password",
+      "text": "${DEMO_STUDENT_PASSWORD}",
+      "delay": 45
+    },
+    {
+      "action": "wait",
+      "ms": 500
+    },
+    {
+      "action": "click",
+      "selector": "#login-submit"
+    },
+    {
+      "action": "wait",
+      "ms": 6000
+    },
+    {
+      "action": "screenshot",
+      "name": "student-dashboard"
+    },
+    {
+      "action": "wait",
+      "ms": 1500
+    },
+    {
+      "action": "scroll",
+      "selector": "#section-classes"
+    },
+    {
+      "action": "wait",
+      "ms": 1500
+    },
+    {
+      "action": "scroll",
+      "selector": "#section-tasks"
+    },
+    {
+      "action": "wait",
+      "ms": 1200
+    },
+    {
+      "action": "navigate",
+      "url": "${DEMO_BASE_URL}/#/student/dashboard"
+    },
+    {
+      "action": "wait",
+      "ms": 2500
+    },
+    {
+      "action": "click",
+      "selector": "#chat-widget-mount"
+    },
+    {
+      "action": "wait",
+      "ms": 1500
+    },
+    {
+      "action": "hover",
+      "selector": "#chat-input"
+    },
+    {
+      "action": "type",
+      "selector": "#chat-input",
+      "text": "¿Qué es un sistema de información gerencial?",
+      "delay": 40
+    },
+    {
+      "action": "click",
+      "selector": "#chat-send"
+    },
+    {
+      "action": "wait",
+      "ms": 12000
+    },
+    {
+      "action": "screenshot",
+      "name": "student-rag-answer"
+    },
+    {
+      "action": "navigate",
+      "url": "${DEMO_BASE_URL}/#/student/tasks"
+    },
+    {
+      "action": "wait",
+      "ms": 3000
+    },
+    {
+      "action": "screenshot",
+      "name": "student-tasks"
+    },
+    {
+      "action": "navigate",
+      "url": "${DEMO_BASE_URL}/#/student/calendar"
+    },
+    {
+      "action": "wait",
+      "ms": 3000
+    },
+    {
+      "action": "screenshot",
+      "name": "student-calendar"
+    },
+    {
+      "action": "wait",
+      "ms": 1500
+    }
+  ]
+}

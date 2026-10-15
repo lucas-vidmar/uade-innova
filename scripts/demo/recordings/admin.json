@@ -1,0 +1,110 @@
+{
+  "url": "${DEMO_BASE_URL}/#/login",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "cursor": {
+    "style": "default",
+    "size": 48
+  },
+  "chrome": {
+    "title": "UADE Innova — Dashboard Educativo"
+  },
+  "background": {
+    "padding": 48,
+    "gradient": [
+      "#00405C",
+      "#0A7EA4"
+    ]
+  },
+  "speed": 1.0,
+  "outputFormat": "mp4",
+  "waitForSelector": "#login-email",
+  "steps": [
+    {
+      "action": "wait",
+      "ms": 2500
+    },
+    {
+      "action": "hover",
+      "selector": "#login-email"
+    },
+    {
+      "action": "type",
+      "selector": "#login-email",
+      "text": "${DEMO_ADMIN_EMAIL}",
+      "delay": 45
+    },
+    {
+      "action": "wait",
+      "ms": 300
+    },
+    {
+      "action": "type",
+      "selector": "#login-password",
+      "text": "${DEMO_ADMIN_PASSWORD}",
+      "delay": 45
+    },
+    {
+      "action": "wait",
+      "ms": 500
+    },
+    {
+      "action": "click",
+      "selector": "#login-submit"
+    },
+    {
+      "action": "wait",
+      "ms": 6000
+    },
+    {
+      "action": "screenshot",
+      "name": "admin-dashboard"
+    },
+    {
+      "action": "wait",
+      "ms": 2000
+    },
+    {
+      "action": "navigate",
+      "url": "${DEMO_BASE_URL}/#/admin/users"
+    },
+    {
+      "action": "wait",
+      "ms": 3000
+    },
+    {
+      "action": "screenshot",
+      "name": "admin-users"
+    },
+    {
+      "action": "navigate",
+      "url": "${DEMO_BASE_URL}/#/admin/model-config"
+    },
+    {
+      "action": "wait",
+      "ms": 3000
+    },
+    {
+      "action": "screenshot",
+      "name": "admin-model-config"
+    },
+    {
+      "action": "navigate",
+      "url": "${DEMO_BASE_URL}/#/admin/compliance"
+    },
+    {
+      "action": "wait",
+      "ms": 3000
+    },
+    {
+      "action": "screenshot",
+      "name": "admin-compliance"
+    },
+    {
+      "action": "wait",
+      "ms": 1500
+    }
+  ]
+}
