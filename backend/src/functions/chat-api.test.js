@@ -125,6 +125,42 @@ test('chat-report-issue should persist report and create teacher alert', async (
     assert.strictEqual(alert.status, 'open');
 });
 
+test('chat-report-issue derives classId from the chat-log classIds array (UJ-39)', async () => {
+    resetState();
+    // The stored chat-log uses `classIds` (array) — see rag-query.js. Reading
+    // `classId`/`classes` left every student report with classId 'unknown'.
+    const chatBlobPath = 'student_1/arq-software-2026/msg-777.json';
+    storageState.chatLogs.set(chatBlobPath, {
+        id: 'msg-777',
+        question: '¿Qué es SAGA?',
+        answer: 'SAGA es un patrón de transacciones distribuidas.',
+        classIds: ['class-01'],
+    });
+    stateStoreMocks.upsertCorrection.mock.resetCalls();
+
+    principalMock = { userRoles: ['Alumno'], oid: 'student-1' };
+
+    const response = await handlers['chat-report-issue'](
+        {
+            json: async () => ({
+                messageId: 'msg-777',
+                subjectId: 'arq-software-2026',
+                issueDetail: 'La respuesta contradice el material de la Clase 1.',
+            }),
+        },
+        { log: () => {}, error: () => {}, warn: () => {} }
+    );
+
+    assert.strictEqual(response.status, 200);
+    const alert = storageState.alerts.get('arq-software-2026/ai-issue-msg-777.json');
+    assert.ok(alert);
+    assert.strictEqual(alert.classId, 'class-01');
+
+    const correctionArg = stateStoreMocks.upsertCorrection.mock.calls.at(-1)?.arguments?.[0];
+    assert.ok(correctionArg, 'upsertCorrection should be called');
+    assert.strictEqual(correctionArg.classId, 'class-01');
+});
+
 test('teacher-ai-feedback-alerts should require teacher or director role', async () => {
     resetState();
     principalMock = { userRoles: ['Alumno'], oid: 'student-2' };

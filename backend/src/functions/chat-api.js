@@ -362,7 +362,7 @@ app.http('chat-report-issue', {
                     blobFound = true;
                     resolvedQuestion = resolvedQuestion || log.question || '';
                     resolvedAnswer = resolvedAnswer || log.answer || '';
-                    resolvedClassId = log.classId || (Array.isArray(log.classes) ? log.classes[0] : '') || '';
+                    resolvedClassId = log.classId || (Array.isArray(log.classIds) ? log.classIds[0] : '') || (Array.isArray(log.classes) ? log.classes[0] : '') || '';
                     log.reportedIssue = {
                         reportedAt: now,
                         detail,
