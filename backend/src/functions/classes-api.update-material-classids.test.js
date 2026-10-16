@@ -26,6 +26,7 @@ const storageMocks = {
 
 const stateStoreMocks = {
     listClassesBySubject: mock.fn(async () => []),
+    upsertClassPublicationState: mock.fn(async () => true),
     listMaterialsBySubject: mock.fn(async () => []),
     listMaterialsByClass: mock.fn(async () => []),
     replaceClassesForSubject: mock.fn(async () => true),
@@ -37,6 +38,7 @@ const stateStoreMocks = {
     deleteMaterialsBySubject: mock.fn(async () => true),
     getEnrollment: mock.fn(async () => ({ status: 'active', role: 'student' })),
     getEnrollmentsByUser: mock.fn(async () => []),
+    getEnrollmentsBySubject: mock.fn(async () => []),
     listClassViewsByStudent: mock.fn(async () => []),
     deleteClassViewsBySubject: mock.fn(async () => true),
 };
