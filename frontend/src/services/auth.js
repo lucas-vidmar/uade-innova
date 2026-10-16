@@ -11,9 +11,27 @@ import { api } from './api.js';
 import { enrollments as enrollmentService } from './enrollments.js';
 import { safeSetItem, safeGetItem } from './local-storage.js';
 import { mergeSubjectsWithLocal, DEFAULT_SUBJECT } from './subjects.api.js';
+import { themeManager } from './theme.js';
 
 const AI_CONSENT_KEY = 'edu_ai_consent_accepted';
 const SESSION_TOKEN_KEY = 'edu_token';
+
+// Fix #361 (UJ-03): claves de UI guardadas por dispositivo, sin dueño. En un
+// equipo compartido sobreviven al cierre de sesión y la siguiente persona las
+// hereda (tema, preferencias del asistente, caché de consentimiento). Se
+// limpian al cerrar sesión; lo que corresponde al usuario se rehidrata desde su
+// perfil del servidor en el próximo ingreso.
+const DEVICE_SCOPED_KEYS = [
+    'uade_innova_theme',
+    'edu_bot_tone',
+    'edu_bot_length',
+    'edu_bot_include_sources',
+    'edu_ai_consent_accepted',
+    'edu_consent_accepted',
+    'edu_last_visit',
+    'uade.processing.tracked-jobs',
+    'uade.local.classes-by-subject',
+];
 
 /**
  * True when client-side mock identities are allowed (dev / preview only). The
@@ -358,6 +376,32 @@ export const auth = {
         sessionStorage.removeItem('edu_scope_subjects');
         sessionStorage.removeItem('edu_active_subject');
         sessionStorage.setItem('edu_logged_in', 'false');
+        // Fix #361 (UJ-03): tampoco debe quedar la UI del dispositivo para la
+        // siguiente persona del equipo compartido (tema, preferencias, cachés).
+        for (const key of DEVICE_SCOPED_KEYS) {
+            try { localStorage.removeItem(key); } catch (_) {}
+        }
+    },
+
+    /**
+     * Persiste el tema elegido en el perfil del usuario (UserProfiles) además de
+     * la caché local, para que viaje entre equipos y no dependa del dispositivo.
+     * Fix #361 (UJ-03).
+     * @param {string} theme 'light' | 'dark'
+     * @returns {Promise<boolean>} true si el servidor confirmó el guardado.
+     */
+    async saveThemePreference(theme) {
+        if (!theme) return false;
+        try {
+            sessionStorage.setItem('edu_theme', theme);
+        } catch (_) {}
+        try {
+            await api.saveProfile({ theme });
+            return true;
+        } catch (err) {
+            console.warn('[Auth] No se pudo persistir el tema en el perfil:', err?.message || err);
+            return false;
+        }
     },
 
     /**
@@ -600,7 +644,12 @@ export const auth = {
                 const accepted = profile.consentAccepted ? 'true' : 'false';
                 sessionStorage.setItem('edu_consent_accepted', accepted);
                 safeSetItem('edu_consent_accepted', accepted);
-                if (profile.theme) sessionStorage.setItem('edu_theme', profile.theme);
+                if (profile.theme) {
+                    sessionStorage.setItem('edu_theme', profile.theme);
+                    // Fix #361 (UJ-03): el tema del perfil pertenece a la identidad
+                    // activa y manda sobre lo que dejó la persona anterior del equipo.
+                    themeManager.applyTheme(profile.theme);
+                }
                 if (profile.language) sessionStorage.setItem('edu_lang', profile.language);
                 this.hydrateBotPreferences(profile);
             }

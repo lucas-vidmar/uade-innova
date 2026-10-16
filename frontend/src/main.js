@@ -11,6 +11,11 @@ import { processingNotifications } from './services/processing-notifications.js'
 
 // Init theme
 themeManager.init();
+// Fix #361 (UJ-03): el tema elegido por la persona se persiste en su perfil
+// (UserProfiles) para que viaje entre equipos; no queda solo en el dispositivo.
+themeManager.onChange = (theme) => {
+    auth.saveThemePreference(theme);
+};
 
 /* ── Page registry ───────────────────────────────────────── */
 const ROUTES = {
