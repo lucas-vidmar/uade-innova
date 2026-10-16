@@ -178,26 +178,34 @@ export async function dispatchClassSummaryNotification({ subjectId, classData, o
   return { success: !deadLetterWrites, retryAttempts, deadLetterWrites, dispatched: 1, recipientCount: recipientUserIds.length };
 }
 
-/**
- * #428 — Retirar la publicación retira también su aviso: con la clase en
- * borrador el alumnado ya no puede abrir el contenido, así que dejar el aviso
- * anunciaría algo que no existe. La constancia del retiro queda en el estado de
- * publicación de la clase y de sus derivados, no en el aviso.
- */
-export async function retractClassSummaryNotification(subjectId, classId) {
-  if (!subjectId || !classId) return { retracted: 0, success: false };
+export function summaryRetiredMessageForClass(classData) {
+  const classLabel = classData?.title || classData?.id || 'Clase';
+  return `El material de «${classLabel}» fue retirado por el docente y ya no está disponible para la unidad.`;
+}
 
-  const current = await listNotificationsBySubject(subjectId);
-  const next = current.filter((item) => item.id !== notificationIdForClass(subjectId, classId));
-  if (next.length === current.length) return { retracted: 0, success: true };
+// UJ-19: retirar una clase publicada también retira su aviso. Se reescribe el
+// mismo aviso para dejar de afirmar que está validada y notificar a la cohorte.
+export async function retractClassSummaryNotification({ subjectId, classData, origin = 'class-unpublish' }) {
+  if (!subjectId || !classData?.id) {
+    return { success: false, retryAttempts: 0, deadLetterWrites: 0, dispatched: 0, recipientCount: 0 };
+  }
 
-  const result = await saveJsonWithRetry(CONTAINER_NOTIFICATIONS, `${subjectId}.json`, next);
-  return {
-    retracted: 1,
-    success: !result.deadLetterWritten && !result.dlWriteError,
-    retryAttempts: result.retryAttempts,
-    deadLetterWrites: result.deadLetterWritten ? 1 : 0,
-  };
+  const classId = String(classData.id);
+  const recipientUserIds = await resolveEnrolledStudentIds(subjectId, classData);
+  const { retryAttempts, deadLetterWrites } = await upsertNotificationForSubject(subjectId, {
+    id: notificationIdForClass(subjectId, classId),
+    type: 'summary',
+    title: 'Material retirado',
+    message: summaryRetiredMessageForClass(classData),
+    createdAt: new Date().toISOString(),
+    unread: true,
+    targetHash: `#/student/class/${classId}`,
+    subjectId,
+    recipientUserIds,
+    origin,
+  });
+
+  return { success: !deadLetterWrites, retryAttempts, deadLetterWrites, dispatched: 1, recipientCount: recipientUserIds.length };
 }
 
 export async function markNotificationReadForUser(subjectId, notificationId, userId) {

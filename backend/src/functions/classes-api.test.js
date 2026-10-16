@@ -90,6 +90,11 @@ mock.module('../services/storage.js', { namedExports: storageMocks });
 mock.module('../services/state-store.js', {
     namedExports: stateStoreMocks
 });
+const notificationStoreMocks = {
+    retractClassSummaryNotification: mock.fn(async () => ({ success: true, dispatched: 1, recipientCount: 0, retryAttempts: 0, deadLetterWrites: 0 })),
+    dispatchClassSummaryNotification: mock.fn(async () => ({ success: true, dispatched: 1, recipientCount: 0, retryAttempts: 0, deadLetterWrites: 0 })),
+};
+mock.module('../services/notification-store.js', { namedExports: notificationStoreMocks });
 mock.module('../services/upload-quota.js', {
     namedExports: {
         releaseUpload: mock.fn(async () => {}),
@@ -1198,12 +1203,13 @@ test('#428: save-class-summary con `pendiente_de_aval` no publica y no avisa al 
     }
 });
 
-test('#428: pasar a borrador retira la clase, deja constancia de quién y cuándo, y retira el aviso', async () => {
+test('#428: pasar a borrador retira la clase, deja constancia de quién y cuándo, y avisa a la cohorte', async () => {
     authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'], userDetails: 'prof01@uade.edu.ar' }));
     const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
     const restoreLoadJson = storageMocks.loadJson.mock.mockImplementation;
     storageMocks.saveJson.mock.resetCalls();
+    notificationStoreMocks.retractClassSummaryNotification.mock.resetCalls();
     storageMocks.loadJson.mock.mockImplementation(async (container, blob) => {
         if (container === 'classes-config' && blob === 'arq-software-2026.json') {
             return [{ id: 'class-01', title: 'Clase 1', summaryReady: true, publicationState: 'publicado' }];
@@ -1247,19 +1253,17 @@ test('#428: pasar a borrador retira la clase, deja constancia de quién y cuánd
         assert.strictEqual(classWrite.arguments[2][0].publicationState, 'borrador');
         assert.strictEqual(classWrite.arguments[2][0].summaryReady, false);
 
-        // El aviso deja de anunciar algo que el alumnado ya no puede abrir.
-        const notificationWrite = storageMocks.saveJson.mock.calls.find((call) => call.arguments[0] === 'notifications');
-        assert.ok(notificationWrite, 'debe reescribir los avisos de la materia');
-        assert.strictEqual(
-            notificationWrite.arguments[2].some((item) => item.id === 'notif-auto-summary-arq-software-2026-class-01'),
-            false,
-            'el aviso del resumen retirado ya no está'
-        );
+        const retirement = notificationStoreMocks.retractClassSummaryNotification.mock.calls.at(-1)?.arguments[0];
+        assert.ok(retirement, 'el retiro debe reemplazar el aviso de publicación por uno de retiro');
+        assert.strictEqual(retirement.subjectId, 'arq-software-2026');
+        assert.strictEqual(retirement.classData.id, 'class-01');
+        assert.strictEqual(retirement.classData.publicationState, 'borrador');
     } finally {
         storageMocks.loadJson.mock.mockImplementation(restoreLoadJson);
         process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
     }
 });
+
 
 test('#428: no se puede publicar una clase sin resumen ni pasar un estado inventado', async () => {
     authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'], userDetails: 'prof01@uade.edu.ar' }));
@@ -1358,6 +1362,71 @@ test('#428: guardar la lista de clases no puede publicar ni retirar por su cuent
         process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
     }
 });
+
+// UJ-19: retirar una clase publicada tiene que retirar también su aviso de
+// publicación (el que dice "ya tiene resumen validado"). Antes, "Guardar
+// Borrador" sacaba la clase de la unidad pero el aviso seguía afirmando que el
+// resumen estaba validado y no llegaba ningún aviso de retiro a la cohorte.
+test('UJ-19: save-class-summary retira el aviso de la clase al despublicarla', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+    const restoreLoadJson = storageMocks.loadJson.mock.mockImplementation;
+    storageMocks.saveJson.mock.resetCalls();
+    notificationStoreMocks.retractClassSummaryNotification.mock.resetCalls();
+    storageMocks.loadJson.mock.mockImplementation(async (container, blob) => {
+        if (container === 'classes-config' && blob === 'arq-software-2026.json') {
+            return [{ id: 'class-01', title: 'Clase 1', summaryReady: true }];
+        }
+        if (container === 'class-summaries') return { classId: 'class-01', summary: 'previo', validated: true };
+        return {};
+    });
+
+    try {
+        const res = await handlers['save-class-summary'](
+            { params: { classId: 'class-01' }, json: async () => ({ subjectId: 'arq-software-2026', summary: 'borrador', publicationState: 'borrador' }) },
+            { log: makeMockLog(), error: mock.fn() }
+        );
+        assert.strictEqual(res.status, 200);
+        assert.strictEqual(notificationStoreMocks.retractClassSummaryNotification.mock.callCount(), 1, 'debe retirar el aviso de la clase');
+        const arg = notificationStoreMocks.retractClassSummaryNotification.mock.calls[0].arguments[0];
+        assert.strictEqual(arg.subjectId, 'arq-software-2026');
+        assert.strictEqual(arg.classData.id, 'class-01');
+    } finally {
+        storageMocks.loadJson.mock.mockImplementation(restoreLoadJson);
+        process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+    }
+});
+
+test('UJ-19: save-class-summary no retira el aviso si la clase sigue publicada', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+    const restoreLoadJson = storageMocks.loadJson.mock.mockImplementation;
+    storageMocks.saveJson.mock.resetCalls();
+    notificationStoreMocks.retractClassSummaryNotification.mock.resetCalls();
+    storageMocks.loadJson.mock.mockImplementation(async (container, blob) => {
+        if (container === 'classes-config' && blob === 'arq-software-2026.json') {
+            return [{ id: 'class-01', title: 'Clase 1', summaryReady: true }];
+        }
+        if (container === 'class-summaries') return { classId: 'class-01', summary: 'previo', validated: true };
+        return {};
+    });
+
+    try {
+        const res = await handlers['save-class-summary'](
+            { params: { classId: 'class-01' }, json: async () => ({ subjectId: 'arq-software-2026', summary: 'sin cambios de estado', validated: true }) },
+            { log: makeMockLog(), error: mock.fn() }
+        );
+        assert.strictEqual(res.status, 200);
+        assert.strictEqual(notificationStoreMocks.retractClassSummaryNotification.mock.callCount(), 0, 'no debe retirar el aviso de una clase publicada');
+    } finally {
+        storageMocks.loadJson.mock.mockImplementation(restoreLoadJson);
+        process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+    }
+});
+
+
 test('#343: get-subjects fails closed for anonymous callers (401, no catalog leak)', async (t) => {
     authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => null);
     const restoreLoadJson = storageMocks.loadJson.mock.mockImplementation;

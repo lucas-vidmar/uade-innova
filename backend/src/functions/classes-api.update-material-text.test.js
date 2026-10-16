@@ -47,6 +47,7 @@ const stateStoreMocks = {
     deleteClassesBySubject: mock.fn(async () => true),
     deleteMaterialsBySubject: mock.fn(async () => true),
     getEnrollmentsByUser: mock.fn(async () => []),
+    getEnrollmentsBySubject: mock.fn(async () => []),
     getEnrollment: mock.fn(async () => null),
     listClassViewsByStudent: mock.fn(async () => []),
     deleteClassViewsBySubject: mock.fn(async () => true),

@@ -153,7 +153,11 @@ export async function applyClassPublicationChange({
             change,
         });
     } else {
-        notification = await retractClassSummaryNotification(subjectId, classId);
+        notification = await retractClassSummaryNotification({
+            subjectId,
+            classData: { ...classData, publicationState: state },
+            origin,
+        });
     }
 
     return {

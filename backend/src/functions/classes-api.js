@@ -1799,9 +1799,8 @@ app.http('save-class-summary', {
             // #328: scoped write.
             await saveJson(CONTAINER_SUMMARIES, `${subjectId}/${classId}.json`, updatedData);
 
-            // #425 + #428: el resumen, sus derivados y la clase comparten un único
-            // estado de publicación, así que el servidor los mantiene juntos con un
-            // solo camino de escritura (aclara quién, cuándo y por qué).
+            // #425 + #428: todos los escritores de estado convergen en el mismo servicio.
+            // Al retirar, se sustituye el aviso de publicación por uno de retiro.
             let publication = null;
             if (requestedState) {
                 publication = await applyClassPublicationChange({
