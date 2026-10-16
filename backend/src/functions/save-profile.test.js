@@ -172,3 +172,44 @@ test('save-profile writes under the session identity, not pilot-user (#329)', as
         authUtilsMocks.parseClientPrincipal.mock.mockImplementation(defaultPrincipal);
     }
 });
+
+// ── #375: constancia de la entrada guiada ─────────────────────────
+test('save-profile persists the onboarding record flattened (#375)', async () => {
+    const ctx = makeContext();
+    const req = makeRequest({
+        onboarding: { status: 'completed', at: '2026-10-16T12:34:56.000Z', step: 3 },
+    });
+    const res = await handlers['save-profile'](req, ctx);
+    assert.strictEqual(res.status, 200);
+    const entity = profileStore['Profiles:alu-001'];
+    assert.strictEqual(entity.onboardingStatus, 'completed');
+    assert.strictEqual(entity.onboardingAt, '2026-10-16T12:34:56.000Z');
+    assert.strictEqual(entity.onboardingStep, 3);
+});
+
+test('save-profile keeps a dismissed record distinct from completed (#375)', async () => {
+    const ctx = makeContext();
+    const req = makeRequest({ onboarding: { status: 'dismissed', at: '2026-10-16T09:00:00.000Z', step: 0 } });
+    const res = await handlers['save-profile'](req, ctx);
+    assert.strictEqual(res.status, 200);
+    const entity = profileStore['Profiles:alu-001'];
+    assert.strictEqual(entity.onboardingStatus, 'dismissed');
+    assert.strictEqual(entity.onboardingStep, 0);
+});
+
+test('save-profile drops an invalid onboarding status, preserving the stored one (#375)', async () => {
+    profileStore['Profiles:alu-001'] = {
+        partitionKey: 'Profiles',
+        rowKey: 'alu-001',
+        onboardingStatus: 'completed',
+        onboardingAt: '2026-10-16T08:00:00.000Z',
+    };
+    const ctx = makeContext();
+    const req = makeRequest({ onboarding: { status: 'terminado', at: 'no-es-fecha' } });
+    const res = await handlers['save-profile'](req, ctx);
+    assert.strictEqual(res.status, 200);
+    const entity = profileStore['Profiles:alu-001'];
+    assert.strictEqual(entity.onboardingStatus, 'completed', 'invalid status must not overwrite');
+    assert.strictEqual(entity.onboardingAt, '2026-10-16T08:00:00.000Z');
+});
+

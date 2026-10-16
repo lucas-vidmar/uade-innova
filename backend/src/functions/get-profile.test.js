@@ -181,3 +181,46 @@ test('#434: un pedido sin identidad no lee el perfil guardado de la fila compart
   assert.equal(body.role, 'student');
   entityToReturn = null;
 });
+
+// ── #375: constancia de la entrada guiada ─────────────────────────
+test('get-profile returns null onboarding fields when there is no record (#375)', async () => {
+  entityToReturn = null;
+  const context = makeContext();
+  context.user = { userId: 'alu-001', role: 'Alumno', email: 'alu@uade.edu.ar', scope: undefined, principal: null };
+  const res = await handlers['get-profile']({}, context);
+  const body = res.jsonBody;
+  assert.equal(body.onboardingStatus, null);
+  assert.equal(body.onboardingAt, null);
+  assert.equal(body.onboardingStep, null);
+});
+
+test('get-profile returns the persisted onboarding record with its date (#375)', async () => {
+  entityToReturn = {
+    theme: 'light',
+    language: 'es',
+    consentAccepted: 'true',
+    onboardingStatus: 'completed',
+    onboardingAt: '2026-10-16T12:34:56.000Z',
+    onboardingStep: 3,
+  };
+  const context = makeContext();
+  context.user = { userId: 'alu-001', role: 'Alumno', email: 'alu@uade.edu.ar', scope: undefined, principal: null };
+  const res = await handlers['get-profile']({}, context);
+  const body = res.jsonBody;
+  assert.equal(body.onboardingStatus, 'completed');
+  assert.equal(body.onboardingAt, '2026-10-16T12:34:56.000Z');
+  assert.equal(body.onboardingStep, 3);
+  entityToReturn = null;
+});
+
+test('get-profile normalizes an invalid onboarding status to null (#375)', async () => {
+  entityToReturn = { onboardingStatus: 'terminado', onboardingAt: 'ayer', onboardingStep: 'tres' };
+  const context = makeContext();
+  context.user = { userId: 'alu-001', role: 'Alumno', email: 'alu@uade.edu.ar', scope: undefined, principal: null };
+  const res = await handlers['get-profile']({}, context);
+  const body = res.jsonBody;
+  assert.equal(body.onboardingStatus, null);
+  assert.equal(body.onboardingAt, null);
+  assert.equal(body.onboardingStep, null);
+  entityToReturn = null;
+});

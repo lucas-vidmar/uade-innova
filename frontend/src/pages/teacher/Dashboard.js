@@ -6,7 +6,7 @@ import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
 import { toast } from '../../components/Toast.js';
 import { showPromptDialog, showConfirmDialog } from '../../components/Dialog.js';
-import { OnboardingEngine, isOnboardingCompleted } from '../../services/onboarding.js';
+import { OnboardingEngine, shouldAutoStartOnboarding } from '../../services/onboarding.js';
 import { TEACHER_ONBOARDING_STEPS } from './OnboardingSteps.js';
 import { renderSubjectWeights } from './SubjectWeights.js';
 
@@ -463,7 +463,8 @@ export async function renderTeacherDashboard(container) {
 
   /* ── Onboarding trigger (first login) ───────────────── */
   requestAnimationFrame(() => {
-    if (!isOnboardingCompleted('teacher')) {
+    // #375: abrir sola solo la primera vez; omitirla no la vuelve a disparar.
+    if (shouldAutoStartOnboarding('teacher')) {
       const engine = new OnboardingEngine({ role: 'teacher', steps: TEACHER_ONBOARDING_STEPS });
       engine.start();
     }
