@@ -42,6 +42,16 @@ export async function renderTeacherUpload(container) {
   let isMasterSource = false;
   const activeSubjectIdSafe = activeSubjectId;
 
+  // #390: reparto del lote por encuentro. Cuando hay más de un encuentro destino,
+  // cada pieza espera a que quien enseña le asigne el suyo antes de subirse; el
+  // destino dejó de ser "todas las clases seleccionadas" y pasó a ser un dato por
+  // archivo. Con un solo encuentro no hay nada que repartir y la carga sigue directa.
+  let piezasDelLote = [];             // [{ key, fileObj, rawFile, destinoId, error }]
+  let subiendoLote = false;
+  const destinosDelLote = new Map();  // key → classId
+
+  const claveDePieza = (rawFile) => `${rawFile.name}|${rawFile.size}|${rawFile.lastModified || 0}`;
+
   // Stored-summary cache for the AI-validation preview (#333): classId ->
   // { status: 'loading' | 'ready' | 'error', text: string }. Fetched once per
   // class so the preview shows the real stored summary, never a placeholder.
@@ -161,6 +171,10 @@ export async function renderTeacherUpload(container) {
                 }
               </span>
             </div>
+            ${selectedClassIds.length > 1 ? `
+            <div class="selection-hint" style="font-size:var(--font-size-xs);color:var(--color-text-secondary);margin-top:var(--space-2)">
+              Con varios encuentros seleccionados el reparto se hace <strong>por pieza</strong>: cada archivo elige su encuentro antes de subirse.
+            </div>` : ''}
           </div>
         ` : ''}
       </div>
@@ -176,6 +190,43 @@ export async function renderTeacherUpload(container) {
         </div>
 
         <div id="upload-zone-wrapper"></div>
+
+        ${piezasDelLote.length > 0 ? `
+        <div class="lote-reparto card" id="lote-reparto" style="margin-top:var(--space-5);padding:var(--space-4);border:1px solid var(--color-border);border-radius:8px">
+          <h3 class="h5" style="margin-bottom:var(--space-2)">📦 Reparto del lote por encuentro</h3>
+          <p style="color:var(--color-text-secondary);font-size:var(--font-size-sm);margin-bottom:var(--space-3)">
+            Ninguna pieza se subió todavía. Elegí a qué encuentro va cada una y recién después confirmá el lote.
+          </p>
+          <table style="width:100%;border-collapse:collapse">
+            <thead>
+              <tr style="text-align:left;font-size:var(--font-size-xs);color:var(--color-text-muted)">
+                <th style="padding:4px 0">Archivo</th>
+                <th style="padding:4px 0">Encuentro destino</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${piezasDelLote.map((pieza, i) => `
+                <tr data-lote-index="${i}">
+                  <td style="padding:6px 0">${escapeHtml(pieza.fileObj.filename)}</td>
+                  <td style="padding:6px 0">
+                    <select class="form-input lote-destino" data-lote-index="${i}" aria-label="Encuentro destino de ${escapeHtml(pieza.fileObj.filename)}">
+                      <option value="">— Sin asignar —</option>
+                      ${selectedClasses.map(c => `<option value="${escapeHtml(c.id)}" ${pieza.destinoId === c.id ? 'selected' : ''}>${escapeHtml(c.title)}</option>`).join('')}
+                    </select>
+                    ${pieza.error ? `<div class="lote-error" role="alert" style="color:var(--color-danger,#b3261e);font-size:var(--font-size-xs);margin-top:4px">${escapeHtml(pieza.error)}</div>` : ''}
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <div style="display:flex;gap:var(--space-3);margin-top:var(--space-4)">
+            <button class="btn btn-primary" id="lote-confirmar" type="button" ${subiendoLote ? 'disabled' : ''}>
+              ${subiendoLote ? 'Subiendo el lote…' : `Confirmar y subir el lote (${piezasDelLote.length})`}
+            </button>
+            <button class="btn btn-ghost" id="lote-descartar" type="button" ${subiendoLote ? 'disabled' : ''}>Descartar el reparto</button>
+          </div>
+        </div>
+        ` : ''}
 
         ${activeTab === 'bibliography' ? `
         <div style="margin-top:var(--space-4);padding:var(--space-4);background:var(--surface-2);border-radius:var(--radius-md)">
@@ -223,6 +274,31 @@ export async function renderTeacherUpload(container) {
         }
         render(); // Re-render to update the info strip
       });
+    });
+
+    // #390: reparto del lote por encuentro.
+    container.querySelectorAll('.lote-destino').forEach(select => {
+      select.addEventListener('change', (e) => {
+        const idx = Number(e.target.dataset.loteIndex);
+        const pieza = piezasDelLote[idx];
+        if (!pieza) return;
+        pieza.destinoId = e.target.value || null;
+        destinosDelLote.set(pieza.key, pieza.destinoId);
+        pieza.error = null;
+        const error = e.target.closest('td')?.querySelector('.lote-error');
+        if (error) error.remove();
+      });
+    });
+
+    container.querySelector('#lote-descartar')?.addEventListener('click', () => {
+      if (subiendoLote) return;
+      piezasDelLote = [];
+      destinosDelLote.clear();
+      render();
+    });
+
+    container.querySelector('#lote-confirmar')?.addEventListener('click', () => {
+      confirmarLote();
     });
 
     container.querySelectorAll('.tab-btn').forEach(btn => {
@@ -277,13 +353,117 @@ export async function renderTeacherUpload(container) {
     });
   };
 
+  // #390: subir el lote confirmado. Cada pieza viaja con su propio encuentro: se
+  // abandonó el envío de todas las clases seleccionadas en cada archivo, que dejaba
+  // el material del encuentro 6 respondiendo en el encuentro 5.
+  const confirmarLote = async () => {
+    if (subiendoLote) return;
+
+    const sinDestino = piezasDelLote.filter(pieza => !pieza.destinoId);
+    if (sinDestino.length > 0) {
+      piezasDelLote.forEach(pieza => {
+        pieza.error = pieza.destinoId ? null : 'Falta elegir el encuentro de esta pieza.';
+      });
+      render();
+      toast('error', 'Reparto incompleto', `Quedaron ${sinDestino.length} pieza(s) sin encuentro. Asigná cada una antes de confirmar.`);
+      return;
+    }
+
+    subiendoLote = true;
+    render();
+
+    const fallidas = [];
+    let subidas = 0;
+
+    for (const pieza of piezasDelLote) {
+      const destinoId = pieza.destinoId;
+      const formData = new FormData();
+      formData.append('file', pieza.rawFile);
+      formData.append('subjectId', activeSubjectIdSafe);
+      formData.append('materialType', activeTab);
+      if (isMasterSource) formData.append('materialPriority', 'primary');
+      formData.append('classIds', destinoId);   // una sola pieza → un solo encuentro
+
+      try {
+        const response = await api.ingestMaterial(formData);
+        subidas += 1;
+
+        const cls = classes.find(c => c.id === destinoId);
+        if (cls) {
+          if (!Array.isArray(cls.materials)) cls.materials = [];
+          cls.materials.push({
+            ...pieza.fileObj,
+            status: response?.status || 'processing',
+            id: response.materialId,
+            classIds: [destinoId],
+            uploadedAt: new Date().toISOString(),
+          });
+        }
+
+        if (response?.materialId) {
+          processingNotifications.trackJob({
+            materialId: response.materialId,
+            subjectId: activeSubjectIdSafe,
+            classIds: [destinoId],
+            filename: pieza.fileObj.filename,
+          });
+        }
+      } catch (error) {
+        const motivo = error?.message ? error.message.replace(/\s*\.\s*$/, '') : 'error de red';
+        fallidas.push({
+          ...pieza,
+          error: `No se pudo subir: ${motivo}. Volvé a intentar.`,
+        });
+      }
+    }
+
+    // Las que fallaron se quedan a la vista con su motivo y su destino, listas para
+    // reintentar; ninguna se pierde en silencio (#386).
+    piezasDelLote = fallidas;
+    subiendoLote = false;
+    render();
+
+    if (fallidas.length === 0) {
+      toast('success', 'Lote encolado', `Se subieron ${subidas} pieza(s), cada una en el encuentro que le asignaste.`);
+    } else {
+      toast('error', 'Parte del lote no se subió', `${fallidas.length} pieza(s) quedaron sin subir. Revisá el motivo y reintentá.`);
+    }
+  };
+
   const mountUploadZone = (selectedClass) => {
     const wrapper = document.getElementById('upload-zone-wrapper');
     if (!wrapper) return;
-    const existingFiles = selectedClass?.materials.filter(m => m.type === activeTab) || [];
+    // #390 (detalle): con varios encuentros seleccionados la lista de "ya cargados"
+    // era la de la clase primaria y no representaba a las demás. Ahora es la unión,
+    // sin repetir el mismo material.
+    const clasesDelDestino = selectedClassIds.length > 0
+      ? classes.filter(c => selectedClassIds.includes(c.id))
+      : (selectedClass ? [selectedClass] : []);
+    const vistos = new Set();
+    const existingFiles = [];
+    for (const cls of clasesDelDestino) {
+      for (const material of (cls.materials || [])) {
+        if (material.type !== activeTab) continue;
+        const id = material.id || material.materialId;
+        if (id && vistos.has(id)) continue;
+        if (id) vistos.add(id);
+        existingFiles.push(material);
+      }
+    }
+
     const uploader = createFileUpload({
       type: activeTab,
       existingFiles,
+      // Con más de un encuentro destino la pieza no se sube al elegirla: espera en el
+      // reparto del lote hasta que se le asigne su encuentro y se confirme (#390).
+      stageFile: selectedClassIds.length > 1
+        ? (fileObj, rawFile) => {
+            const key = claveDePieza(rawFile);
+            if (piezasDelLote.some(pieza => pieza.key === key)) return;
+            piezasDelLote.push({ key, fileObj, rawFile, destinoId: null, error: null });
+            render();
+          }
+        : null,
       onUpload: async (fileObj, rawFile, updateProgress) => {
         if (selectedClassIds.length === 0) {
           toast('error', 'Error', 'Debe seleccionar al menos una clase antes de subir el material.');
