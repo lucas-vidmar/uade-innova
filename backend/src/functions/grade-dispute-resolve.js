@@ -30,13 +30,19 @@ app.http('grade-disputes-list', {
         if (!subjectId) {
             return { status: 400, body: JSON.stringify({ error: 'Falta subjectId' }) };
         }
+        const statusFilter = request.query.get('status');
         const disputes = (await loadJson(CONTAINER_DISPUTES, `${subjectId}.json`)) || [];
-        const open = Array.isArray(disputes) ? disputes.filter((d) => d.status === 'open') : [];
-        context.log(`[GradeDisputes] list subjectId=${subjectId} open=${open.length}`);
+        // Default keeps the historic behaviour (open only); `status=all` or a
+        // specific status lets direction/compliance replay a closed dispute so
+        // the resolution stays traceable after it is settled (UJ-41).
+        const listed = Array.isArray(disputes)
+            ? disputes.filter((d) => (!statusFilter ? d.status === 'open' : statusFilter === 'all' ? true : d.status === statusFilter))
+            : [];
+        context.log(`[GradeDisputes] list subjectId=${subjectId} status=${statusFilter || 'open'} n=${listed.length}`);
         return {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(open),
+            body: JSON.stringify(listed),
         };
     })),
 });
@@ -55,10 +61,13 @@ app.http('grade-dispute-resolve', {
         }
         try {
             const body = await request.json();
-            const { disputeId, subjectId, decision, newGrade } = body || {};
+            const { disputeId, subjectId, decision, newGrade, reason, resolutionNote } = body || {};
             if (!disputeId || !subjectId || !['resolved', 'rejected'].includes(decision)) {
                 return { status: 400, body: JSON.stringify({ error: 'Faltan campos requeridos: disputeId, subjectId, decision (resolved|rejected)' }) };
             }
+
+            const { userId, sanitizedId } = getAuthenticatedUser(request);
+            const note = String(reason ?? resolutionNote ?? '').trim();
 
             const disputes = (await loadJson(CONTAINER_DISPUTES, `${subjectId}.json`)) || [];
             const idx = Array.isArray(disputes) ? disputes.findIndex((d) => d.disputeId === disputeId) : -1;
@@ -72,6 +81,10 @@ app.http('grade-dispute-resolve', {
                 ...dispute,
                 status: decision,
                 resolution: decision,
+                // Traceability: keep the written rationale and WHO decided so a
+                // non-participant can reconstruct why the grade changed or held.
+                resolutionNote: note,
+                resolvedBy: sanitizedId || userId || null,
                 resolvedAt: now,
                 resolvedGrade: decision === 'resolved' && newGrade != null ? Number(newGrade) : undefined,
             };
@@ -97,7 +110,7 @@ app.http('grade-dispute-resolve', {
                 id: `dispute-resolution-${disputeId}`,
                 type: 'grade',
                 title: 'Resultado de tu disputa',
-                message: `Tu disputa de ${dispute.taskTitle || dispute.taskId} fue ${outcome}`,
+                message: `Tu disputa de ${dispute.taskTitle || dispute.taskId} fue ${outcome}${note ? `: ${note}` : ''}`,
                 createdAt: now,
                 unread: true,
                 targetHash: '#/student/tasks',

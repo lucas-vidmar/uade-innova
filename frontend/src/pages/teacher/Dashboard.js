@@ -56,7 +56,7 @@ export async function renderTeacherDashboard(container) {
 
   const activeSubjectName = user.subjects?.find(s => s.id === activeSubjectId)?.name || 'Materia';
 
-  let classes = [], deadlines = [], corrections = [], disputes = [];
+  let classes = [], deadlines = [], corrections = [], disputes = [], closedDisputes = [];
   try {
     [classes = [], deadlines = [], corrections = [], disputes = []] = await Promise.all([
       api.getClasses(activeSubjectId),
@@ -64,6 +64,10 @@ export async function renderTeacherDashboard(container) {
       api.getCorrectionsPending(activeSubjectId, undefined, 'all').catch(() => []),
       api.getGradeDisputes(activeSubjectId).catch(() => []),
     ]);
+    // Full history (open + closed) so a settled dispute stays traceable: who
+    // resolved it and with what written rationale (UJ-41).
+    closedDisputes = (await api.getGradeDisputes(activeSubjectId, 'all').catch(() => []))
+      .filter(d => d.status !== 'open');
   } catch {
     classes = classes || [];
     deadlines = deadlines || [];
@@ -244,7 +248,27 @@ export async function renderTeacherDashboard(container) {
       </div>
     </div>
 
-    <div class="section-title" style="margin-top:var(--space-10)"><h2>${icon('activity')} Progreso de Alumnos</h2><div class="line"></div></div>
+    ${(closedDisputes || []).length > 0 ? `
+    <div class="section-title" style="margin-top:var(--space-10)"><h2>${icon('alert')} Resoluciones de disputas</h2><div class="line"></div></div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Disputas resueltas o rechazadas</span>
+        <span class="badge badge-neutral">${closedDisputes.length}</span>
+      </div>
+      <div class="class-list" id="dashboard-closed-disputes-list">
+        ${closedDisputes.map((item) => `
+          <div class="class-list-item" style="align-items:flex-start" data-closed-dispute-id="${escapeHtml(item.disputeId)}">
+            <div class="class-list-date">${icon('alert')}</div>
+            <div class="class-list-info">
+              <div class="class-list-title">${escapeHtml(item.taskTitle || item.taskId)} — ${escapeHtml(item.studentName || item.studentId)} <span class="badge ${item.status === 'resolved' ? 'badge-success' : 'badge-error'}">${item.status === 'resolved' ? 'Resuelta' : 'Rechazada'}</span></div>
+              <div class="class-list-topics">${escapeHtml(item.resolutionNote || (item.status === 'resolved' ? 'Resuelta a favor (sin motivo registrado).' : 'Rechazada (sin motivo registrado).'))}</div>
+              <div class="class-list-files">Nota: ${item.originalGrade != null ? item.originalGrade : '—'}${item.resolvedGrade != null ? ` → ${item.resolvedGrade}` : ''} · Resolvió: ${escapeHtml(item.resolvedBy || 'sin registro')} · ${item.resolvedAt ? (() => { const d = new Date(item.resolvedAt); return isNaN(d.getTime()) ? '---' : d.toLocaleDateString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); })() : '---'}</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+    ` : ''}
     <div class="card" id="student-progress-section">
       <div style="padding:var(--space-4);text-align:center;color:var(--color-text-secondary);font-size:var(--text-sm)" class="animate-pulse">Cargando progreso de alumnos...</div>
     </div>
@@ -422,17 +446,14 @@ export async function renderTeacherDashboard(container) {
     });
   });
   container.querySelectorAll('.dispute-reject-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
+    btn.addEventListener('click', (e) => {
       e.stopPropagation();
+      // Route through the modal so every decision records a written rationale
+      // (UJ-41): resolveGradeDispute now carries `reason`.
       const disputeId = btn.getAttribute('data-dispute-id');
-      if (!confirm('¿Rechazar esta disputa? Se notificará al alumno.')) return;
-      try {
-        await api.resolveGradeDispute({ disputeId, subjectId: activeSubjectId, decision: 'rejected' });
-        toast('success', 'Disputa rechazada', 'Se notificó al alumno el resultado.');
-        renderTeacherDashboard(container);
-      } catch (err) {
-        toast('error', 'Error', err.message || 'No se pudo rechazar la disputa.');
-      }
+      const dispute = (disputes || []).find(d => d.disputeId === disputeId);
+      if (!dispute) return;
+      showDisputeResolveModal(activeSubjectId, dispute, container);
     });
   });
 
@@ -818,6 +839,11 @@ function showDisputeResolveModal(subjectId, dispute, container) {
           <label class="form-label">Nueva nota (si se resuelve a favor)</label>
           <input type="number" class="form-input" id="dispute-new-grade" min="0" max="10" step="0.1" value="${dispute.originalGrade != null ? dispute.originalGrade : 0}" />
         </div>
+        <div class="form-group">
+          <label class="form-label">Motivo de la decisión (queda registrado y se notifica al alumno)</label>
+          <textarea class="form-input" id="dispute-resolution-note" style="min-height:80px;resize:vertical;" placeholder="Ej: el ejercicio 3 sigue sin cumplir el criterio X del material de la Clase 1."></textarea>
+          <p id="dispute-resolution-error" style="display:none;margin-top:6px;color:var(--color-error);font-size:13px;"></p>
+        </div>
       </div>
       <div class="modal-footer" style="display:flex;gap:var(--space-2);justify-content:flex-end">
         <button type="button" class="btn btn-ghost modal-close-btn">Cancelar</button>
@@ -831,10 +857,24 @@ function showDisputeResolveModal(subjectId, dispute, container) {
   overlay.querySelectorAll('.modal-close-btn').forEach(el => el.addEventListener('click', cleanup));
   overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(); });
 
+  const readNote = () => {
+    const note = (overlay.querySelector('#dispute-resolution-note')?.value || '').trim();
+    const errorEl = overlay.querySelector('#dispute-resolution-error');
+    if (note.length < 10) {
+      if (errorEl) { errorEl.textContent = 'Escribí un motivo de al menos 10 caracteres.'; errorEl.style.display = 'block'; }
+      overlay.querySelector('#dispute-resolution-note')?.focus();
+      return null;
+    }
+    if (errorEl) errorEl.style.display = 'none';
+    return note;
+  };
+
   overlay.querySelector('#dispute-modal-reject').addEventListener('click', async () => {
+    const reason = readNote();
+    if (!reason) return;
     if (!confirm('¿Rechazar esta disputa? Se notificará al alumno.')) return;
     try {
-      await api.resolveGradeDispute({ disputeId: dispute.disputeId, subjectId, decision: 'rejected' });
+      await api.resolveGradeDispute({ disputeId: dispute.disputeId, subjectId, decision: 'rejected', reason });
       cleanup();
       toast('success', 'Disputa rechazada', 'Se notificó al alumno el resultado.');
       renderTeacherDashboard(container);
@@ -849,9 +889,11 @@ function showDisputeResolveModal(subjectId, dispute, container) {
       toast('error', 'Nota inválida', 'Ingresá una nota entre 0 y 10.');
       return;
     }
+    const reason = readNote();
+    if (!reason) return;
     if (!confirm(`¿Resolver a favor con nota ${newGrade}? Se notificará al alumno.`)) return;
     try {
-      await api.resolveGradeDispute({ disputeId: dispute.disputeId, subjectId, decision: 'resolved', newGrade });
+      await api.resolveGradeDispute({ disputeId: dispute.disputeId, subjectId, decision: 'resolved', newGrade, reason });
       cleanup();
       toast('success', 'Disputa resuelta', 'Se notificó al alumno el resultado.');
       renderTeacherDashboard(container);

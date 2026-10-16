@@ -129,9 +129,10 @@ export async function submitGradeDispute({ taskId, reason, taskTitle, studentNam
     return res.json();
 }
 
-export async function getGradeDisputes(subjectId) {
+export async function getGradeDisputes(subjectId, status) {
     if (!subjectId) return [];
-    const res = await fetchWithTimeout(`${BASE_URL}/grade-disputes?subjectId=${encodeURIComponent(subjectId)}`, { timeout: 4000 });
+    const query = status ? `&status=${encodeURIComponent(status)}` : '';
+    const res = await fetchWithTimeout(`${BASE_URL}/grade-disputes?subjectId=${encodeURIComponent(subjectId)}${query}`, { timeout: 4000 });
     if (!res.ok) {
         let message = `Error ${res.status}: no se pudieron cargar las disputas`;
         try { const err = await res.json(); if (err?.error) message = err.error; } catch {}
@@ -141,7 +142,7 @@ export async function getGradeDisputes(subjectId) {
     return Array.isArray(json) ? json : [];
 }
 
-export async function resolveGradeDispute({ disputeId, subjectId, decision, newGrade }) {
+export async function resolveGradeDispute({ disputeId, subjectId, decision, newGrade, reason }) {
     const res = await apiFetch(`${BASE_URL}/grade-dispute/resolve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -150,6 +151,7 @@ export async function resolveGradeDispute({ disputeId, subjectId, decision, newG
             subjectId,
             decision,
             newGrade: newGrade != null ? Number(newGrade) : undefined,
+            reason: reason != null ? String(reason).trim() : undefined,
         }),
     });
     if (!res.ok) {
