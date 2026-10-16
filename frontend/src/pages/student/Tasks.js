@@ -33,15 +33,6 @@ export async function renderStudentTasks(container) {
     }
     const classes = await api.getClasses(activeSubjectId).catch(() => []);
 
-    // Sort logic: Score = (weight / 10) + (10 / (Math.max(1, daysUntil)))
-    // Higher score = more prioritized
-    const calculatePriority = (t) => {
-        const daysUntil = Math.max(0, Math.ceil((new Date(t.dueDate) - new Date()) / 86400000));
-        const proximity = 10 / (daysUntil + 1);
-        const weightFactor = t.weight / 5;
-        return proximity + weightFactor;
-    };
-
     const deadlineItems = (deadlines || [])
         .filter(d => d.subjectId === activeSubjectId && d.status !== 'completed')
         .map(d => ({
@@ -60,10 +51,18 @@ export async function renderStudentTasks(container) {
             status: 'pending',
             classIds: Array.isArray(d.classIds) && d.classIds.length > 0 ? d.classIds : (d.classId ? [d.classId] : []),
         }));
+    // #355 (UJ-33): la prioridad deja de ser un orden oculto. Se conserva el
+    // puntaje que ya ordenaba la lista (proximidad del vencimiento + peso) y se
+    // calcula una sola vez, junto con los datos que la pantalla necesita para
+    // explicarlo: el criterio aplicado, el puesto de cada entrega y el motivo
+    // de ese puesto (compuesto con el peso y la fecha que ya existen).
     const allItems = [...tasks, ...deadlineItems];
     const pending = allItems
         .filter(t => t.status === 'pending')
-        .sort((a, b) => calculatePriority(b) - calculatePriority(a));
+        .map((item, index) => ({ item, index, priority: describePriority(item) }))
+        .sort((a, b) => (b.priority.score - a.priority.score) || (a.index - b.index))
+        .map((entry, index) => ({ ...entry.item, priority: { ...entry.priority, rank: index + 1 } }));
+    const priorityCriteria = buildPriorityCriteria(pending);
 
     const completed = tasks
         .filter(t => t.status === 'completed')
@@ -98,14 +97,17 @@ export async function renderStudentTasks(container) {
     <div class="section-title"><h2>⏳ Pendientes</h2><div class="line"></div></div>
     ${pending.length === 0 ? `<div class="card" style="margin-bottom:var(--space-5)"><div class="empty-state" style="padding:32px"><span class="empty-state-icon">🎉</span><p>¡No tenés tareas pendientes!</p></div></div>` : `
     <div class="card" style="margin-bottom:var(--space-8)">
+      <p id="priority-criteria" style="margin:0;padding:var(--space-4) var(--space-4) 0;font-size:13px;color:var(--color-text-secondary);line-height:1.5;">🎯 ${escapeHtml(priorityCriteria)}</p>
       <div class="table-wrap">
         <table class="data-table">
           <thead>
             <tr>
-                <th>Prioridad</th>
+                <th>Puesto</th>
                 <th>Tarea</th>
                 <th>Peso</th>
                 <th>Vencimiento</th>
+                <th>Urgencia</th>
+                <th>Por qué este puesto</th>
                 <th>Estado</th>
             </tr>
           </thead>
@@ -166,6 +168,53 @@ function renderLoadError(container, err, onRetry) {
   }
 }
 
+// #355 (UJ-33): criterio de orden explícito.
+// La prioridad de una entrega combina, como antes, su peso con la cercanía de
+// su vencimiento: `proximidad = 10 / (días que faltan + 1)` + `peso / 5`. Una
+// entrega sin fecha de vencimiento válida no puede aportar cercanía, así que se
+// ordena sólo por peso; cuando eso pasa, la pantalla lo declara.
+const MS_PER_DAY = 86400000;
+
+function describePriority(t) {
+  const weight = Number.isFinite(Number(t?.weight)) ? Number(t.weight) : 0;
+  const due = t?.dueDate ? new Date(t.dueDate) : null;
+  const hasDueDate = !!due && !Number.isNaN(due.getTime());
+  const daysUntil = hasDueDate ? Math.ceil((due - new Date()) / MS_PER_DAY) : null;
+  const proximity = hasDueDate ? 10 / (Math.max(0, daysUntil) + 1) : 0;
+  return {
+    score: proximity + weight / 5,
+    weight,
+    hasDueDate,
+    daysUntil,
+    isOverdue: hasDueDate && daysUntil < 0,
+    motive: buildPriorityMotive({ weight, hasDueDate, daysUntil }),
+  };
+}
+
+function buildPriorityMotive({ weight, hasDueDate, daysUntil }) {
+  const parts = ['pesa ' + weight + '%'];
+  if (!hasDueDate) {
+    parts.push('no tiene fecha de vencimiento, así que se ordena sólo por peso');
+  } else if (daysUntil < 0) {
+    const days = Math.abs(daysUntil);
+    parts.push('venció hace ' + days + (days === 1 ? ' día' : ' días'));
+  } else if (daysUntil === 0) {
+    parts.push('vence hoy');
+  } else {
+    parts.push('vence en ' + daysUntil + (daysUntil === 1 ? ' día' : ' días'));
+  }
+  return parts.join(' y ');
+}
+
+function buildPriorityCriteria(items) {
+  const base = 'Criterio de orden: prioridad = peso de la entrega + cercanía de su vencimiento. '
+    + 'El puesto 1 es la entrega más prioritaria.';
+  const sinFecha = (items || []).filter(t => t.priority && t.priority.hasDueDate === false).length;
+  if (sinFecha === 0) return base;
+  return base + ' ' + sinFecha + (sinFecha === 1 ? ' entrega no tiene' : ' entregas no tienen')
+    + ' fecha de vencimiento: se ordena' + (sinFecha === 1 ? '' : 'n') + ' sólo por peso.';
+}
+
 function buildRelatedClassesHtml(t, classes) {
   const related = (classes || []).filter(c => (t.classIds || []).includes(c.id));
   if (related.length === 0) return '';
@@ -174,18 +223,22 @@ function buildRelatedClassesHtml(t, classes) {
 }
 
 function buildPendingRow(t, classes) {
-  const daysUntil = Math.ceil((new Date(t.dueDate) - new Date()) / 86400000);
-  const isOverdue = new Date(t.dueDate) < new Date();
-  const urgency = isOverdue ? { label: '🔴 Vencida', badge: 'badge-error' }
-      : daysUntil <= 3 ? { label: '🔴 Alta', badge: 'badge-error' }
-          : daysUntil <= 7 ? { label: '🟡 Media', badge: 'badge-warning' }
-              : { label: '🔵 Normal', badge: 'badge-info' };
+  const priority = t.priority || {};
+  const daysUntil = priority.hasDueDate ? priority.daysUntil : null;
+  const urgency = !priority.hasDueDate ? { label: '⚪ Sin fecha', badge: 'badge-neutral' }
+      : priority.isOverdue ? { label: '🔴 Vencida', badge: 'badge-error' }
+          : daysUntil <= 3 ? { label: '🔴 Alta', badge: 'badge-error' }
+              : daysUntil <= 7 ? { label: '🟡 Media', badge: 'badge-warning' }
+                  : { label: '🔵 Normal', badge: 'badge-info' };
   const weightLabel = t.weight >= 20 ? 'badge-primary' : 'badge-neutral';
   const relatedHtml = buildRelatedClassesHtml(t, classes);
+  const dueLabel = priority.hasDueDate
+    ? new Date(t.dueDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })
+    : 'Sin fecha';
   const detailBtn = (t.classIds || []).length > 0
     ? '<button class="btn btn-ghost btn-sm task-detail-btn" data-task-id="' + escapeHtml(t.id) + '" title="Ver detalle y materiales relacionados" style="font-size:11px;color:var(--color-primary-light);margin-top:4px;padding:2px 8px;">Ver detalle</button>'
     : '';
-  return '<tr><td><span class="badge ' + urgency.badge + '">' + urgency.label + '</span></td><td><strong>' + t.title + '</strong>' + relatedHtml + detailBtn + '</td><td><span class="badge ' + weightLabel + '">' + t.weight + '%</span></td><td>' + new Date(t.dueDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }) + '</td><td><span class="badge badge-warning">⏳ Pendiente</span></td></tr>';
+  return '<tr><td class="priority-rank-cell"><strong>' + (priority.rank || '—') + '</strong></td><td><strong>' + t.title + '</strong>' + relatedHtml + detailBtn + '</td><td><span class="badge ' + weightLabel + '">' + t.weight + '%</span></td><td>' + dueLabel + '</td><td><span class="badge ' + urgency.badge + '">' + urgency.label + '</span></td><td class="priority-motive-cell" style="font-size:13px;color:var(--color-text-secondary)">' + escapeHtml(priority.motive || '') + '</td><td><span class="badge badge-warning">⏳ Pendiente</span></td></tr>';
 }
 
 function buildCompletedRow(t, classes) {
