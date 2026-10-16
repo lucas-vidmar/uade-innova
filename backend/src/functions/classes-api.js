@@ -1703,6 +1703,23 @@ app.http('save-class-summary', {
             // #328: scoped write.
             await saveJson(CONTAINER_SUMMARIES, `${subjectId}/${classId}.json`, updatedData);
 
+            // #425: el aval del resumen y la publicación de la clase son el mismo
+            // hecho, así que el servidor los mantiene juntos. Sin esto, "Guardar
+            // Borrador" dejaba la clase visible para la unidad (summaryReady seguía
+            // en true) y "Aprobar y Publicar" desde el modal de material no publicaba
+            // (validated pasaba a true pero summaryReady no). Sólo se escribe la clase
+            // cuando el flag cambia, para no pisar cambios concurrentes de la lista.
+            const desiredPublished = body.validated === true;
+            const classes = await loadJson(CONTAINER_CLASSES, `${subjectId}.json`);
+            if (Array.isArray(classes)) {
+                const idx = classes.findIndex((cls) => String(cls?.id) === String(classId));
+                if (idx >= 0 && (classes[idx].summaryReady === true) !== desiredPublished) {
+                    const next = [...classes];
+                    next[idx] = { ...next[idx], summaryReady: desiredPublished };
+                    await saveJson(CONTAINER_CLASSES, `${subjectId}.json`, next);
+                }
+            }
+
             return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updatedData) };
         } catch (err) {
             return { status: 500, body: JSON.stringify({ error: `Error guardando resumen: ${err.message}` }) };

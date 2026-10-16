@@ -1073,7 +1073,97 @@ test('#328: save-class-summary writes to the scoped path and requires subjectId'
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
 });
 
-test('#343: get-subjects fails closed for anonymous callers (401, no catalog leak)', async () => {
+// #425: el aval del resumen y la publicación de la clase tienen que ser el mismo
+// hecho. Antes, guardar un borrador dejaba la clase visible para la unidad y
+// aprobar desde el modal de material no publicaba.
+test('#425: save-class-summary retira la clase cuando el resumen deja de estar validado', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+    const restoreLoadJson = storageMocks.loadJson.mock.mockImplementation;
+    storageMocks.saveJson.mock.resetCalls();
+    storageMocks.loadJson.mock.mockImplementation(async (container, blob) => {
+        if (container === 'classes-config' && blob === 'arq-software-2026.json') {
+            return [{ id: 'class-01', title: 'Clase 1', summaryReady: true }];
+        }
+        if (container === 'class-summaries') return { classId: 'class-01', summary: 'previo', validated: true };
+        return {};
+    });
+
+    try {
+        const res = await handlers['save-class-summary'](
+            { params: { classId: 'class-01' }, json: async () => ({ subjectId: 'arq-software-2026', summary: 'borrador', validated: false }) },
+            { log: makeMockLog(), error: mock.fn() }
+        );
+        assert.strictEqual(res.status, 200);
+        const classWrite = storageMocks.saveJson.mock.calls.find(
+            (call) => call.arguments[0] === 'classes-config' && call.arguments[1] === 'arq-software-2026.json'
+        );
+        assert.ok(classWrite, 'debe reescribir la lista de clases');
+        assert.strictEqual(classWrite.arguments[2][0].summaryReady, false, 'la clase debe dejar de estar publicada');
+    } finally {
+        storageMocks.loadJson.mock.mockImplementation(restoreLoadJson);
+        process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+    }
+});
+
+test('#425: save-class-summary publica la clase cuando el resumen se valida', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+    const restoreLoadJson = storageMocks.loadJson.mock.mockImplementation;
+    storageMocks.saveJson.mock.resetCalls();
+    storageMocks.loadJson.mock.mockImplementation(async (container, blob) => {
+        if (container === 'classes-config' && blob === 'arq-software-2026.json') {
+            return [{ id: 'class-01', title: 'Clase 1', summaryReady: false }];
+        }
+        return {};
+    });
+
+    try {
+        const res = await handlers['save-class-summary'](
+            { params: { classId: 'class-01' }, json: async () => ({ subjectId: 'arq-software-2026', summary: 'listo', validated: true }) },
+            { log: makeMockLog(), error: mock.fn() }
+        );
+        assert.strictEqual(res.status, 200);
+        const classWrite = storageMocks.saveJson.mock.calls.find(
+            (call) => call.arguments[0] === 'classes-config' && call.arguments[1] === 'arq-software-2026.json'
+        );
+        assert.ok(classWrite, 'debe reescribir la lista de clases');
+        assert.strictEqual(classWrite.arguments[2][0].summaryReady, true, 'la clase debe quedar publicada');
+    } finally {
+        storageMocks.loadJson.mock.mockImplementation(restoreLoadJson);
+        process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+    }
+});
+
+test('#425: save-class-summary no reescribe la lista de clases si el estado de publicación no cambia', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+    const restoreLoadJson = storageMocks.loadJson.mock.mockImplementation;
+    storageMocks.saveJson.mock.resetCalls();
+    storageMocks.loadJson.mock.mockImplementation(async (container, blob) => {
+        if (container === 'classes-config' && blob === 'arq-software-2026.json') {
+            return [{ id: 'class-01', title: 'Clase 1', summaryReady: true }];
+        }
+        return {};
+    });
+
+    try {
+        const res = await handlers['save-class-summary'](
+            { params: { classId: 'class-01' }, json: async () => ({ subjectId: 'arq-software-2026', summary: 'sin cambios de estado', validated: true }) },
+            { log: makeMockLog(), error: mock.fn() }
+        );
+        assert.strictEqual(res.status, 200);
+        const classWrite = storageMocks.saveJson.mock.calls.find((call) => call.arguments[0] === 'classes-config');
+        assert.strictEqual(classWrite, undefined, 'no debe reescribir la clase sin cambios');
+    } finally {
+        storageMocks.loadJson.mock.mockImplementation(restoreLoadJson);
+        process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+    }
+});
+test('#343: get-subjects fails closed for anonymous callers (401, no catalog leak)', async (t) => {
     authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => null);
     const restoreLoadJson = storageMocks.loadJson.mock.mockImplementation;
     storageMocks.loadJson.mock.mockImplementation(async () => ([
