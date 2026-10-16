@@ -98,15 +98,25 @@ export async function renderSavedConversationsModal({ subjectId, onLoad }) {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const conversationId = btn.dataset.id;
-        if (!confirm('¿Eliminar esta conversación guardada?')) return;
+        const item = btn.closest('.saved-conversation-item');
+        const title = (item?.querySelector('div')?.innerText || '').trim();
+        const ok = confirm(
+          `¿Eliminar esta conversación guardada?\n\nSe borra el hilo completo, con todas sus preguntas y respuestas` +
+          (title ? `:\n"${title.slice(0, 120)}"` : '.') +
+          `\n\nEsta acción no se puede deshacer.`
+        );
+        if (!ok) return;
         btn.textContent = '...';
         btn.disabled = true;
         try {
-          await api.deleteConversation(conversationId, subjectId);
-          const item = btn.closest('.saved-conversation-item');
+          // Borra el hilo entero (turnos + conversación guardada), no sólo la
+          // fila de la conversación: si no, el hilo reaparece en el historial.
+          await api.deleteChatSession(conversationId, subjectId);
           if (item) item.style.display = 'none';
           toast('success', 'Eliminada', 'La conversación fue eliminada.');
         } catch (err) {
+          btn.textContent = 'Eliminar';
+          btn.disabled = false;
           toast('error', 'Error', err?.message || 'No se pudo eliminar.');
         }
       });

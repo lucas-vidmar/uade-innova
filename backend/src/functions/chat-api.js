@@ -1,7 +1,7 @@
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { withAuth } from '../middleware/with-auth.js';
 import { validateFrontDoorId, parseClientPrincipal, getAuthenticatedUser } from '../services/auth-utils.js';
-import { getEnrollment, upsertCorrection, listCorrections, getCorrection, getConversation, listConversationsByUser, RATINGS_TABLE } from '../services/state-store.js';
+import { getEnrollment, upsertCorrection, listCorrections, getCorrection, getConversation, listConversationsByUser, deleteConversation, RATINGS_TABLE } from '../services/state-store.js';
 import { CONFIG } from '../services/config.js';
 import { v4 as uuidv4 } from 'uuid';
 /**
@@ -144,7 +144,13 @@ app.http('get-chat-history', {
 });
 
 
-// ── DELETE /api/chat-history?subjectId={id} ──────────────────────────
+// ── DELETE /api/chat-history?subjectId={id}[&sessionId={id}] ──────────
+// El listado de "Chats recientes" se arma con los blobs de chat-logs (un blob
+// por turno), no con la tabla Conversations. Borrar sólo la fila de
+// Conversations dejaba el hilo reaparecer en el listado y accesible por
+// enlace directo, así que el borrado de un hilo tiene que alcanzar a las dos
+// representaciones: los blobs de sus turnos y su fila de Conversations.
+// Sin `sessionId` se mantiene el borrado completo del historial.
 app.http('delete-chat-history', {
     methods: ['DELETE'],
     authLevel: 'anonymous',
@@ -152,6 +158,7 @@ app.http('delete-chat-history', {
     handler: withCorrelation(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         const subjectId = request.query.get('subjectId');
+        const sessionId = request.query.get('sessionId');
         const { userId, sanitizedId } = getAuthenticatedUser(request);
 
         if (!subjectId) return { status: 400, body: 'Falta subjectId' };
@@ -175,12 +182,43 @@ app.http('delete-chat-history', {
         try {
             const prefix = `${sanitizedId}/${subjectId}/`;
             const blobNames = await listBlobs(CONTAINER_CHAT, prefix);
-            
-            for (const name of blobNames) {
-                await deleteBlob(CONTAINER_CHAT, name);
+
+            let deletedBlobs = 0;
+            let deletedConversations = 0;
+
+            if (sessionId) {
+                for (const name of blobNames) {
+                    const log = await loadJson(CONTAINER_CHAT, name);
+                    const blobSessionId = log?.sessionId || log?.id || null;
+                    if (blobSessionId !== sessionId) continue;
+                    await deleteBlob(CONTAINER_CHAT, name);
+                    deletedBlobs += 1;
+                }
+                const conversationDeleted = await deleteConversation(userId, sessionId).catch(() => false);
+                deletedConversations = conversationDeleted ? 1 : 0;
+                context.log(`[chat-history] Hilo ${sessionId} borrado (blobs=${deletedBlobs}, conversaciones=${deletedConversations}, user=${sanitizedId}, subject=${subjectId})`);
+            } else {
+                for (const name of blobNames) {
+                    await deleteBlob(CONTAINER_CHAT, name);
+                    deletedBlobs += 1;
+                }
+                try {
+                    const conversations = await listConversationsByUser(userId, subjectId);
+                    for (const conversation of conversations || []) {
+                        if (!conversation?.conversationId) continue;
+                        if (await deleteConversation(userId, conversation.conversationId)) deletedConversations += 1;
+                    }
+                } catch (convErr) {
+                    context.warn?.(`[chat-history] No se pudieron borrar las conversaciones guardadas: ${convErr?.message || convErr}`);
+                }
+                context.log(`[chat-history] Historial completo borrado (blobs=${deletedBlobs}, conversaciones=${deletedConversations}, user=${sanitizedId}, subject=${subjectId})`);
             }
 
-            return { status: 200, body: JSON.stringify({ success: true, count: blobNames.length }) };
+            return {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ success: true, count: deletedBlobs, conversationsDeleted: deletedConversations, sessionId: sessionId || null }),
+            };
         } catch (err) {
             context.error('Error eliminando historial:', err);
             return { status: 500, body: 'Error interno' };

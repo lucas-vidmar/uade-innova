@@ -22,7 +22,7 @@ import {
 } from './classes.api.js';
 import {
     ragQuery, ragQueryStream, globalSearch,
-    getChatHistory, clearChatHistory, sendChatFeedback,
+    getChatHistory, clearChatHistory, deleteChatSession, sendChatFeedback,
     sendChatRating, getSatAnalytics, reportChatIssue,
     reportMissingInfo, reportMissingKeyword,
     saveConversation, listConversations, getConversation, deleteConversation
@@ -104,7 +104,7 @@ export const api = {
     getLocalClassViews, setLocalClassView, trackClassView, getClassViews,
 
     ragQuery, ragQueryStream, globalSearch,
-    getChatHistory, clearChatHistory, sendChatFeedback,
+    getChatHistory, clearChatHistory, deleteChatSession, sendChatFeedback,
     sendChatRating, getSatAnalytics, reportChatIssue, reportMissingInfo, reportMissingKeyword,
     saveConversation, listConversations, getConversation, deleteConversation,
 

@@ -437,8 +437,21 @@ export async function renderStudentDashboard(container) {
           e.stopPropagation();
           const sessionId = btn.dataset.deleteSessionId;
           if (!sessionId) return;
+          const item = btn.closest('[data-chat-session-id]');
+          const title = (item?.querySelector('.chat-history-title')?.innerText || '').trim();
+          const confirmado = window.confirm(
+            `¿Eliminar esta conversación?\n\nSe borra el hilo completo, con todas sus preguntas y respuestas` +
+            (title ? `:\n"${title.slice(0, 120)}"` : '.') +
+            `\n\nEsta acción no se puede deshacer.`
+          );
+          if (!confirmado) return;
+          btn.disabled = true;
+          const previo = btn.style.opacity;
+          btn.style.opacity = '0.4';
           try {
-            await api.deleteConversation(sessionId, activeSubjectId);
+            // El listado se arma con los registros de cada turno: el borrado
+            // tiene que alcanzarlos, no sólo la conversación guardada.
+            await api.deleteChatSession(sessionId, activeSubjectId);
             sessionSummariesCache = sessionSummariesCache.filter(s => s.sessionId !== sessionId);
             const scroll = sectionHistory.querySelector('#chat-history-scroll');
             if (scroll) {
@@ -449,8 +462,12 @@ export async function renderStudentDashboard(container) {
                 requestAnimationFrame(applyTitleScroll);
               }
             }
+            toast('success', 'Conversación eliminada', 'El hilo se borró de tu historial.');
           } catch (err) {
             console.error('Error deleting conversation:', err);
+            btn.disabled = false;
+            btn.style.opacity = previo;
+            toast('error', 'No se pudo eliminar', err?.message || 'Intentá de nuevo en unos minutos.');
           }
         });
       });
