@@ -75,11 +75,8 @@ app.http('ingest-material', {
 
             const materialId = uuidv4();
             if (!validateFileType(fileHeader, materialType, fileName, materialId, context)) {
-                const message = materialType === 'transcript'
-                    ? 'El archivo no es un texto válido (UTF-8). Verificá el formato.'
-                    : `El tipo de archivo no coincide con el tipo de material "${materialType}". Formatos aceptados: TXT, VTT, DOCX, PDF, PPTX.`;
-                const code = materialType === 'transcript' ? 'FILE_CONTENT_INVALID' : 'INVALID_FILE_TYPE';
-                return structuredErrorResponse(400, message, ErrorCategory.VALIDATION, code);
+                const message = `El archivo "${sanitizeFileName(fileName)}" no coincide con el tipo de material "${materialType}". Formatos aceptados: ${acceptedFormatsLabel(materialType)}. Verificá que el contenido coincida con el formato declarado.`;
+                return structuredErrorResponse(400, message, ErrorCategory.VALIDATION, 'INVALID_FILE_TYPE');
             }
 
             const material = {
@@ -183,29 +180,51 @@ function sanitizeFileName(name) {
 }
 
 /**
- * Server-side file type validation by magic bytes.
- * Rejects files whose content doesn't match the declared materialType.
+ * Formatos aceptados por tipo de material.
+ *
+ * Fuente única de verdad: la validación y el mensaje de error salen de acá, y
+ * la lista coincide con lo que declara la zona de carga del frontend
+ * (`frontend/src/components/FileUpload.js`, TYPE_CONFIG) (#385).
  */
-function validateFileType(buffer, materialType, fileName, materialId, context) {
-    if (!Buffer.isBuffer(buffer) || buffer.length < 4) return false;
+const FILE_TYPE_VARIANTS = {
+    transcript: { variants: ['text', 'docx', 'pdf'], label: 'TXT, VTT, SRT, DOCX o PDF' },
+    presentation: { variants: ['pptx', 'pdf'], label: 'PPTX o PDF' },
+    notes: { variants: ['docx', 'pdf', 'text'], label: 'DOCX, PDF o TXT' },
+    bibliography: { variants: ['pdf', 'docx', 'text'], label: 'PDF, DOCX o TXT' },
+};
+
+const EXTENSION_VARIANTS = {
+    '.txt': 'text',
+    '.vtt': 'text',
+    '.srt': 'text',
+    '.md': 'text',
+    '.docx': 'docx',
+    '.pptx': 'pptx',
+    '.pdf': 'pdf',
+};
+
+/**
+ * Etiqueta de los formatos aceptados para un tipo de material (para mensajes).
+ * @param {string} materialType
+ * @returns {string}
+ */
+function acceptedFormatsLabel(materialType) {
+    return FILE_TYPE_VARIANTS[materialType]?.label || 'TXT, VTT, SRT, DOCX, PDF o PPTX';
+}
+
+/**
+ * Contenido válido para una variante de archivo.
+ * Los formatos de texto plano (TXT, VTT, SRT) se validan como UTF-8 legible;
+ * los contenedores se validan por magic bytes.
+ */
+function contentMatchesVariant(buffer, variant, materialId, context) {
     const header = buffer.slice(0, 8).toString('hex').toLowerCase();
-    const safeName = sanitizeFileName(fileName);
     const logWarn = (...args) => context?.log?.warn?.(...args);
 
-    switch (materialType) {
-        case 'transcript': {
-            if (typeof fileName !== 'string' || !fileName) {
-                logWarn(`[Ingest] Transcript rejected: invalid fileName`);
-                return false;
-            }
-            const allowedExts = ['.txt', '.vtt'];
-            const ext = path.extname(fileName).toLowerCase();
-            if (!allowedExts.includes(ext)) {
-                logWarn(`[Ingest] Transcript file rejected materialId=${materialId} reason=extension_not_allowed ext=${ext}`);
-                return false;
-            }
+    switch (variant) {
+        case 'text': {
             if (header.startsWith('fffe') || header.startsWith('feff')) {
-                logWarn(`[Ingest] Transcript file rejected materialId=${materialId} reason=utf16_bom_detected`);
+                logWarn(`[Ingest] Text file rejected materialId=${materialId} reason=utf16_bom_detected`);
                 return false;
             }
             const scanLen = Math.min(buffer.length, 4096);
@@ -215,19 +234,19 @@ function validateFileType(buffer, materialType, fileName, materialId, context) {
             }
             const content = buffer.slice(offset, scanLen);
             if (content.length === 0) {
-                logWarn(`[Ingest] Transcript file rejected materialId=${materialId} reason=empty_content`);
+                logWarn(`[Ingest] Text file rejected materialId=${materialId} reason=empty_content`);
                 return false;
             }
             for (let i = 0; i < content.length; i++) {
                 if (content[i] === 0x00) {
-                    logWarn(`[Ingest] Transcript file rejected materialId=${materialId} reason=nul_byte position=${i + offset}`);
+                    logWarn(`[Ingest] Text file rejected materialId=${materialId} reason=nul_byte position=${i + offset}`);
                     return false;
                 }
             }
             try {
                 new TextDecoder('utf-8', { fatal: true }).decode(content);
             } catch {
-                logWarn(`[Ingest] Transcript file rejected materialId=${materialId} reason=invalid_utf8`);
+                logWarn(`[Ingest] Text file rejected materialId=${materialId} reason=invalid_utf8`);
                 return false;
             }
             let nonPrintableCount = 0;
@@ -238,39 +257,62 @@ function validateFileType(buffer, materialType, fileName, materialId, context) {
                 }
             }
             if (nonPrintableCount * 100 > content.length) {
-                logWarn(`[Ingest] Transcript file rejected materialId=${materialId} reason=control_chars_exceeded nonPrintablePct=${((nonPrintableCount / content.length) * 100).toFixed(1)}`);
+                logWarn(`[Ingest] Text file rejected materialId=${materialId} reason=control_chars_exceeded nonPrintablePct=${((nonPrintableCount / content.length) * 100).toFixed(1)}`);
                 return false;
             }
             return true;
         }
-        case 'presentation':
-            // PPTX — ZIP-based (PK\x03\x04)
+        case 'docx':
+        case 'pptx': {
+            // Contenedores OOXML — ZIP (PK\x03\x04)
             if (header.startsWith('504b0304')) return true;
-            // PDF fallback: some presentations are uploaded as PDF
-            if (header.startsWith('25504446')) return true;
-            logWarn(`[Ingest] File type validation failed for presentation: expected PPTX/PDF, got header=0x${header}`);
+            logWarn(`[Ingest] File type validation failed for ${variant}: expected ZIP container, got header=0x${header}`);
             return false;
-        case 'notes':
-            // DOCX — ZIP-based (PK\x03\x04)
-            if (header.startsWith('504b0304')) return true;
-            // PDF
-            if (header.startsWith('25504446')) return true;
-            logWarn(`[Ingest] File type validation failed for notes: expected DOCX/PDF, got header=0x${header}`);
-            return false;
-        case 'bibliography':
+        }
+        case 'pdf': {
             // PDF (25 50 44 46 = %PDF)
             if (header.startsWith('25504446')) return true;
-            // DOCX
-            if (header.startsWith('504b0304')) return true;
-            logWarn(`[Ingest] File type validation failed for bibliography: expected PDF/DOCX, got header=0x${header}`);
+            logWarn(`[Ingest] File type validation failed for pdf: expected %PDF, got header=0x${header}`);
             return false;
+        }
         default:
-            logWarn(`[Ingest] Unknown materialType "${materialType}" — allowing file`);
-            return true;
+            logWarn(`[Ingest] Unknown file variant "${variant}" — rejecting file`);
+            return false;
     }
 }
 
-export { validateFileType };
+/**
+ * Server-side file type validation by extension + magic bytes.
+ * Rejects files whose content doesn't match the declared materialType.
+ * Acepta exactamente los formatos que declara la superficie de carga (#385).
+ */
+function validateFileType(buffer, materialType, fileName, materialId, context) {
+    if (!Buffer.isBuffer(buffer) || buffer.length < 4) return false;
+    const logWarn = (...args) => context?.log?.warn?.(...args);
+
+    const config = FILE_TYPE_VARIANTS[materialType];
+    if (!config) {
+        // Tipo desconocido: no se restringe (comportamiento previo).
+        logWarn(`[Ingest] Unknown materialType "${materialType}" — allowing file`);
+        return true;
+    }
+
+    if (typeof fileName !== 'string' || !fileName) {
+        logWarn(`[Ingest] File rejected: invalid fileName (materialType=${materialType})`);
+        return false;
+    }
+
+    const ext = path.extname(fileName).toLowerCase();
+    const variant = EXTENSION_VARIANTS[ext];
+    if (!variant || !config.variants.includes(variant)) {
+        logWarn(`[Ingest] File rejected materialId=${materialId} reason=extension_not_allowed materialType=${materialType} ext=${ext} accepted=${config.variants.join('|')}`);
+        return false;
+    }
+
+    return contentMatchesVariant(buffer, variant, materialId, context);
+}
+
+export { validateFileType, acceptedFormatsLabel };
 
 /**
  * Parsea el cuerpo de la petición multipart/form-data usando busboy.

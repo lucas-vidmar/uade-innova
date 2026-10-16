@@ -7,6 +7,10 @@ import { showConfirmDialog } from './Dialog.js';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
+// La lista de formatos de cada tipo debe coincidir con la validación del
+// servidor (backend/src/functions/ingest-material.js, FILE_TYPE_VARIANTS):
+// si acá se promete un formato que el servidor rechaza, la carga falla con un
+// mensaje que no explica nada (#385).
 const TYPE_CONFIG = {
   transcript: { label: 'Transcripción', icon: '📝', accept: '.txt,.docx,.vtt,.srt,.pdf', hint: 'TXT, DOCX, VTT, SRT o PDF' },
   presentation: { label: 'Presentación', icon: '📊', accept: '.pptx,.pdf', hint: 'PPTX o PDF' },

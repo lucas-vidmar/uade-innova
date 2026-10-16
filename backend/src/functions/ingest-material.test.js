@@ -13,7 +13,7 @@ beforeEach(() => {
     contextMock.log.warn.mock.resetCalls();
 });
 
-const { validateFileType } = await import('./ingest-material.js');
+const { validateFileType, acceptedFormatsLabel } = await import('./ingest-material.js');
 
 function makeBuffer(...bytes) {
     return Buffer.from(bytes);
@@ -158,6 +158,75 @@ describe('validateFileType — transcript', () => {
             assert.strictEqual(validateFileType('string', 'transcript', 'notes.txt', materialId, contextMock), false);
         });
 
+    });
+
+});
+
+// ── #385: la validación debe aceptar exactamente los formatos que la zona de
+// carga del frontend anuncia (FileUpload.js, TYPE_CONFIG) y el mensaje de error
+// debe listar esa misma lista. ────────────────────────────────────────────────
+describe('validateFileType — formatos anunciados por la zona de carga (#385)', () => {
+
+    const zipBuffer = () => Buffer.concat([makeBuffer(0x50, 0x4B, 0x03, 0x04), Buffer.alloc(120, 0x01)]);
+    const pdfBuffer = () => Buffer.concat([Buffer.from('%PDF-1.7', 'utf-8'), Buffer.alloc(120, 0x01)]);
+
+    it('transcript acepta TXT, VTT, SRT, DOCX y PDF', () => {
+        assert.strictEqual(validateFileType(textBuffer('texto plano'), 'transcript', 'clase.txt', materialId, contextMock), true);
+        assert.strictEqual(validateFileType(textBuffer('WEBVTT\n00:00:01.000 --> 00:00:02.000\nHola'), 'transcript', 'clase.vtt', materialId, contextMock), true);
+        assert.strictEqual(validateFileType(textBuffer('1\n00:00:01,000 --> 00:00:02,000\nHola'), 'transcript', 'clase.srt', materialId, contextMock), true);
+        assert.strictEqual(validateFileType(zipBuffer(), 'transcript', 'clase.docx', materialId, contextMock), true);
+        assert.strictEqual(validateFileType(pdfBuffer(), 'transcript', 'clase.pdf', materialId, contextMock), true);
+    });
+
+    it('transcript sigue rechazando lo que no anunció', () => {
+        assert.strictEqual(validateFileType(zipBuffer(), 'transcript', 'slides.pptx', materialId, contextMock), false);
+        assert.strictEqual(validateFileType(textBuffer('x'.repeat(50)), 'transcript', 'installer.exe', materialId, contextMock), false);
+        assert.strictEqual(validateFileType(textBuffer('x'.repeat(50)), 'transcript', 'README', materialId, contextMock), false);
+        // Un .pdf con contenido de texto plano no es un PDF
+        assert.strictEqual(validateFileType(textBuffer('solo texto'), 'transcript', 'falso.pdf', materialId, contextMock), false);
+    });
+
+    it('notes acepta DOCX, PDF y TXT', () => {
+        assert.strictEqual(validateFileType(zipBuffer(), 'notes', 'apuntes.docx', materialId, contextMock), true);
+        assert.strictEqual(validateFileType(pdfBuffer(), 'notes', 'apuntes.pdf', materialId, contextMock), true);
+        assert.strictEqual(validateFileType(textBuffer('apuntes en texto'), 'notes', 'apuntes.txt', materialId, contextMock), true);
+        assert.strictEqual(validateFileType(zipBuffer(), 'notes', 'apuntes.pptx', materialId, contextMock), false);
+    });
+
+    it('bibliography acepta PDF, DOCX y TXT', () => {
+        assert.strictEqual(validateFileType(pdfBuffer(), 'bibliography', 'libro.pdf', materialId, contextMock), true);
+        assert.strictEqual(validateFileType(zipBuffer(), 'bibliography', 'libro.docx', materialId, contextMock), true);
+        assert.strictEqual(validateFileType(textBuffer('referencias'), 'bibliography', 'libro.txt', materialId, contextMock), true);
+        assert.strictEqual(validateFileType(zipBuffer(), 'bibliography', 'libro.pptx', materialId, contextMock), false);
+    });
+
+    it('presentation acepta sólo PPTX y PDF', () => {
+        assert.strictEqual(validateFileType(zipBuffer(), 'presentation', 'slides.pptx', materialId, contextMock), true);
+        assert.strictEqual(validateFileType(pdfBuffer(), 'presentation', 'slides.pdf', materialId, contextMock), true);
+        assert.strictEqual(validateFileType(textBuffer('apuntes'), 'presentation', 'slides.txt', materialId, contextMock), false);
+        assert.strictEqual(validateFileType(zipBuffer(), 'presentation', 'notas.docx', materialId, contextMock), false);
+    });
+
+    it('la etiqueta de formatos aceptados coincide con lo que la validación acepta', () => {
+        assert.strictEqual(acceptedFormatsLabel('transcript'), 'TXT, VTT, SRT, DOCX o PDF');
+        assert.strictEqual(acceptedFormatsLabel('notes'), 'DOCX, PDF o TXT');
+        assert.strictEqual(acceptedFormatsLabel('bibliography'), 'PDF, DOCX o TXT');
+        assert.strictEqual(acceptedFormatsLabel('presentation'), 'PPTX o PDF');
+        // Cada extensión nombrada en la etiqueta debe estar aceptada para ese tipo.
+        const porTipo = {
+            transcript: ['.txt', '.vtt', '.srt', '.docx', '.pdf'],
+            notes: ['.docx', '.pdf', '.txt'],
+            bibliography: ['.pdf', '.docx', '.txt'],
+            presentation: ['.pptx', '.pdf'],
+        };
+        const etiquetaANombre = { TXT: 'txt', VTT: 'vtt', SRT: 'srt', DOCX: 'docx', PDF: 'pdf', PPTX: 'pptx' };
+        for (const [tipo, exts] of Object.entries(porTipo)) {
+            const nombradas = acceptedFormatsLabel(tipo)
+                .replace(/ o /g, ', ')
+                .split(', ')
+                .map((n) => '.' + etiquetaANombre[n]);
+            assert.deepStrictEqual(nombradas.sort(), [...exts].sort(), `la etiqueta de ${tipo} debe listar exactamente los formatos aceptados`);
+        }
     });
 
 });
