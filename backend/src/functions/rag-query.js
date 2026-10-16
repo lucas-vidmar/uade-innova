@@ -1054,5 +1054,5 @@ ${contextText}
         }
 
         return jsonResponse(200, { id: interactionId, answer, sources });
-    }, 'chat'))),
+    }), 'chat')),
 });

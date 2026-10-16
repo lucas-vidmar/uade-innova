@@ -131,6 +131,18 @@ mock.module('../services/state-store.js', { namedExports: stateStoreMocks });
 mock.module('../services/subject-weights.js', { namedExports: subjectWeightsMocks });
 mock.module('../services/glossary-store.js', { namedExports: glossaryStoreMocks });
 
+// UJ-61: espía del limitador de caudal. Captura el tier con el que se envuelve
+// la ruta. Regresión: el tier 'chat' (30/min) tiene que llegar a withRateLimit,
+// no a withAuth (que ignora las opciones que no sean { roles }).
+const rateLimitTiers = [];
+mock.module('../middleware/with-rate-limit.js', {
+    namedExports: {
+        withRateLimit: (handler, tier = 'general') => { rateLimitTiers.push(tier); return handler; },
+        resolveClientIp: () => 'test-ip',
+        resolveRateLimitKey: () => 'test-key',
+    }
+});
+
 // Mock @azure/functions to capture the handler
 let capturedHandler;
 mock.module('@azure/functions', {
@@ -150,6 +162,14 @@ await import('./rag-query.js');
 
 test('rag-query handler should be registered', () => {
     assert.strictEqual(typeof capturedHandler, 'function');
+});
+
+test('rag-query aplica el tier de caudal "chat" (30/min) y no el general (UJ-61)', () => {
+    assert.deepStrictEqual(
+        rateLimitTiers,
+        ['chat'],
+        `se esperaba registrar la ruta con el tier 'chat'; tiers capturados: ${JSON.stringify(rateLimitTiers)}`
+    );
 });
 
 test('rag-query should include correct system prompt and rules', async (t) => {
