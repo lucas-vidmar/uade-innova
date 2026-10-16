@@ -1,17 +1,15 @@
 import {
-    BASE_URL, apiFetch, fetchWithTimeout
+    BASE_URL, apiFetch, fetchWithTimeout, readList
 } from './core.js';
 
-export async function getDeadlines(subjectId) {
-    try {
-        const res = await fetchWithTimeout(`${BASE_URL}/deadlines?subjectId=${subjectId}`, { timeout: 3000 });
-        if (!res.ok) return [];
-        const data = await res.json();
-        return Array.isArray(data) ? data : [];
-    } catch (err) {
-        console.error('[API] getDeadlines failed:', err);
-        return [];
-    }
+export async function getDeadlines(subjectId, options = {}) {
+    // fix #352: with `strict: true` a failed read throws instead of looking
+    // like "this subject has no deadlines".
+    return readList(`${BASE_URL}/deadlines?subjectId=${subjectId}`, {
+        timeout: 3000,
+        strict: options.strict,
+        label: '[API] getDeadlines',
+    });
 }
 
 export async function saveDeadline(payload) {

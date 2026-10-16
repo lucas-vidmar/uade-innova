@@ -1,6 +1,6 @@
 import {
     BASE_URL, apiFetch, fetchWithTimeout, readLocalJson, writeLocalJson,
-    LOCAL_CLASSES_KEY, isAbortError
+    LOCAL_CLASSES_KEY, isAbortError, parseApiError
 } from './core.js';
 
 function getLocalClasses(subjectId) {
@@ -17,20 +17,26 @@ function setLocalClasses(subjectId, classesArray) {
     writeLocalJson(LOCAL_CLASSES_KEY, safeMap);
 }
 
-export async function getClasses(subjectId) {
+export async function getClasses(subjectId, options = {}) {
     const localClassesBySubject = readLocalJson(LOCAL_CLASSES_KEY, {});
     const localClasses = Array.isArray(localClassesBySubject[subjectId]) ? localClassesBySubject[subjectId] : [];
 
     try {
         const res = await apiFetch(`${BASE_URL}/classes?subjectId=${subjectId}`);
-        if (!res.ok) return localClasses;
+        if (!res.ok) {
+            // fix #352: `strict` callers must not receive an empty cache as if
+            // the subject simply had no classes.
+            if (options.strict) throw await parseApiError(res, `No se pudieron leer los encuentros (HTTP ${res.status}).`);
+            return localClasses;
+        }
         const data = await res.json();
         const classes = Array.isArray(data) ? data : [];
         setLocalClasses(subjectId, classes);
         return classes;
     } catch (err) {
         // Fix #346: cancellations (subject switch / navigation) are not errors.
-        if (isAbortError(err)) return localClasses;
+        if (isAbortError(err) && !options.strict) return localClasses;
+        if (options.strict) throw err;
         console.error('[API] getClasses failed:', err);
         return localClasses;
     }

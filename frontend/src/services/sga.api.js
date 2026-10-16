@@ -1,5 +1,5 @@
 import {
-    BASE_URL, apiFetch, fetchWithTimeout, delay, parseApiError
+    BASE_URL, apiFetch, fetchWithTimeout, readList, delay, parseApiError
 } from './core.js';
 
 function normalizeTeacherAlert(item = {}, idx = 0) {
@@ -47,16 +47,14 @@ function normalizeEarlyAlert(item = {}) {
     };
 }
 
-export async function getTasks(studentId) {
-    try {
-        const res = await fetchWithTimeout(`${BASE_URL}/sga/tasks?studentId=${encodeURIComponent(studentId)}`, { timeout: 4000 });
-        if (!res.ok) return [];
-        const data = await res.json();
-        return Array.isArray(data) ? data : [];
-    } catch (err) {
-        console.error('[API] getTasks failed:', err);
-        return [];
-    }
+export async function getTasks(studentId, options = {}) {
+    // fix #352: with `strict: true` a failed read throws instead of looking
+    // like "this student has no pending work".
+    return readList(`${BASE_URL}/sga/tasks?studentId=${encodeURIComponent(studentId)}`, {
+        timeout: 4000,
+        strict: options.strict,
+        label: '[API] getTasks',
+    });
 }
 
 export async function getEarlyAlerts(subjectId, options = {}) {

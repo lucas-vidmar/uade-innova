@@ -212,6 +212,37 @@ export async function fetchWithTimeout(resource, options = {}) {
     }
 }
 
+/**
+ * Shared read path for list endpoints (fix #352).
+ *
+ * Without `strict`, a failed read degrades to `fallback` (the historical
+ * behaviour kept for the many callers that only need best-effort data).
+ * With `strict: true` the failure is propagated as a structured error, so a
+ * page can tell "no hay datos" apart from "no se pudieron leer los datos"
+ * instead of telling the student there is nothing pending.
+ *
+ * @param {string} resource
+ * @param {{timeout?: number, strict?: boolean, fallback?: any[], label?: string}} options
+ * @returns {Promise<any[]>}
+ */
+export async function readList(resource, { timeout = 5000, strict = false, fallback = [], label = '[API]' } = {}) {
+    let res;
+    try {
+        res = await fetchWithTimeout(resource, { timeout });
+    } catch (err) {
+        if (strict) throw err;
+        console.error(`${label} failed:`, err);
+        return fallback;
+    }
+    if (!res.ok) {
+        if (strict) throw await parseApiError(res, `No se pudieron leer los datos (HTTP ${res.status}).`);
+        console.error(`${label} failed: HTTP ${res.status}`);
+        return fallback;
+    }
+    const data = await res.json().catch(() => null);
+    return Array.isArray(data) ? data : [];
+}
+
 export function readLocalJson(key, fallbackValue) {
     try {
         const raw = window.localStorage.getItem(key);
