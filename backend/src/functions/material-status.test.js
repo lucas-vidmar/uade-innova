@@ -272,3 +272,85 @@ test('reprocess-material returns 200 and resets material to pending', async () =
     assert.strictEqual(body.success, true);
     assert.strictEqual(vectorStoreMocks.deleteVectorsByMaterialId.mock.calls.length, 1);
 });
+
+// #387: el "a medio procesar" del recorrido de recuperación es un material
+// detenido en 'processing', que antes quedaba sin ninguna vía de reintento.
+test('reprocess-material admite un material detenido en processing', async () => {
+    stateStoreMocks.getMaterialState.mock.mockImplementationOnce(async () => ({
+        materialId: 'mat-stuck-001',
+        subjectId: 'arq-software-2026',
+        status: 'processing',
+        filename: 'stuck.txt',
+        classIds: ['class-06'],
+    }));
+    const mockedUpsert = stateStoreMocks.upsertMaterialState;
+    mockedUpsert.mock.mockImplementationOnce(async (state) => state);
+
+    const response = await handlers['reprocess-material'](
+        {
+            params: { materialId: 'mat-stuck-001' },
+            query: new URLSearchParams({ subjectId: 'arq-software-2026' }),
+        },
+        { log: mock.fn(), error: mock.fn() }
+    );
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(JSON.parse(response.body).success, true);
+});
+
+// #387: el origen de la descarga es el blob real del material; el nombre
+// versionado es sólo el destino que vuelve a disparar el pipeline.
+test('reprocess-material descarga el blob real y re-sube a un nombre versionado', async () => {
+    stateStoreMocks.getMaterialState.mock.mockImplementationOnce(async () => ({
+        materialId: 'mat-error-002',
+        subjectId: 'arq-software-2026',
+        status: 'error',
+        filename: 'guia.txt',
+        classIds: ['class-06'],
+        blobUrl: 'https://storage.blob.core.windows.net/class-materials/arq-software-2026/mat-error-002.txt',
+    }));
+    stateStoreMocks.upsertMaterialState.mock.mockImplementationOnce(async (state) => state);
+    storageMocks.downloadFile.mock.resetCalls();
+    storageMocks.uploadFile.mock.resetCalls();
+
+    const response = await handlers['reprocess-material'](
+        {
+            params: { materialId: 'mat-error-002' },
+            query: new URLSearchParams({ subjectId: 'arq-software-2026' }),
+        },
+        { log: mock.fn(), error: mock.fn() }
+    );
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(
+        storageMocks.downloadFile.mock.calls[0].arguments[1],
+        'arq-software-2026/mat-error-002.txt',
+        'el origen debe ser el blob existente, no el nombre versionado'
+    );
+    const uploadedName = storageMocks.uploadFile.mock.calls[0].arguments[1];
+    assert.match(uploadedName, /^arq-software-2026\/mat-error-002-v\d+\.txt$/);
+    assert.strictEqual(storageMocks.downloadFile.mock.calls[0].arguments[1] === uploadedName, false);
+});
+
+// #387: si el archivo original falta, el reintento explica qué hacer en vez de
+// responder un 500 de infraestructura.
+test('reprocess-material responde 409 cuando falta el archivo original', async () => {
+    stateStoreMocks.getMaterialState.mock.mockImplementationOnce(async () => ({
+        materialId: 'mat-sin-blob',
+        subjectId: 'arq-software-2026',
+        status: 'error',
+        filename: '',
+        classIds: ['class-06'],
+        blobUrl: '',
+    }));
+
+    const response = await handlers['reprocess-material'](
+        {
+            params: { materialId: 'mat-sin-blob' },
+            query: new URLSearchParams({ subjectId: 'arq-software-2026' }),
+        },
+        { log: mock.fn(), error: mock.fn() }
+    );
+
+    assert.strictEqual(response.status, 409);
+});

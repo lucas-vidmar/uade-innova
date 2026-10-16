@@ -11,6 +11,17 @@ const MATERIAL_TYPES = [
     { value: 'bibliography', label: 'Bibliografía', icon: '📚' },
 ];
 
+// Un material que sigue en 'processing' pasado este plazo quedó detenido
+// ("a medio procesar"): hay que poder reintentarlo (#387).
+const STUCK_PROCESSING_MS = 10 * 60 * 1000;
+
+function isStuckProcessing(mat) {
+    if (!mat || mat.status !== 'processing') return false;
+    const uploadedAt = mat.uploadedAt ? new Date(mat.uploadedAt).getTime() : NaN;
+    if (!Number.isFinite(uploadedAt)) return false;
+    return (Date.now() - uploadedAt) > STUCK_PROCESSING_MS;
+}
+
 function typeLabel(type) {
     return MATERIAL_TYPES.find(t => t.value === type)?.label || type || 'Sin tipo';
 }
@@ -190,9 +201,10 @@ export async function renderMaterialManager(container) {
                                                         </button>
                                                         ${(() => {
                                                             const err = (mat.errorMessage || '').toLowerCase();
-                                                            const canRetry = mat.status === 'error' && !err.includes('429') && !err.includes('demasiado grande') && !err.includes('too large');
+                                                            const retryableError = mat.status === 'error' && !err.includes('429') && !err.includes('demasiado grande') && !err.includes('too large');
+                                                            const canRetry = retryableError || isStuckProcessing(mat);
                                                             return canRetry ? `
-                                                        <button class="btn btn-sm btn-outline mat-btn-reprocess" data-idx="${i}" title="Reintentar procesamiento">
+                                                        <button class="btn btn-sm btn-outline mat-btn-reprocess" data-idx="${i}" title="${isStuckProcessing(mat) ? 'El procesamiento quedó detenido: reintentar' : 'Reintentar procesamiento'}">
                                                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                                                             Reintentar
                                                         </button>` : '';
@@ -532,13 +544,15 @@ export async function renderMaterialManager(container) {
                     if (!shouldRetry) return;
 
                     try {
+                        // Primero el servidor, después la pantalla: antes se
+                        // avisaba "encolado para procesar" antes de llamar a la
+                        // API y el reintento terminaba en 500 (#387).
+                        await api.reprocessMaterial(mat.materialId || mat.id, subjectId);
                         mat.status = 'pending';
                         mat.errorMessage = '';
-                        render();
                         toast('info', 'Reprocesando', 'El material se ha encolado para procesar.');
-                        await api.reprocessMaterial(mat.materialId || mat.id, subjectId);
                     } catch (e) {
-                        toast('error', 'Error', e.message || 'No se pudo reprocesar el material.');
+                        toast('error', 'No se pudo reintentar', e.message || 'No se pudo reprocesar el material.');
                     } finally {
                         classes = await api.getClasses(subjectId);
                         materials = [];

@@ -2034,8 +2034,12 @@ app.http('reprocess-material', {
                 return { status: 404, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Material no encontrado' }) };
             }
 
-            if (material.status !== 'error' && material.status !== 'pending') {
-                return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Solo se pueden reprocesar materiales con estado "error" o "pending"' }) };
+            // Se admite reprocesar un material que falló, que quedó pendiente o
+            // que quedó detenido en 'processing' (el "a medio procesar" del
+            // recorrido de recuperación, #387). Un material 'ready' no se
+            // reprocesa: no hay nada que rescatar.
+            if (material.status === 'ready') {
+                return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'El material ya está procesado. Si querés volver a procesarlo, editá su texto o cargalo de nuevo.' }) };
             }
 
             // 1. Eliminar vectores existentes en Pinecone
@@ -2058,20 +2062,31 @@ app.http('reprocess-material', {
             const blobUrlExt = material.blobUrl ? path.extname(new URL(material.blobUrl).pathname) : '';
             const origExt = blobUrlExt || path.extname(material.filename || 'file');
             const blobVersion = Date.now();
-            const origBlobName = `${subjectId}/${materialId}-v${blobVersion}${origExt}`;
+            // Origen: el blob que ya existe (nombre real del material).
+            // Destino: un nombre versionado nuevo, que es el que vuelve a
+            // disparar el trigger del pipeline (#387). Antes se descargaba el
+            // nombre versionado recién calculado, que nunca existe.
+            const sourceBlobName = deriveMaterialBlobName(material, materialId);
+            if (!sourceBlobName) {
+                return { status: 409, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'El material no tiene archivo asociado para reprocesar. Volvé a cargarlo.' }) };
+            }
+            const versionedBlobName = `${subjectId}/${materialId}-v${blobVersion}${origExt}`;
 
             try {
-                const fileBuffer = await downloadFile(containerName, origBlobName);
-                const extMap = { '.txt': 'text/plain', '.vtt': 'text/vtt', '.pdf': 'application/pdf', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation' };
+                const fileBuffer = await downloadFile(containerName, sourceBlobName);
+                if (!fileBuffer || !fileBuffer.length) {
+                    return { status: 409, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'No se encontró el archivo original del material. Volvé a cargarlo.' }) };
+                }
+                const extMap = { '.txt': 'text/plain', '.vtt': 'text/vtt', '.srt': 'text/plain', '.pdf': 'application/pdf', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation' };
                 const contentType = extMap[origExt] || 'application/octet-stream';
-                await uploadFile(containerName, origBlobName, fileBuffer, contentType, {
+                await uploadFile(containerName, versionedBlobName, fileBuffer, contentType, {
                     materialId,
                     subjectId,
                     materialType: material.type || '',
                     classIds: JSON.stringify(material.classIds || []),
                     filename: material.filename || 'file',
                 });
-                context.log(`[Reprocess] Blob re-subido para ${materialId} (${fileBuffer.length} bytes)`);
+                context.log(`[Reprocess] Blob re-subido para ${materialId} (${fileBuffer.length} bytes) desde ${sourceBlobName} hacia ${versionedBlobName}`);
             } catch (reUpErr) {
                 context.error(`[Reprocess] Error re-subiendo blob para ${materialId}:`, reUpErr);
                 return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'No se pudo re-subir el archivo al storage.' }) };
