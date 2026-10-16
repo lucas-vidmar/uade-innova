@@ -69,10 +69,23 @@ app.http('get-class-views', {
         }
 
         const principal = parseClientPrincipal(request);
-        const authUserId = principal?.userId || principal?.oid || readDevIdentityHeader(request, 'x-edu-uid') || 'anonymous';
         const roles = principal?.userRoles || [];
         const isTeacher = roles.includes('Docente');
         const isDirector = roles.includes('Director');
+        const sessionUserId = principal?.userId || principal?.oid || readDevIdentityHeader(request, 'x-edu-uid');
+        const authUserId = sessionUserId || 'anonymous';
+
+        // Fail closed: sin identidad resuelta no hay vistas que devolver. Servir el
+        // bucket 'anonymous' era el resto visible del agujero de suplantación por
+        // encabezado (el endpoint devolvía historial de otro alumno con solo
+        // mandar x-edu-uid).
+        if (!sessionUserId) {
+            return {
+                status: 401,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ error: 'Se requiere autenticación para ver las vistas de clase.', code: 'AUTH_REQUIRED' }),
+            };
+        }
 
         try {
             let views;
