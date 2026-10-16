@@ -9,6 +9,53 @@ test('student can review SGA-backed tasks usability flow', async ({ page, browse
     sessionStorage.setItem('edu_consent_accepted', 'true');
   });
 
+  // Entorno de arranque: sin una materia activa la página no llega a pedir las
+  // tareas, y desde #363 una lectura que falla se muestra como error en lugar de
+  // pintar la lista vacía. La prueba necesita el contexto completo, no sólo las
+  // tareas, para ejercitar el camino real.
+  await page.route('**/api/get-profile**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        role: 'student', theme: 'light', language: 'es', consentAccepted: true,
+        botTone: 'formal', botLength: 'detailed', includeSources: true,
+      }),
+    });
+  });
+
+  await page.route('**/api/subjects**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([{ id: 'arq-software-2026', name: 'Arquitectura de Software 2026', track: 'sistemas' }]),
+    });
+  });
+
+  await page.route('**/api/enrollments**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([{ id: 'enr-1', userId: 'alu-001', subjectId: 'arq-software-2026', status: 'active', enrolledCount: 5 }]),
+    });
+  });
+
+  await page.route('**/api/consent**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ consentAccepted: true }) });
+  });
+
+  await page.route('**/api/reminder-preferences**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+  });
+
+  await page.route('**/api/notifications?**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+
+  await page.route('**/api/deadlines?**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+
   await page.route('**/api/classes?**', async (route) => {
     await route.fulfill({
       status: 200,
@@ -39,5 +86,7 @@ test('student can review SGA-backed tasks usability flow', async ({ page, browse
   await expect(page.locator('body')).toContainText('Pendientes');
   await expect(page.locator('body')).toContainText('TP1: Diagrama de Arquitectura C4');
   await expect(page.locator('body')).toContainText('Quiz Online — Estilos Arquitectónicos');
-  await expect(page.locator('body')).toContainText('Promedio ponderado');
+  // El indicador se rotula en mayúsculas por estilo (text-transform), así que la
+  // aserción tolera la caja sin dejar de verificar el concepto.
+  await expect(page.locator('body')).toContainText(/promedio ponderado/i);
 });
