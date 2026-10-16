@@ -37,6 +37,77 @@ const escapeHtml = (value = '') => String(value)
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 
+/**
+ * #391: retirar una fuente no es borrarla ni ponderarla. La fila se queda, con
+ * su estado, su autor, la fecha y el motivo, y se puede reponer desde ahí mismo.
+ */
+function retirementState(mat) {
+    return mat?.retirementState === 'retirada' ? 'retirada' : 'activa';
+}
+
+const formatRetirementDate = (value) => {
+    if (!value) return '';
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? String(value).slice(0, 10) : d.toLocaleString('es-AR');
+};
+
+function retirementBadge(mat) {
+    if (retirementState(mat) !== 'retirada') return '';
+    const quien = mat.retiredBy ? ` por ${escapeHtml(mat.retiredBy)}` : '';
+    const cuando = mat.retiredAt ? ` el ${escapeHtml(formatRetirementDate(mat.retiredAt))}` : '';
+    const motivo = mat.retireReason ? `<br><span class="mat-retirement-reason">Motivo: ${escapeHtml(mat.retireReason)}</span>` : '';
+    const historial = Array.isArray(mat.retirementHistory) ? mat.retirementHistory : [];
+    const ultimo = historial.at(-1);
+    const reposiciones = historial.filter((h) => h?.action === 'reponer').length;
+    return `
+        <div class="mat-retirement-constancia" data-state="retirada" title="Deja de citarse en las respuestas. El archivo se conserva.">
+            <span class="badge badge-error mat-retirement-chip">⛔ Retirada</span>
+            <span class="mat-retirement-trace">${quien}${cuando}${motivo}</span>
+            ${ultimo ? `<span class="mat-retirement-last">Último movimiento: ${escapeHtml(ultimo.action || '')} (${escapeHtml(formatRetirementDate(ultimo.at))})</span>` : ''}
+            ${reposiciones > 0 ? `<span class="mat-retirement-last">Repuesta ${reposiciones} vez/veces y vuelta a retirar</span>` : ''}
+        </div>
+    `;
+}
+
+/**
+ * Pide el motivo del retiro. Devuelve el texto (puede ser vacío) o `null` si se
+ * cancela, para que retirar sin motivo siga siendo una decisión explícita.
+ */
+function askRetirementReason(mat) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = `
+            <div class="modal-content" style="max-width:520px;">
+                <div class="modal-header">
+                    <h3 class="h4" style="margin:0;">Retirar fuente</h3>
+                    <button type="button" class="btn btn-ghost btn-sm btn-close-modal">✕</button>
+                </div>
+                <div class="modal-body">
+                    <p style="font-size:0.9rem;color:var(--color-text-secondary);">
+                        <strong>${escapeHtml(mat.filename || 'Esta fuente')}</strong> dejará de citarse en las respuestas.
+                        El archivo se conserva y la fila queda en la lista con esta constancia.
+                    </p>
+                    <label class="form-label" for="retire-reason-input">Motivo (queda registrado)</label>
+                    <textarea id="retire-reason-input" class="form-input" rows="3" placeholder="por qué se retira esta fuente"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-ghost btn-cancel-retire">Cancelar</button>
+                    <button type="button" class="btn btn-primary btn-confirm-retire">Retirar fuente</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        const close = (value) => { overlay.remove(); resolve(value); };
+        overlay.querySelector('.btn-close-modal')?.addEventListener('click', () => close(null));
+        overlay.querySelector('.btn-cancel-retire')?.addEventListener('click', () => close(null));
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null); });
+        overlay.querySelector('.btn-confirm-retire')?.addEventListener('click', () => {
+            close(overlay.querySelector('#retire-reason-input')?.value?.trim() || '');
+        });
+    });
+}
+
 export async function renderMaterialManager(container) {
     renderHeader('Gestión de Materiales');
     container.innerHTML = `<div class="loading-state">Cargando materiales...</div>`;
@@ -140,6 +211,7 @@ export async function renderMaterialManager(container) {
                                                         <span class="mat-filename-icon">${typeIcon(mat.type)}</span>
                                                         <span class="mat-filename-text subject-directory-name" data-idx="${i}" data-field="filename" title="Click para editar nombre">${escapeHtml(mat.filename || 'Sin nombre')}</span>
                                                     </div>
+                                                    ${retirementBadge(mat)}
                                                 </td>
                                                 <td class="mat-col-type">
                                                     <span
@@ -213,6 +285,9 @@ export async function renderMaterialManager(container) {
                                                             Reintentar
                                                         </button>` : '';
                                                         })()}
+                                                        <button class="btn btn-sm btn-outline mat-btn-retire ${retirementState(mat) === 'retirada' ? 'mat-btn-restore' : ''}" data-idx="${i}" title="${retirementState(mat) === 'retirada' ? 'Volver a citar esta fuente en las respuestas (deja constancia)' : 'Sacar esta fuente de las respuestas sin borrarla'}">
+                                                            ${retirementState(mat) === 'retirada' ? '↩ Reponer' : '⛔ Retirar'}
+                                                        </button>
                                                         <button class="btn btn-icon btn-ghost mat-btn-delete" data-idx="${i}" title="Eliminar material">
                                                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
                                                         </button>
@@ -689,6 +764,66 @@ export async function renderMaterialManager(container) {
                     }
                 });
             }
+
+            // Retirar / reponer una fuente (#391): sale de las respuestas sin borrarse.
+            container.querySelectorAll('.mat-btn-retire').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const idx = parseInt(btn.dataset.idx);
+                    const mat = materials[idx];
+                    if (!mat) return;
+                    const materialId = mat.materialId || mat.id;
+                    const retirada = retirementState(mat) === 'retirada';
+
+                    try {
+                        if (retirada) {
+                            const shouldRestore = await showConfirmDialog({
+                                title: 'Reponer fuente',
+                                message: `¿Volver a citar "${mat.filename}" en las respuestas?`,
+                                detailsHtml: `
+                                  <div style="display:flex;flex-direction:column;gap:6px;">
+                                    <div><strong>Retirada:</strong> ${escapeHtml(formatRetirementDate(mat.retiredAt) || '—')}${mat.retiredBy ? ` por ${escapeHtml(mat.retiredBy)}` : ''}</div>
+                                    ${mat.retireReason ? `<div><strong>Motivo del retiro:</strong> ${escapeHtml(mat.retireReason)}</div>` : ''}
+                                    <div style="font-size:0.75rem;color:var(--color-text-muted);">La reposición también queda registrada en el historial del material.</div>
+                                  </div>`,
+                                confirmText: 'Reponer',
+                                cancelText: 'Cancelar',
+                            });
+                            if (!shouldRestore) return;
+
+                            container.style.opacity = '0.6';
+                            container.style.pointerEvents = 'none';
+                            const res = await api.restoreMaterial(subjectId, materialId);
+                            Object.assign(mat, { retirementState: 'activa' });
+                            if (res?.material) Object.assign(mat, res.material);
+                            mat.retirementState = 'activa';
+                            toast('success', 'Fuente repuesta', 'La fuente vuelve a alimentar las respuestas. La constancia del retiro se conserva.');
+                            return;
+                        }
+
+                        const motivo = await askRetirementReason(mat);
+                        if (motivo === null) return;
+
+                        container.style.opacity = '0.6';
+                        container.style.pointerEvents = 'none';
+                        const res = await api.retireMaterial(subjectId, materialId, motivo);
+                        const constancia = res?.retirement || {};
+                        Object.assign(mat, {
+                            retirementState: 'retirada',
+                            retiredBy: constancia.by || res?.material?.retiredBy || null,
+                            retiredAt: constancia.at || res?.material?.retiredAt || new Date().toISOString(),
+                            retireReason: constancia.reason || motivo || null,
+                            retirementHistory: res?.material?.retirementHistory || mat.retirementHistory,
+                        });
+                        toast('success', 'Fuente retirada', 'Dejó de citarse en las respuestas. El archivo se conserva con su constancia.');
+                    } catch (e) {
+                        toast('error', 'Error', e.message || 'No se pudo cambiar el estado de la fuente.');
+                    } finally {
+                        container.style.opacity = '1';
+                        container.style.pointerEvents = '';
+                        render();
+                    }
+                });
+            });
 
             // Delete material
             container.querySelectorAll('.mat-btn-delete').forEach(btn => {

@@ -30,6 +30,7 @@ import {
 import {
     getMaterialStatus, getMaterialStatusBatch, _getMaterialStatusBatchGet, ingestMaterial,
     deleteMaterial, reprocessMaterial, updateMaterial,
+    retireMaterial, restoreMaterial,
     getMaterialText, updateMaterialText, getMaterialDownloadUrl
 } from './materials.api.js';
 import {
@@ -110,6 +111,7 @@ export const api = {
 
     getMaterialStatus, getMaterialStatusBatch, _getMaterialStatusBatchGet, ingestMaterial,
     deleteMaterial, reprocessMaterial, updateMaterial,
+    retireMaterial, restoreMaterial,
     getMaterialText, updateMaterialText, getMaterialDownloadUrl,
 
     getNotifications, markNotificationRead, markNotificationsRead,

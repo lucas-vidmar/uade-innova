@@ -1,6 +1,7 @@
 import { getTableClient } from './storage.js';
 import { CONFIG } from '../config.js';
 import { isPublished, normalizePublicationState, resolveClassPublicationState } from './publication-state.js';
+import { parseRetirementHistory } from './material-retirement.js';
 
 const MATERIALS_TABLE = CONFIG.tables.materials;
 const CLASSES_TABLE = CONFIG.tables.classes;
@@ -75,6 +76,14 @@ function toMaterialEntity(material) {
     chunkCount: typeof material.chunkCount === 'number' ? material.chunkCount : undefined,
     reviewed: material.reviewed === true,
     priority: material.priority,
+    // #391: estado de retiro propio del material (no es `priority`).
+    retirementState: material.retirementState,
+    retiredBy: material.retiredBy,
+    retiredAt: material.retiredAt,
+    retireReason: material.retireReason,
+    retirementHistory: Array.isArray(material.retirementHistory) && material.retirementHistory.length > 0
+      ? JSON.stringify(material.retirementHistory)
+      : undefined,
     uploadedBy: material.uploadedBy,
     fileSize: typeof material.fileSize === 'number' ? material.fileSize : undefined,
   });
@@ -117,6 +126,12 @@ function fromMaterialEntity(entity) {
     chunkCount: entity.chunkCount,
     reviewed: entity.reviewed === true,
     priority: entity.priority,
+    // #391: la constancia del retiro viaja con el material.
+    retirementState: entity.retirementState,
+    retiredBy: entity.retiredBy,
+    retiredAt: entity.retiredAt,
+    retireReason: entity.retireReason,
+    retirementHistory: parseRetirementHistory(entity.retirementHistory),
     uploadedBy: entity.uploadedBy,
     fileSize: typeof entity.fileSize === 'number' ? entity.fileSize : Number(entity.fileSize) || undefined,
   };

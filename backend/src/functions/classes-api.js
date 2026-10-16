@@ -26,6 +26,11 @@ import {
     PublicationStateError,
 } from '../services/class-publication.js';
 import { computeClassProcessingStats } from '../services/class-processing.js';
+import {
+    applyRetirementChange,
+    isRetirementState,
+    resolveMaterialRetirement,
+} from '../services/material-retirement.js';
 const CONTAINER_CLASSES = CONFIG.containers.classes;
 const CONTAINER_PROCESSED = 'processed';
 const SUBJECTS_BLOB = CONFIG.blobs.subjects;
@@ -933,6 +938,13 @@ app.http('get-classes', {
                     reviewed: mat.reviewed === true,
                     chunkCount: mat.chunkCount,
                     priority: mat.priority,
+                    // #391: el estado de retiro y su constancia viajan con el material
+                    // para que la lista del docente pueda mostrarlos.
+                    retirementState: mat.retirementState || 'activa',
+                    retiredBy: mat.retiredBy || null,
+                    retiredAt: mat.retiredAt || null,
+                    retireReason: mat.retireReason || null,
+                    retirementHistory: Array.isArray(mat.retirementHistory) ? mat.retirementHistory : [],
                     errorMessage: mat.errorMessage,
                 };
 
@@ -2376,6 +2388,37 @@ app.http('update-material', {
                 }
             }
 
+            // #391: retirar una fuente no es ponderarla. `retirementState` es un
+            // estado propio del material: deja de citarse en las respuestas, sigue
+            // en la lista y guarda quién, cuándo y por qué. Reponer deja constancia.
+            let retirement = null;
+            if (isRetirementState(body.retirementState)) {
+                const requested = String(body.retirementState).trim();
+                const current = resolveMaterialRetirement(existing);
+                if (requested !== current.state) {
+                    const by = principal?.userDetails || readDevIdentityHeader(request, 'x-edu-uid') || 'docente';
+                    const conRetiro = applyRetirementChange(existing, {
+                        state: requested,
+                        by,
+                        reason: body.retireReason ?? body.reason,
+                    });
+                    Object.assign(updates, {
+                        retirementState: conRetiro.retirementState,
+                        retirementHistory: conRetiro.retirementHistory,
+                        retiredBy: conRetiro.retiredBy,
+                        retiredAt: conRetiro.retiredAt,
+                        retireReason: conRetiro.retireReason,
+                    });
+                    retirement = {
+                        previousState: current.state,
+                        state: conRetiro.retirementState,
+                        by,
+                        at: conRetiro.retiredAt || conRetiro.retirementHistory.at(-1)?.at,
+                        reason: conRetiro.retireReason || null,
+                    };
+                }
+            }
+
             const updated = await upsertMaterialState({
                 ...existing,
                 materialId: existing.materialId || existing.id,
@@ -2384,7 +2427,11 @@ app.http('update-material', {
             }, 'Merge');
 
             context.log(`[UpdateMaterial] ${materialId} updated:`, JSON.stringify(updates));
-            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: true, material: updated }) };
+            return {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ success: true, material: updated, retirement }),
+            };
         } catch (err) {
             context.error(`[UpdateMaterial] Error updating ${materialId}:`, err);
             return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: `Error al actualizar: ${err.message}` }) };

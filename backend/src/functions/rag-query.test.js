@@ -1195,6 +1195,55 @@ test('rag-query sandbox mode should skip reviewed filter in teacher preview (sim
     });
 });
 
+test('#391: rag-query deja de citar una fuente retirada (también en el sandbox docente)', async (t) => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    for (let i = 0; i < 3; i++) { try { await openaiMocks.chatCompletion('drain'); } catch {} }
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.mockImplementation(async () => ({
+        content: 'El despliegue se hace con FARO-NUEVO.',
+        usage: { prompt_tokens: 30, completion_tokens: 20, total_tokens: 50 },
+    }));
+
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'doc-001', oid: 'doc-001', userRoles: ['Docente'] }));
+
+    // La fuente vieja fue retirada (no borrada) y la nueva la reemplaza.
+    stateStoreMocks.listMaterialsBySubject.mock.mockImplementation(async () => [
+        {
+            id: 'mat-vieja', materialId: 'mat-vieja', reviewed: true, priority: 'secondary',
+            retirementState: 'retirada', retiredBy: 'prof01@uade.edu.ar',
+            retiredAt: '2026-10-16T12:00:00.000Z', retireReason: 'reemplazada por la guia 2026-10',
+        },
+        { id: 'mat-nueva', materialId: 'mat-nueva', reviewed: true, priority: 'primary' },
+    ]);
+
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter) => {
+        if (filter?.materialType?.$eq === 'verified-answer') return [];
+        return [
+            { score: 0.95, metadata: { materialType: 'notes', materialId: 'mat-vieja', text: 'FARO-VIEJO', classIds: ['class1'], chunkIndex: 0, sourceFilename: 'uj09-fuente-obsoleta.txt' } },
+            { score: 0.60, metadata: { materialType: 'notes', materialId: 'mat-nueva', text: 'FARO-NUEVO', classIds: ['class1'], chunkIndex: 0, sourceFilename: 'uj09-fuente-nueva.txt' } },
+        ];
+    });
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = {
+        json: async () => ({ question: '¿Con qué herramienta se hace el despliegue?', subjectId: 'materia1', classIds: ['class1'], sandbox: true, simulateStudent: false }),
+        headers: new Map(),
+        user: { id: 'test-user' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(response.status, 200);
+    const citadas = body.sources.map((s) => s.materialId);
+    assert.ok(!citadas.includes('mat-vieja'), 'la fuente retirada no se cita');
+    assert.ok(citadas.includes('mat-nueva'), 'la fuente que la reemplaza sí alimenta la respuesta');
+
+    t.after(() => {
+        stateStoreMocks.listMaterialsBySubject.mock.mockImplementation(async () => []);
+        authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ oid: 'test-user-oid', userRoles: ['Alumno'] }));
+    });
+});
+
 test('rag-query sandbox mode should keep reviewed filter when simulateStudent=true', async (t) => {
     openaiMocks.chatCompletion.mock.resetCalls();
     for (let i = 0; i < 3; i++) { try { await openaiMocks.chatCompletion('drain'); } catch {} }

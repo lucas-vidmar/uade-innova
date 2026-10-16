@@ -26,6 +26,7 @@ import {
     resolveMaterialPriority, resolveSourceMix, resolveSelectedClassCount, resolveFilterType
 } from '../services/rag-ranking.js';
 import { isQuarantined } from '../services/vector-audit.js';
+import { excludeRetiredMatches, partitionMaterialsByRetirement } from '../services/material-retirement.js';
 const MIN_HISTORY_TURNS = CONFIG.history.minTurns;
 const MAX_HISTORY_TURNS = CONFIG.history.maxTurns;
 const DEFAULT_HISTORY_TURNS = CONFIG.history.defaultTurns;
@@ -537,7 +538,7 @@ app.http('rag-query', {
             context.log(`[RAG] Subject post-filter: se descartaron ${dropped} matches fuera de subjectId=${subjectId} (correlationId=${correlationId})`);
         }
 
-        // ── 4b. Filtrar materiales no revisados ───────────────────
+        // ── 4b. Filtrar materiales no revisados y fuentes retiradas ───
         let priorityMap = {};
         try {
             const allMaterials = await listMaterialsBySubject(subjectId);
@@ -548,6 +549,20 @@ app.http('rag-query', {
                     priorityMap[m.materialId || m.id] = m.priority;
                 }
             });
+
+            // #391: una fuente retirada deja de alimentar las respuestas. A
+            // diferencia del filtro de revisión, el retiro es una decisión explícita
+            // del docente sobre esa fuente, así que se aplica también en el sandbox
+            // (es exactamente ahí donde se comprueba que ya no se cita).
+            const { retiredIds } = partitionMaterialsByRetirement(allMaterials);
+            if (retiredIds.size > 0) {
+                const beforeRetired = matches.length;
+                matches = excludeRetiredMatches(matches, retiredIds);
+                retiredIds.forEach((id) => delete priorityMap[id]);
+                if (beforeRetired !== matches.length) {
+                    context.log(`[RAG] Filtro de retiro: ${beforeRetired} → ${matches.length} matches (${retiredIds.size} fuentes retiradas)`);
+                }
+            }
 
             const reviewedMaterialIds = new Set(
                 allMaterials.filter(m => m.reviewed === true).map(m => m.materialId || m.id)
