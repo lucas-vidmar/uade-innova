@@ -572,3 +572,74 @@ export async function listAllVectorIds(options = {}, deps = {}) {
         return allIds;
     });
 }
+
+/**
+ * Reasigna metadatos de los vectores de un material sin recalcular embeddings.
+ *
+ * UJ-08 / #389: reubicar un material (agregarle o quitarle un encuentro) tiene
+ * que alcanzar al índice. Si sólo se actualiza el estado del material, los
+ * vectores conservan la clase vieja: la búsqueda del encuentro de origen sigue
+ * citando material que ya no le corresponde y el encuentro de destino no lo
+ * encuentra nunca.
+ *
+ * Se reescriben los metadatos sobre los mismos vectores (mismos `values`), así
+ * que no se paga una corrida nueva de embeddings ni cambia el ordenamiento.
+ *
+ * @param {string} materialId
+ * @param {object} patch - Metadatos a reescribir: `classIds` (arreglo) y/o `materialType`
+ * @param {object} [deps] - Override de telemetria para testing
+ * @returns {Promise<{updated: number, missing: number}>}
+ */
+export async function updateMaterialVectorsMetadata(materialId, patch = {}, deps = {}) {
+    if (!materialId || typeof materialId !== 'string' || !materialId.trim()) {
+        throw new Error('[VectorStore] updateMaterialVectorsMetadata requiere un materialId valido');
+    }
+
+    const classIds = Array.isArray(patch.classIds) ? patch.classIds.filter(Boolean) : null;
+    const metadataPatch = {};
+    if (classIds) {
+        metadataPatch.classId = classIds[0] || '';
+        metadataPatch.classIds = [...classIds];
+    }
+    if (typeof patch.materialType === 'string' && patch.materialType) {
+        metadataPatch.materialType = patch.materialType;
+    }
+    if (Object.keys(metadataPatch).length === 0) return { updated: 0, missing: 0 };
+
+    const ids = await listAllVectorIds({ prefix: `${materialId}-chunk-` }, deps);
+    if (ids.length === 0) return { updated: 0, missing: 0 };
+
+    const FETCH_BATCH_SIZE = 500;
+    const updates = [];
+    let missing = 0;
+
+    for (let i = 0; i < ids.length; i += FETCH_BATCH_SIZE) {
+        const batch = ids.slice(i, i + FETCH_BATCH_SIZE);
+        const { vectors, missingIds } = await fetchVectorsByIds(batch, {}, deps);
+        missing += (missingIds || []).length;
+
+        for (const vector of vectors) {
+            if (!Array.isArray(vector.values) || vector.values.length === 0) {
+                // Sin valores no se puede re-upsertear: se cuenta como faltante en
+                // lugar de mandar un upsert que Pinecone va a rechazar.
+                missing += 1;
+                continue;
+            }
+            updates.push({
+                id: vector.id,
+                values: vector.values,
+                metadata: { ...vector.metadata, ...metadataPatch },
+            });
+        }
+    }
+
+    if (updates.length === 0) {
+        console.warn(`[VectorStore] Sin vectores reutilizables para reindexar metadatos de ${materialId}`);
+        return { updated: 0, missing };
+    }
+
+    await upsertChunks(updates);
+    console.log(`[VectorStore] Metadatos reindexados para ${materialId}: ${updates.length} vectores (${missing} faltantes)`);
+
+    return { updated: updates.length, missing };
+}
