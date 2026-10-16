@@ -59,6 +59,7 @@ const stateStoreMocks = {
     getCorrection: mock.fn(async () => null),
     getConversation: mock.fn(async () => null),
     listConversationsByUser: mock.fn(async () => []),
+    deleteConversation: mock.fn(async () => true),
     RATINGS_TABLE: 'ConversationRatings',
 };
 
@@ -384,6 +385,68 @@ test('get-chat-history dedupes sessions present in both stores (#331)', async ()
         const dupes = body.filter((item) => (item.sessionId || item.id) === 'conv-dup');
         assert.strictEqual(dupes.length, 1, 'session present in both stores must appear once');
         assert.strictEqual(dupes[0].answer, 'Separación de comandos y consultas.', 'chat-log (richer) entry wins');
+    } finally {
+        stateStoreMocks.listConversationsByUser.mock.mockImplementation(async () => []);
+    }
+});
+
+// UJ-25: el listado de "Chats recientes" se arma con los blobs de chat-logs.
+// Borrar sólo la conversación guardada dejaba el hilo reaparecer y accesible
+// por enlace directo, así que el borrado de un hilo tiene que alcanzar los dos
+// almacenes.
+test('delete-chat-history con sessionId borra sólo ese hilo (turnos + conversación)', async () => {
+    resetState();
+    principalMock = { userRoles: ['Alumno'], oid: 'student-1' };
+    storageState.chatLogs.set('student_1/arq-software-2026/i1.json', { id: 'i1', sessionId: 'sess-1', question: 'q1', answer: 'a1' });
+    storageState.chatLogs.set('student_1/arq-software-2026/i2.json', { id: 'i2', sessionId: 'sess-1', question: 'q2', answer: 'a2' });
+    storageState.chatLogs.set('student_1/arq-software-2026/i3.json', { id: 'i3', sessionId: 'sess-otro', question: 'q3', answer: 'a3' });
+
+    const response = await handlers['delete-chat-history'](
+        { query: new URLSearchParams({ subjectId: 'arq-software-2026', sessionId: 'sess-1' }) },
+        { log: () => {}, error: () => {}, warn: () => {} }
+    );
+
+    assert.strictEqual(response.status, 200);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.success, true);
+    assert.strictEqual(body.count, 2, 'borra los dos turnos del hilo pedido');
+    assert.strictEqual(body.conversationsDeleted, 1);
+
+    const borrados = storageMocks.deleteBlob.mock.calls
+        .map((call) => call.arguments[1])
+        .filter((name) => typeof name === 'string' && name.includes('/arq-software-2026/i'));
+    assert.deepStrictEqual(borrados.sort(), [
+        'student_1/arq-software-2026/i1.json',
+        'student_1/arq-software-2026/i2.json',
+    ], 'no debe tocar los turnos de otros hilos');
+
+    const conversaciones = stateStoreMocks.deleteConversation.mock.calls.map((call) => call.arguments);
+    assert.ok(
+        conversaciones.some(([userId, conversationId]) => userId === 'student-1' && conversationId === 'sess-1'),
+        'borra también la conversación guardada del hilo'
+    );
+});
+
+test('delete-chat-history sin sessionId borra todo el historial y sus conversaciones', async () => {
+    resetState();
+    principalMock = { userRoles: ['Alumno'], oid: 'student-1' };
+    storageState.chatLogs.set('student_1/arq-software-2026/j1.json', { id: 'j1', sessionId: 'sess-a' });
+    storageState.chatLogs.set('student_1/arq-software-2026/j2.json', { id: 'j2', sessionId: 'sess-b' });
+    stateStoreMocks.listConversationsByUser.mock.mockImplementation(async () => ([
+        { conversationId: 'sess-a' },
+        { conversationId: 'sess-b' },
+    ]));
+
+    try {
+        const response = await handlers['delete-chat-history'](
+            { query: new URLSearchParams({ subjectId: 'arq-software-2026' }) },
+            { log: () => {}, error: () => {}, warn: () => {} }
+        );
+
+        assert.strictEqual(response.status, 200);
+        const body = JSON.parse(response.body);
+        assert.strictEqual(body.count, 2);
+        assert.strictEqual(body.conversationsDeleted, 2, 'borra también las conversaciones guardadas espejadas');
     } finally {
         stateStoreMocks.listConversationsByUser.mock.mockImplementation(async () => []);
     }

@@ -165,6 +165,21 @@ export async function clearChatHistory(subjectId) {
     }
 }
 
+// Borrado de un solo hilo. El listado de "Chats recientes" se arma con los
+// blobs de chat-logs, así que borrar el hilo tiene que alcanzarlos: el
+// endpoint recibe el sessionId y borra sus turnos y su conversación guardada.
+export async function deleteChatSession(sessionId, subjectId) {
+    const res = await apiFetch(`${BASE_URL}/chat-history?subjectId=${encodeURIComponent(subjectId)}&sessionId=${encodeURIComponent(sessionId)}`, {
+        method: 'DELETE'
+    });
+    if (!res.ok) {
+        let message = `Error ${res.status}: no se pudo eliminar el hilo`;
+        try { const err = await res.json(); if (err?.error) message = err.error; } catch {}
+        throw new Error(message);
+    }
+    return res.json();
+}
+
 export async function sendChatFeedback({ messageId, subjectId, isPositive }) {
     const res = await apiFetch(`${BASE_URL}/chat-feedback`, {
         method: 'POST',
