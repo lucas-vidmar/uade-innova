@@ -2,7 +2,7 @@ import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 // Import the real module (no mock) to test production mock gating (#218 F1 regression).
-const { isDevelopment, isMockAuthAllowed, parseClientPrincipal, getAuthenticatedUser, setStashedIdentity } = await import('./auth-utils.js');
+const { isDevelopment, isMockAuthAllowed, parseClientPrincipal, getAuthenticatedUser, setStashedIdentity, readDevIdentityHeader, resolveIdentityKey } = await import('./auth-utils.js');
 const { resetAllowlistCache, isAllowlistConfigured } = await import('./allowlist.js');
 
 function mockRequest(headers = {}) {
@@ -136,4 +136,39 @@ test('ALLOWLIST_ALLOWED_EMAIL — configured allowlist + listed email resolves t
   const user = getAuthenticatedUser(req);
   assert.equal(user.role, 'Docente');
   assert.deepEqual(user.scope, { subjects: ['arq-software-2026'], classes: [] });
+});
+
+// Los encabezados x-edu-uid / x-mock-role no son identidad: los puede mandar
+// cualquiera. En producción se ignoran (verificado: devolvían el historial de
+// otro alumno sin sesión); solo valen con el atajo de mock habilitado.
+test('DEV_IDENTITY_HEADER_PROD_OFF — x-edu-uid is ignored in production', () => {
+  const req = mockRequest({ 'x-edu-uid': 'alu-001' });
+  assert.equal(readDevIdentityHeader(req, 'x-edu-uid'), null);
+  assert.equal(getAuthenticatedUser(req).userId, 'anonymous');
+  assert.equal(resolveIdentityKey(req, undefined), 'pilot-user');
+});
+
+test('DEV_IDENTITY_HEADER_ESCAPE_HATCH — x-edu-uid is honored with AUTH_MOCK_ENABLED=true', () => {
+  process.env.AUTH_MOCK_ENABLED = 'true';
+  const req = mockRequest({ 'x-edu-uid': 'alu-001' });
+  assert.equal(readDevIdentityHeader(req, 'x-edu-uid'), 'alu-001');
+  assert.equal(getAuthenticatedUser(req).userId, 'alu-001');
+  assert.equal(resolveIdentityKey(req, undefined), 'alu-001');
+});
+
+test('DEV_IDENTITY_HEADER_DEV — x-edu-uid is honored in Development', () => {
+  process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Development';
+  const req = mockRequest({ 'x-edu-uid': 'alu-002' });
+  assert.equal(readDevIdentityHeader(req, 'x-edu-uid'), 'alu-002');
+  assert.equal(getAuthenticatedUser(req).userId, 'alu-002');
+});
+
+test('DEV_IDENTITY_HEADER_SESSION — a real session identity always wins over the header', () => {
+  process.env.AUTH_MOCK_ENABLED = 'true';
+  const req = mockRequest({ 'x-edu-uid': 'alu-001' });
+  setStashedIdentity(req, {
+    user: { userId: 'session-user', sanitizedId: 'session_user', principal: { userRoles: ['Alumno'] }, role: 'Alumno' },
+    principal: null,
+  });
+  assert.equal(resolveIdentityKey(req, undefined), 'session-user');
 });

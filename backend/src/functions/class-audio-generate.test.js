@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 
 const authMocks = {
     validateFrontDoorId: mock.fn(() => true),
+    readDevIdentityHeader: mock.fn((request, name) => request?.headers?.get?.(name) || null),
     parseClientPrincipal: mock.fn(() => ({ userId: 'alu-001', userRoles: ['authenticated', 'Alumno'] })),
 };
 

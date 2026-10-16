@@ -52,6 +52,11 @@ mock.module('@azure/functions', {
     },
 });
 
+// El cierre acotado del stream se prueba con un límite chico, mutando CONFIG en
+// el momento del test (config.js es un singleton del proceso de test), para no
+// acortar la vida del stream en los demás casos.
+const { CONFIG } = await import('../services/config.js');
+
 await import('./notifications.js');
 
 test('get-notifications should filter by subject and honor limit', async () => {
@@ -267,6 +272,45 @@ test('stream-notifications sends notification event for new items', async () => 
 
     reader.cancel('test done');
     notificationStoreMocks.listNotificationsSince.mock.mockImplementation(async () => ([]));
+});
+
+// El stream debe cerrarse solo mucho antes de que el host mate la invocación:
+// si no, el cliente ve una conexión cortada en lugar de un cierre limpio y el
+// endpoint acumula fallos con duraciones de minutos (37% de fallos y p95 ~313 s
+// medidos en producción).
+test('stream-notifications closes itself at max lifetime and asks for reconnect', async () => {
+    let text = '';
+    let done = false;
+    const original = CONFIG.notifications.streamMaxMs;
+    CONFIG.notifications.streamMaxMs = 80;
+    try {
+        notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => ([]));
+        notificationStoreMocks.listNotificationsSince.mock.mockImplementation(async () => ([]));
+
+        const response = await handlers['stream-notifications'](
+            { query: new URLSearchParams({ subjectId: 'arq-software-2026', userId: 'alu-001' }) },
+            { log: () => {} }
+        );
+
+        assert.strictEqual(response.status, 200);
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        // Límite de 20 lecturas: el timer de vida (80 ms) tiene que cerrar el
+        // stream mucho antes de agotarlas.
+        for (let i = 0; i < 20 && !done; i += 1) {
+            const { value, done: finished } = await reader.read();
+            if (value) text += decoder.decode(value, { stream: true });
+            done = finished;
+        }
+    } finally {
+        CONFIG.notifications.streamMaxMs = original;
+    }
+
+    assert.ok(text.includes('event: snapshot'), 'debe emitir el snapshot inicial');
+    assert.ok(text.includes('event: reconnect'), 'debe pedir reconexión antes de cerrar');
+    assert.ok(text.includes('max-lifetime'), 'la reconexión debe explicar el motivo');
+    assert.strictEqual(done, true, 'el stream debe cerrarse solo, no quedar abierto');
 });
 
 test('get-notifications should return persisted notification with correct read state', async () => {

@@ -4,7 +4,7 @@ import { withCorrelation } from '../middleware/with-correlation.js';
 import { createStructuredLogger } from '../services/structured-logger.js';
 import { loadJson, saveJson, listBlobs, deleteBlob, moveBlob, uploadFile, downloadFile, getTableClient } from '../services/storage.js';
 import { v4 as uuidv4 } from 'uuid';
-import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
+import { parseClientPrincipal, validateFrontDoorId, readDevIdentityHeader } from '../services/auth-utils.js';
 import { listClassesBySubject, listMaterialsBySubject, listMaterialsByClass, replaceClassesForSubject, deleteMaterialStateById, getMaterialState, upsertMaterialState, deleteClassesBySubject, deleteMaterialsBySubject, getEnrollmentsByUser, getEnrollment, listClassViewsByStudent, deleteClassViewsBySubject, getMaterialStateById } from '../services/state-store.js';
 import * as vectorStore from '../services/vector-store.js';
 import { trackPollingEvent, trackAuthFallbackBlocked } from '../services/telemetry.js';
@@ -561,7 +561,7 @@ app.http('get-subjects', {
         // Admin is a global/unscoped role like Director (fix #343): it must see
         // the full catalog, never the group-filtered student subset.
         const isUnscoped = isDirector || isAdmin;
-        const userId = principal?.userId || principal?.oid || request.headers.get('x-mock-role') || 'anonymous';
+        const userId = principal?.userId || principal?.oid || readDevIdentityHeader(request, 'x-mock-role') || 'anonymous';
 
         // Fail closed for anonymous callers (fix #343): without any principal
         // there is no scope to resolve, so return nothing instead of the full
@@ -1552,7 +1552,7 @@ app.http('generate-class-map', {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         const classId = request.params.classId;
         const principal = parseClientPrincipal(request);
-        const userId = principal?.oid || request.headers.get('x-edu-uid') || 'pilot-user';
+        const userId = principal?.oid || readDevIdentityHeader(request, 'x-edu-uid') || 'pilot-user';
         const CONTAINER_MAPS = 'class-maps';
         const CONTAINER_SUMMARIES = 'class-summaries';
         try {

@@ -163,6 +163,15 @@ export const CONFIG = {
     minRatedThreshold: Number(process.env.SAT_MIN_RATED_THRESHOLD) || 10,
   },
 
+  notifications: {
+    // El endpoint SSE debe cerrar la conexión bastante antes de que el host
+    // mate la ejecución (el límite duro de HTTP en Consumption ronda los 230 s).
+    // Cerrar primero y dejar que el cliente reconecte mantiene las duraciones
+    // acotadas en lugar de terminar en un FunctionTimeoutException.
+    streamMaxMs: Number(process.env.NOTIFICATION_STREAM_MAX_MS) || 110000,
+    streamPollMs: Number(process.env.NOTIFICATION_STREAM_POLL_MS) || 5000,
+  },
+
   materialWeights: {
     notes: 1.35,
     bibliography: 1.1,

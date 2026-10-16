@@ -53,6 +53,24 @@ export function isMockAuthAllowed() {
   return isDevelopment() || process.env.AUTH_MOCK_ENABLED === 'true';
 }
 
+/**
+ * Lee un encabezado de identidad de desarrollo (`x-edu-uid`, `x-mock-role`).
+ *
+ * Devuelve `null` salvo que el atajo de mock esté permitido (Development o
+ * `AUTH_MOCK_ENABLED=true`). En producción esos encabezados NO son identidad:
+ * cualquiera puede mandarlos, así que confiar en ellos es una suplantación
+ * directa (verificado contra el entorno de producción: `x-edu-uid` devolvía el
+ * historial de otro alumno sin sesión).
+ *
+ * @param {Request} request
+ * @param {string} name
+ * @returns {string|null}
+ */
+export function readDevIdentityHeader(request, name) {
+  if (!isMockAuthAllowed()) return null;
+  return request?.headers?.get?.(name) || null;
+}
+
 function enrichPrincipalEmail(principal, request) {
   const email = resolvePrincipalEmail(principal, request);
   if (email && !principal.email) principal.email = email;
@@ -154,7 +172,7 @@ export function getAuthenticatedUser(request) {
     let userId = principal?.userId || principal?.oid;
 
     if (!userId) {
-        userId = request?.headers?.get?.('x-edu-uid') || 'anonymous';
+        userId = readDevIdentityHeader(request, 'x-edu-uid') || 'anonymous';
     }
 
     const sanitizedId = String(userId).replace(/[^a-zA-Z0-9]/g, '_');
@@ -209,7 +227,7 @@ export function resolveIdentityKey(request, context) {
     if (stashed?.user?.userId) return stashed.user.userId;
     const authUser = getAuthenticatedUser(request);
     if (authUser?.userId && authUser.userId !== 'anonymous') return authUser.userId;
-    return request?.headers?.get?.('x-edu-uid') || 'pilot-user';
+    return readDevIdentityHeader(request, 'x-edu-uid') || 'pilot-user';
 }
 
 /**

@@ -324,6 +324,7 @@ app.http('stream-notifications', {
     let pollCount = 0;
     let sinceTimestamp = lastPolledAt || new Date(Date.now() - 5000).toISOString();
     let pollInterval = null;
+    let maxLifetimeTimer = null;
 
     const sendEvent = (controller, event, data) => {
       if (closed) return;
@@ -358,7 +359,29 @@ app.http('stream-notifications', {
             clearInterval(pollInterval);
             pollInterval = null;
           }
+          if (maxLifetimeTimer) {
+            clearTimeout(maxLifetimeTimer);
+            maxLifetimeTimer = null;
+          }
         };
+
+        // Cierre acotado del stream. Sin esto la conexión vive hasta que el host
+        // mata la invocación (límite duro de HTTP en Consumption), y el cliente
+        // ve una conexión cortada en lugar de un cierre limpio: eso producía el
+        // 37% de fallos y los p95 de ~313 s del endpoint. Cerramos antes y
+        // pedimos reconexión explícita; el cliente ya reintenta solo.
+        maxLifetimeTimer = setTimeout(() => {
+          if (closed) return;
+          sendEvent(controller, 'reconnect', { reason: 'max-lifetime', ms: CONFIG.notifications.streamMaxMs });
+          closed = true;
+          cleanup();
+          try {
+            controller.close();
+          } catch (err) {
+            context.log(`[notifications/stream] close skipped: ${err.message}`);
+          }
+          context.log(`[notifications/stream] closed after max lifetime (${CONFIG.notifications.streamMaxMs} ms)`);
+        }, CONFIG.notifications.streamMaxMs);
 
         pollInterval = setInterval(async () => {
           if (closed) { cleanup(); return; }
@@ -386,7 +409,7 @@ app.http('stream-notifications', {
           if (pollCount % 6 === 0) {
             sendEvent(controller, 'keepalive', { ts: new Date().toISOString() });
           }
-        }, 5000);
+        }, CONFIG.notifications.streamPollMs);
 
         request?.signal?.addEventListener('abort', () => {
           closed = true;
@@ -399,6 +422,10 @@ app.http('stream-notifications', {
         if (pollInterval) {
           clearInterval(pollInterval);
           pollInterval = null;
+        }
+        if (maxLifetimeTimer) {
+          clearTimeout(maxLifetimeTimer);
+          maxLifetimeTimer = null;
         }
       },
     });

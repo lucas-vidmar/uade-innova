@@ -3,7 +3,7 @@ import { withAuth } from '../middleware/with-auth.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { createStructuredLogger } from '../services/structured-logger.js';
 import { upsertClassView, listClassViewsBySubject, listClassViewsByStudent } from '../services/state-store.js';
-import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
+import { parseClientPrincipal, validateFrontDoorId, readDevIdentityHeader } from '../services/auth-utils.js';
 import { getEnrollment } from '../services/state-store.js';
 
 app.http('track-class-view', {
@@ -27,7 +27,7 @@ app.http('track-class-view', {
         }
 
         const principal = parseClientPrincipal(request);
-        const userId = principal?.userId || principal?.oid || request.headers.get('x-edu-uid') || 'anonymous';
+        const userId = principal?.userId || principal?.oid || readDevIdentityHeader(request, 'x-edu-uid') || 'anonymous';
 
         try {
             const enrollment = await getEnrollment(subjectId, userId);
@@ -69,7 +69,7 @@ app.http('get-class-views', {
         }
 
         const principal = parseClientPrincipal(request);
-        const authUserId = principal?.userId || principal?.oid || request.headers.get('x-edu-uid') || 'anonymous';
+        const authUserId = principal?.userId || principal?.oid || readDevIdentityHeader(request, 'x-edu-uid') || 'anonymous';
         const roles = principal?.userRoles || [];
         const isTeacher = roles.includes('Docente');
         const isDirector = roles.includes('Director');
