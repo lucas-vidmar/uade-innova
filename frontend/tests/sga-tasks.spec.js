@@ -5,7 +5,6 @@ test('student can review SGA-backed tasks usability flow', async ({ page, browse
 
   await page.addInitScript(() => {
     sessionStorage.setItem('edu_role', 'student');
-    localStorage.setItem('onboarding-student-completed', 'true');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');
   });

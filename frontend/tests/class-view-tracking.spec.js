@@ -6,7 +6,6 @@ test.describe('Class View Tracking', () => {
     await page.addInitScript(() => {
       localStorage.setItem('uade_use_mock', 'false');
       sessionStorage.setItem('edu_role', 'student');
-      localStorage.setItem('onboarding-student-completed', 'true');
       sessionStorage.setItem('edu_uid', 'alu-001');
       sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
       sessionStorage.setItem('edu_logged_in', 'true');
