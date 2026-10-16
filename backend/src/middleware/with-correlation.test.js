@@ -106,4 +106,20 @@ describe('withCorrelation middleware', () => {
     assert.equal(result, undefined);
   });
 
+  // #411: sin access-control-expose-headers el navegador no expone x-correlation-id
+  // en una respuesta de otro origen y nadie puede citar la correlación de un fallo.
+  test('expone la correlación a otro origen (access-control-expose-headers)', async () => {
+    const handler = mock.fn(async () => ({
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error: 'boom' }),
+    }));
+    const wrapped = withCorrelation(handler);
+    const result = await wrapped(mockRequest({ origin: 'http://localhost:5173', 'x-correlation-id': 'req-9' }), mockContext());
+
+    assert.equal(result.headers['x-correlation-id'], 'req-9');
+    assert.equal(result.headers['access-control-allow-origin'], 'http://localhost:5173');
+    assert.match(result.headers['access-control-expose-headers'], /x-correlation-id/);
+  });
+
 });

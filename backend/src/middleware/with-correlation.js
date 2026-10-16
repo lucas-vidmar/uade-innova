@@ -11,6 +11,11 @@ function getCorsHeaders(request) {
     'access-control-allow-origin': allowedOrigin,
     'access-control-allow-methods': 'GET, POST, PUT, DELETE, PATCH, OPTIONS',
     'access-control-allow-headers': 'content-type,authorization,x-correlation-id,x-mock-role,x-edu-uid,x-ms-client-principal-name,traceparent,tracestate',
+    // #411: la correlación viaja en la respuesta, pero en un origen distinto el
+    // navegador sólo expone las cabeceras de la lista segura de CORS. Sin esta
+    // lista, ninguna pantalla puede leer x-correlation-id y nadie puede citar la
+    // correlación de un fallo al reportarlo.
+    'access-control-expose-headers': 'x-correlation-id,traceparent,tracestate',
     'access-control-max-age': '86400',
     'vary': 'Origin',
   };
