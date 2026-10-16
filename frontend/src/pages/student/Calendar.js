@@ -353,6 +353,15 @@ export async function renderStudentCalendar(container) {
   };
 
   // ── Calendar export helpers (fix #339: RFC 5545 + valid provider URLs) ──
+  // fix #354: every exported event must name its unit so the dates do not land
+  // orphaned in the student's own calendar. `activeSubjectId` is a technical id
+  // ('arq-software-2026'); the human name comes from the resolved subject list.
+  const subjectName = (() => {
+    const subjects = user && Array.isArray(user.subjects) ? user.subjects : [];
+    const match = subjects.find(s => s && s.id === activeSubjectId);
+    return (match && match.name) ? match.name : (activeSubjectId || '');
+  })();
+  const withUnit = (title) => subjectName ? `${title} · ${subjectName}` : title;
   const dtStamp = () => new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
   // RFC 5545 TEXT escaping: backslash, semicolon, comma, newline.
   const escapeIcsText = (s) => String(s ?? '')
@@ -384,8 +393,8 @@ export async function renderStudentCalendar(container) {
       lines.push(`DTSTAMP:${stamp}`);
       lines.push('DTSTART;VALUE=DATE:' + toIcsDate(c.date));
       lines.push('DTEND;VALUE=DATE:' + nextDayIcsDate(c.date));
-      lines.push('SUMMARY:' + escapeIcsText(c.title || 'Clase'));
-      lines.push('DESCRIPTION:' + escapeIcsText('Clase de ' + (c.subjectId || '') + '. Temas: ' + (c.topics || []).join(', ')));
+      lines.push('SUMMARY:' + escapeIcsText(withUnit(c.title || 'Clase')));
+      lines.push('DESCRIPTION:' + escapeIcsText('Clase de ' + subjectName + '. Temas: ' + (c.topics || []).join(', ')));
       lines.push('END:VEVENT');
     });
     deadlines.forEach(d => {
@@ -395,8 +404,8 @@ export async function renderStudentCalendar(container) {
       lines.push(`DTSTAMP:${stamp}`);
       lines.push('DTSTART;VALUE=DATE:' + toIcsDate(d.dueDate));
       lines.push('DTEND;VALUE=DATE:' + nextDayIcsDate(d.dueDate));
-      lines.push('SUMMARY:' + escapeIcsText('Entrega: ' + (d.title || 'Tarea')));
-      lines.push('DESCRIPTION:' + escapeIcsText(d.description || 'Entrega de ' + (d.title || '')));
+      lines.push('SUMMARY:' + escapeIcsText(withUnit('Entrega: ' + (d.title || 'Tarea'))));
+      lines.push('DESCRIPTION:' + escapeIcsText('Entrega de ' + subjectName + ': ' + (d.description || d.title || '')));
       lines.push('END:VEVENT');
     });
     lines.push('END:VCALENDAR');
@@ -407,8 +416,8 @@ export async function renderStudentCalendar(container) {
   const nextUpcomingEvent = () => {
     const today = formatDateStr(new Date());
     const candidates = [
-      ...classes.filter(c => c.date).map(c => ({ kind: 'class', date: String(c.date).slice(0, 10), title: c.title || 'Clase', detail: 'Clase de ' + (c.subjectId || '') + '. Temas: ' + (c.topics || []).join(', ') })),
-      ...deadlines.filter(d => d.dueDate).map(d => ({ kind: 'deadline', date: String(d.dueDate).slice(0, 10), title: 'Entrega: ' + (d.title || 'Tarea'), detail: d.description || '' })),
+      ...classes.filter(c => c.date).map(c => ({ kind: 'class', date: String(c.date).slice(0, 10), title: withUnit(c.title || 'Clase'), detail: 'Clase de ' + subjectName + '. Temas: ' + (c.topics || []).join(', ') })),
+      ...deadlines.filter(d => d.dueDate).map(d => ({ kind: 'deadline', date: String(d.dueDate).slice(0, 10), title: withUnit('Entrega: ' + (d.title || 'Tarea')), detail: 'Entrega de ' + subjectName + ': ' + (d.description || d.title || '') })),
     ].filter(e => e.date >= today).sort((a, b) => a.date.localeCompare(b.date));
     return candidates[0] || null;
   };
