@@ -108,6 +108,30 @@ test('get-pending-reports should anonymize numeric student IDs correctly', async
   assert.match(body.data[0].studentId, /^\d\*\*\*\d$/);
 });
 
+test('get-pending-reports groups coincident reports first and counts them (UJ-40)', async () => {
+  mockStateStore.listPendingCorrections.mock.mockImplementation(async () => [
+    { correctionId: 'c-solo', subjectId: 'arq-software-2026', studentId: 'alu-003', question: 'Q solo', originalAnswer: 'respuesta distinta', issueDetail: 'x', classId: 'class-02', status: 'pending', createdAt: '2026-04-10T12:00:00.000Z', groupKey: 'k-solo' },
+    { correctionId: 'c-a', subjectId: 'arq-software-2026', studentId: 'alu-001', question: 'Q compartida', originalAnswer: 'misma respuesta', issueDetail: 'x', classId: 'class-04', status: 'pending', createdAt: '2026-04-10T11:00:00.000Z', groupKey: 'k-shared' },
+    { correctionId: 'c-b', subjectId: 'arq-software-2026', studentId: 'alu-005', question: 'Q compartida', originalAnswer: 'misma respuesta', issueDetail: 'x', classId: 'class-04', status: 'pending', createdAt: '2026-04-10T13:00:00.000Z', groupKey: 'k-shared' },
+  ]);
+
+  const response = await capturedHandler(
+    { query: new URLSearchParams({ subjectId: 'arq-software-2026' }) },
+    { invocationId: 'test-uj40' }
+  );
+
+  assert.strictEqual(response.status, 200);
+  const body = JSON.parse(response.body);
+  assert.strictEqual(body.data.length, 3);
+  // The two coincident reports come first, ordered oldest-first within the group.
+  assert.strictEqual(body.data[0].correctionId, 'c-a');
+  assert.strictEqual(body.data[0].coincidences, 2);
+  assert.strictEqual(body.data[1].correctionId, 'c-b');
+  assert.strictEqual(body.data[1].coincidences, 2);
+  assert.strictEqual(body.data[2].correctionId, 'c-solo');
+  assert.strictEqual(body.data[2].coincidences, 1);
+});
+
 test('get-pending-reports should honor correctionId for non-pending states (#350)', async () => {
   mockStateStore.getCorrection.mock.mockImplementation(async (subjectId, correctionId) => {
     if (correctionId === 'verified-1') {

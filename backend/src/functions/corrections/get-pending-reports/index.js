@@ -175,15 +175,39 @@ app.http('get-pending-reports', {
         corrections = await listPendingCorrections(subjectId);
       }
 
+      // Convergence (UJ-40): reports about the same material fragment must be
+      // seen together. Derive a stable group key per report (persisted at
+      // report time; fall back to encounter + normalized answer head) and count
+      // how many reports share it. Order: state, then most-coincident group,
+      // then the oldest case first so the biggest/oldest problem is on top.
+      const groupKeyOf = (c) => {
+        if (c.groupKey) return c.groupKey;
+        const head = String(c.originalAnswer || c.question || '').toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 120);
+        return `${c.classId || 'unknown'}|${head}`;
+      };
+      const coincidence = new Map();
+      for (const c of corrections) {
+        const k = groupKeyOf(c);
+        coincidence.set(k, (coincidence.get(k) || 0) + 1);
+      }
+
       const statusOrder = { pending: 0, reviewed: 1, resolved: 2, verified: 3 };
       corrections.sort((a, b) => {
         const aOrder = statusOrder[a.status] ?? 99;
         const bOrder = statusOrder[b.status] ?? 99;
         if (aOrder !== bOrder) return aOrder - bOrder;
-        return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+        const aCount = coincidence.get(groupKeyOf(a)) || 1;
+        const bCount = coincidence.get(groupKeyOf(b)) || 1;
+        if (aCount !== bCount) return bCount - aCount;
+        return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
       });
 
-      let data = corrections.map(toDto);
+      const toDtoWithGroup = (c) => {
+        const k = groupKeyOf(c);
+        return { ...toDto(c), groupKey: k, coincidences: coincidence.get(k) || 1 };
+      };
+
+      let data = corrections.map(toDtoWithGroup);
 
       if (classId) {
         data = data.filter((c) => c.classId === classId);

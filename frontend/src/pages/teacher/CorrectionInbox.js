@@ -145,7 +145,7 @@ export async function renderCorrectionInbox(container) {
             </svg>
           </div>
           <div class="class-list-info">
-            <div class="class-list-title"><strong>${escapeHtml(c.question || 'Consulta sin título')}</strong></div>
+            <div class="class-list-title"><strong>${escapeHtml(c.question || 'Consulta sin título')}</strong>${c.coincidences > 1 ? ` <span class="badge badge-warning" title="Reportes del mismo material o respuesta">${c.coincidences} coincidencias</span>` : ''}</div>
             <div class="class-list-topics">${escapeHtml(answerExcerpt)}${(c.originalAnswer || '').length > 240 ? '...' : ''}</div>
             <div class="class-list-files">
               Reportado ${date} · ${escapeHtml(classTitle)} · ${escapeHtml(c.studentId || 'Anónimo')}
