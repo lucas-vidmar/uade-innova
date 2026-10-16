@@ -5,6 +5,7 @@ import assert from 'node:assert';
 
 const mockStateStore = {
   getEnrollment: mock.fn(async () => ({ status: 'active', role: 'teacher' })),
+  getCorrection: mock.fn(async () => null),
   listCorrections: mock.fn(async () => []),
   listPendingCorrections: mock.fn(async () => [
     {
@@ -105,4 +106,43 @@ test('get-pending-reports should anonymize numeric student IDs correctly', async
   assert.ok(body.data.length > 0);
   // Numeric ID with > 4 digits should be masked as first***last
   assert.match(body.data[0].studentId, /^\d\*\*\*\d$/);
+});
+
+test('get-pending-reports should honor correctionId for non-pending states (#350)', async () => {
+  mockStateStore.getCorrection.mock.mockImplementation(async (subjectId, correctionId) => {
+    if (correctionId === 'verified-1') {
+      return {
+        correctionId: 'verified-1',
+        subjectId: 'arq-software-2026',
+        studentId: 'alu-001',
+        question: '¿Qué es CQRS?',
+        originalAnswer: 'Una respuesta.',
+        correctedAnswer: 'Una corrección.',
+        issueDetail: 'Incorrecta',
+        classId: 'class-01',
+        status: 'verified',
+        createdAt: '2026-04-10T10:00:00.000Z',
+      };
+    }
+    return null;
+  });
+
+  const response = await capturedHandler(
+    { query: new URLSearchParams({ subjectId: 'arq-software-2026', correctionId: 'verified-1' }) },
+    { invocationId: 'test-350' }
+  );
+
+  assert.strictEqual(response.status, 200);
+  const body = JSON.parse(response.body);
+  assert.strictEqual(body.success, true);
+  assert.strictEqual(body.data.length, 1);
+  assert.strictEqual(body.data[0].correctionId, 'verified-1');
+  assert.strictEqual(body.data[0].status, 'verified');
+
+  const missing = await capturedHandler(
+    { query: new URLSearchParams({ subjectId: 'arq-software-2026', correctionId: 'does-not-exist' }) },
+    { invocationId: 'test-350-missing' }
+  );
+  assert.strictEqual(missing.status, 200);
+  assert.deepStrictEqual(JSON.parse(missing.body).data, []);
 });

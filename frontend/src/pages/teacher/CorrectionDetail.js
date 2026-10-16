@@ -64,6 +64,13 @@ export async function renderCorrectionDetail(container) {
   }
 
   function render(correction) {
+    // #350: detail must stay reachable after the report leaves Pendiente.
+    // Non-pending states render read-only with their contextual next action
+    // (Verificado -> Resuelto) instead of the correction form.
+    if (correction.status && correction.status !== 'pending') {
+      renderNonPending(correction);
+      return;
+    }
     const date = correction.createdAt
       ? new Date(correction.createdAt).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
       : '---';
@@ -197,6 +204,71 @@ export async function renderCorrectionDetail(container) {
         if (submitBtnSpinner) submitBtnSpinner.style.display = 'none';
         submitBtn.disabled = false;
         isSubmitting = false;
+      }
+    });
+  }
+
+  function renderNonPending(correction) {
+    const date = correction.createdAt
+      ? new Date(correction.createdAt).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+      : '---';
+    const statusMap = {
+      reviewed: ['badge-warning', 'Revisado'],
+      verified: ['badge-primary', 'Verificado'],
+      resolved: ['badge-success', 'Resuelto'],
+    };
+    const badge = statusMap[correction.status] || ['badge-neutral', correction.status];
+    const closable = correction.status === 'verified' || correction.status === 'reviewed';
+
+    contentEl.innerHTML = `
+      <div class="section-title"><h2>Detalle de Corrección</h2><div class="line"></div></div>
+
+      <div class="card" style="margin-bottom:var(--space-6)">
+        <div class="card-header">
+          <span class="card-title">Reporte</span>
+          <span class="badge ${badge[0]}">${escapeHtml(badge[1])}</span>
+        </div>
+        <div style="padding:var(--space-4);display:grid;gap:var(--space-4)">
+          <div>
+            <div style="font-size:12px;color:var(--color-text-muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em">Reportado por</div>
+            <div style="color:var(--color-text-secondary)">${escapeHtml(correction.studentId || 'Anónimo')} · ${escapeHtml(date)}</div>
+          </div>
+          <div>
+            <div style="font-size:12px;color:var(--color-text-muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em">Pregunta del alumno</div>
+            <div style="background:var(--surface-2);padding:var(--space-3);border-radius:var(--radius-md);color:var(--color-text-primary);font-weight:500">${escapeHtml(correction.question || 'Consulta sin título')}</div>
+          </div>
+          ${correction.issueDetail ? `
+          <div>
+            <div style="font-size:12px;color:var(--color-text-muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em">Motivo del reporte</div>
+            <div style="background:var(--surface-2);padding:var(--space-3);border-radius:var(--radius-md);color:var(--color-text-warning)">${escapeHtml(correction.issueDetail)}</div>
+          </div>
+          ` : ''}
+          ${correction.correctedAnswer ? `
+          <div>
+            <div style="font-size:12px;color:var(--color-text-muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em">Corrección publicada</div>
+            <div style="background:var(--surface-2);padding:var(--space-3);border-radius:var(--radius-md);color:var(--color-text-primary)">${escapeHtml(correction.correctedAnswer)}</div>
+          </div>
+          ` : ''}
+        </div>
+      </div>
+
+      <div style="display:flex;gap:var(--space-3);justify-content:flex-end">
+        <a href="#/teacher/corrections" class="btn btn-secondary">Volver a la bandeja</a>
+        ${closable ? '<button type="button" class="btn btn-primary" id="resolve-btn">Marcar como Resuelto</button>' : ''}
+      </div>
+    `;
+
+    contentEl.querySelector('#resolve-btn')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      try {
+        await api.updateCorrectionStatus(activeSubjectId, correctionId, 'resolved');
+        toast('success', 'Estado actualizado', 'La corrección fue marcada como resuelta.');
+        window.location.hash = '#/teacher/corrections';
+      } catch (err) {
+        console.error('[CorrectionDetail] Failed to resolve:', err);
+        toast('error', 'Error', err?.message || 'No se pudo marcar como resuelta.');
+        btn.disabled = false;
       }
     });
   }

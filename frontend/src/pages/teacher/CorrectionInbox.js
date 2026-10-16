@@ -132,7 +132,9 @@ export async function renderCorrectionInbox(container) {
       })() : '---';
       const classTitle = classMap[c.classId] || c.classId || 'Sin clase';
       const answerExcerpt = (c.originalAnswer || '').slice(0, 240);
-      const isActionable = c.status === 'pending' || c.status === 'reviewed';
+      // #350: verified is an intermediate state (note published, awaiting
+      // close). It must stay actionable towards Resuelto, like pending.
+      const isActionable = c.status === 'pending' || c.status === 'reviewed' || c.status === 'verified';
 
       return `
         <div class="class-list-item" style="align-items:flex-start">
@@ -161,7 +163,9 @@ export async function renderCorrectionInbox(container) {
               ` : ''}
               ${c.status === 'pending' ? `
                 <a href="#/teacher/correction/${escapeHtml(c.correctionId)}" class="btn btn-primary btn-sm">Corregir</a>
-              ` : ''}
+              ` : `
+                <a href="#/teacher/correction/${escapeHtml(c.correctionId)}" class="btn btn-ghost btn-sm">Ver detalle</a>
+              `}
             </div>
           </div>
         </div>

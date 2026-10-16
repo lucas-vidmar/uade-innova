@@ -103,24 +103,37 @@ app.http('update-correction-status', {
         };
       }
 
-      if (correction.status === 'verified' || correction.status === 'resolved') {
+      if (correction.status === 'resolved') {
         return {
           status: 409,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             success: false,
-            error: { code: 'ALREADY_RESOLVED', message: 'La corrección ya fue resuelta o verificada.' },
+            error: { code: 'ALREADY_RESOLVED', message: 'La corrección ya fue resuelta.' },
           }),
         };
       }
 
-      if (correction.status !== 'pending') {
+      // Saga: Pendiente -> (nota) Verificado -> (cierre) Resuelto (#350).
+      // Verified is an intermediate state; only Resuelto closes it.
+      if (correction.status === 'verified') {
+        if (status !== 'resolved') {
+          return {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              success: false,
+              error: { code: 'INVALID_TRANSITION', message: 'Una corrección verificada solo puede pasar a Resuelto.' },
+            }),
+          };
+        }
+      } else if (correction.status !== 'pending') {
         return {
           status: 400,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             success: false,
-            error: { code: 'INVALID_TRANSITION', message: 'Solo se pueden resolver correcciones pendientes.' },
+            error: { code: 'INVALID_TRANSITION', message: 'Solo se pueden resolver correcciones pendientes o verificadas.' },
           }),
         };
       }
