@@ -281,9 +281,17 @@ function renderQuestion(mount, { classId, subjectId, className }) {
             };
             renderResults(mount, { classId, subjectId, className });
         } catch (err) {
+            // #442: si el guardado falla no hay resultado que mostrar. Antes se
+            // llamaba a renderResults() con state.result en null y el TypeError
+            // dejaba la práctica trabada en «Calculando...», sin reintento y con
+            // las respuestas ya elegidas a la vista pero sin forma de reenviarlas.
             const { message } = jsonResponseError(err, 'No se pudieron guardar los resultados.');
-            toast('error', 'Error', message);
-            renderResults(mount, { classId, subjectId, className });
+            toast('error', 'No se pudo cerrar la práctica', `${message} Tus respuestas siguen ahí: probá de nuevo.`);
+            const retryBtn = mount.querySelector('#quiz-submit-btn');
+            if (retryBtn) {
+                retryBtn.disabled = false;
+                retryBtn.textContent = 'Ver resultados ✓';
+            }
         }
     });
 }
