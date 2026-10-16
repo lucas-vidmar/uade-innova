@@ -319,10 +319,16 @@ app.http('rag-query', {
         // ── 1e. Glossary fast-path (Story 11.1.6) ──────────────────
         // Si la pregunta pide la definición de un término ("¿qué significa X?")
         // y la materia tiene glosario, se responde determinísticamente desde el
-        // glosario: definición con badge 📖 Glosario, o el mensaje de "no
-        // encontrado" del AC. Si no hay glosario configurado se cae al pipeline
-        // RAG normal.
+        // glosario: definición con badge 📖 Glosario. Si no hay glosario
+        // configurado se cae al pipeline RAG normal.
+        //
+        // #349: el glosario es un atajo por ACIERTO, no un cortocircuito por
+        // FALLO. Si el término no está en el glosario, la consulta definicional
+        // sigue por el pipeline RAG (el material puede cubrirla perfectamente);
+        // el mensaje de "no encontré ese término" se usa recién como último
+        // recurso, cuando la recuperación de material vuelve vacía.
         const glossaryLookupTerm = extractGlossaryTerm(rewrittenQuestion || question);
+        let glossaryMissTerm = null;
         if (glossaryLookupTerm) {
             try {
                 const glossary = await getGlossary(subjectId);
@@ -349,12 +355,9 @@ app.http('rag-query', {
                             stream,
                         });
                     }
-                    context.log(`[RAG] Glossary fast-path MISS: term="${glossaryLookupTerm}" subjectId=${subjectId}`);
-                    return buildGlossaryResponse({
-                        answer: GLOSSARY_NOT_FOUND_MSG,
-                        glossaryMeta: { found: false, term: glossaryLookupTerm },
-                        stream,
-                    });
+                    // MISS: no cortocircuitar; recordar el término y seguir al RAG.
+                    glossaryMissTerm = glossaryLookupTerm;
+                    context.log(`[RAG] Glossary fast-path MISS (fall-through a RAG): term="${glossaryLookupTerm}" subjectId=${subjectId}`);
                 }
             } catch (glossaryErr) {
                 context.warn('[RAG] Error loading glossary (non-blocking):', glossaryErr.message);
@@ -547,7 +550,12 @@ app.http('rag-query', {
 
         // ── 5. Early return if no context found ───────────────────
         if (matches.length === 0) {
-            context.log(`[RAG] No matches found for subjectId=${subjectId}. Sending refusal stream.`);
+            // #349: si la consulta era definicional y no hubo material, se
+            // compone el mensaje del glosario ("no encontré ese término") como
+            // último recurso; en cualquier otro caso, el rechazo estándar.
+            const noMatchAnswer = glossaryMissTerm ? GLOSSARY_NOT_FOUND_MSG : REFUSAL_MESSAGE;
+            const noMatchGlossaryMeta = glossaryMissTerm ? { found: false, term: glossaryMissTerm } : null;
+            context.log(`[RAG] No matches found for subjectId=${subjectId}. ${glossaryMissTerm ? 'Definitional query: glossary not-found fallback.' : 'Sending refusal stream.'}`);
             // Audit unanswered query (no context) for prompt-injection / knowledge-gap detection (#221).
             trackUnansweredQuery({
                 question,
@@ -564,14 +572,14 @@ app.http('rag-query', {
                     start(controller) {
                         const encoder = new TextEncoder();
                         // 1. Enviar metadatos vacíos para inicializar el footer
-                        controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ sources: [], model: getChatModelName() })}\n\n`));
-                        
+                        controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ sources: [], model: getChatModelName(), ...(noMatchGlossaryMeta ? { glossary: noMatchGlossaryMeta } : {}) })}\n\n`));
+
                         // 2. Enviar el mensaje como un delta para que la UI lo anime/muestre progresivamente si quiere, 
                         // o al menos use el path más probado del frontend.
-                        controller.enqueue(encoder.encode(`event: delta\ndata: ${JSON.stringify({ content: REFUSAL_MESSAGE })}\n\n`));
-                        
+                        controller.enqueue(encoder.encode(`event: delta\ndata: ${JSON.stringify({ content: noMatchAnswer })}\n\n`));
+
                         // 3. Enviar evento final
-                        controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ answer: REFUSAL_MESSAGE })}\n\n`));
+                        controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ answer: noMatchAnswer })}\n\n`));
                         controller.close();
                     }
                 });
@@ -582,8 +590,9 @@ app.http('rag-query', {
                 };
             } else {
                 return jsonResponse(200, {
-                    answer: REFUSAL_MESSAGE,
-                    sources: []
+                    answer: noMatchAnswer,
+                    sources: [],
+                    ...(noMatchGlossaryMeta ? { glossary: noMatchGlossaryMeta } : {}),
                 });
             }
         }
