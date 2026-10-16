@@ -48,7 +48,7 @@
     },
     {
       "action": "wait",
-      "ms": 500
+      "ms": 600
     },
     {
       "action": "click",
@@ -56,7 +56,7 @@
     },
     {
       "action": "wait",
-      "ms": 6000
+      "ms": 7000
     },
     {
       "action": "screenshot",
@@ -64,7 +64,11 @@
     },
     {
       "action": "wait",
-      "ms": 2000
+      "ms": 3000
+    },
+    {
+      "action": "screenshot",
+      "name": "admin-costos"
     },
     {
       "action": "navigate",
@@ -72,11 +76,11 @@
     },
     {
       "action": "wait",
-      "ms": 3000
+      "ms": 4000
     },
     {
       "action": "screenshot",
-      "name": "admin-users"
+      "name": "admin-usuarios"
     },
     {
       "action": "navigate",
@@ -84,11 +88,11 @@
     },
     {
       "action": "wait",
-      "ms": 3000
+      "ms": 4000
     },
     {
       "action": "screenshot",
-      "name": "admin-model-config"
+      "name": "admin-modelo-ia"
     },
     {
       "action": "navigate",
@@ -96,15 +100,39 @@
     },
     {
       "action": "wait",
-      "ms": 3000
+      "ms": 4000
     },
     {
       "action": "screenshot",
-      "name": "admin-compliance"
+      "name": "admin-cumplimiento"
+    },
+    {
+      "action": "navigate",
+      "url": "${DEMO_BASE_URL}/#/admin/retention"
     },
     {
       "action": "wait",
-      "ms": 1500
+      "ms": 3500
+    },
+    {
+      "action": "screenshot",
+      "name": "admin-retencion"
+    },
+    {
+      "action": "navigate",
+      "url": "${DEMO_BASE_URL}/#/admin/archive-usage"
+    },
+    {
+      "action": "wait",
+      "ms": 3500
+    },
+    {
+      "action": "screenshot",
+      "name": "admin-archivo-frio"
+    },
+    {
+      "action": "wait",
+      "ms": 1200
     }
   ]
 }

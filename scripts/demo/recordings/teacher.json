@@ -48,7 +48,7 @@
     },
     {
       "action": "wait",
-      "ms": 500
+      "ms": 600
     },
     {
       "action": "click",
@@ -56,11 +56,19 @@
     },
     {
       "action": "wait",
-      "ms": 6000
+      "ms": 7000
     },
     {
       "action": "screenshot",
       "name": "teacher-dashboard"
+    },
+    {
+      "action": "wait",
+      "ms": 2500
+    },
+    {
+      "action": "scroll",
+      "selector": "#weights-section"
     },
     {
       "action": "wait",
@@ -72,11 +80,11 @@
     },
     {
       "action": "wait",
-      "ms": 3000
+      "ms": 4000
     },
     {
       "action": "screenshot",
-      "name": "teacher-classes"
+      "name": "teacher-clases"
     },
     {
       "action": "navigate",
@@ -84,7 +92,7 @@
     },
     {
       "action": "wait",
-      "ms": 3000
+      "ms": 4000
     },
     {
       "action": "hover",
@@ -92,11 +100,23 @@
     },
     {
       "action": "wait",
-      "ms": 1500
+      "ms": 1200
     },
     {
       "action": "screenshot",
-      "name": "teacher-upload"
+      "name": "teacher-carga-materiales"
+    },
+    {
+      "action": "navigate",
+      "url": "${DEMO_BASE_URL}/#/teacher/materials"
+    },
+    {
+      "action": "wait",
+      "ms": 4000
+    },
+    {
+      "action": "screenshot",
+      "name": "teacher-materiales"
     },
     {
       "action": "navigate",
@@ -104,11 +124,23 @@
     },
     {
       "action": "wait",
-      "ms": 3000
+      "ms": 4000
     },
     {
       "action": "screenshot",
-      "name": "teacher-corrections"
+      "name": "teacher-correcciones"
+    },
+    {
+      "action": "navigate",
+      "url": "${DEMO_BASE_URL}/#/teacher/rag-sandbox"
+    },
+    {
+      "action": "wait",
+      "ms": 4500
+    },
+    {
+      "action": "screenshot",
+      "name": "teacher-rag-sandbox"
     },
     {
       "action": "navigate",
@@ -116,11 +148,11 @@
     },
     {
       "action": "wait",
-      "ms": 3500
+      "ms": 4500
     },
     {
       "action": "screenshot",
-      "name": "teacher-analytics"
+      "name": "teacher-analitica"
     },
     {
       "action": "wait",
