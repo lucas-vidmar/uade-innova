@@ -29,6 +29,28 @@ export const themeManager = {
         safeSetItem(this.key, theme);
         // Dispatch event for components to react if needed
         window.dispatchEvent(new CustomEvent('themeChanged', { detail: { theme } }));
+        // Fix #361 (UJ-03): a change made by the person must be persisted to that
+        // person's profile, not only to the device. The hook is wired in main.js
+        // to auth.saveThemePreference.
+        if (typeof this.onChange === 'function') {
+            try { this.onChange(theme); } catch (err) { console.warn('[Theme] onChange hook failed:', err); }
+        }
+    },
+
+    /**
+     * Applies a theme coming from the server profile (already owned by the
+     * active identity) without re-persisting it. Used on boot so the identity
+     * that is active wins over whatever the previous person left on the device.
+     */
+    applyTheme(theme) {
+        if (!theme) return;
+        const previous = this.onChange;
+        this.onChange = null;
+        try {
+            this.setTheme(theme);
+        } finally {
+            this.onChange = previous;
+        }
     },
 
     getTheme() {
