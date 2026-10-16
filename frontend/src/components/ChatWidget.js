@@ -247,17 +247,17 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
 
             <div class="chat-msg-actions">
               <div class="chat-feedback-btns" data-message-id="${msg.id || ''}">
-                <button class="feedback-btn ${msg.feedback === 'positive' ? 'active' : ''}" data-type="positive" title="Útil">
+                <button class="feedback-btn ${msg.feedback === 'positive' ? 'active' : ''}" data-type="positive" title="Útil" ${isStreaming ? 'disabled' : ''}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.53l-1.6 7A2 2 0 0 1 18.23 21H7a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h4l.5-1c.9-1.8 1.8-3 3.5-3 1.1 0 2 1.1 2 2.5 0 1-.3 1.5-1 2.38Z"/></svg>
                 </button>
-                <button class="feedback-btn ${msg.feedback === 'negative' ? 'active' : ''}" data-type="negative" title="No es útil">
+                <button class="feedback-btn ${msg.feedback === 'negative' ? 'active' : ''}" data-type="negative" title="No es útil" ${isStreaming ? 'disabled' : ''}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.53l1.6-7A2 2 0 0 1 5.77 3H17a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-4l-.5 1c-.9 1.8-1.8 3-3.5 3-1.1 0-2-1.1-2-2.5 0-1 .3-1.5 1-2.38Z"/></svg>
                 </button>
               </div>
-              <button class="report-issue-btn ${msg.issueReported ? 'active' : ''}" data-message-id="${msg.id || ''}" title="Usalo si la respuesta es incorrecta o contradice lo visto en clase" aria-label="Reportar respuesta incorrecta" ${msg.issueReported ? 'disabled' : ''}>
+              <button class="report-issue-btn ${msg.issueReported ? 'active' : ''}" data-message-id="${msg.id || ''}" title="Usalo si la respuesta es incorrecta o contradice lo visto en clase" aria-label="Reportar respuesta incorrecta" ${(msg.issueReported || isStreaming) ? 'disabled' : ''}>
                 ${msg.issueReported ? '✅ Reportado' : `${ICON_REPORT_ISSUE}<span>Respuesta incorrecta</span>`}
               </button>
-              <button class="report-missing-keyword-btn ${msg.missingKeywordReported ? 'active' : ''}" data-message-id="${msg.id || ''}" title="Usalo si esperabas encontrar un tema que no aparece en los materiales" aria-label="Reportar concepto faltante" ${msg.missingKeywordReported ? 'disabled' : ''}>
+              <button class="report-missing-keyword-btn ${msg.missingKeywordReported ? 'active' : ''}" data-message-id="${msg.id || ''}" title="Usalo si esperabas encontrar un tema que no aparece en los materiales" aria-label="Reportar concepto faltante" ${(msg.missingKeywordReported || isStreaming) ? 'disabled' : ''}>
                 ${msg.missingKeywordReported ? '✅ Concepto reportado' : `${ICON_REPORT_MISSING_KEYWORD}<span>Falta un concepto</span>`}
               </button>
               ${isLowConfidence(msg.content) && !msg.missingInfoReported ? `
@@ -305,28 +305,9 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
       });
     });
 
-    // Feedback buttons
-    container.querySelectorAll('.feedback-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const messageId = btn.parentElement.dataset.messageId;
-        const type = btn.dataset.type;
-        if (!messageId || btn.classList.contains('active')) return;
-
-        // Visual update
-        btn.parentElement.querySelectorAll('.feedback-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-
-        try {
-          await api.sendChatFeedback({ messageId, subjectId, isPositive: type === 'positive' });
-        } catch (err) {
-          console.error('Error sending feedback:', err);
-          // #330: revert the optimistic highlight so the UI doesn't show a
-          // rating that the server never persisted, then surface the error.
-          btn.classList.remove('active');
-          toast('error', 'No se pudo guardar tu valoración', err?.message || 'Intentá de nuevo.');
-        }
-      });
-    });
+    // Feedback buttons — single source of truth so a rating always writes BOTH
+    // the chat-log feedback and the analytics rating (see bindFeedbackEvents).
+    bindFeedbackEvents(container);
 
     // Report issue
     bindReportIssueEvents(container);
@@ -492,6 +473,12 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
             `;
             bindFeedbackEvents(footerEl);
             bindReportIssueEvents(footerEl);
+            // The answer may still be streaming: keep rating/report controls
+            // disabled until the message is final (no server id yet). They are
+            // re-rendered enabled by the final render() once streaming ends.
+            if (assistantMsg.streaming) {
+              footerEl.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+            }
           }
           if (data.verified) {
             const badgeEl = document.createElement('div');
@@ -623,6 +610,10 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         const messageId = btn.parentElement.dataset.messageId;
         const type = btn.dataset.type;
         if (!messageId || btn.classList.contains('active')) return;
+        // Do not rate an answer that is still streaming: it has no server id
+        // yet, so the mark would be bound to a non-existent message.
+        const streamingMsg = messages.find((item) => item.id === messageId && item.streaming);
+        if (streamingMsg) return;
         btn.parentElement.querySelectorAll('.feedback-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
 
@@ -640,14 +631,20 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
 
         try {
           const classId = Array.isArray(selectedClassIds) && selectedClassIds.length > 0 ? selectedClassIds[0] : '';
-          await Promise.all([
+          // Write both signals, but tolerate a partial failure: the analytics
+          // rating and the chat-log feedback are independent stores, so one
+          // 404 must not discard the other (nor revert a persisted rating).
+          const [feedbackRes, ratingRes] = await Promise.allSettled([
             api.sendChatFeedback({ messageId, subjectId, isPositive: type === 'positive' }),
             api.sendChatRating({ sessionId: currentSessionId, messageId, subjectId, classId, rating: type, comment }),
           ]);
           const msg = messages.find((item) => item.id === messageId);
-          if (msg) { msg.feedback = type; msg.rated = true; }
-          if (type === 'positive') {
-            toast('success', 'Respuesta calificada', '');
+          if (ratingRes.status === 'fulfilled' || feedbackRes.status === 'fulfilled') {
+            if (msg) { msg.feedback = type; msg.rated = true; }
+            if (type === 'positive') toast('success', 'Respuesta calificada', '');
+          }
+          if (feedbackRes.status === 'rejected' && ratingRes.status === 'rejected') {
+            throw feedbackRes.reason || ratingRes.reason || new Error('No se pudo guardar tu valoración.');
           }
         } catch (err) {
           console.error('Error sending feedback:', err);
@@ -935,6 +932,7 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         if (!messageId || btn.disabled) return;
 
         const msg = messages.find(m => m.id === messageId);
+        if (msg?.streaming) return;
         const msgIndex = messages.indexOf(msg);
         const userMsg = msgIndex > 0 ? messages[msgIndex - 1] : null;
         const question = userMsg?.role === 'user' ? userMsg.content : '';
@@ -966,6 +964,7 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         if (!result) return;
 
         const msg = messages.find(m => m.id === messageId);
+        if (msg?.streaming) return;
         const msgIndex = messages.indexOf(msg);
         const userMsg = msgIndex > 0 ? messages[msgIndex - 1] : null;
         const question = userMsg?.role === 'user' ? userMsg.content : '';
@@ -997,6 +996,7 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         if (!result) return;
 
         const msg = messages.find(m => m.id === messageId);
+        if (msg?.streaming) return;
         const msgIndex = messages.indexOf(msg);
         const userMsg = msgIndex > 0 ? messages[msgIndex - 1] : null;
         const question = userMsg?.role === 'user' ? userMsg.content : '';

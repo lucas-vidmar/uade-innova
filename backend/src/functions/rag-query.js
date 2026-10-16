@@ -841,8 +841,16 @@ ${contextText}
                         };
 
                         if (!sandboxMode) {
-                            saveJson('chat-logs', `${userAuth.sanitizedId}/${subjectId}/${interactionId}.json`, chatLog)
-                                .catch(e => context.error('Error guardando log de chat (stream):', e));
+                            // Persist the chat-log BEFORE signalling completion:
+                            // feedback/rating/report endpoints look the message up
+                            // by id, so an async (fire-and-forget) write let a fast
+                            // rating/report hit a not-yet-existing blob → 404
+                            // MESSAGE_NOT_FOUND / missing class context (#330, UJ-38/39).
+                            try {
+                                await saveJson('chat-logs', `${userAuth.sanitizedId}/${subjectId}/${interactionId}.json`, chatLog);
+                            } catch (e) {
+                                context.error('Error guardando log de chat (stream):', e);
+                            }
 
                             saveMetricsToTable('SessionMetrics', {
                                 partitionKey: subjectId,
