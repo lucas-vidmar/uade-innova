@@ -618,6 +618,10 @@ function showDeadlineEditModal(deadline, classes, subjectId, container) {
           </div>
         </div>
         <div class="form-group">
+          <label class="form-label">Motivo del cambio (opcional)</label>
+          <textarea class="form-textarea" id="edit-deadline-reason" style="min-height:60px" placeholder="Por qué se mueve la fecha. Queda en el aviso que reciben los alumnos."></textarea>
+        </div>
+        <div class="form-group">
           <label class="form-label">Descripción</label>
           <textarea class="form-textarea" id="edit-deadline-description" style="min-height:80px">${escapeHtml(deadline.description || '')}</textarea>
         </div>
@@ -668,6 +672,7 @@ function showDeadlineEditModal(deadline, classes, subjectId, container) {
         classId: selectedClasses[0],
         dueDate: overlay.querySelector('#edit-deadline-date').value,
         description: overlay.querySelector('#edit-deadline-description').value.trim(),
+        changeReason: (overlay.querySelector('#edit-deadline-reason')?.value || '').trim(),
         notifyOnDayBefore: overlay.querySelector('#edit-deadline-before').checked,
         notifyOnDayOf: overlay.querySelector('#edit-deadline-day').checked,
       });
