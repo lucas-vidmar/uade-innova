@@ -12,7 +12,7 @@ import { loadJson } from '../services/storage.js';
 import { getActivePrompt } from '../services/prompts.js';
 import {
     getEnrollment, getConsentStatus, listMaterialsByClass,
-    upsertQuizResult, getQuizResult
+    upsertQuizResult, getQuizResult, saveQuiz, getQuiz
 } from '../services/state-store.js';
 import { parseClientPrincipal, validateFrontDoorId, getAuthenticatedUser } from '../services/auth-utils.js';
 import { normalizeCategorizedError, ErrorCategory } from '../services/error-categories.js';
@@ -27,12 +27,71 @@ const DEFAULT_QUESTION_COUNT = 5;
 const MIN_QUESTION_COUNT = 5;
 const MAX_QUESTION_COUNT = 10;
 const PASS_THRESHOLD = 60;
+// El cuestionario emitido se conserva para poder corregir el intento en el
+// servidor. Pasada la ventana, el intento se rechaza con QUIZ_EXPIRED y la
+// persona genera uno nuevo.
+const QUIZ_TTL_MS = 24 * 60 * 60 * 1000;
 
 function jsonResponse(status, payload) {
     return {
         status,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+    };
+}
+
+/**
+ * El navegador nunca recibe `correctIndex` ni `explanation`: con ellas el
+ * puntaje se calcula (y se puede forjar) del lado del cliente.
+ */
+function toClientQuestions(questions) {
+    return questions.map((q) => ({
+        id: q.id,
+        question: q.question,
+        options: q.options,
+        topic: q.topic,
+    }));
+}
+
+/**
+ * Corrige un intento contra el cuestionario guardado en el servidor.
+ * Sólo se aceptan `questionId` + `selectedIndex` del cliente: el puntaje, los
+ * aciertos y los temas flojos los deriva el servidor.
+ */
+function gradeAttempt(quiz, submittedAnswers) {
+    const byId = new Map();
+    for (const a of Array.isArray(submittedAnswers) ? submittedAnswers : []) {
+        if (a && typeof a.questionId === 'string') byId.set(a.questionId, a);
+    }
+    const weakTopicSet = new Set();
+    let correctCount = 0;
+    const answers = quiz.questions.map((q) => {
+        const submitted = byId.get(q.id);
+        const raw = submitted?.selectedIndex;
+        const selectedIndex = Number.isInteger(raw) && raw >= 0 && raw < q.options.length ? raw : null;
+        const isCorrect = selectedIndex !== null && selectedIndex === q.correctIndex;
+        if (isCorrect) correctCount += 1;
+        else if (q.topic) weakTopicSet.add(q.topic);
+        return {
+            questionId: q.id,
+            question: q.question,
+            options: q.options,
+            correctIndex: q.correctIndex,
+            selectedIndex,
+            isCorrect,
+            explanation: q.explanation || '',
+            topic: q.topic || '',
+        };
+    });
+    const totalQuestions = quiz.questions.length;
+    const score = totalQuestions ? Math.round((correctCount / totalQuestions) * 100) : 0;
+    return {
+        answers,
+        correctCount,
+        totalQuestions,
+        score,
+        passed: score >= PASS_THRESHOLD,
+        weakTopics: Array.from(weakTopicSet),
     };
 }
 
@@ -214,8 +273,19 @@ app.http('generate-quiz', {
                 generatedAt: new Date().toISOString(),
                 durationMs: Date.now() - startTime,
             };
+            // El cuestionario con sus respuestas correctas queda sólo en el
+            // servidor: el intento se corrige contra este registro.
+            await saveQuiz({
+                subjectId,
+                quizId: payload.quizId,
+                userId,
+                classId,
+                questions,
+                createdAt: payload.generatedAt,
+                expiresAt: new Date(Date.now() + QUIZ_TTL_MS).toISOString(),
+            });
             log.info('Quiz generated', { quizId: payload.quizId, questions: questions.length, durationMs: payload.durationMs });
-            return jsonResponse(200, payload);
+            return jsonResponse(200, { ...payload, questions: toClientQuestions(questions) });
         } catch (err) {
             const categorized = normalizeCategorizedError(err, ErrorCategory.LLM);
             context.error('[Quiz] Error generating quiz:', categorized);
@@ -244,10 +314,41 @@ app.http('save-quiz-result', {
             return jsonResponse(400, { error: 'Body JSON inválido' });
         }
 
-        const { subjectId, classId, quizId, score, totalQuestions, correctCount, passed, weakTopics, answers } = body || {};
-        if (!subjectId || !classId || typeof score !== 'number') {
-            return jsonResponse(400, { error: 'Faltan campos requeridos: subjectId, classId, score' });
+        const { subjectId, classId, quizId, answers } = body || {};
+        if (!subjectId || !classId || !quizId || !Array.isArray(answers)) {
+            return jsonResponse(400, { error: 'Faltan campos requeridos: subjectId, classId, quizId, answers' });
         }
+
+        // La corrección vive en el servidor: el cliente sólo envía qué opción
+        // eligió en cada pregunta. `score`, `correctCount` y `passed` que
+        // llegaran en el cuerpo se ignoran a propósito.
+        const quiz = await getQuiz(subjectId, quizId).catch(() => null);
+        if (!quiz) {
+            return jsonResponse(404, {
+                error: { code: 'QUIZ_NOT_FOUND', message: 'No encontramos esa práctica. Generá una nueva.' },
+                errorCategory: 'NOT_FOUND',
+            });
+        }
+        if (quiz.userId !== userId) {
+            return jsonResponse(403, {
+                error: { code: 'QUIZ_NOT_OWNED', message: 'Esta práctica pertenece a otra persona.' },
+                errorCategory: 'AUTH',
+            });
+        }
+        if (quiz.classId !== classId) {
+            return jsonResponse(409, {
+                error: { code: 'QUIZ_CLASS_MISMATCH', message: 'La práctica corresponde a otra clase.' },
+                errorCategory: 'CONFLICT',
+            });
+        }
+        if (quiz.expiresAt && Date.parse(quiz.expiresAt) < Date.now()) {
+            return jsonResponse(409, {
+                error: { code: 'QUIZ_EXPIRED', message: 'La práctica venció. Generá una nueva para volver a intentarlo.' },
+                errorCategory: 'CONFLICT',
+            });
+        }
+
+        const graded = gradeAttempt(quiz, answers);
 
         const existing = await getQuizResult(subjectId, userId, classId).catch(() => null);
         const attemptCount = (existing?.attemptCount || 0) + 1;
@@ -256,17 +357,17 @@ app.http('save-quiz-result', {
             subjectId,
             userId,
             classId,
-            quizId: quizId || '',
-            score: Math.round(score),
-            totalQuestions: Number(totalQuestions || 0),
-            correctCount: Number(correctCount || 0),
-            passed: passed === true || score >= PASS_THRESHOLD,
-            weakTopics: Array.isArray(weakTopics) ? weakTopics.slice(0, 20) : [],
-            answers: Array.isArray(answers) ? answers.slice(0, 50) : [],
+            quizId,
+            score: graded.score,
+            totalQuestions: graded.totalQuestions,
+            correctCount: graded.correctCount,
+            passed: graded.passed,
+            weakTopics: graded.weakTopics,
+            answers: graded.answers,
             attemptCount,
         });
 
-        log.info('Quiz result saved', { classId, score: saved.score, attemptCount: saved.attemptCount });
+        log.info('Quiz result saved', { classId, quizId, score: saved.score, attemptCount: saved.attemptCount });
         return jsonResponse(200, saved);
     }, 'general'))),
 });

@@ -12,6 +12,7 @@ export const RATINGS_TABLE = CONFIG.tables.conversationRatings;
 export const CONVERSATIONS_TABLE = CONFIG.tables.conversations;
 const CLASS_VIEWS_TABLE = CONFIG.tables.classViews;
 const QUIZ_RESULTS_TABLE = CONFIG.tables.quizResults;
+const QUIZZES_TABLE = CONFIG.tables.quizzes;
 
 const ensuredTables = new Set();
 
@@ -927,4 +928,57 @@ export async function listQuizResultsByClass(subjectId, classId) {
   if (!subjectId || !classId) return [];
   const all = await listQuizResultsBySubject(subjectId);
   return all.filter((r) => r.classId === classId);
+}
+
+// ─── Quiz (cuestionario emitido) Operations ─────────────────
+// El cuestionario se guarda en el servidor al emitirlo: es la única copia con
+// las respuestas correctas, y contra ella se corrige el intento. Sin este
+// registro la corrección queda delegada al navegador (puntaje forjable).
+
+function toQuizEntity(quiz) {
+  return compactObject({
+    partitionKey: quiz.subjectId,
+    rowKey: quiz.quizId,
+    userId: quiz.userId,
+    classId: quiz.classId,
+    questions: JSON.stringify(quiz.questions || []),
+    createdAt: quiz.createdAt || new Date().toISOString(),
+    expiresAt: quiz.expiresAt,
+  });
+}
+
+function fromQuizEntity(entity) {
+  let questions = [];
+  try { questions = JSON.parse(entity.questions || '[]'); } catch { questions = []; }
+  return {
+    subjectId: entity.partitionKey,
+    quizId: entity.rowKey,
+    userId: entity.userId,
+    classId: entity.classId,
+    questions,
+    createdAt: entity.createdAt,
+    expiresAt: entity.expiresAt,
+  };
+}
+
+export async function saveQuiz(quiz) {
+  if (!quiz?.subjectId || !quiz?.quizId || !quiz?.userId || !quiz?.classId) {
+    throw new Error('saveQuiz requires subjectId, quizId, userId, and classId');
+  }
+  await ensureTable(QUIZZES_TABLE);
+  const client = getTableClient(QUIZZES_TABLE);
+  const entity = toQuizEntity(quiz);
+  await client.upsertEntity(entity, 'Replace');
+  return fromQuizEntity(entity);
+}
+
+export async function getQuiz(subjectId, quizId) {
+  if (!subjectId || !quizId) return null;
+  await ensureTable(QUIZZES_TABLE);
+  const client = getTableClient(QUIZZES_TABLE);
+  try {
+    return fromQuizEntity(await client.getEntity(subjectId, quizId));
+  } catch {
+    return null;
+  }
 }
