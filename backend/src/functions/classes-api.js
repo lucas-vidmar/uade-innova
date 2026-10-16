@@ -1767,7 +1767,26 @@ app.http('get-director-stats', {
             name: s.name,
             rate: Math.min(100, Math.round((metrics.wausBySubject.find(w => w.subjectId === s.id)?.currentWeek || 0) / Math.max(Object.values(metrics.wausBySubject).reduce((sum, w) => sum + w.currentWeek, 0) || 1, 1) * 100)),
         }));
-        const adoptionRate = uniqueActiveUsers > 0 ? Math.min(100, Math.round(uniqueActiveUsers / allSubjects.reduce((sum, s) => sum + (s.enrolledCount || 60), 60) * 100)) : 0;
+        // Adoption base = real active student enrollments. The previous
+        // `s.enrolledCount || 60` (plus a 60 seed) fabricated a 60-student
+        // cohort per subject and produced percentages with no source (#417).
+        let enrolledBase = 0;
+        try {
+            const stateStore = await import('../services/state-store.js');
+            if (typeof stateStore.countActiveStudentEnrollments === 'function') {
+                enrolledBase = await stateStore.countActiveStudentEnrollments();
+            }
+        } catch (err) {
+            context.log.warn(`[director/stats] Could not count enrollments: ${err.message}`);
+        }
+        if (enrolledBase <= 0) {
+            // Only fall back to a subject-declared count when it actually
+            // exists — never invent one.
+            enrolledBase = allSubjects.reduce((sum, s) => sum + (Number(s.enrolledCount) || 0), 0);
+        }
+        const adoptionRate = uniqueActiveUsers > 0 && enrolledBase > 0
+            ? Math.min(100, Math.round(uniqueActiveUsers / enrolledBase * 100))
+            : 0;
 
         let classesProcessed = 0;
         try {

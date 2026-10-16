@@ -349,6 +349,26 @@ export async function listAllEnrollments() {
   return entities.map(fromEnrollmentEntity);
 }
 
+/**
+ * Real cohort base for the adoption reading: the number of distinct people with
+ * an ACTIVE student enrollment. Used instead of the fabricated 60-per-subject
+ * default that produced adoption percentages with no source (#417).
+ * @returns {Promise<number>}
+ */
+export async function countActiveStudentEnrollments() {
+  const entities = await queryAllEntities(ENROLLMENTS_TABLE);
+  const userIds = new Set();
+  for (const entity of entities) {
+    const { userId, role, status } = fromEnrollmentEntity(entity);
+    if (String(role || '').toLowerCase() === 'student'
+      && String(status || '').toLowerCase() === 'active'
+      && userId) {
+      userIds.add(userId);
+    }
+  }
+  return userIds.size;
+}
+
 export async function upsertEnrollment(enrollment) {
   if (!enrollment?.subjectId || !enrollment?.userId) {
     throw new Error('upsertEnrollment requires subjectId and userId');
