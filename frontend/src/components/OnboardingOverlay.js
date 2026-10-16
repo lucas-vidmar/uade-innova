@@ -53,7 +53,12 @@ export class OnboardingOverlay {
     if (!this.tooltipEl) return;
     this._releaseFocus = createDialogFocus({
       dialog: this.tooltipEl,
-      background: [document.getElementById('app'), document.querySelector('.app-shell')].filter(Boolean),
+      // La guía es un recorrido señalado, no un diálogo modal: contiene el
+      // tabulador y recibe el foco, pero NO deja inerte el fondo. El requisito
+      // QA-008 exige que la interacción principal (abrir una clase) siga
+      // disponible sin cerrar la guía primero; marcar el fondo como inerte la
+      // bloqueaba por completo.
+      background: [],
       initialFocus: 'dialog',
       onEscape: () => this.engine.skip(),
     });
