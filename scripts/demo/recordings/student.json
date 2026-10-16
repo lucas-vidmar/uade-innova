@@ -1,4 +1,5 @@
 {
+  "url": "${DEMO_BASE_URL}/#/login",
   "viewport": {
     "width": 1440,
     "height": 900
@@ -20,7 +21,6 @@
   "speed": 1.0,
   "outputFormat": "mp4",
   "waitForSelector": "#login-email",
-  "url": "${DEMO_BASE_URL}/#/login",
   "steps": [
     {
       "action": "wait",
@@ -48,7 +48,7 @@
     },
     {
       "action": "wait",
-      "ms": 500
+      "ms": 600
     },
     {
       "action": "click",
@@ -56,7 +56,7 @@
     },
     {
       "action": "wait",
-      "ms": 6000
+      "ms": 7000
     },
     {
       "action": "screenshot",
@@ -64,7 +64,25 @@
     },
     {
       "action": "wait",
-      "ms": 1500
+      "ms": 2000
+    },
+    {
+      "action": "hover",
+      "selector": "#global-search-header"
+    },
+    {
+      "action": "type",
+      "selector": "#global-search-header",
+      "text": "arquitectura",
+      "delay": 60
+    },
+    {
+      "action": "wait",
+      "ms": 2000
+    },
+    {
+      "action": "screenshot",
+      "name": "student-busqueda"
     },
     {
       "action": "scroll",
@@ -80,33 +98,33 @@
     },
     {
       "action": "wait",
-      "ms": 1200
-    },
-    {
-      "action": "navigate",
-      "url": "${DEMO_BASE_URL}/#/student/dashboard"
-    },
-    {
-      "action": "wait",
-      "ms": 2500
+      "ms": 1500
     },
     {
       "action": "click",
-      "selector": "#chat-widget-mount"
+      "selector": "#chat-chips button:first-child"
     },
     {
       "action": "wait",
-      "ms": 1500
+      "ms": 900
     },
     {
       "action": "hover",
       "selector": "#chat-input"
     },
     {
+      "action": "click",
+      "selector": "#chat-input"
+    },
+    {
       "action": "type",
       "selector": "#chat-input",
-      "text": "¿Qué es un sistema de información gerencial?",
-      "delay": 40
+      "text": "¿Qué es una arquitectura de software por capas?",
+      "delay": 35
+    },
+    {
+      "action": "wait",
+      "ms": 600
     },
     {
       "action": "click",
@@ -114,11 +132,11 @@
     },
     {
       "action": "wait",
-      "ms": 12000
+      "ms": 16000
     },
     {
       "action": "screenshot",
-      "name": "student-rag-answer"
+      "name": "student-rag-respuesta"
     },
     {
       "action": "navigate",
@@ -126,11 +144,11 @@
     },
     {
       "action": "wait",
-      "ms": 3000
+      "ms": 4000
     },
     {
       "action": "screenshot",
-      "name": "student-tasks"
+      "name": "student-tareas"
     },
     {
       "action": "navigate",
@@ -138,11 +156,23 @@
     },
     {
       "action": "wait",
-      "ms": 3000
+      "ms": 4000
     },
     {
       "action": "screenshot",
-      "name": "student-calendar"
+      "name": "student-calendario"
+    },
+    {
+      "action": "navigate",
+      "url": "${DEMO_BASE_URL}/#/student/reports"
+    },
+    {
+      "action": "wait",
+      "ms": 3500
+    },
+    {
+      "action": "screenshot",
+      "name": "student-reportes"
     },
     {
       "action": "wait",

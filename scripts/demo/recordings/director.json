@@ -48,7 +48,7 @@
     },
     {
       "action": "wait",
-      "ms": 500
+      "ms": 600
     },
     {
       "action": "click",
@@ -56,7 +56,7 @@
     },
     {
       "action": "wait",
-      "ms": 6000
+      "ms": 7000
     },
     {
       "action": "screenshot",
@@ -64,11 +64,19 @@
     },
     {
       "action": "wait",
-      "ms": 2000
+      "ms": 3000
+    },
+    {
+      "action": "hover",
+      "selector": "#kpi-export-bar"
+    },
+    {
+      "action": "wait",
+      "ms": 1500
     },
     {
       "action": "screenshot",
-      "name": "director-dashboard"
+      "name": "director-kpis"
     },
     {
       "action": "navigate",
@@ -76,11 +84,11 @@
     },
     {
       "action": "wait",
-      "ms": 3000
+      "ms": 4000
     },
     {
       "action": "screenshot",
-      "name": "director-interventions"
+      "name": "director-intervenciones"
     },
     {
       "action": "navigate",
@@ -88,19 +96,35 @@
     },
     {
       "action": "wait",
-      "ms": 3000
+      "ms": 4000
     },
     {
       "action": "screenshot",
-      "name": "director-subjects"
+      "name": "director-materias"
     },
     {
       "action": "navigate",
-      "url": "${DEMO_BASE_URL}/#/director/dashboard"
+      "url": "${DEMO_BASE_URL}/#/director/students"
     },
     {
       "action": "wait",
-      "ms": 3000
+      "ms": 4000
+    },
+    {
+      "action": "screenshot",
+      "name": "director-alumnos"
+    },
+    {
+      "action": "navigate",
+      "url": "${DEMO_BASE_URL}/#/director/sat-analytics"
+    },
+    {
+      "action": "wait",
+      "ms": 4000
+    },
+    {
+      "action": "screenshot",
+      "name": "director-sat"
     },
     {
       "action": "wait",
