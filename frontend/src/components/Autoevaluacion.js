@@ -33,6 +33,36 @@ const QUIZ_STYLE = `
 
 const OPTION_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
+/**
+ * Compara el intento recién cerrado con el anterior, tema por tema (UJ-31, paso 7).
+ * El anterior llega resumido por tema desde /quiz-attempts; el actual se deduce de
+ * las respuestas corregidas.
+ */
+function buildTopicComparison(previousAttempt, answers) {
+    if (!previousAttempt) return [];
+    const before = previousAttempt.topics || {};
+    const current = {};
+    for (const a of answers || []) {
+        const topic = a?.topic || 'Sin tema';
+        if (!current[topic]) current[topic] = { asked: 0, correct: 0 };
+        current[topic].asked += 1;
+        if (a?.isCorrect) current[topic].correct += 1;
+    }
+    const topics = Array.from(new Set([...Object.keys(before), ...Object.keys(current)]));
+    return topics.map((topic) => {
+        const b = before[topic] || null;
+        const c = current[topic] || null;
+        const beforeRatio = b && b.asked ? b.correct / b.asked : null;
+        const afterRatio = c && c.asked ? c.correct / c.asked : null;
+        let verdict = 'se mantuvo';
+        if (beforeRatio === null) verdict = 'tema nuevo';
+        else if (afterRatio === null) verdict = 'no se evaluó';
+        else if (afterRatio > beforeRatio) verdict = 'avanzaste';
+        else if (afterRatio < beforeRatio) verdict = 'retrocediste';
+        return { topic, beforeRatio, afterRatio, verdict };
+    });
+}
+
 function escapeHtml(value = '') {
     return String(value)
         .replace(/&/g, '&amp;')
@@ -67,6 +97,7 @@ let state = {
     quizId: null,
     result: null,
     busy: false,
+    previousAttempt: null,
 };
 
 let hostContainer = null;
@@ -80,6 +111,7 @@ function resetState() {
         quizId: null,
         result: null,
         busy: false,
+        previousAttempt: null,
     };
 }
 
@@ -90,17 +122,27 @@ export async function renderAutoevaluacion(container, { classId, subjectId, clas
     resetState();
 
     let latestResult = null;
+    let attempts = [];
     try {
         latestResult = await api.getQuizResult(subjectId, classId);
     } catch {
         latestResult = null;
     }
+    try {
+        attempts = await api.getQuizAttempts(subjectId, classId);
+    } catch {
+        attempts = [];
+    }
+    // El intento anterior queda a mano para poder comparar al cerrar (UJ-31, paso 7).
+    state.previousAttempt = attempts.length ? attempts[attempts.length - 1] : null;
 
-    renderIdle(mount, { classId, subjectId, className, latestResult });
+    renderIdle(mount, { classId, subjectId, className, latestResult, attempts });
 }
 
-function renderIdle(mount, { classId, subjectId, className, latestResult }) {
+function renderIdle(mount, { classId, subjectId, className, latestResult, attempts = [] }) {
     const passScore = latestResult && latestResult.score >= 60;
+    const attemptNumber = attempts.length + 1;
+    const previousCount = attempts.length;
     mount.innerHTML = `
         <div class="card" style="margin-bottom:var(--space-4)">
             <div style="padding:var(--space-6);display:flex;flex-direction:column;gap:var(--space-5)">
@@ -114,9 +156,16 @@ function renderIdle(mount, { classId, subjectId, className, latestResult }) {
 
                 ${latestResult ? `
                     <div class="quiz-pass-banner" style="border:1px solid ${passScore ? 'var(--color-success)' : 'var(--color-warning)'};background:color-mix(in srgb, ${passScore ? 'var(--color-success)' : 'var(--color-warning)'} 10%, transparent);">
-                        <div style="font-size:var(--font-size-sm);color:var(--color-text-secondary);">Tu último intento</div>
+                        <div style="font-size:var(--font-size-sm);color:var(--color-text-secondary);">Tu último intento${previousCount > 1 ? ` (${previousCount} en total)` : ''}</div>
                         <div class="quiz-score-badge" style="color:${passScore ? 'var(--color-success)' : 'var(--color-warning)'};">${latestResult.score}%</div>
                         <div style="font-size:var(--font-size-sm);color:var(--color-text-secondary);">${passScore ? '¡Aprobado!' : 'Aún no aprobás. Repasá y volvé a intentar.'}</div>
+                    </div>
+                ` : ''}
+
+                ${state.previousAttempt ? `
+                    <div id="quiz-attempt-notice" style="border:1px solid var(--color-border);border-radius:var(--radius-md);padding:var(--space-4);background:var(--color-surface-2);font-size:var(--font-size-sm);color:var(--color-text-secondary);">
+                        Esta va a ser tu <strong>práctica ${attemptNumber}</strong> sobre esta clase: cubre los mismos temas que la anterior
+                        (${previousCount === 1 ? '1 intento previo' : `${previousCount} intentos previos`}) y deja afuera las preguntas que ya respondiste.
                     </div>
                 ` : ''}
 
@@ -301,6 +350,8 @@ function renderResults(mount, { classId, subjectId, className }) {
     const passed = r.passed;
     const color = passed ? 'var(--color-success)' : 'var(--color-warning)';
     const totalAnswered = r.answers.length;
+    const comparison = buildTopicComparison(state.previousAttempt, r.answers);
+    const VERDICT_COLOR = { avanzaste: 'var(--color-success)', retrocediste: 'var(--color-error)' };
 
     mount.innerHTML = `
         <div class="quiz-pass-banner quiz-celebrate" style="border:1px solid ${color};background:color-mix(in srgb, ${color} 10%, transparent);">
@@ -311,6 +362,25 @@ function renderResults(mount, { classId, subjectId, className }) {
                 ${r.correctCount} de ${totalAnswered} correctas
             </div>
         </div>
+
+        ${comparison.length > 0 ? `
+            <div class="card" id="quiz-comparison" style="margin-top:var(--space-4)">
+                <div style="padding:var(--space-5);display:flex;flex-direction:column;gap:var(--space-3);">
+                    <h5 style="margin:0;font-weight:700;">Comparación con tu práctica anterior</h5>
+                    <p style="margin:0;font-size:var(--font-size-xs);color:var(--color-text-secondary);">
+                        Tu intento previo fue de ${state.previousAttempt.score}% (${state.previousAttempt.correctCount} de ${state.previousAttempt.totalQuestions}).
+                    </p>
+                    <div style="display:flex;flex-direction:column;gap:var(--space-2);">
+                        ${comparison.map((c) => `
+                            <div style="display:flex;justify-content:space-between;gap:var(--space-3);font-size:var(--font-size-sm);">
+                                <span>${escapeHtml(c.topic)}</span>
+                                <span style="color:${VERDICT_COLOR[c.verdict] || 'var(--color-text-secondary)'};font-weight:600;">${c.verdict}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+        ` : ''}
 
         ${r.weakTopics.length > 0 ? `
             <div class="card" style="margin-top:var(--space-4)">

@@ -12,7 +12,7 @@ import { loadJson } from '../services/storage.js';
 import { getActivePrompt } from '../services/prompts.js';
 import {
     getEnrollment, getConsentStatus, listMaterialsByClass,
-    upsertQuizResult, getQuizResult, saveQuiz, getQuiz
+    upsertQuizResult, getQuizResult, saveQuiz, getQuiz, appendQuizAttempt, listQuizAttempts
 } from '../services/state-store.js';
 import { parseClientPrincipal, validateFrontDoorId, getAuthenticatedUser } from '../services/auth-utils.js';
 import { normalizeCategorizedError, ErrorCategory } from '../services/error-categories.js';
@@ -170,7 +170,37 @@ async function loadClassContext(subjectId, classId, context) {
     return parts.join('\n\n');
 }
 
-async function buildQuizPrompt(subjectName, className, contextText, questionCount) {
+const MAX_EXCLUDED_QUESTIONS = 60;
+
+/**
+ * Reúne las preguntas ya vistas por esa persona en esa clase para pedirle al
+ * modelo que no las repita (UJ-31, paso 2) y resume el resultado por tema para
+ * que el frontend pueda comparar intentos (paso 7).
+ */
+function previousQuestionsOf(attempts) {
+    const seen = new Set();
+    for (const attempt of attempts) {
+        for (const answer of attempt.answers || []) {
+            const text = sanitizeText(answer?.question, 400);
+            if (text) seen.add(text);
+            if (seen.size >= MAX_EXCLUDED_QUESTIONS) return Array.from(seen);
+        }
+    }
+    return Array.from(seen);
+}
+
+function topicsSummaryOf(attempt) {
+    const topics = {};
+    for (const answer of attempt.answers || []) {
+        const topic = sanitizeText(answer?.topic || '', 200) || 'Sin tema';
+        if (!topics[topic]) topics[topic] = { asked: 0, correct: 0 };
+        topics[topic].asked += 1;
+        if (answer?.isCorrect === true) topics[topic].correct += 1;
+    }
+    return topics;
+}
+
+async function buildQuizPrompt(subjectName, className, contextText, questionCount, previousQuestions = []) {
     const promptConfig = await getActivePrompt('quiz').catch(() => null);
     const systemContent = promptConfig?.systemPrompt || `Sos un docente experto en crear cuestionarios de autoevaluación para estudiantes universitarios.
 Generás exactamente ${questionCount} preguntas de opción múltiple (4 opciones cada una) sobre el material de clase provisto.
@@ -182,12 +212,18 @@ Requerimientos del JSON de salida:
   { "question": "texto de la pregunta", "options": ["opción A", "opción B", "opción C", "opción D"], "correctIndex": <índice de la opción correcta (0-3)>, "explanation": "explicación breve de por qué es correcta", "topic": "tema o concepto que evalúa" }
 - Deben ser ${questionCount} preguntas exactas.
 - Sin preguntas repetidas ni demasiado parecidas entre sí.`;
-    const userTemplate = promptConfig?.userPromptTemplate || 'Generá ${questionCount} preguntas de autoevaluación sobre la siguiente clase.\n\nMateria: ${subjectName}\nClase: ${className}\n\nCONTEXTO:\n${contextText}';
-    const userContent = userTemplate
+    let userContent = (promptConfig?.userPromptTemplate || 'Generá ${questionCount} preguntas de autoevaluación sobre la siguiente clase.\n\nMateria: ${subjectName}\nClase: ${className}\n\nCONTEXTO:\n${contextText}')
         .replace('${questionCount}', String(questionCount))
         .replace('${subjectName}', subjectName || '')
         .replace('${className}', className || '')
         .replace('${contextText}', contextText);
+    // UJ-31: la persona ya hizo la práctica y vuelve a ponerse a prueba. El nuevo
+    // conjunto tiene que cubrir la misma clase pero sin repetir lo ya visto.
+    if (previousQuestions.length) {
+        userContent += `\n\nLa persona ya respondió una práctica de esta clase. NO repitas ninguna de estas preguntas, ni las reformules para evaluar el mismo punto:\n`
+            + previousQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')
+            + `\nCubrí los mismos temas de la clase, pero con preguntas nuevas sobre otros puntos del material, de dificultad equivalente.`;
+    }
     return { systemContent, userContent };
 }
 
@@ -238,8 +274,14 @@ app.http('generate-quiz', {
                 return jsonResponse(400, { error: 'No hay resumen ni materiales procesados disponibles para esta clase.' });
             }
 
+            // Intentos previos de esta persona en esta clase: el nuevo conjunto no
+            // repite lo ya visto (UJ-31) y la pantalla puede anunciar el número.
+            const previousAttempts = await listQuizAttempts(subjectId, userId, classId).catch(() => []);
+            const previousQuestions = previousQuestionsOf(previousAttempts);
+            const attemptNumber = previousAttempts.length + 1;
+
             const className = body.className || classId;
-            const { systemContent, userContent } = await buildQuizPrompt(subjectName, className, contextText, count);
+            const { systemContent, userContent } = await buildQuizPrompt(subjectName, className, contextText, count, previousQuestions);
 
             const quizModel = await resolveModelForTask('quiz');
             const result = await chatCompletion(
@@ -272,6 +314,8 @@ app.http('generate-quiz', {
                 model: getModelDisplayName(quizModel),
                 generatedAt: new Date().toISOString(),
                 durationMs: Date.now() - startTime,
+                attemptNumber,
+                excludedQuestionCount: previousQuestions.length,
             };
             // El cuestionario con sus respuestas correctas queda sólo en el
             // servidor: el intento se corrige contra este registro.
@@ -351,7 +395,8 @@ app.http('save-quiz-result', {
         const graded = gradeAttempt(quiz, answers);
 
         const existing = await getQuizResult(subjectId, userId, classId).catch(() => null);
-        const attemptCount = (existing?.attemptCount || 0) + 1;
+        const previousAttempts = await listQuizAttempts(subjectId, userId, classId).catch(() => []);
+        const attemptCount = Math.max(existing?.attemptCount || 0, previousAttempts.length) + 1;
 
         const saved = await upsertQuizResult({
             subjectId,
@@ -365,6 +410,25 @@ app.http('save-quiz-result', {
             weakTopics: graded.weakTopics,
             answers: graded.answers,
             attemptCount,
+        });
+
+        // El resultado vigente se reemplaza, pero cada intento queda como registro
+        // propio: sin eso no se puede comparar ni saber qué preguntas ya se vieron.
+        await appendQuizAttempt({
+            subjectId,
+            userId,
+            classId,
+            quizId: quizId || '',
+            attemptNumber: attemptCount,
+            score: saved.score,
+            totalQuestions: saved.totalQuestions,
+            correctCount: saved.correctCount,
+            passed: saved.passed,
+            weakTopics: saved.weakTopics,
+            answers: saved.answers,
+            createdAt: saved.updatedAt,
+        }).catch((err) => {
+            log.warn('Quiz attempt history not persisted', { classId, attemptCount, message: err?.message });
         });
 
         log.info('Quiz result saved', { classId, quizId, score: saved.score, attemptCount: saved.attemptCount });
@@ -386,5 +450,36 @@ app.http('get-quiz-result', {
         }
         const result = await getQuizResult(subjectId, userId, classId).catch(() => null);
         return jsonResponse(200, { result });
+    })),
+});
+
+app.http('get-quiz-attempts', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'quiz-attempts',
+    handler: withCorrelation(withAuth(async (request, context) => {
+        if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
+        const { userId } = getAuthenticatedUser(request);
+        const subjectId = request.query.get('subjectId');
+        const classId = request.query.get('classId');
+        if (!subjectId || !classId) {
+            return jsonResponse(400, { error: 'Parámetros requeridos: subjectId, classId' });
+        }
+        // Historial de intentos de esa persona en esa clase, resumido por tema:
+        // es lo que permite comparar en qué avanzó y en qué no (UJ-31, paso 7).
+        const attempts = await listQuizAttempts(subjectId, userId, classId).catch(() => []);
+        return jsonResponse(200, {
+            attempts: attempts.map((a) => ({
+                attemptNumber: a.attemptNumber,
+                quizId: a.quizId,
+                score: a.score,
+                correctCount: a.correctCount,
+                totalQuestions: a.totalQuestions,
+                passed: a.passed,
+                weakTopics: a.weakTopics,
+                topics: topicsSummaryOf(a),
+                createdAt: a.createdAt,
+            })),
+        });
     })),
 });

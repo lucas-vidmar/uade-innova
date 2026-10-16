@@ -13,6 +13,7 @@ export const CONVERSATIONS_TABLE = CONFIG.tables.conversations;
 const CLASS_VIEWS_TABLE = CONFIG.tables.classViews;
 const QUIZ_RESULTS_TABLE = CONFIG.tables.quizResults;
 const QUIZZES_TABLE = CONFIG.tables.quizzes;
+const QUIZ_ATTEMPTS_TABLE = CONFIG.tables.quizAttempts;
 
 const ensuredTables = new Set();
 
@@ -1001,4 +1002,68 @@ export async function getQuiz(subjectId, quizId) {
   } catch {
     return null;
   }
+}
+
+// ─── Quiz Attempts (historial de intentos) ──────────────────
+// El resultado "vigente" (QuizResults) se reemplaza en cada intento; para poder
+// comparar intentos y no repetir preguntas hace falta que cada uno quede como
+// registro propio.
+
+function toQuizAttemptEntity(attempt) {
+  return compactObject({
+    partitionKey: attempt.subjectId,
+    rowKey: `${attempt.userId}__${attempt.classId}__${String(attempt.attemptNumber).padStart(4, '0')}`,
+    userId: attempt.userId,
+    classId: attempt.classId,
+    quizId: attempt.quizId || '',
+    attemptNumber: attempt.attemptNumber,
+    score: attempt.score,
+    totalQuestions: attempt.totalQuestions,
+    correctCount: attempt.correctCount,
+    passed: attempt.passed === true,
+    weakTopics: JSON.stringify(attempt.weakTopics || []),
+    answers: JSON.stringify(attempt.answers || []),
+    createdAt: attempt.createdAt || new Date().toISOString(),
+  });
+}
+
+function fromQuizAttemptEntity(entity) {
+  let weakTopics = [];
+  let answers = [];
+  try { weakTopics = JSON.parse(entity.weakTopics || '[]'); } catch { weakTopics = []; }
+  try { answers = JSON.parse(entity.answers || '[]'); } catch { answers = []; }
+  return {
+    subjectId: entity.partitionKey,
+    userId: entity.userId,
+    classId: entity.classId,
+    quizId: entity.quizId || '',
+    attemptNumber: Number(entity.attemptNumber || 0),
+    score: Number(entity.score || 0),
+    totalQuestions: Number(entity.totalQuestions || 0),
+    correctCount: Number(entity.correctCount || 0),
+    passed: entity.passed === true,
+    weakTopics,
+    answers,
+    createdAt: entity.createdAt,
+  };
+}
+
+export async function appendQuizAttempt(attempt) {
+  if (!attempt?.subjectId || !attempt?.userId || !attempt?.classId || !attempt?.attemptNumber) {
+    throw new Error('appendQuizAttempt requires subjectId, userId, classId, and attemptNumber');
+  }
+  await ensureTable(QUIZ_ATTEMPTS_TABLE);
+  const client = getTableClient(QUIZ_ATTEMPTS_TABLE);
+  const entity = toQuizAttemptEntity(attempt);
+  await client.upsertEntity(entity, 'Replace');
+  return fromQuizAttemptEntity(entity);
+}
+
+export async function listQuizAttempts(subjectId, userId, classId) {
+  if (!subjectId || !userId || !classId) return [];
+  const entities = await queryByPartition(QUIZ_ATTEMPTS_TABLE, subjectId);
+  return entities
+    .map(fromQuizAttemptEntity)
+    .filter((a) => a.userId === userId && a.classId === classId)
+    .sort((a, b) => a.attemptNumber - b.attemptNumber);
 }

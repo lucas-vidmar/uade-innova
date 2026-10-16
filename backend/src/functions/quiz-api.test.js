@@ -16,6 +16,9 @@ const authMocks = {
 
 const quizStore = new Map();
 const resultStore = new Map();
+// El historial de intentos (UJ-31) convive con el resultado vigente: quiz-api
+// importa ambos juegos de funciones, así que la simulación tiene que ofrecerlos.
+const attemptStore = [];
 
 const stateStoreMocks = {
     getEnrollment: mock.fn(async () => ({ status: 'active' })),
@@ -31,6 +34,10 @@ const stateStoreMocks = {
         return result;
     }),
     getQuizResult: mock.fn(async (subjectId, userId, classId) => resultStore.get(`${subjectId}:${userId}__${classId}`) || null),
+    appendQuizAttempt: mock.fn(async (attempt) => { attemptStore.push(attempt); return attempt; }),
+    listQuizAttempts: mock.fn(async (subjectId, userId, classId) => attemptStore
+        .filter((a) => a.subjectId === subjectId && a.userId === userId && a.classId === classId)
+        .sort((a, b) => a.attemptNumber - b.attemptNumber)),
 };
 
 const aiMocks = {
@@ -77,6 +84,7 @@ beforeEach(() => {
     currentUid = 'alu-001';
     quizStore.clear();
     resultStore.clear();
+    attemptStore.length = 0;
     stateStoreMocks.getEnrollment.mock.mockImplementation(async () => ({ status: 'active' }));
     stateStoreMocks.getConsentStatus.mock.mockImplementation(async () => true);
 });
