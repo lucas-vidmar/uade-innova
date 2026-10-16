@@ -2,6 +2,7 @@ import { api } from '../../services/api.js';
 import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
 import { toast } from '../../components/Toast.js';
+import { showConfirmDialog, showPromptDialog } from '../../components/Dialog.js';
 import { apiErrorFeedback } from '../../services/error-feedback.js';
 
 function esc(str) {
@@ -179,6 +180,7 @@ function renderTypeDetail(container) {
               <th>Modelo</th>
               <th>Creado</th>
               <th>Actualizado</th>
+              <th>Activada / por</th>
               <th></th>
             </tr>
           </thead>
@@ -186,7 +188,10 @@ function renderTypeDetail(container) {
             ${state.versions.map(v => `
               <tr>
                 <td><code style="font-weight:600">${esc(v.versionId)}</code></td>
-                <td style="max-width:200px;white-space:normal">${esc(v.description || '-')}</td>
+                <td style="max-width:200px;white-space:normal">
+                  ${esc(v.description || '-')}
+                  ${v.activationReason ? `<div class="text-xs text-text-muted" style="margin-top:4px">Motivo: ${esc(v.activationReason)}</div>` : ''}
+                </td>
                 <td>
                   ${v.isActive
                     ? '<span class="badge badge-success">Activa</span>'
@@ -195,7 +200,10 @@ function renderTypeDetail(container) {
                 </td>
                 <td><span class="badge" style="background:var(--color-surface-3)">${esc(v.model || 'default')}</span></td>
                 <td style="font-size:0.85rem">${formatDate(v.createdAt)}</td>
-                <td style="font-size:0.85rem">${formatDate(v.updatedAt)}</td>
+                <td style="font-size:0.85rem">${formatDate(v.updatedAt)}${v.updatedBy ? `<div class="text-xs text-text-muted">por ${esc(v.updatedBy)}</div>` : ''}</td>
+                <td style="font-size:0.85rem">
+                  ${v.activatedAt ? `${formatDate(v.activatedAt)}<div class="text-xs text-text-muted">por ${esc(v.activatedBy || '-')}</div>` : '-'}
+                </td>
                 <td>
                   <div style="display:flex;gap:var(--space-2)">
                     <button class="btn btn-secondary btn-sm" data-action="edit" data-type="${esc(state.selectedType)}" data-version-id="${esc(v.versionId)}">Editar</button>
@@ -212,6 +220,8 @@ function renderTypeDetail(container) {
       </div>
       `}
     </div>
+
+    ${renderGovernanceLog()}
   `;
 
   document.getElementById('back-to-list').addEventListener('click', () => renderList(container));
@@ -228,12 +238,24 @@ function renderTypeDetail(container) {
     btn.addEventListener('click', async () => {
       const type = btn.dataset.type;
       const versionId = btn.dataset.versionId;
+      // El paso de una versión a otra se asienta con su motivo: sin motivo no se
+      // activa, y queda dicho quién y cuándo (UJ-48 pasos 5 y 9).
+      const reason = await showPromptDialog({
+        title: `Activar ${versionId}`,
+        label: 'Motivo de la activación (queda registrado)',
+        placeholder: 'Por qué esta versión pasa a regir',
+        confirmText: 'Activar',
+      });
+      if (!reason) return;
+      const reemplazada = (state.versions.find(v => v.isActive) || {}).versionId || 'ninguna';
       try {
-        await api.activatePromptVersion(type, versionId);
-        toast('success', 'Versión activada', `La versión ${versionId} ahora es la activa.`);
+        btn.disabled = true; // un doble clic no puede disparar dos activaciones
+        const record = await api.activatePromptVersion(type, versionId, { reason });
+        toast('success', 'Versión activada', `${versionId} rige desde ${formatDate(record?.activatedAt)} (antes regía: ${reemplazada}).`);
         await showTypeDetail(container, type);
       } catch (err) {
         toast('error', 'Error al activar', err.message);
+        btn.disabled = false;
       }
     });
   });
@@ -242,7 +264,13 @@ function renderTypeDetail(container) {
     btn.addEventListener('click', async () => {
       const type = btn.dataset.type;
       const versionId = btn.dataset.versionId;
-      if (!confirm(`¿Eliminar la versión "${versionId}" de "${type}"? No se puede deshacer.`)) return;
+      const confirmed = await showConfirmDialog({
+        title: 'Eliminar versión',
+        message: `¿Eliminar la versión "${versionId}" de "${type}"? No se puede deshacer.`,
+        confirmText: 'Eliminar',
+        danger: true,
+      });
+      if (!confirmed) return;
 
       try {
         await api.deletePromptVersion(type, versionId);
@@ -389,6 +417,64 @@ function showEditor(container, version) {
       }
     });
   }
+}
+
+const GOVERNANCE_LABELS = {
+  activate: 'Activada',
+  deactivate: 'Dejó de regir',
+  edit: 'Contenido editado',
+};
+
+/**
+ * Historial de la gobernanza del comportamiento: con esto cualquiera puede
+ * reconstruir qué versión regía en cada tramo, quién la activó y con qué motivo
+ * (UJ-48 pasos 5, 7, 9 y 10).
+ */
+function renderGovernanceLog() {
+  const entries = [];
+  for (const version of state.versions) {
+    for (const entry of (version.activationHistory || [])) {
+      entries.push({ versionId: version.versionId, ...entry });
+    }
+  }
+  entries.sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
+
+  return `
+    <div class="card" style="margin-top:var(--space-6)">
+      <div class="card-header">
+        <span class="card-title">Historial de activaciones</span>
+        <span class="badge badge-info">${entries.length} movimientos</span>
+      </div>
+      ${entries.length === 0 ? `
+        <div class="empty-state" style="padding:20px">Todavía no hay movimientos registrados para este tipo de prompt.</div>
+      ` : `
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Cuándo</th>
+              <th>Qué</th>
+              <th>Versión</th>
+              <th>Quién</th>
+              <th>Motivo</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${entries.map(entry => `
+              <tr>
+                <td style="font-size:0.85rem">${formatDate(entry.at)}</td>
+                <td style="font-size:0.85rem">${esc(GOVERNANCE_LABELS[entry.action] || entry.action)}</td>
+                <td><code>${esc(entry.versionId)}</code></td>
+                <td style="font-size:0.85rem">${esc(entry.by || '-')}</td>
+                <td style="font-size:0.85rem">${esc(entry.reason || '-')}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+      `}
+    </div>
+  `;
 }
 
 function formatDate(value) {

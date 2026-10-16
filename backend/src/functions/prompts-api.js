@@ -155,6 +155,7 @@ app.http('prompts-update', {
         variables: body.variables,
         description: body.description,
         model: body.model,
+        updatedBy: principal.userId || 'director',
       });
       return jsonResponse(200, result);
     } catch (err) {
@@ -171,9 +172,28 @@ app.http('prompts-activate', {
     const principal = requireDirector(request, context);
     if (!principal) return directorDenied();
     const { type, versionId } = request.params;
+    // El paso de una versión a otra tiene que quedar asentado con su motivo:
+    // sin motivo no se activa, para que después se pueda reconstruir por qué
+    // se cambió y por qué se volvió atrás (UJ-48 pasos 5 y 9).
+    let reason = '';
     try {
-      const result = await activateVersion(type, versionId);
-      context.log(`[Prompts] Versión activada: type=${type}, versionId=${versionId}`);
+      const body = await request.json();
+      reason = String(body?.reason || '').trim();
+    } catch (err) {
+      reason = '';
+    }
+    if (!reason) {
+      return jsonResponse(400, {
+        error: 'ACTIVATION_REASON_REQUIRED',
+        message: 'Indicá el motivo de la activación: queda registrado junto con quién y cuándo.',
+      });
+    }
+    try {
+      const result = await activateVersion(type, versionId, {
+        activatedBy: principal.userId || 'director',
+        reason,
+      });
+      context.log(`[Prompts] Versión activada: type=${type}, versionId=${versionId}, by=${principal.userId || 'director'}, reason=${reason}`);
       return jsonResponse(200, result);
     } catch (err) {
       return jsonResponse(400, { error: err.message });

@@ -47,9 +47,11 @@ export async function updatePromptVersion(type, versionId, { content, systemProm
   return res.json();
 }
 
-export async function activatePromptVersion(type, versionId) {
+export async function activatePromptVersion(type, versionId, { reason } = {}) {
   const res = await apiFetch(`${BASE_URL}/prompts/${encodeURIComponent(type)}/activate/${encodeURIComponent(versionId)}`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason: reason || '' }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Error desconocido' }));

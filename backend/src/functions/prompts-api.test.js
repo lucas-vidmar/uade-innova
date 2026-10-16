@@ -88,3 +88,47 @@ test('prompts-list-types returns 200 for a director principal', async () => {
 
     authMocks.parseClientPrincipal.mock.mockImplementation(() => null);
 });
+
+test('prompts-activate exige motivo y lo registra junto con quién activa', async () => {
+    authMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'adm-001', userRoles: ['authenticated', 'Admin'] }));
+    promptStoreMocks.activateVersion.mock.resetCalls();
+
+    const sinMotivo = await handlers['prompts-activate'](
+        { method: 'POST', params: { type: 'rag-master', versionId: 'v1' }, json: async () => ({}) },
+        { log: () => {} },
+    );
+    assert.strictEqual(sinMotivo.status, 400);
+    assert.strictEqual(JSON.parse(sinMotivo.body).error, 'ACTIVATION_REASON_REQUIRED');
+    assert.strictEqual(promptStoreMocks.activateVersion.mock.callCount(), 0, 'sin motivo no se activa nada');
+
+    promptStoreMocks.activateVersion.mock.mockImplementation(async (type, versionId, options) => (
+        { type, versionId, isActive: true, activatedAt: '2026-10-16T00:00:00.000Z', ...options }
+    ));
+    const conMotivo = await handlers['prompts-activate'](
+        { method: 'POST', params: { type: 'rag-master', versionId: 'v1' }, json: async () => ({ reason: 'el tono nuevo es más claro' }) },
+        { log: () => {} },
+    );
+
+    assert.strictEqual(conMotivo.status, 200);
+    const passed = promptStoreMocks.activateVersion.mock.calls.at(-1).arguments[2];
+    assert.deepStrictEqual(passed, { activatedBy: 'adm-001', reason: 'el tono nuevo es más claro' });
+    const body = JSON.parse(conMotivo.body);
+    assert.strictEqual(body.activatedBy, 'adm-001');
+    assert.strictEqual(body.activatedAt, '2026-10-16T00:00:00.000Z', 'la respuesta declara el momento de la activación');
+
+    authMocks.parseClientPrincipal.mock.mockImplementation(() => null);
+});
+
+test('prompts-update registra a quién editó el contenido', async () => {
+    authMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'dir-001', userRoles: ['authenticated', 'Director'] }));
+    promptStoreMocks.updateVersion.mock.resetCalls();
+
+    await handlers['prompts-update'](
+        { method: 'PUT', params: { type: 'rag-master', versionId: 'v1' }, json: async () => ({ content: 'nuevo' }) },
+        { log: () => {} },
+    );
+
+    const passed = promptStoreMocks.updateVersion.mock.calls.at(-1).arguments[2];
+    assert.strictEqual(passed.updatedBy, 'dir-001');
+    authMocks.parseClientPrincipal.mock.mockImplementation(() => null);
+});
