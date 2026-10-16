@@ -63,3 +63,16 @@ export async function getQuizResult(subjectId, classId) {
         return null;
     }
 }
+
+export async function getQuizAttempts(subjectId, classId) {
+    const params = new URLSearchParams({ subjectId, classId });
+    try {
+        const res = await apiFetch(`${BASE_URL}/quiz-attempts?${params}`);
+        if (!res.ok) return [];
+        const data = await res.json();
+        return Array.isArray(data?.attempts) ? data.attempts : [];
+    } catch (err) {
+        console.warn('[API] getQuizAttempts failed:', err);
+        return [];
+    }
+}
