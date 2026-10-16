@@ -109,3 +109,32 @@ test('mobile nav link keeps an accessible name while its label span is display:n
   // Decorative icons must not pollute the computed accessible name.
   await expect(link.locator('svg')).toHaveAttribute('aria-hidden', 'true');
 });
+
+// Regression (#474): en el teléfono la guía de inicio es un bottom sheet. Debe
+// apoyarse POR ENCIMA de la franja de la navegación inferior: anclada en
+// `bottom: 0` la tapaba y el puntero dejaba de llegar a los enlaces (QA-008).
+test('con la guía de inicio abierta la navegación inferior sigue alcanzable (#474)', async ({ page }) => {
+  const nav = await loadMobileNav(page, 'student');
+
+  // Abrir la guía desde el propio botón de ayuda de la barra.
+  await nav.getByRole('button', { name: 'Guía de inicio', exact: true }).click();
+  const tooltip = page.locator('.onboarding-tooltip');
+  await expect(tooltip).toBeVisible({ timeout: 10000 });
+
+  const t = await tooltip.boundingBox();
+  const n = await nav.boundingBox();
+  expect(t).not.toBeNull();
+  expect(n).not.toBeNull();
+
+  // La tarjeta no pisa la franja de la navegación (queda por encima).
+  expect(t.y + t.height).toBeLessThanOrEqual(n.y + 1);
+
+  // El hit-test real llega al enlace, no a la tarjeta.
+  const link = nav.getByRole('link', { name: 'Tareas y Notas', exact: true });
+  const box = await link.boundingBox();
+  const topmost = await page.evaluate(
+    ([x, y]) => document.elementFromPoint(x, y)?.closest('a')?.id || null,
+    [Math.round(box.x + box.width / 2), Math.round(box.y + box.height / 2)],
+  );
+  expect(topmost).toBe('nav-student-tasks-mobile');
+});

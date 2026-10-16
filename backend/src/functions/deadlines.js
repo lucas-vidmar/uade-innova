@@ -163,8 +163,16 @@ app.http('save-deadline', {
             const isNew = !existingDeadline;
             if (isNew || dateChanged) {
                 const fmt = (d) => new Date(d).toLocaleDateString('es-AR');
-                const changeMessage = `${deadline.title}: la fecha cambió del ${fmt(existingDeadline.dueDate)} al ${fmt(deadline.dueDate)}`
-                    + (deadline.changeReason ? ` (Motivo: ${deadline.changeReason})` : '');
+                // #XXX: el aviso de cambio sólo aplica cuando hay una fecha
+                // anterior. En un alta no existe `existingDeadline`, así que
+                // construir este texto acá lanzaba (TypeError al leer
+                // `existingDeadline.dueDate`) y el try/catch lo silenciaba:
+                // crear una fecha NO generaba ningún aviso. Se calcula sólo
+                // cuando de verdad hubo un movimiento.
+                const changeMessage = isNew
+                    ? ''
+                    : `${deadline.title}: la fecha cambió del ${fmt(existingDeadline.dueDate)} al ${fmt(deadline.dueDate)}`
+                        + (deadline.changeReason ? ` (Motivo: ${deadline.changeReason})` : '');
                 const { upsertNotificationForSubject } = await import('../services/notification-store.js');
                 await upsertNotificationForSubject(subjectId, {
                     id: `notif-deadline-change-${deadline.id}`,

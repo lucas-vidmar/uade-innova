@@ -88,7 +88,7 @@ test('student can report issue and teacher sees alert', async ({ page }) => {
           id: 'ai-issue-001',
           question: '¿Qué es arquitectura hexagonal?',
           answer: 'La arquitectura hexagonal separa el dominio de la infraestructura.',
-          sources: [],
+          sources: [{ classId: 'class-03', sourceFilename: 'clase3.pdf', text: '…' }],
         },
       ]),
     });
@@ -108,6 +108,9 @@ test('student can report issue and teacher sees alert', async ({ page }) => {
       messageId: payload.messageId,
       question: '¿Qué es arquitectura hexagonal?',
       issueDetail: payload.issueDetail || 'Sin detalle',
+      // #429: el reporte debe viajar con su clase para poder ubicarlo
+      // aunque el asistente no haya dejado log de chat.
+      classId: payload.classId || '',
       createdAt: '2026-04-10T12:00:00.000Z',
     });
 
@@ -144,6 +147,10 @@ test('student can report issue and teacher sees alert', async ({ page }) => {
   await page.click('.dialog-confirm');
 
   await expect(page.locator('.report-issue-btn').first()).toHaveText('✅ Reportado');
+
+  // #429: el reporte viaja con la clase activa, no queda "unknown".
+  expect(teacherAlerts.length).toBeGreaterThan(0);
+  expect(teacherAlerts[0].classId).toBe('class-03');
 
   await page.evaluate(() => {
     sessionStorage.setItem('edu_role', 'teacher');
