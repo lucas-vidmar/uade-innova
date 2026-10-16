@@ -2344,6 +2344,38 @@ app.http('update-material', {
             if (typeof body.reviewed === 'boolean') updates.reviewed = body.reviewed;
             if (body.priority === 'primary' || body.priority === 'secondary') updates.priority = body.priority;
 
+            // #389: reubicar un material tiene que alcanzar al índice vectorial. El
+            // alcance de la búsqueda (clase) vive en los metadatos de cada vector, no
+            // en el estado del material: sin reindexar, el material sigue respondiendo
+            // en el encuentro del que se lo quitó y no aparece en el que se lo puso.
+            // Se reescriben los metadatos sobre los mismos vectores (no se recalculan
+            // embeddings) y se hace antes de tocar el estado: si la reindexación falla,
+            // el material queda como estaba en los dos lados, sin estado mentiroso.
+            const nextClassIds = Array.isArray(updates.classIds) ? updates.classIds.filter(Boolean) : null;
+            const classIdsChanged = nextClassIds
+                && JSON.stringify(nextClassIds) !== JSON.stringify(existing.classIds || []);
+            const typeChanged = typeof updates.type === 'string' && updates.type && updates.type !== existing.type;
+
+            if (classIdsChanged || typeChanged) {
+                try {
+                    const reindex = await vectorStore.updateMaterialVectorsMetadata(materialId, {
+                        ...(classIdsChanged ? { classIds: nextClassIds } : {}),
+                        ...(typeChanged ? { materialType: updates.type } : {}),
+                    });
+                    context.log(`[UpdateMaterial] ${materialId} reindexado: ${JSON.stringify(reindex)}`);
+                } catch (reindexErr) {
+                    context.error(`[UpdateMaterial] No se pudo reindexar ${materialId}:`, reindexErr);
+                    return {
+                        status: 500,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            error: `No se pudo actualizar el material en el índice de conocimiento, así que la reubicación no se aplicó: ${reindexErr.message}`,
+                            code: 'MATERIAL_REINDEX_FAILED',
+                        }),
+                    };
+                }
+            }
+
             const updated = await upsertMaterialState({
                 ...existing,
                 materialId: existing.materialId || existing.id,

@@ -178,11 +178,18 @@ function buildPineconeFilter(subjectId, classIds, disableBibliographyFallback = 
 
     const isSingleClass = classIds.length === 1 && classIds[0] !== 'all';
 
-    const classClause = isSingleClass
-        ? { classId: { $eq: classIds[0] } }
-        : { classIds: { $in: classIds } };
+    const clauses = [];
 
-    const clauses = [classClause];
+    if (isSingleClass) {
+        // #389: un material puede pertenecer a más de un encuentro. Los vectores
+        // guardan `classId` (escalar: la primera clase) y `classIds` (lista con todas).
+        // Con el alcance acotado a un solo encuentro hay que mirar las dos formas; si
+        // no, un material asociado a dos encuentros sólo se alcanza desde el primero
+        // (y sigue alcanzándose desde el primero aunque se lo hayan quitado).
+        clauses.push({ classId: { $eq: classIds[0] } }, { classIds: { $in: [classIds[0]] } });
+    } else {
+        clauses.push({ classIds: { $in: classIds } });
+    }
 
     if (!disableBibliographyFallback) {
         clauses.push({ materialType: { $eq: 'bibliography' } });

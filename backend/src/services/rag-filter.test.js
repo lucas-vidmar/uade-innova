@@ -170,6 +170,28 @@ test('RAG Filter: should include $or with classIds.$in and bibliography when mul
     ]);
 });
 
+// #389: un material puede pertenecer a más de un encuentro y los vectores guardan
+// la clase como escalar (`classId`) y como lista (`classIds`). Con un solo encuentro
+// en el alcance hay que mirar las dos formas: si no, el material asociado a dos
+// encuentros sólo se alcanza desde el primero (y sigue alcanzándose desde el primero
+// aunque se lo hayan quitado), que es lo que se reprodujo en el recorrido UJ-08.
+test('RAG Filter: con un solo encuentro en el alcance mira classId y la lista classIds (#389)', async () => {
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+    const subjectId = 'math-101';
+
+    await capturedHandler(
+        mockRequest({ question: 'test', subjectId, classIds: ['class1'] }),
+        mockContext()
+    );
+
+    const filter = vectorStoreMocks.querySimilar.mock.calls[1].arguments[1];
+    assert.deepStrictEqual(filter.$or, [
+        { classId: { $eq: 'class1' } },
+        { classIds: { $in: ['class1'] } },
+        { materialType: { $eq: 'bibliography' } }
+    ]);
+});
+
 test('RAG Filter: should simplify to ONLY subjectId when classIds is ["all"]', async () => {
     vectorStoreMocks.querySimilar.mock.resetCalls();
     const subjectId = 'math-101';
