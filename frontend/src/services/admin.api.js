@@ -128,6 +128,34 @@ export async function getVectorHealth() {
     }
 }
 
+/**
+ * Contenido del índice de conocimiento para una unidad (#452): cada material que
+ * el índice sirve para esa unidad con su veredicto contra el registro
+ * autoritativo (`ok` | `orphan` | `mismatch` | `metadata-incomplete`).
+ * El escaneo recorre el índice, por eso el timeout es más largo que el de las
+ * métricas agregadas.
+ */
+export async function getVectorIndex(subjectId) {
+    const res = await fetchWithTimeout(`${BASE_URL}/vector-index?subjectId=${encodeURIComponent(subjectId)}`, { timeout: 30000 });
+    if (!res.ok) throw await parseApiError(res, `Error ${res.status}: no se pudo leer el índice de conocimiento.`);
+    return res.json();
+}
+
+/**
+ * Saca del índice (cuarentena) los materiales indicados y devuelve el registro
+ * de la corrida con su verificación posterior (#452). Un material sin conflicto
+ * sólo se toca con `force`.
+ */
+export async function quarantineVectorIndex(subjectId, materialIds, { force = false, reason } = {}) {
+    const res = await apiFetch(`${BASE_URL}/vector-index/quarantine`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subjectId, materialIds, force, reason }),
+    });
+    if (!res.ok) throw await parseApiError(res, 'No se pudo purgar el índice de conocimiento.');
+    return res.json();
+}
+
 export async function getArchiveUsage(subjectId, semester) {
     try {
         const params = new URLSearchParams();

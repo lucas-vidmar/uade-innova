@@ -130,6 +130,7 @@ export const api = {
 
     getDirectorStats, getDirectorKpiExport, getDirectorPowerBiMetrics,
     getSafetyRate, getAdminUsers, getVectorHealth, getArchiveUsage,
+    getVectorIndex, quarantineVectorIndex,
     getRetentionPolicy, getRetentionExport, saveRetentionPolicy,
     getSubjectWeights, saveSubjectWeights,
     getAdminConfig, saveAdminConfig, resetAdminConfig,

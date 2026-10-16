@@ -1,4 +1,7 @@
 import { api } from '../../services/api.js';
+import { auth } from '../../services/auth.js';
+import { showConfirmDialog } from '../../components/Dialog.js';
+import { toast } from '../../components/Toast.js';
 
 export async function renderAdminDashboard(container) {
   container.innerHTML = `<div class="page-header">
@@ -43,6 +46,7 @@ export async function renderAdminDashboard(container) {
   const metricsSampleCount = Number(vectorHealth?.metricsSampleCount || 0);
   const latencyP50 = vectorHealth?.latencyMs?.p50;
   const latencyP95 = vectorHealth?.latencyMs?.p95;
+  const activeSubjectId = auth.getActiveSubjectId?.() || null;
 
   container.innerHTML = `
     <!-- Cost per subject -->
@@ -111,6 +115,20 @@ export async function renderAdminDashboard(container) {
       `}
     </div>
 
+    <!-- Contenido del índice de conocimiento (por unidad) -->
+    <div class="card" style="margin-bottom:var(--space-8)">
+      <div class="card-header">
+        <span class="card-title">${icon('database')} Contenido del índice de conocimiento</span>
+        <span class="badge badge-info" id="vector-index-subject">${activeSubjectId || 'sin unidad activa'}</span>
+      </div>
+      <p style="margin:0 0 var(--space-4);color:var(--color-text-secondary);font-size:var(--font-size-sm)">
+        Qué fragmentos responde el índice para la unidad activa y cuáles no coinciden con su registro.
+        Entradas en conflicto (sin registro en la unidad o con metadata desactualizada) se pueden sacar del índice.
+      </p>
+      <button type="button" class="btn btn-secondary" id="vector-index-load">Inspeccionar la unidad</button>
+      <div id="vector-index-result" style="margin-top:var(--space-4)"></div>
+    </div>
+
     <!-- Presupuesto -->
     <div class="card">
       <div class="card-header">
@@ -145,6 +163,110 @@ export async function renderAdminDashboard(container) {
   if (costBySubject.length > 0) {
     renderCostLineChart(costBySubject);
   }
+
+  wireVectorIndexSection(container, activeSubjectId);
+}
+
+const VERDICT_LABEL = {
+  ok: 'OK',
+  orphan: 'Sin registro en la unidad',
+  mismatch: 'No coincide con su registro',
+  'metadata-incomplete': 'Metadata incompleta',
+};
+
+const VERDICT_BADGE = {
+  ok: 'badge-info',
+  orphan: 'badge-error',
+  mismatch: 'badge-warning',
+  'metadata-incomplete': 'badge-warning',
+};
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
+/**
+ * Índice de conocimiento por unidad (#452 / UJ-59): acota el daño (qué sirve el
+ * índice para esta unidad) y permite sacar de él las entradas en conflicto,
+ * mostrando la verificación posterior de la corrida.
+ */
+function wireVectorIndexSection(container, subjectId) {
+  const button = container.querySelector('#vector-index-load');
+  const result = container.querySelector('#vector-index-result');
+  if (!button || !result) return;
+
+  const render = (payload) => {
+    const conflictivas = (payload.groups || []).filter((g) => g.verdict !== 'ok');
+    const rows = (payload.groups || []).map((g) => `
+      <tr>
+        <td>${escapeHtml(g.sourceFilename || g.materialId)}</td>
+        <td>${escapeHtml(g.materialType || 'n/a')}</td>
+        <td>${escapeHtml((g.classIds && g.classIds.length ? g.classIds.join(', ') : g.classId) || 'n/a')}</td>
+        <td>${Number(g.chunkCount || 0)}</td>
+        <td><span class="badge ${VERDICT_BADGE[g.verdict] || 'badge-warning'}">${escapeHtml(VERDICT_LABEL[g.verdict] || g.verdict)}</span>${g.quarantined ? ' <span class="badge badge-info">En cuarentena</span>' : ''}</td>
+      </tr>`).join('');
+
+    result.innerHTML = `
+      <div style="display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap;margin-bottom:var(--space-3)">
+        <span class="badge badge-info">${Number(payload.totalInUnit || 0)} materiales en el índice</span>
+        <span class="badge ${conflictivas.length > 0 ? 'badge-warning' : 'badge-info'}">${conflictivas.length} en conflicto</span>
+        ${payload.truncated ? '<span class="badge badge-warning">Escaneo truncado: la lista no es completa</span>' : ''}
+      </div>
+      ${rows ? `<div class="table-wrap"><table class="data-table">
+        <thead><tr><th>Material</th><th>Tipo</th><th>Clase</th><th>Fragmentos</th><th>Estado</th></tr></thead>
+        <tbody>${rows}</tbody></table></div>` : '<div class="empty-state" style="padding:20px">El índice no tiene fragmentos para esta unidad.</div>'}
+      ${conflictivas.length > 0 ? '<div style="margin-top:var(--space-4)"><button type="button" class="btn btn-danger" id="vector-index-quarantine">Sacar del índice las ' + conflictivas.length + ' entradas en conflicto</button></div>' : ''}
+    `;
+
+    const quarantineButton = result.querySelector('#vector-index-quarantine');
+    if (quarantineButton) {
+      quarantineButton.addEventListener('click', async () => {
+        const confirmed = await showConfirmDialog({
+          title: 'Sacar del índice de conocimiento',
+          message: `Se sacan ${conflictivas.length} materiales del índice de esta unidad. Dejan de alimentar las respuestas y la corrida queda registrada con su verificación.`,
+          detailsHtml: conflictivas.map((g) => escapeHtml(g.sourceFilename || g.materialId)).join('<br>'),
+          confirmText: 'Sacar del índice',
+          danger: true,
+        });
+        if (!confirmed) return;
+
+        quarantineButton.disabled = true;
+        quarantineButton.textContent = 'Purgando...';
+        try {
+          const run = await api.quarantineVectorIndex(subjectId, conflictivas.map((g) => g.materialId));
+          toast(run.verification?.verified ? 'success' : 'warning', 'Índice actualizado',
+            `${run.applied.length} sacados del índice · verificación: ${run.verification?.verified ? 'confirmada' : `pendiente (${(run.verification?.remaining || []).length})`}`,
+            6000, run.auditBlob ? [`Registro: ${run.auditBlob}`] : []);
+          const refreshed = await api.getVectorIndex(subjectId);
+          render(refreshed);
+        } catch (err) {
+          quarantineButton.disabled = false;
+          quarantineButton.textContent = `Sacar del índice las ${conflictivas.length} entradas en conflicto`;
+          toast('error', 'No se pudo purgar', err?.message || 'Error desconocido');
+        }
+      });
+    }
+  };
+
+  button.addEventListener('click', async () => {
+    if (!subjectId) {
+      toast('warning', 'Sin unidad activa', 'Elegí una unidad en el selector de arriba para inspeccionar su índice.');
+      return;
+    }
+    button.disabled = true;
+    button.textContent = 'Inspeccionando...';
+    result.innerHTML = '<div class="animate-pulse" style="padding:12px;color:var(--color-text-secondary)">Leyendo el índice de la unidad...</div>';
+    try {
+      render(await api.getVectorIndex(subjectId));
+    } catch (err) {
+      result.innerHTML = `<div class="empty-state" style="padding:20px">No se pudo leer el índice: ${escapeHtml(err?.message || 'error desconocido')}</div>`;
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Inspeccionar la unidad';
+    }
+  });
 }
 
 function renderCostLineChart(costBySubject) {
