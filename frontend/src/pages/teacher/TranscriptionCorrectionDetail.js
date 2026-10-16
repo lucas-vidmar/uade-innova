@@ -71,10 +71,37 @@ export async function renderTranscriptionCorrectionDetail(container) {
             </div>
           </div>
 
+          ${suggestion.status !== 'pending' ? `
+          <div class="tcd-section" id="tcd-decision">
+            <h3>Decisión registrada</h3>
+            <p>
+              ${statusLabel(suggestion.status)} por <strong>${escapeHtml(suggestion.teacherId || 'docente sin registrar')}</strong>
+              ${suggestion.resolvedAt ? ` el ${formatDate(suggestion.resolvedAt)}` : ''}.
+            </p>
+            ${suggestion.status === 'rejected'
+              ? `<p>${suggestion.rejectionReason
+                    ? `Motivo: ${escapeHtml(suggestion.rejectionReason)}`
+                    : 'Sin motivo registrado (enmienda rechazada antes de que el motivo fuera obligatorio).'}</p>`
+              : ''}
+          </div>
+          ` : ''}
+
           ${suggestion.status === 'pending' ? `
             <div class="tcd-actions">
               <button class="btn btn-primary" id="tcd-apply-btn">✓ Aplicar Corrección</button>
               <button class="btn btn-outline" id="tcd-reject-btn">✕ Rechazar Sugerencia</button>
+            </div>
+            <div class="tcd-reject-form" id="tcd-reject-form" style="display:none;margin-top:var(--space-4)">
+              <label class="form-label" for="tcd-reject-reason">Motivo del rechazo</label>
+              <p style="font-size:var(--font-size-sm);color:var(--color-text-secondary);margin:var(--space-1) 0 var(--space-2)">
+                Queda registrado con tu nombre y la fecha, para que otra persona pueda revisar la decisión.
+              </p>
+              <textarea class="form-input" id="tcd-reject-reason" rows="3" placeholder="Por qué este tramo tiene que quedar como está"></textarea>
+              <p id="tcd-reject-error" role="alert" aria-live="assertive" style="color:var(--color-error);font-size:0.85rem;margin:var(--space-2) 0;display:none"></p>
+              <div style="display:flex;gap:var(--space-3);margin-top:var(--space-2)">
+                <button class="btn btn-outline" id="tcd-reject-confirm-btn">Confirmar rechazo</button>
+                <button class="btn btn-ghost" id="tcd-reject-cancel-btn">Cancelar</button>
+              </div>
             </div>
           ` : ''}
         </div>
@@ -100,17 +127,40 @@ export async function renderTranscriptionCorrectionDetail(container) {
       }
 
       if (rejectBtn) {
-        rejectBtn.addEventListener('click', async () => {
+        const rejectForm = contentEl.querySelector('#tcd-reject-form');
+        const rejectReasonEl = contentEl.querySelector('#tcd-reject-reason');
+        const rejectErrorEl = contentEl.querySelector('#tcd-reject-error');
+
+        rejectBtn.addEventListener('click', () => {
+          if (!rejectForm) return;
+          rejectForm.style.display = 'block';
+          rejectReasonEl?.focus();
+        });
+
+        contentEl.querySelector('#tcd-reject-cancel-btn')?.addEventListener('click', () => {
+          rejectForm.style.display = 'none';
+          if (rejectErrorEl) rejectErrorEl.style.display = 'none';
+        });
+
+        contentEl.querySelector('#tcd-reject-confirm-btn')?.addEventListener('click', async () => {
+          const reason = String(rejectReasonEl?.value || '').trim();
+          if (!reason) {
+            if (rejectErrorEl) {
+              rejectErrorEl.textContent = 'Escribí el motivo del rechazo: el tramo queda intacto y el motivo es lo que deja revisable la decisión.';
+              rejectErrorEl.style.display = 'block';
+            }
+            rejectReasonEl?.focus();
+            return;
+          }
+          const confirmBtn = contentEl.querySelector('#tcd-reject-confirm-btn');
           try {
-            rejectBtn.disabled = true;
-            rejectBtn.textContent = 'Rechazando...';
-            await api.rejectTranscriptionSuggestion(suggestionId, subjectId);
-            toast('success', 'Sugerencia rechazada', 'La sugerencia fue marcada como rechazada.');
+            if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Rechazando...'; }
+            await api.rejectTranscriptionSuggestion(suggestionId, subjectId, reason);
+            toast('success', 'Enmienda rechazada', 'El tramo queda intacto y el motivo quedó registrado.');
             loadSuggestion();
           } catch (err) {
             toast('error', 'Error', err.message);
-            rejectBtn.disabled = false;
-            rejectBtn.textContent = '✕ Rechazar Sugerencia';
+            if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirmar rechazo'; }
           }
         });
       }

@@ -32,9 +32,16 @@ app.http('reject-transcription-suggestion', {
       return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: false, error: { code: 'INVALID_INPUT', message: 'El cuerpo debe ser JSON válido.' } }) };
     }
 
-    const { suggestionId, subjectId } = body || {};
+    const { suggestionId, subjectId, reason } = body || {};
     if (!suggestionId || !subjectId) {
       return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: false, error: { code: 'INVALID_INPUT', message: 'suggestionId y subjectId son requeridos.' } }) };
+    }
+
+    // UJ-17 paso 4: el tramo rechazado queda intacto Y con el motivo del rechazo.
+    // Sin motivo, la decisión no es revisable por otra persona.
+    const rejectionReason = typeof reason === 'string' ? reason.trim().slice(0, 500) : '';
+    if (!rejectionReason) {
+      return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: false, error: { code: 'INVALID_INPUT', message: 'El motivo del rechazo es requerido.' } }) };
     }
 
     try {
@@ -49,15 +56,16 @@ app.http('reject-transcription-suggestion', {
       entity.status = 'rejected';
       entity.resolvedAt = now;
       entity.teacherId = principal?.userId || principal?.oid || '';
+      entity.rejectionReason = rejectionReason;
 
       await client.upsertEntity(entity, 'Replace');
 
-      context.log(`[reject-transcription-suggestion] Rejected suggestion ${suggestionId} for subjectId=${subjectId}`);
+      context.log(`[reject-transcription-suggestion] Rejected suggestion ${suggestionId} for subjectId=${subjectId} by=${entity.teacherId}`);
 
       return {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ success: true, data: { suggestionId, status: 'rejected' } }),
+        body: JSON.stringify({ success: true, data: { suggestionId, status: 'rejected', rejectionReason } }),
       };
     } catch (err) {
       if (err.statusCode === 404) {
