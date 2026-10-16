@@ -259,22 +259,33 @@ app.http('get-director-kpi-export', {
         context.log.warn(`[KpiExport] Could not count classes: ${err.message}`);
       }
 
-      // #341: loadSubjects is module-private inside classes-api.js (not
-      // exported), so resolve it defensively instead of throwing a TypeError
-      // on every export. Falls back to the 60-student default when absent.
+      // #417: adoption base = real active student enrollments, matching the
+      // director dashboard. The previous 60-student-per-subject default was a
+      // fabricated base that made the percentage meaningless.
       let totalEnrolled = 0;
       try {
-        const classesApi = await import('./classes-api.js');
-        const allSubjects = typeof classesApi.loadSubjects === 'function'
-          ? ((await classesApi.loadSubjects()) || [])
-          : [];
-        totalEnrolled = allSubjects.reduce((sum, s) => sum + (toNum(s?.enrolledCount, 60) || 60), 60);
-        if (totalEnrolled <= 0) totalEnrolled = 60;
+        const stateStore = await import('../services/state-store.js');
+        if (typeof stateStore.countActiveStudentEnrollments === 'function') {
+          totalEnrolled = await stateStore.countActiveStudentEnrollments();
+        }
       } catch (err) {
-        context.log.warn(`[KpiExport] Could not load subjects: ${err.message}`);
-        totalEnrolled = 60;
+        context.log.warn(`[KpiExport] Could not count enrollments: ${err.message}`);
       }
-      const adoptionRate = uniqueActiveUsers > 0 ? Math.min(100, Math.round(uniqueActiveUsers / totalEnrolled * 100)) : 0;
+      if (totalEnrolled <= 0) {
+        // Only fall back to a subject-declared count when it actually exists.
+        try {
+          const classesApi = await import('./classes-api.js');
+          const allSubjects = typeof classesApi.loadSubjects === 'function'
+            ? ((await classesApi.loadSubjects()) || [])
+            : [];
+          totalEnrolled = allSubjects.reduce((sum, s) => sum + (toNum(s?.enrolledCount, 0) || 0), 0);
+        } catch (err) {
+          context.log.warn(`[KpiExport] Could not load subjects: ${err.message}`);
+        }
+      }
+      const adoptionRate = uniqueActiveUsers > 0 && totalEnrolled > 0
+        ? Math.min(100, Math.round(uniqueActiveUsers / totalEnrolled * 100))
+        : 0;
 
       const earlyAlertSummary = await loadEarlyAlertSummary(context).catch((err) => {
         context.log.warn(`[KpiExport] Could not load early-alert summary: ${err.message}`);

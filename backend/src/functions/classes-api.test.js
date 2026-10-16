@@ -77,6 +77,7 @@ const stateStoreMocks = {
     listMaterialsByClass: mock.fn(async () => []),
     listClassViewsByStudent: mock.fn(async () => []),
     deleteClassViewsBySubject: mock.fn(async () => true),
+    countActiveStudentEnrollments: mock.fn(async () => 0),
 };
 
 // Mock dependencies
@@ -322,6 +323,43 @@ test('classes-api get-director-stats returns aggregate summary without student i
     assert.strictEqual(payload.name, undefined);
     assert.strictEqual(payload.studentId, undefined);
     assert.strictEqual(payload.subject, undefined);
+});
+
+test('classes-api get-director-stats computes adoption against real active student enrollments (#417)', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+
+    const now = new Date();
+    const todayIso = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12, 0, 0)).toISOString();
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: makeListEntitiesResult([
+            { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, timestamp: todayIso },
+            { userId: 'alu-002', promptTokens: 100, completionTokens: 50, totalTokens: 150, timestamp: todayIso },
+        ])
+    }));
+    stateStoreMocks.countActiveStudentEnrollments.mock.mockImplementation(async () => 5);
+
+    try {
+        const response = await handlers['get-director-stats']({ params: {}, query: new Map() }, { log: makeMockLog(), error: mock.fn() });
+        assert.strictEqual(response.status, 200);
+        const payload = JSON.parse(response.body);
+        // 2 distinct active users over a real base of 5 enrolled students.
+        assert.strictEqual(payload.adoptionRate, 40);
+    } finally {
+        storageMocks.getTableClient.mock.mockImplementation(() => ({ listEntities: defaultListEntities }));
+        stateStoreMocks.countActiveStudentEnrollments.mock.mockImplementation(async () => 0);
+    }
+});
+
+test('classes-api get-director-stats returns adoption 0 (never a fabricated base) when there is no enrollment data (#417)', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+
+    stateStoreMocks.countActiveStudentEnrollments.mock.mockImplementation(async () => 0);
+
+    const response = await handlers['get-director-stats']({ params: {}, query: new Map() }, { log: makeMockLog(), error: mock.fn() });
+    assert.strictEqual(response.status, 200);
+    const payload = JSON.parse(response.body);
+    assert.strictEqual(payload.adoptionRate, 0);
 });
 
 test('classes-api get-director-powerbi-metrics should require Director role', async () => {

@@ -89,6 +89,9 @@ mock.module('../middleware/with-correlation.js', { namedExports: correlationMock
 mock.module('../services/auth-utils.js', { namedExports: authMocks });
 mock.module('../services/storage.js', { namedExports: storageMocks });
 mock.module('./classes-api.js', { namedExports: classesApiMocks });
+mock.module('../services/state-store.js', {
+    namedExports: { countActiveStudentEnrollments: mock.fn(async () => 0) },
+});
 mock.module('../services/azure-cost.js', { namedExports: azureCostMocks });
 mock.module('../services/telemetry.js', {
     namedExports: { trackNotificationInteraction: mock.fn(async () => {}) },
