@@ -190,6 +190,21 @@ export async function updateMaterial(subjectId, materialId, updates) {
     return res.json();
 }
 
+/**
+ * #391: retirar una fuente la saca de las respuestas sin borrarla. Queda en la
+ * lista con quién, cuándo y por qué, y se puede reponer dejando esa constancia.
+ */
+export async function retireMaterial(subjectId, materialId, reason) {
+    return updateMaterial(subjectId, materialId, {
+        retirementState: 'retirada',
+        retireReason: reason || undefined,
+    });
+}
+
+export async function restoreMaterial(subjectId, materialId) {
+    return updateMaterial(subjectId, materialId, { retirementState: 'activa' });
+}
+
 export async function getMaterialText(subjectId, materialId) {
     if (!subjectId || !materialId) return { text: '' };
     try {

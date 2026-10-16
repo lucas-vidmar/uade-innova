@@ -1201,6 +1201,82 @@ test('#425: save-class-summary no reescribe la lista de clases si el estado de p
         process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
     }
 });
+test('#391: retirar un material deja constancia y no lo borra; reponer la conserva', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'], userDetails: 'prof01@uade.edu.ar' }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+    const restoreGetMaterial = stateStoreMocks.getMaterialState.mock.mockImplementation;
+    const restoreUpsert = stateStoreMocks.upsertMaterialState.mock.mockImplementation;
+    stateStoreMocks.upsertMaterialState.mock.mockImplementation(async (material) => material);
+    stateStoreMocks.getMaterialState.mock.mockImplementation(async () => ({
+        subjectId: 'arq-software-2026',
+        materialId: 'mat-vieja',
+        classIds: ['class-04'],
+        type: 'notes',
+        filename: 'uj09-fuente-obsoleta.txt',
+        status: 'ready',
+        reviewed: true,
+        priority: 'primary',
+    }));
+
+    try {
+        const request = (body) => ({
+            params: { materialId: 'mat-vieja' },
+            json: async () => body,
+        });
+
+        const retirado = await handlers['update-material'](
+            request({ subjectId: 'arq-software-2026', retirementState: 'retirada', retireReason: 'reemplazada por la guía 2026-10' }),
+            { log: makeMockLog(), error: mock.fn() }
+        );
+        assert.strictEqual(retirado.status, 200);
+        const retiradoBody = JSON.parse(retirado.body);
+        assert.strictEqual(retiradoBody.retirement.state, 'retirada');
+        assert.strictEqual(retiradoBody.retirement.previousState, 'activa');
+        assert.strictEqual(retiradoBody.retirement.by, 'prof01@uade.edu.ar', 'queda registrado quién retiró');
+        assert.ok(retiradoBody.retirement.at, 'queda registrado cuándo');
+        assert.strictEqual(retiradoBody.retirement.reason, 'reemplazada por la guía 2026-10');
+
+        const primeraEscritura = stateStoreMocks.upsertMaterialState.mock.calls.at(-1).arguments[0];
+        assert.strictEqual(primeraEscritura.retirementState, 'retirada');
+        assert.strictEqual(primeraEscritura.retireReason, 'reemplazada por la guía 2026-10');
+        assert.strictEqual(primeraEscritura.priority, 'primary', 'retirar no es ponderar: la prioridad no se toca');
+        assert.strictEqual(primeraEscritura.filename, 'uj09-fuente-obsoleta.txt', 'retirar no borra el archivo');
+
+        // Se puede reponer, conservando el rastro de las dos decisiones.
+        stateStoreMocks.getMaterialState.mock.mockImplementation(async () => ({
+            subjectId: 'arq-software-2026',
+            materialId: 'mat-vieja',
+            classIds: ['class-04'],
+            type: 'notes',
+            filename: 'uj09-fuente-obsoleta.txt',
+            status: 'ready',
+            reviewed: true,
+            priority: 'primary',
+            retirementState: 'retirada',
+            retirementHistory: primeraEscritura.retirementHistory,
+            retiredBy: 'prof01@uade.edu.ar',
+            retiredAt: '2026-10-16T12:00:00.000Z',
+            retireReason: 'reemplazada por la guía 2026-10',
+        }));
+
+        const repuesto = await handlers['update-material'](
+            request({ subjectId: 'arq-software-2026', retirementState: 'activa' }),
+            { log: makeMockLog(), error: mock.fn() }
+        );
+        const repuestoBody = JSON.parse(repuesto.body);
+        assert.strictEqual(repuestoBody.retirement.state, 'activa');
+        const segundaEscritura = stateStoreMocks.upsertMaterialState.mock.calls.at(-1).arguments[0];
+        assert.strictEqual(segundaEscritura.retirementHistory.length, 2, 'la constancia del retiro se conserva');
+        assert.strictEqual(segundaEscritura.retirementHistory[0].action, 'retirar');
+        assert.strictEqual(segundaEscritura.retirementHistory[1].action, 'reponer');
+    } finally {
+        stateStoreMocks.getMaterialState.mock.mockImplementation(restoreGetMaterial);
+        stateStoreMocks.upsertMaterialState.mock.mockImplementation(restoreUpsert);
+        process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+    }
+});
+
 test('#343: get-subjects fails closed for anonymous callers (401, no catalog leak)', async (t) => {
     authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => null);
     const restoreLoadJson = storageMocks.loadJson.mock.mockImplementation;
