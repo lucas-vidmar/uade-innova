@@ -59,7 +59,8 @@ import {
     getRetentionPolicy, getRetentionExport, saveRetentionPolicy,
     getSubjectWeights, saveSubjectWeights,
     getAdminConfig, saveAdminConfig, resetAdminConfig,
-    createAdminUser, updateAdminUser, deleteAdminUser, resetAdminUserPassword
+    createAdminUser, updateAdminUser, deleteAdminUser, resetAdminUserPassword,
+    getVectorIndex, quarantineVectorIndex
 } from './admin.api.js';
 import {
     login as authLogin, logout as authLogout,
