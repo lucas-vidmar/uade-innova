@@ -82,13 +82,16 @@ test('student sees the TTS audio player when the class has a ready podcast', asy
   await expect(player.locator('[data-testid="audio-player-download"]')).toBeVisible();
 });
 
-test('student sees a "Generar audio" button when the class has no podcast yet', async ({ page, browserName }) => {
+test('student sees the pending podcast state and no generate action when the class has no approved podcast', async ({ page, browserName }) => {
   test.skip(browserName !== 'chromium', 'This usability check must run on Chrome/Chromium.');
   await seedSession(page);
   await seedClassRoutes(page, [CLASS_WITHOUT_AUDIO], { validated: false, ttsGeneratedAt: null });
 
   await page.goto('http://localhost:3000/#/student/class/class-02', { waitUntil: 'domcontentloaded' });
-  const generateBtn = page.locator('[data-testid="btn-generate-audio"]');
-  await expect(generateBtn).toBeVisible({ timeout: 10000 });
-  await expect(generateBtn).toHaveText('Generar audio');
+  // #370: aprobar el guión es una acción de quien enseña; la alumna sólo ve el estado.
+  const pending = page.locator('[data-testid="podcast-pending"]');
+  await expect(pending).toBeVisible({ timeout: 10000 });
+  await expect(pending).toContainText('todavía no está disponible');
+  await expect(page.locator('[data-testid="btn-generate-audio"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid="tts-audio-player"]')).toHaveCount(0);
 });
