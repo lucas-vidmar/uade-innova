@@ -14,6 +14,7 @@ export async function renderGlossaryManager(container) {
       <div>
         <h1 class="h2" style="margin:0">Glosario de Términos</h1>
         <p class="page-subtitle" style="margin:var(--space-1) 0 0;color:var(--color-text-secondary);font-size:var(--font-size-sm)">Términos técnicos para corrección automática de transcripciones <span id="glossary-count" style="color:var(--color-text-muted)"></span></p>
+        <p class="page-subtitle" id="glossary-meta" style="margin:var(--space-1) 0 0;color:var(--color-text-muted);font-size:var(--font-size-xs)"></p>
       </div>
       <button class="btn btn-primary" id="glossary-add-term-btn">+ Agregar Término</button>
     </div>
@@ -24,16 +25,30 @@ export async function renderGlossaryManager(container) {
 
   const editor = container.querySelector('#glossary-editor');
   const countEl = container.querySelector('#glossary-count');
+  const metaEl = container.querySelector('#glossary-meta');
   const topAddBtn = container.querySelector('#glossary-add-term-btn');
 
   let glossary = { terms: [] };
   let dirty = false;
   let saving = false;
   let savedAt = null;
+  let savedBy = null;
 
   function updateCount() {
     const n = (glossary.terms || []).length;
     if (countEl) countEl.textContent = n > 0 ? `· ${n} término${n === 1 ? '' : 's'}` : '';
+  }
+
+  // UJ-16 paso 8: quién fijó el vocabulario y en qué momento. Viene del servidor,
+  // así que sobrevive al refresco y lo ve cualquier otra persona de la unidad.
+  function updateMeta() {
+    if (!metaEl) return;
+    if (!savedBy && !savedAt) {
+      metaEl.textContent = '';
+      return;
+    }
+    const when = savedAt ? new Date(savedAt).toLocaleString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : null;
+    metaEl.textContent = `Vigente: fijado por ${savedBy || 'sin registrar'}${when ? ` el ${when}` : ''}`;
   }
 
   function updateSaveBtn() {
@@ -65,6 +80,7 @@ export async function renderGlossaryManager(container) {
 
   function renderTerms(loadError) {
     updateCount();
+    updateMeta();
     const terms = glossary.terms || [];
 
     if (loadError) {
@@ -126,7 +142,7 @@ export async function renderGlossaryManager(container) {
         </table>
       </div>
       <div style="display:flex;align-items:center;justify-content:space-between;padding:var(--space-3) var(--space-4);border-top:1px solid var(--color-border);flex-wrap:wrap;gap:var(--space-3)">
-        <span id="glossary-saved-indicator" style="font-size:var(--font-size-xs);color:var(--color-text-muted)">${savedAt ? `Guardado ${savedAt}` : ''}</span>
+        <span id="glossary-saved-indicator" style="font-size:var(--font-size-xs);color:var(--color-text-muted)">${savedAt ? `Vigente desde ${new Date(savedAt).toLocaleString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}${savedBy ? ` · ${savedBy}` : ''}` : ''}</span>
         <button class="btn btn-primary btn-sm" id="glossary-save-btn">Guardar Glosario</button>
       </div>
     `;
@@ -166,8 +182,34 @@ export async function renderGlossaryManager(container) {
     markDirty();
   });
 
+  function markRowInvalid(index, message) {
+    const row = editor.querySelector(`.glossary-term-row[data-index="${index}"]`);
+    if (!row) return;
+    const termInput = row.querySelector('[data-field="term"]');
+    if (termInput) {
+      termInput.classList.add('input-invalid');
+      termInput.style.borderColor = 'var(--color-error)';
+    }
+    const holder = row.querySelector('.glossary-row-error') || document.createElement('div');
+    holder.className = 'glossary-row-error';
+    holder.style.color = 'var(--color-error)';
+    holder.style.fontSize = 'var(--font-size-xs)';
+    holder.style.padding = 'var(--space-1) var(--space-4)';
+    holder.textContent = message || '';
+    row.appendChild(holder);
+  }
+
+  function clearRowMarks() {
+    editor.querySelectorAll('.glossary-row-error').forEach((el) => el.remove());
+    editor.querySelectorAll('.input-invalid').forEach((el) => {
+      el.classList.remove('input-invalid');
+      el.style.borderColor = '';
+    });
+  }
+
   async function onSave() {
     if (saving) return;
+    clearRowMarks();
     syncModelFromDom();
     const rows = Array.from(editor.querySelectorAll('.glossary-term-row'));
     const valid = glossary.terms
@@ -175,10 +217,33 @@ export async function renderGlossaryManager(container) {
         term: String(t.term || '').trim(),
         aliases: Array.isArray(t.aliases) ? t.aliases : [],
         definition: String(t.definition || '').trim(),
-      }))
-      .filter((t) => t.term);
+      }));
 
-    if (valid.length === 0) {
+    // UJ-16 paso 2: una fila con contenido pero sin forma preferida no se descarta
+    // en silencio; se señala para completarla (antes se perdía con un aviso de éxito).
+    const incomplete = valid
+      .map((t, i) => ({ ...t, index: i }))
+      .filter((t) => !t.term && (t.aliases.length > 0 || t.definition));
+
+    const withTerm = valid.filter((t) => t.term);
+
+    if (withTerm.length === 0 && incomplete.length > 0) {
+      incomplete.forEach((t) => markRowInvalid(t.index, 'Falta la forma preferida.'));
+      toast('warning', 'Falta el término', 'Completá la forma preferida o quitá la fila: no se guarda nada a medias.');
+      const firstInvalid = editor.querySelector('.glossary-term-row [data-field="term"]');
+      if (firstInvalid) firstInvalid.focus();
+      return;
+    }
+
+    if (incomplete.length > 0) {
+      incomplete.forEach((t) => markRowInvalid(t.index, 'Falta la forma preferida: completala o quitá esta fila para guardar.'));
+      toast('warning', 'Hay filas incompletas', 'Completá la forma preferida de las filas marcadas: si guardás así, esas definiciones no se guardan.');
+      const firstInvalid = editor.querySelector('.glossary-term-row.input-invalid, .glossary-term-row [data-field="term"].input-invalid');
+      if (firstInvalid) firstInvalid.focus();
+      return;
+    }
+
+    if (withTerm.length === 0) {
       rows.forEach((row) => {
         const termInput = row.querySelector('[data-field="term"]');
         if (termInput && !termInput.value.trim()) {
@@ -197,14 +262,26 @@ export async function renderGlossaryManager(container) {
     const indicator = editor.querySelector('#glossary-saved-indicator');
     if (indicator) indicator.textContent = 'Guardando...';
     try {
-      const result = await api.updateGlossary(subjectId, valid);
-      glossary = result && Array.isArray(result.terms) ? result : { terms: valid };
+      const result = await api.updateGlossary(subjectId, withTerm);
+      glossary = result && Array.isArray(result.terms) ? result : { terms: withTerm };
       dirty = false;
-      savedAt = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+      savedBy = result?.updatedBy || savedBy;
+      savedAt = result?.updatedAt || new Date().toISOString();
       toast('success', 'Glosario guardado', 'Los términos se actualizaron correctamente.');
       renderTerms();
     } catch (err) {
-      toast('error', 'Error al guardar', err.message);
+      // UJ-16 paso 4: los choques se resuelven antes de poner el vocabulario en
+      // vigencia, y la pantalla tiene que señalar qué filas se contradicen.
+      const conflicts = Array.isArray(err?.conflicts) ? err.conflicts : [];
+      if (conflicts.length > 0) {
+        conflicts.forEach((c) => {
+          const rows = Array.isArray(c.rows) ? c.rows : (typeof c.row === 'number' ? [c.row] : []);
+          rows.forEach((i) => markRowInvalid(i, c.message || 'Choque con otra fila.'));
+        });
+        toast('error', 'El vocabulario tiene choques', err.message);
+      } else {
+        toast('error', 'Error al guardar', err.message);
+      }
       updateSaveBtn();
       if (indicator) indicator.textContent = '';
     } finally {
@@ -230,10 +307,19 @@ export async function renderGlossaryManager(container) {
     try {
       const data = await api.getGlossary(subjectId);
       glossary = data && Array.isArray(data.terms) ? data : { terms: [] };
+      savedBy = glossary.updatedBy || null;
+      savedAt = glossary.updatedAt || null;
       dirty = false;
       renderTerms();
     } catch (err) {
-      renderTerms(err.message || 'Error al cargar el glosario.');
+      // Un timeout o una caída no se muestra como el mensaje crudo del navegador
+      // ("signal is aborted without reason"): la persona necesita saber qué pasó
+      // y que puede reintentar.
+      const raw = String(err?.message || '');
+      const friendly = (err?.name === 'AbortError' || /abort|timeout|network|failed to fetch/i.test(raw))
+        ? 'La respuesta del servidor tardó demasiado o no llegó. Reintentá en unos segundos.'
+        : (raw || 'Error al cargar el glosario.');
+      renderTerms(friendly);
     }
   }
 

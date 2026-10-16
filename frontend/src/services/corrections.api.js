@@ -193,8 +193,19 @@ export async function updateGlossary(subjectId, terms) {
     });
     if (!res.ok) {
         let message = 'Error al actualizar el glosario';
-        try { const err = await res.json(); if (err?.error?.message) message = err.error.message; } catch {}
-        throw new Error(message);
+        let conflicts = [];
+        try {
+            const err = await res.json();
+            if (err?.error?.message) message = err.error.message;
+            if (Array.isArray(err?.conflicts)) conflicts = err.conflicts;
+        } catch {}
+        // UJ-16 paso 4: los choques viajan con la respuesta para que la pantalla
+        // pueda señalar las filas que se contradicen antes de poner el vocabulario
+        // en vigencia.
+        const error = new Error(message);
+        error.conflicts = conflicts;
+        error.status = res.status;
+        throw error;
     }
     const json = await res.json();
     return json?.data || null;

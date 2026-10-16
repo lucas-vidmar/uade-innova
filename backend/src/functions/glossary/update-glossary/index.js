@@ -1,9 +1,8 @@
 import { app } from '@azure/functions';
 import { withCorrelation } from '../../../middleware/with-correlation.js';
 import { withAuth } from '../../../middleware/with-auth.js';
-import { validateFrontDoorId } from '../../../services/auth-utils.js';
-import { getEnrollment } from '../../../services/state-store.js';
-import { updateGlossary } from '../../../services/glossary-store.js';
+import { validateFrontDoorId, parseClientPrincipal } from '../../../services/auth-utils.js';
+import { updateGlossary, GlossaryValidationError } from '../../../services/glossary-store.js';
 
 app.http('update-glossary', {
   methods: ['POST'],
@@ -27,13 +26,25 @@ app.http('update-glossary', {
     }
 
     try {
-      const data = await updateGlossary(subjectId, terms);
+      // UJ-16 paso 8: el vocabulario tiene responsable, no sólo contenido.
+      const principal = parseClientPrincipal(request);
+      const updatedBy = principal?.userId || principal?.oid || '';
+      const data = await updateGlossary(subjectId, terms, updatedBy);
       return {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ success: true, data }),
       };
     } catch (err) {
+      // UJ-16 paso 4: los choques se resuelven antes de poner el vocabulario en
+      // vigencia, con el detalle de qué filas se contradicen.
+      if (err instanceof GlossaryValidationError || err?.code === 'GLOSSARY_VALIDATION') {
+        return {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ success: false, error: { code: 'GLOSSARY_VALIDATION', message: err.message }, conflicts: err.conflicts || [] }),
+        };
+      }
       context.error(`[update-glossary] Error:`, err);
       return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: false, error: { code: 'INTERNAL_ERROR', message: err.message } }) };
     }
