@@ -48,8 +48,9 @@ export function mergeWeightsWithDefaults(custom) {
 }
 
 export async function getSubjectWeights(subjectId) {
+  const empty = { weights: { ...DEFAULT_WEIGHTS }, defaults: true, updatedBy: null, updatedAt: null, reason: '' };
   if (!subjectId) {
-    return { weights: { ...DEFAULT_WEIGHTS }, defaults: true };
+    return empty;
   }
   const client = getTableClient(SUBJECT_WEIGHTS_TABLE);
   try {
@@ -60,13 +61,33 @@ export async function getSubjectWeights(subjectId) {
       transcript: entity.transcript,
       presentation: entity.presentation,
     };
-    return { weights: mergeWeightsWithDefaults(custom), defaults: false };
+    return {
+      weights: mergeWeightsWithDefaults(custom),
+      defaults: false,
+      // UJ-11 paso 6: la decisión tiene que ser revisable por otra persona, así
+      // que quién la fijó, cuándo y con qué fundamento viajan con los pesos.
+      updatedBy: entity.updatedBy || null,
+      updatedAt: entity.updatedAt || null,
+      reason: typeof entity.reason === 'string' ? entity.reason : '',
+    };
   } catch {
-    return { weights: { ...DEFAULT_WEIGHTS }, defaults: true };
+    return empty;
   }
 }
 
-export async function upsertSubjectWeights(subjectId, weights, updatedBy) {
+function parseStoredWeights(entity) {
+  if (!entity) return null;
+  const weights = {
+    notes: Number(entity.notes),
+    bibliography: Number(entity.bibliography),
+    transcript: Number(entity.transcript),
+    presentation: Number(entity.presentation),
+  };
+  if (Object.values(weights).some((value) => !Number.isFinite(value))) return null;
+  return weights;
+}
+
+export async function upsertSubjectWeights(subjectId, weights, updatedBy, reason) {
   if (!subjectId) throw new Error('subjectId es requerido.');
   const validation = validateWeights(weights);
   if (!validation.valid) throw new Error(validation.error);
@@ -78,7 +99,18 @@ export async function upsertSubjectWeights(subjectId, weights, updatedBy) {
   } catch (err) {
     if (err.statusCode !== 409) throw err;
   }
-  await client.upsertEntity({
+
+  // Guarda el estado anterior para poder volver atrás con motivo (UJ-11 paso 6).
+  let previousWeights = null;
+  try {
+    previousWeights = parseStoredWeights(await client.getEntity(subjectId, 'weights'));
+  } catch {
+    previousWeights = null;
+  }
+
+  const updatedAt = new Date().toISOString();
+  const cleanReason = typeof reason === 'string' ? reason.trim().slice(0, 500) : '';
+  const entity = {
     partitionKey: subjectId,
     rowKey: 'weights',
     notes: merged.notes,
@@ -86,7 +118,11 @@ export async function upsertSubjectWeights(subjectId, weights, updatedBy) {
     transcript: merged.transcript,
     presentation: merged.presentation,
     updatedBy: updatedBy || 'unknown',
-    updatedAt: new Date().toISOString(),
-  }, 'Replace');
-  return { weights: merged, defaults: false };
+    updatedAt,
+    reason: cleanReason,
+  };
+  if (previousWeights) entity.previousWeights = JSON.stringify(previousWeights);
+
+  await client.upsertEntity(entity, 'Replace');
+  return { weights: merged, defaults: false, updatedBy: entity.updatedBy, updatedAt, reason: cleanReason };
 }
