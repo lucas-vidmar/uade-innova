@@ -11,6 +11,7 @@ test('teacher can link a task to multiple classes via "Vincular a clases"', asyn
   await page.addInitScript(() => {
     localStorage.setItem('uade_use_mock', 'false');
     sessionStorage.setItem('edu_role', 'teacher');
+    localStorage.setItem('onboarding-teacher-completed', 'true');
     sessionStorage.setItem('edu_uid', 'doc-001');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');
@@ -102,6 +103,7 @@ test('teacher edit modal reveals pre-selected linked classes via "Vincular a cla
   await page.addInitScript(() => {
     localStorage.setItem('uade_use_mock', 'false');
     sessionStorage.setItem('edu_role', 'teacher');
+    localStorage.setItem('onboarding-teacher-completed', 'true');
     sessionStorage.setItem('edu_uid', 'doc-001');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');
@@ -181,6 +183,7 @@ test('student task detail shows "Materiales relacionados" with links to linked c
   await page.addInitScript(() => {
     localStorage.setItem('uade_use_mock', 'false');
     sessionStorage.setItem('edu_role', 'student');
+    localStorage.setItem('onboarding-student-completed', 'true');
     sessionStorage.setItem('edu_uid', 'alu-001');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');

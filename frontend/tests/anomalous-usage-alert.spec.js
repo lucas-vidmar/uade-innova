@@ -5,6 +5,7 @@ test('director can see anomalous usage alert policy in admin panel', async ({ pa
 
   await page.addInitScript(() => {
     sessionStorage.setItem('edu_role', 'admin');
+    localStorage.setItem('onboarding-admin-completed', 'true');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');
   });

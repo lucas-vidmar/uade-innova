@@ -41,6 +41,7 @@ const MOCK_RESULTS = {
 test('student can search and see categorized results', async ({ page }) => {
   await page.addInitScript(() => {
     sessionStorage.setItem('edu_role', 'student');
+    localStorage.setItem('onboarding-student-completed', 'true');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');
     sessionStorage.setItem('edu_ai_consent_accepted', 'true');
@@ -141,6 +142,7 @@ test('student can search and see categorized results', async ({ page }) => {
 test('search bar on dashboard navigates on Enter', async ({ page }) => {
   await page.addInitScript(() => {
     sessionStorage.setItem('edu_role', 'student');
+    localStorage.setItem('onboarding-student-completed', 'true');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');
     sessionStorage.setItem('edu_ai_consent_accepted', 'true');

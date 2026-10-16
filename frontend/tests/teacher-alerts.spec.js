@@ -6,6 +6,7 @@ test('teacher sees engagement and material alerts in analytics view', async ({ p
   await page.addInitScript(() => {
     localStorage.setItem('uade_use_mock', 'false');
     sessionStorage.setItem('edu_role', 'teacher');
+    localStorage.setItem('onboarding-teacher-completed', 'true');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');
     sessionStorage.setItem('edu_logged_in', 'true');
@@ -97,6 +98,7 @@ test('teacher sees thematic gaps card with severity colors and expandable detail
   await page.addInitScript(() => {
     localStorage.setItem('uade_use_mock', 'false');
     sessionStorage.setItem('edu_role', 'teacher');
+    localStorage.setItem('onboarding-teacher-completed', 'true');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');
     sessionStorage.setItem('edu_logged_in', 'true');
