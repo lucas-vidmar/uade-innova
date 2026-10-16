@@ -15,6 +15,14 @@ import { CONFIG } from '../services/config.js';
 import { isQuarantined } from '../services/vector-audit.js';
 
 const MAX_GLOBAL_RESULTS = 12;
+// #357/UJ-26: piso de relevancia para los resultados semánticos de material.
+// Pinecone devuelve siempre los K vecinos más cercanos, incluso para consultas
+// sin relación con el material. Sin este piso, una búsqueda sin coincidencias
+// devolvía hasta 12 tarjetas irrelevantes y el estado "sin coincidencias" del
+// frontend nunca se alcanzaba. Un match se conserva si hay coincidencia
+// literal de la consulta (keywordHits > 0) o si su similitud semántica
+// alcanza este piso.
+const MIN_MATERIAL_RELEVANCE = 0.35;
 const MAX_CHAT_RESULTS = 5;
 const MAX_CLASS_RESULTS = 5;
 const MAX_TASK_RESULTS = 5;
@@ -147,6 +155,12 @@ app.http('global-search', {
                     const filename = match.metadata?.sourceFilename || '';
                     const keywordHits = keywordFrequency(text, query) + keywordFrequency(filename, query);
                     const semanticScore = Number(match.score || 0);
+                    // #357/UJ-26: descartar vecinos irrelevantes (sin coincidencia
+                    // literal y por debajo del piso semántico) para no presentar
+                    // ruido como hallazgo y habilitar el estado "sin coincidencias".
+                    if (keywordHits === 0 && semanticScore < MIN_MATERIAL_RELEVANCE) {
+                        continue;
+                    }
                     const finalScore = semanticScore + Math.min(keywordHits * 0.04, 0.2);
 
                     allResults.push({
