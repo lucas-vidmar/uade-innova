@@ -100,7 +100,15 @@ export async function upsertNotificationForSubject(subjectId, notification) {
 
   const next = [...current];
   if (idx >= 0) {
-    next[idx] = { ...next[idx], ...normalized };
+    // Un aviso que se actualiza (p. ej. la fecha de una entrega que se mueve) sigue
+    // siendo el MISMO aviso: lo que cada persona ya marcó como leído no se puede
+    // perder, y sin esto el aviso vuelve a quedar pendiente para toda la cohorte
+    // (UJ-58, paso 8).
+    const readByUserIds = normalizeReadByUserIds([
+      ...(next[idx].readByUserIds || []),
+      ...(normalized.readByUserIds || []),
+    ]);
+    next[idx] = { ...next[idx], ...normalized, readByUserIds };
   } else {
     next.push(normalized);
   }
