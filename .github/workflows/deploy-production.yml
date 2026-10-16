@@ -213,6 +213,33 @@ jobs:
             exit 1
           fi
           echo "Frontend health check passed ($STATUS)"
+      # Guarda de regresión: los encabezados de identidad de desarrollo (x-mock-role,
+      # x-edu-uid) NO deben otorgar identidad en producción. Si el atajo de mock
+      # vuelve a quedar encendido en la app, estos pedidos responderían 200 y el
+      # deploy falla acá en lugar de descubrirse con un incidente.
+      - name: Assert dev identity headers are inert in production
+        run: |
+          FUNC_URL="https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net"
+
+          MOCK_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "x-mock-role: director" -H "x-edu-uid: dir-001" \
+            "$FUNC_URL/api/manage/users" || echo "000")
+          echo "x-mock-role sobre /manage/users -> $MOCK_STATUS"
+          if [ "$MOCK_STATUS" = "200" ]; then
+            echo "::error::AUTH_MOCK_ENABLED está activo en producción: un encabezado otorga rol de director."
+            exit 1
+          fi
+
+          UID_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "x-edu-uid: alu-001" \
+            "$FUNC_URL/api/class-views?subjectId=arq-software-2026&classId=class-01" || echo "000")
+          echo "x-edu-uid sobre /class-views -> $UID_STATUS"
+          if [ "$UID_STATUS" = "200" ]; then
+            echo "::error::x-edu-uid otorga identidad sin sesión en producción."
+            exit 1
+          fi
+
+          echo "Encabezados de desarrollo inertes: OK"
       - name: Checkout
         uses: actions/checkout@v4
       - name: Setup Node.js for application-state probe
