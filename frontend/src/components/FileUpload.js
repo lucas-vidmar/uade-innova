@@ -30,7 +30,7 @@ const STATUS_CONFIG = {
   error: { label: 'Error', badge: 'badge-error', icon: '❌' },
 };
 
-export function createFileUpload({ type = 'transcript', onUpload, existingFiles = [] }) {
+export function createFileUpload({ type = 'transcript', onUpload, existingFiles = [], stageFile = null }) {
   const cfg = TYPE_CONFIG[type];
   const container = document.createElement('div');
   container.className = 'file-upload-container';
@@ -144,6 +144,26 @@ export function createFileUpload({ type = 'transcript', onUpload, existingFiles 
         _progress: 0,
         _file: file,
       };
+
+      // #390: cuando quien enseña carga un lote para varios encuentros, la pieza
+      // no se sube sola: queda en manos de la pantalla que la llamó para que le
+      // asigne su encuentro antes de confirmar (el destino dejó de ser el conjunto
+      // de clases seleccionadas y pasó a ser un dato por archivo).
+      if (typeof stageFile === 'function') {
+        fileObj.status = 'pending';
+        files.push(fileObj);
+        render();
+        try {
+          await stageFile(fileObj, file);
+        } catch (error) {
+          fileObj.status = 'error';
+          render();
+          const details = error instanceof Error && error.message ? ` (${error.message})` : '';
+          toast('error', 'Error al preparar el lote', `No se pudo dejar "${file.name}" listo para repartir${details}.`);
+        }
+        continue;
+      }
+
       files.push(fileObj);
       render();
 
