@@ -170,6 +170,40 @@ export async function dispatchClassSummaryNotification({ subjectId, classData, o
   return { success: !deadLetterWrites, retryAttempts, deadLetterWrites, dispatched: 1, recipientCount: recipientUserIds.length };
 }
 
+export function summaryRetiredMessageForClass(classData) {
+  const classLabel = classData?.title || classData?.id || 'Clase';
+  return `El material de «${classLabel}» fue retirado por el docente y ya no está disponible para la unidad.`;
+}
+
+// UJ-19: retirar una clase publicada también retira su aviso. Se reescribe el
+// MISMO aviso (`notificationIdForClass`) como aviso de retiro, para que (a) la
+// afirmación "ya tiene resumen validado" deje de estar en la bandeja de la
+// cohorte cuando el resumen dejó de estar validado y (b) quienes lo vieron sepan
+// que el material ya no está. Se conserva el `readByUserIds` que ya tenía el aviso.
+export async function retractClassSummaryNotification({ subjectId, classData, origin = 'class-unpublish' }) {
+  if (!subjectId || !classData?.id) {
+    return { success: false, retryAttempts: 0, deadLetterWrites: 0, dispatched: 0, recipientCount: 0 };
+  }
+
+  const classId = String(classData.id);
+  const recipientUserIds = await resolveEnrolledStudentIds(subjectId, classData);
+
+  const { retryAttempts, deadLetterWrites } = await upsertNotificationForSubject(subjectId, {
+    id: notificationIdForClass(subjectId, classId),
+    type: 'summary',
+    title: 'Material retirado',
+    message: summaryRetiredMessageForClass(classData),
+    createdAt: new Date().toISOString(),
+    unread: true,
+    targetHash: `#/student/class/${classId}`,
+    subjectId,
+    recipientUserIds,
+    origin,
+  });
+
+  return { success: !deadLetterWrites, retryAttempts, deadLetterWrites, dispatched: 1, recipientCount: recipientUserIds.length };
+}
+
 export async function markNotificationReadForUser(subjectId, notificationId, userId) {
   if (!subjectId || !notificationId || !userId) return { success: false, retryAttempts: 0, deadLetterWrites: 0 };
 

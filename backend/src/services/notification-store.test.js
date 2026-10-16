@@ -180,3 +180,52 @@ test('dispatchClassSummaryNotification should skip when classData is missing id'
   assert.strictEqual(result.dispatched, 0);
   assert.strictEqual(storageMocks.saveJson.mock.callCount(), saveBefore);
 });
+
+// UJ-19: el aviso de publicación no puede sobrevivir al retiro de la clase. Se
+// reescribe el mismo aviso (mismo id) como aviso de retiro, conservando lo que
+// cada persona ya marcó como leído.
+test('retractClassSummaryNotification reescribe el aviso como retiro y conserva readByUserIds', async () => {
+  stateStoreMocks.getEnrollmentsBySubject.mock.mockImplementation(async () => ([
+    { subjectId: 's1', userId: 'alu-001', role: 'student', status: 'active' },
+    { subjectId: 's1', userId: 'alu-002', role: 'student', status: 'active' },
+  ]));
+  storageMocks.loadJson.mock.mockImplementation(async () => ([
+    {
+      id: 'notif-auto-summary-s1-class-01',
+      type: 'summary',
+      title: 'Resumen validado por docente',
+      message: 'Clase 1 ya tiene resumen validado.',
+      createdAt: '2026-04-10T08:00:00Z',
+      unread: true,
+      subjectId: 's1',
+      recipientUserIds: ['alu-001', 'alu-002'],
+      readByUserIds: ['alu-001'],
+      origin: 'class-publish',
+    },
+  ]));
+
+  const result = await store.retractClassSummaryNotification({
+    subjectId: 's1',
+    classData: { id: 'class-01', title: 'Clase 1' },
+  });
+
+  assert.strictEqual(result.success, true);
+  assert.strictEqual(result.dispatched, 1);
+  const [, , payload] = storageMocks.saveJson.mock.calls.at(-1).arguments;
+  assert.strictEqual(payload.length, 1, 'debe reescribir el mismo aviso, no agregar otro');
+  const saved = payload[0];
+  assert.strictEqual(saved.id, 'notif-auto-summary-s1-class-01');
+  assert.strictEqual(saved.title, 'Material retirado');
+  assert.ok(/retirado/i.test(saved.message), `el mensaje debe declarar el retiro: ${saved.message}`);
+  assert.ok(!/validado/i.test(saved.message), 'el aviso ya no puede afirmar que el resumen está validado');
+  assert.deepStrictEqual(saved.readByUserIds, ['alu-001'], 'no se pierde lo ya leído');
+  assert.strictEqual(saved.origin, 'class-unpublish');
+});
+
+test('retractClassSummaryNotification should skip when classData is missing id', async () => {
+  const saveBefore = storageMocks.saveJson.mock.callCount();
+  const result = await store.retractClassSummaryNotification({ subjectId: 's1', classData: {} });
+  assert.strictEqual(result.success, false);
+  assert.strictEqual(result.dispatched, 0);
+  assert.strictEqual(storageMocks.saveJson.mock.callCount(), saveBefore);
+});

@@ -13,6 +13,7 @@ import { chatCompletion, generateClassSummary, generateClassMap, generateClassAu
 import { computeBudgetProjection as computeBudgetProjectionV2, getAzureCostForBudget } from '../services/azure-cost.js';
 
 import { CONFIG } from '../services/config.js';
+import { retractClassSummaryNotification } from '../services/notification-store.js';
 const CONTAINER_CLASSES = CONFIG.containers.classes;
 const CONTAINER_PROCESSED = 'processed';
 const SUBJECTS_BLOB = CONFIG.blobs.subjects;
@@ -1717,6 +1718,21 @@ app.http('save-class-summary', {
                     const next = [...classes];
                     next[idx] = { ...next[idx], summaryReady: desiredPublished };
                     await saveJson(CONTAINER_CLASSES, `${subjectId}.json`, next);
+
+                    // Retiro: el aviso de publicación de la clase no puede seguir
+                    // diciendo que "ya tiene resumen validado" cuando el resumen dejó
+                    // de estar validado y la clase salió de la unidad (UJ-19). Se
+                    // reescribe el MISMO aviso (mismo id) como aviso de retiro, así la
+                    // cohorte se entera de que el material ya no está y no queda una
+                    // afirmación falsa en la bandeja. Si el guardado de la clase falla
+                    // antes, no se toca ningún aviso.
+                    if (!desiredPublished) {
+                        try {
+                            await retractClassSummaryNotification({ subjectId, classData: next[idx], origin: 'class-unpublish' });
+                        } catch (notifErr) {
+                            context.error(`[save-class-summary] no se pudo retirar el aviso de la clase ${classId}: ${notifErr.message}`);
+                        }
+                    }
                 }
             }
 
