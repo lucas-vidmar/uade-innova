@@ -276,21 +276,21 @@ export async function renderClassDetail(container) {
                     </div>
                 `;
             } else {
+                // #370: la generación del audio depende del aval del guión, que sólo
+                // puede dar quien enseña (`POST /class-audio/{classId}/generate`
+                // responde 400 mientras `validated` sea falso). Ofrecer el botón acá
+                // era un callejón sin salida para quien aprende: se informa el estado
+                // pendiente y no se ofrece ninguna acción.
                 html += `
                     ${SECTION_TITLE('🎧', 'Podcast de Estudio (IA)')}
-                    <div class="card premium-vibe" id="podcast-generate-card" style="margin-bottom:var(--space-6);background:linear-gradient(135deg, var(--color-surface) 0%, var(--color-bg-alt) 100%);">
+                    <div class="card premium-vibe" id="podcast-pending-card" data-testid="podcast-pending" style="margin-bottom:var(--space-6);background:linear-gradient(135deg, var(--color-surface) 0%, var(--color-bg-alt) 100%);">
                         <div style="padding:var(--space-6);display:flex;flex-direction:column;align-items:center;gap:var(--space-4);">
                             <div style="width:56px;height:56px;border-radius:50%;background:var(--color-surface-2);display:flex;align-items:center;justify-content:center;">
                                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
                             </div>
                             <div style="text-align:center">
                                 <h4 style="margin:0;font-size:var(--text-lg);font-weight:700;">Podcast de la clase — ${escapeHtml(classInfo.title)}</h4>
-                                <p style="margin:var(--space-1) 0 0 0;font-size:var(--text-xs);color:var(--color-text-secondary);">Aún no hay audio generado para esta clase.</p>
-                            </div>
-                            <button type="button" class="btn btn-primary" id="btn-generate-audio" data-testid="btn-generate-audio">Generar audio</button>
-                            <div id="audio-generation-progress" style="display:none;align-items:center;gap:var(--space-2);font-size:var(--text-xs);color:var(--color-text-secondary);">
-                                <span class="audio-player-spinner" aria-hidden="true"></span>
-                                <span>Generando audio... esto puede tomar unos segundos.</span>
+                                <p style="margin:var(--space-1) 0 0 0;font-size:var(--text-xs);color:var(--color-text-secondary);">El podcast de esta clase todavía no está disponible. Se habilita cuando el contenido del encuentro quedó revisado.</p>
                             </div>
                         </div>
                     </div>
@@ -422,31 +422,9 @@ export async function renderClassDetail(container) {
             });
         }
 
-        // ── 'Generar audio' (Story 11.3.1): trigger on-demand TTS generation ──
-        const generateAudioBtn = container.querySelector('#btn-generate-audio');
-        const generateProgress = container.querySelector('#audio-generation-progress');
+        // ── Podcast: la acción de generar audio es de quien enseña (#370). El detalle
+        // de clase de la alumna sólo informa el estado, así que ya no hay handler.
 
-        generateAudioBtn?.addEventListener('click', async () => {
-            if (generateAudioBtn.disabled) return;
-            if (generateAudioBtn) generateAudioBtn.disabled = true;
-            if (generateProgress) generateProgress.style.display = 'flex';
-            try {
-                const { toast } = await import('../../components/Toast.js');
-                // #337: forward the active subject so the backend loads the
-                // subject-scoped podcast script ({subjectId}/{classId}.json);
-                // without it scoped deployments 400 with "No hay guión".
-                await api.generateClassAudio(classId, subjectId);
-                toast('success', 'Audio generado', 'El podcast de la clase está listo.');
-                await renderClassDetail(container);
-            } catch (err) {
-                if (generateProgress) {
-                    generateProgress.style.display = 'none';
-                }
-                if (generateAudioBtn) generateAudioBtn.disabled = false;
-                const { toast } = await import('../../components/Toast.js');
-                toast('error', 'Error', err?.message || 'No se pudo generar el audio. Reintentá más tarde.');
-            }
-        });
 
         // Restore quiz tab if the URL carries ?tab=quiz (deep link from dashboard)
         if (new URLSearchParams(window.location.search).get('tab') === 'quiz') {
