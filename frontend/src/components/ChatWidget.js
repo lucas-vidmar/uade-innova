@@ -26,6 +26,9 @@ const ERROR_MESSAGES = {
   STORAGE: 'No se pudo acceder a los materiales. Probá de nuevo en unos minutos.',
   NOT_FOUND: 'No se encontró el recurso solicitado. Verificá las clases seleccionadas.',
   INTERNAL: 'Ocurrió un error interno. Probá de nuevo en unos minutos.',
+  // #378 (UJ-29): el stream cerró sin evento terminal — la respuesta quedó a
+  // medias y hay que decirlo con claridad, nunca mostrarla como si estuviera completa.
+  STREAM_INTERRUPTED: 'La respuesta se interrumpió antes de completarse. Reintentá la misma pregunta.',
   UNKNOWN: 'Ocurrió un error inesperado. Por favor, intentá nuevamente.',
 };
 
@@ -92,6 +95,21 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
   let cooldownUntil = 0;
   let cooldownInterval = null;
   let transcriptFocus = initialTranscriptFocus;
+
+  const TYPING_PLACEHOLDER_HTML = '<span class="chat-typing-dots"><span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></span>';
+
+  // #378 (UJ-29): una respuesta cortada a mitad no es una respuesta. Se marca el
+  // mensaje como interrumpido, se conserva lo que sí llegó (con constancia de que
+  // está incompleto) y se ofrece reintentar la misma pregunta sin reescribirla.
+  const markInterrupted = (msg, fallbackCopy) => {
+    const received = typeof msg.content === 'string' ? msg.content : '';
+    const hasPartial = received.length > 0 && received !== TYPING_PLACEHOLDER_HTML;
+    msg.streaming = false;
+    msg.interrupted = true;
+    msg.content = hasPartial
+      ? `${received}\n\n⚠️ La respuesta se interrumpió antes de completarse.`
+      : (fallbackCopy || ERROR_MESSAGES.STREAM_INTERRUPTED);
+  };
 
   const container = document.createElement('div');
   container.className = 'chat-container-card';
@@ -266,6 +284,11 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
               </button>
               ` : ''}
               ${msg.missingInfoReported ? '<span class="text-xs text-text-muted" style="margin-top:4px;display:block;">✅ Información faltante reportada</span>' : ''}
+              ${msg.interrupted ? `
+              <button class="chat-retry-btn" data-retry-message-id="${msg.id || ''}" title="Volver a hacer la misma pregunta">
+                ↻ Reintentar
+              </button>
+              ` : ''}
             </div>
           </div>
         </div>
@@ -362,10 +385,22 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
       });
     }
 
+    // Reintentar una respuesta interrumpida (#378): se reenvía la misma pregunta.
+    container.querySelectorAll('.chat-retry-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (isLoading) return;
+        const msg = messages.find(m => String(m.id) === String(btn.dataset.retryMessageId));
+        const retryQ = (msg?.question || '').trim();
+        if (!retryQ) return;
+        sendMessage(retryQ);
+      });
+    });
+
     // Send
     const sendBtn = container.querySelector('#chat-send');
     const input = container.querySelector('#chat-input');
-    sendBtn?.addEventListener('click', sendMessage);
+    // #378: el handler no debe recibir el evento como pregunta.
+    sendBtn?.addEventListener('click', () => sendMessage());
     input?.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
     });
@@ -408,9 +443,9 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
     }, { force: true });
   };
 
-    const sendMessage = async () => {
+    const sendMessage = async (explicitQuestion) => {
     const input = container.querySelector('#chat-input');
-    const question = input?.value?.trim();
+    const question = String(explicitQuestion ?? input?.value ?? '').trim();
     if (!question || isLoading || selectedClassIds.length === 0 || hasEnrollment === false) return;
 
     const botPrefs = auth.getBotPreferences();
@@ -429,9 +464,11 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
     const assistantMsg = {
       id: 'ai-' + Date.now(),
       role: 'assistant',
-      content: '<span class="chat-typing-dots"><span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></span>',
+      content: TYPING_PLACEHOLDER_HTML,
       sources: [],
-      streaming: true
+      streaming: true,
+      // #378: se guarda la pregunta para poder reintentarla sin reescribirla.
+      question
     };
     messages.push(assistantMsg);
     render();
@@ -515,10 +552,14 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
           }
         } else if (type === 'error') {
           const resolved = resolveChatErrorMessage({ ...data, status: data?.status });
-          assistantMsg.content = resolved;
           // Preserve raw category for cooldown
           const category = data?.errorCategory || data?.category;
-          assistantMsg.streaming = false;
+          if (category === 'STREAM_INTERRUPTED' || data?.code === 'STREAM_INTERRUPTED') {
+            markInterrupted(assistantMsg, resolved);
+          } else {
+            assistantMsg.content = resolved;
+            assistantMsg.streaming = false;
+          }
           const bubbleEl = msgEl.querySelector('.chat-bubble-assistant');
           if (bubbleEl) bubbleEl.textContent = assistantMsg.content;
           // #338: consent denial gets the terms CTA, not just copy.
@@ -529,7 +570,7 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
             startCooldown(data.retryAfterSec);
           }
         } else if (type === 'delta') {
-          if (assistantMsg.content === '<span class="chat-typing-dots"><span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></span>') {
+          if (assistantMsg.content === TYPING_PLACEHOLDER_HTML) {
             assistantMsg.content = '';
           }
           assistantMsg.content += data.content;
@@ -601,8 +642,14 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         if (onMessageSent) onMessageSent({ sessionId: currentSessionId });
         return;
       }
-      assistantMsg.content = resolveChatErrorMessage(err);
-      assistantMsg.streaming = false;
+      const interrupted = err?.code === 'STREAM_INTERRUPTED' || err?.errorCategory === 'STREAM_INTERRUPTED';
+      if (interrupted) {
+        // #378: se conserva lo recibido y se marca la respuesta como incompleta.
+        markInterrupted(assistantMsg, resolveChatErrorMessage(err));
+      } else {
+        assistantMsg.content = resolveChatErrorMessage(err);
+        assistantMsg.streaming = false;
+      }
       // #338: consent denial gets the terms CTA, not just copy.
       if (isConsentError(err)) openConsentCTA();
       render();

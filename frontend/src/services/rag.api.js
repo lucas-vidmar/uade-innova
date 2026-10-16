@@ -71,6 +71,36 @@ export async function ragQueryStream({ question, classIds, subjectId, sessionId,
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    // UJ-29 (#378): el stream puede cerrar sin evento terminal (conexión caída a
+    // mitad de la respuesta). Sin esta marca, la función resolvía igual que una
+    // respuesta completa y el llamador mostraba el texto parcial como si fuera
+    // el final. Solo `done` y `error` cierran el turno.
+    let sawTerminalEvent = false;
+
+    const handlePart = (part) => {
+        if (!part || !part.trim()) return;
+
+        const lines = part.split('\n');
+        let eventType = 'message';
+        let data = null;
+
+        for (const line of lines) {
+            if (line.startsWith('event: ')) {
+                eventType = line.slice(7).trim();
+            } else if (line.startsWith('data: ')) {
+                try {
+                    data = JSON.parse(line.slice(6));
+                } catch (e) {
+                    console.error('Error parseando SSE data:', line);
+                }
+            }
+        }
+
+        if (data && typeof onEvent === 'function') {
+            if (eventType === 'done' || eventType === 'error') sawTerminalEvent = true;
+            onEvent(eventType, data);
+        }
+    };
 
     try {
         while (true) {
@@ -85,33 +115,25 @@ export async function ragQueryStream({ question, classIds, subjectId, sessionId,
                 buffer = '';
             }
 
-            for (const part of parts) {
-                if (!part.trim()) continue;
-
-                const lines = part.split('\n');
-                let eventType = 'message';
-                let data = null;
-
-                for (const line of lines) {
-                    if (line.startsWith('event: ')) {
-                        eventType = line.slice(7).trim();
-                    } else if (line.startsWith('data: ')) {
-                        try {
-                            data = JSON.parse(line.slice(6));
-                        } catch (e) {
-                            console.error('Error parseando SSE data:', line);
-                        }
-                    }
-                }
-
-                if (data && typeof onEvent === 'function') {
-                    onEvent(eventType, data);
-                }
-            }
+            for (const part of parts) handlePart(part);
         }
+        // #378: el último evento puede llegar sin el separador final; se procesa
+        // antes de decidir si el turno quedó sin cerrar (un `done` completo nunca
+        // debe confundirse con un corte).
+        handlePart(buffer);
+        buffer = '';
     } catch (err) {
         console.error('[API] Stream interrupted:', err);
         throw err;
+    }
+
+    if (!sawTerminalEvent) {
+        const interruptedError = new Error('La respuesta se interrumpió antes de completarse.');
+        interruptedError.name = 'StreamInterruptedError';
+        interruptedError.code = 'STREAM_INTERRUPTED';
+        interruptedError.errorCategory = 'STREAM_INTERRUPTED';
+        interruptedError.retryable = true;
+        throw interruptedError;
     }
 }
 
