@@ -16,8 +16,16 @@ app.http('vector-health', {
 
         const principal = parseClientPrincipal(request);
         const roles = principal?.userRoles || [];
-        if (!roles.includes('Docente') && !roles.includes('Director') && !roles.includes('authenticated')) {
-            return { status: 403, body: JSON.stringify({ error: 'Forbidden - Authentication required' }) };
+        // 'authenticated' NO es un rol: withAuth lo agrega a toda sesión
+        // (with-auth.js:116), así que incluirlo aquí dejaba la superficie de
+        // operación abierta a cualquier identidad con sesión —alumnado
+        // incluido— y publicaba el host del depósito vectorial (#468).
+        // Los roles de operación son los mismos que su hermana
+        // vector-health-snapshots-api.js, más Admin, que es el único
+        // consumidor (frontend/src/pages/admin/Dashboard.js).
+        const OPERATIVE_ROLES = ['Docente', 'Director', 'Admin'];
+        if (!roles.some((r) => OPERATIVE_ROLES.includes(r))) {
+            return { status: 403, body: JSON.stringify({ error: 'Forbidden - Se requieren permisos de Docente, Director o Admin' }) };
         }
 
         try {
@@ -47,7 +55,9 @@ app.http('vector-health', {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     provider: 'pinecone',
-                    error: err.message,
+                    // No devolver err.message: puede arrastrar el host del
+                    // depósito y detalle de infraestructura al cliente (#468).
+                    error: 'No se pudo obtener el estado del índice.',
                 }),
             };
         }

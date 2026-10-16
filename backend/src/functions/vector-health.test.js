@@ -123,3 +123,92 @@ test('vector-health should reject when Front Door validation fails', async () =>
     const body = JSON.parse(response.body);
     assert.strictEqual(body.error, 'Forbidden - Invalid Front Door ID');
 });
+
+// #468: 'authenticated' es el piso común de toda sesión (with-auth.js:116), no
+// un rol. Mientras estuvo en la lista de permitidos, cualquier identidad con
+// sesión —alumnado incluido— leía la salud del índice y el host del depósito.
+//
+// parseClientPrincipal se consulta dos veces por pedido: una en withAuth y otra
+// en el handler, así que la identidad de prueba se fija como implementación
+// vigente (no "once") y se restituye al terminar cada caso.
+const DEFAULT_PRINCIPAL = () => ({ userId: 'test-user', userRoles: ['Director'] });
+
+function asIdentity(principal) {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => principal);
+}
+
+function resetIdentity() {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(DEFAULT_PRINCIPAL);
+}
+
+test('vector-health should reject an authenticated student (#468)', async () => {
+    asIdentity({ userId: 'alu-002', userRoles: ['authenticated', 'Alumno'] });
+    try {
+        const response = await capturedHandler(
+            { headers: { get: () => null }, query: { get: () => null } },
+            { error: mock.fn() }
+        );
+
+        assert.strictEqual(response.status, 403);
+        const body = JSON.parse(response.body);
+        assert.ok(!body.endpoint, 'no debe filtrar el host del depósito a una alumna');
+        assert.ok(!body.stats, 'no debe filtrar el estado del índice a una alumna');
+    } finally { resetIdentity(); }
+});
+
+test('vector-health should reject an anonymous principal', async () => {
+    asIdentity(null);
+    try {
+        const response = await capturedHandler(
+            { headers: { get: () => null }, query: { get: () => null } },
+            { error: mock.fn() }
+        );
+
+        assert.strictEqual(response.status, 403);
+    } finally { resetIdentity(); }
+});
+
+test('vector-health should allow Admin (its only consumer)', async () => {
+    asIdentity({ userId: 'adm-001', userRoles: ['authenticated', 'Admin'] });
+    try {
+        const response = await capturedHandler(
+            { headers: { get: () => null }, query: { get: () => null } },
+            { error: mock.fn() }
+        );
+
+        assert.strictEqual(response.status, 200);
+        assert.strictEqual(JSON.parse(response.body).provider, 'pinecone');
+    } finally { resetIdentity(); }
+});
+
+test('vector-health should allow Docente', async () => {
+    asIdentity({ userId: 'prof-001', userRoles: ['authenticated', 'Docente'] });
+    try {
+        const response = await capturedHandler(
+            { headers: { get: () => null }, query: { get: () => null } },
+            { error: mock.fn() }
+        );
+
+        assert.strictEqual(response.status, 200);
+    } finally { resetIdentity(); }
+});
+
+test('vector-health should not leak the raw exception message on failure', async () => {
+    asIdentity({ userId: 'adm-001', userRoles: ['authenticated', 'Admin'] });
+    vectorStoreMocks.getIndexStats.mock.mockImplementationOnce(async () => {
+        throw new Error('Pinecone host dashboard-edu-pilot.svc.aped-4627-b74a.pinecone.io unreachable');
+    });
+    try {
+        const response = await capturedHandler(
+            { headers: { get: () => null }, query: { get: () => null } },
+            { error: mock.fn() }
+        );
+
+        assert.strictEqual(response.status, 500);
+        const body = JSON.parse(response.body);
+        assert.ok(!JSON.stringify(body).includes('pinecone.io'), 'no debe devolver el host en el error');
+        assert.strictEqual(body.error, 'No se pudo obtener el estado del índice.');
+    } finally { resetIdentity(); }
+});
+
+
