@@ -40,7 +40,15 @@ app.http('subject-weights-get', {
             return {
                 status: 200,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ data: result.weights, defaults: result.defaults }),
+                // UJ-11 paso 6: la constancia de la decisión (quién, cuándo y con
+                // qué fundamento) tiene que poder leerse desde afuera.
+                body: JSON.stringify({
+                    data: result.weights,
+                    defaults: result.defaults,
+                    updatedBy: result.updatedBy || null,
+                    updatedAt: result.updatedAt || null,
+                    reason: result.reason || '',
+                }),
             };
         } catch (err) {
             context.error('[SubjectWeights] Error getting weights:', err);
@@ -77,13 +85,20 @@ app.http('subject-weights-put', {
             return { status: 400, body: JSON.stringify({ error: 'Body JSON inválido.' }) };
         }
         const weights = body.weights || body;
+        const reason = typeof body.reason === 'string' ? body.reason : '';
         const { userId } = getAuthenticatedUser(request);
         try {
-            const result = await upsertSubjectWeights(subjectId, weights, userId);
+            const result = await upsertSubjectWeights(subjectId, weights, userId, reason);
             return {
                 status: 200,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ data: result.weights, defaults: result.defaults }),
+                body: JSON.stringify({
+                    data: result.weights,
+                    defaults: result.defaults,
+                    updatedBy: result.updatedBy || null,
+                    updatedAt: result.updatedAt || null,
+                    reason: result.reason || '',
+                }),
             };
         } catch (err) {
             context.error('[SubjectWeights] Error upserting weights:', err);

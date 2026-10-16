@@ -214,24 +214,33 @@ export async function getRetentionExport(format) {
 }
 
 export async function getSubjectWeights(subjectId) {
-    if (!subjectId) return { data: { notes: 1.35, bibliography: 1.1, transcript: 1.0, presentation: 0.95 }, defaults: true };
+    if (!subjectId) return { data: { notes: 1.35, bibliography: 1.1, transcript: 1.0, presentation: 0.95 }, defaults: true, readFailed: false };
     try {
         const res = await fetchWithTimeout(`${BASE_URL}/subject-weights/${encodeURIComponent(subjectId)}`, { timeout: 4000 });
-        if (!res.ok) return null;
+        // UJ-11: "no pude leer" no es "no hay configuración". Si la lectura falla,
+        // la pantalla tiene que decirlo y ofrecer reintentar, nunca inventar pesos.
+        if (!res.ok) return { data: null, defaults: false, readFailed: true };
         const json = await res.json();
-        return { data: json?.data, defaults: json?.defaults };
+        return {
+            data: json?.data,
+            defaults: json?.defaults,
+            updatedBy: json?.updatedBy || null,
+            updatedAt: json?.updatedAt || null,
+            reason: json?.reason || '',
+            readFailed: false,
+        };
     } catch (err) {
         console.error('[API] getSubjectWeights failed:', err);
-        return null;
+        return { data: null, defaults: false, readFailed: true };
     }
 }
 
-export async function saveSubjectWeights(subjectId, weights) {
+export async function saveSubjectWeights(subjectId, weights, reason) {
     if (!subjectId) throw new Error('subjectId is required');
     const res = await apiFetch(`${BASE_URL}/subject-weights/${encodeURIComponent(subjectId)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ weights }),
+        body: JSON.stringify({ weights, reason: String(reason || '').trim() }),
     });
     if (!res.ok) {
         let message = 'Error al guardar la ponderación de fuentes';
