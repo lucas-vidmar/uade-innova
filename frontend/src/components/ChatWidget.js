@@ -989,7 +989,16 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         if (!issueDetail) return;
 
         try {
-          await api.reportChatIssue({ messageId, subjectId, issueDetail, question, answer });
+          // #429: el reporte viaja con su clase. Si la alumna no tiene una clase
+          // seleccionada (hilo viejo), se usa la del material citado en la
+          // respuesta; sin eso el caso queda "unknown" para quien corrige.
+          const sourceClassId = Array.isArray(msg?.sources) && msg.sources.length > 0
+            ? (msg.sources[0].classId || '')
+            : '';
+          const reportClassId = (Array.isArray(selectedClassIds) && selectedClassIds.length > 0)
+            ? selectedClassIds[0]
+            : sourceClassId;
+          await api.reportChatIssue({ messageId, subjectId, classId: reportClassId, issueDetail, question, answer });
           if (msg) msg.issueReported = true;
           btn.disabled = true;
           btn.classList.add('active');

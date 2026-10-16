@@ -256,11 +256,13 @@ export async function getSatAnalytics({ subjectId, classId, days }) {
     return res.json();
 }
 
-export async function reportChatIssue({ messageId, subjectId, issueDetail, question, answer }) {
+export async function reportChatIssue({ messageId, subjectId, classId, issueDetail, question, answer }) {
     const res = await apiFetch(`${BASE_URL}/chat-report-issue`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messageId, subjectId, issueDetail: String(issueDetail || '').trim(), question: question || '', answer: answer || '' })
+        // `classId` viaja con el reporte: si el asistente no llegó a dejar su
+        // log de chat, es lo único que permite ubicar el caso en su encuentro.
+        body: JSON.stringify({ messageId, subjectId, classId: classId || '', issueDetail: String(issueDetail || '').trim(), question: question || '', answer: answer || '' })
     });
     if (!res.ok) {
         let message = `Error ${res.status}: no se pudo reportar el problema`;

@@ -701,7 +701,7 @@ function initContentReport(container, classId, subjectId) {
                     const issueDetail = surface.derivado === 'Transcripción'
                         ? `Error en transcripción: "${selectedText.substring(0, 200)}" — Corrección sugerida: ${val}`
                         : `Derivado afectado: ${surface.derivado} (encuentro ${classId}) — Afirmación sin respaldo: "${selectedText.substring(0, 200)}" — Tramo del registro más parecido: ${tramoRef} — Corrección sugerida: ${val}`;
-                    await api.reportChatIssue({ messageId, subjectId, issueDetail, question: '', answer: selectedText });
+                    await api.reportChatIssue({ messageId, subjectId, classId, issueDetail, question: '', answer: selectedText });
                     toast('success', 'Reporte enviado', surface.success);
                     cleanup();
                 } catch (err) {
