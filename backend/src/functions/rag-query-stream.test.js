@@ -67,8 +67,16 @@ const promptsMocks = {
 const authUtilsMocks = {
     validateFrontDoorId: mock.fn(() => true),
     setStashedIdentity: mock.fn(() => {}),
-    parseClientPrincipal: mock.fn(() => ({ oid: 'user-1' })),
+    parseClientPrincipal: mock.fn(() => ({ oid: 'user-1', userRoles: ['authenticated', 'Alumno'] })),
     getAuthenticatedUser: mock.fn(() => ({ id: 'user-1', roles: ['Alumno'] })),
+    // Mirrors the real hasResolvedIdentity (#481).
+    hasResolvedIdentity: mock.fn((user) => {
+        if (!user) return false;
+        const role = user.role;
+        if (!role || role === 'Anonymous' || role === 'Denied') return false;
+        const id = user.userId || user.id;
+        return Boolean(id) && id !== 'anonymous' && id !== 'pilot-user';
+    }),
 };
 
 const telemetryMocks = {

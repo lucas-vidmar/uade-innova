@@ -94,6 +94,14 @@ const authUtilsMocks = {
     setStashedIdentity: mock.fn(() => {}),
     parseClientPrincipal: mock.fn(() => ({ oid: 'test-user-oid', userRoles: ['Alumno'] })),
     getAuthenticatedUser: mock.fn(() => ({ id: 'test-user-oid', roles: ['Alumno'] })),
+    // Mirrors the real hasResolvedIdentity: nobody without a real identity (#481).
+    hasResolvedIdentity: mock.fn((user) => {
+        if (!user) return false;
+        const role = user.role;
+        if (!role || role === 'Anonymous' || role === 'Denied') return false;
+        const id = user.userId || user.id;
+        return Boolean(id) && id !== 'anonymous' && id !== 'pilot-user';
+    }),
 };
 
 const telemetryMocks = {
@@ -1763,4 +1771,73 @@ test('una versión pedida que no existe se rechaza con 400 en vez de responder c
     assert.strictEqual(JSON.parse(response.body).error, 'PROMPT_VERSION_NOT_FOUND');
 
     authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ oid: 'test-user-oid', userRoles: ['Alumno'] }));
+});
+
+// ── #481: sin identidad resuelta no hay consulta ─────────────────────────────
+// Los guards de matrícula y consentimiento llevan `&& principal`: con
+// principal === null no se evaluaba ninguno de los dos y la consulta llegaba al
+// pipeline sin sesión, consumiendo modelo pagado. El anónimo debe recibir 401
+// antes de tocar el modelo.
+function anonimo() {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => null);
+    authUtilsMocks.getAuthenticatedUser.mock.mockImplementation(() => ({ userId: 'anonymous', role: 'Anonymous' }));
+}
+
+function restaurarIdentidad() {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ oid: 'test-user-oid', userRoles: ['Alumno'] }));
+    authUtilsMocks.getAuthenticatedUser.mock.mockImplementation(() => ({ id: 'test-user-oid', roles: ['Alumno'] }));
+}
+
+test('#481 una consulta sin credencial se rechaza con 401', async () => {
+    anonimo();
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.generateEmbedding.mock.resetCalls();
+    try {
+        const response = await capturedHandler({
+            json: async () => ({ question: '¿Qué es la UADEE?', subjectId: 'arq-software-2026' }),
+            headers: { get: () => null },
+            query: { get: () => null },
+        }, { log: mock.fn(), error: mock.fn(), warn: mock.fn() });
+
+        assert.strictEqual(response.status, 401);
+        const body = JSON.parse(response.body);
+        assert.strictEqual(body.error, 'AUTH_REQUIRED');
+        assert.strictEqual(body.answer, undefined);
+    } finally { restaurarIdentidad(); }
+});
+
+test('#481 el anonimo rechazado no llega al modelo ni al indice', async () => {
+    anonimo();
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.generateEmbedding.mock.resetCalls();
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+    try {
+        await capturedHandler({
+            json: async () => ({ question: '¿Qué es la UADEE?', subjectId: 'arq-software-2026' }),
+            headers: { get: () => null },
+            query: { get: () => null },
+        }, { log: mock.fn(), error: mock.fn(), warn: mock.fn() });
+
+        assert.strictEqual(openaiMocks.chatCompletion.mock.callCount(), 0, 'no debe generar respuesta sin sesion');
+        assert.strictEqual(openaiMocks.generateEmbedding.mock.callCount(), 0, 'no debe embeber la pregunta sin sesion');
+        assert.strictEqual(vectorStoreMocks.querySimilar.mock.callCount(), 0, 'no debe consultar el indice sin sesion');
+    } finally {
+        restaurarIdentidad();
+        vectorStoreMocks.querySimilar.mock.mockImplementation(defaultQuerySimilarImpl);
+    }
+});
+
+test('#481 el sandbox tampoco se abre al anonimo', async () => {
+    anonimo();
+    openaiMocks.chatCompletion.mock.resetCalls();
+    try {
+        const response = await capturedHandler({
+            json: async () => ({ question: '¿Qué es la UADEE?', subjectId: 'arq-software-2026', sandbox: true }),
+            headers: { get: () => null },
+            query: { get: () => null },
+        }, { log: mock.fn(), error: mock.fn(), warn: mock.fn() });
+
+        assert.strictEqual(response.status, 401);
+        assert.strictEqual(openaiMocks.chatCompletion.mock.callCount(), 0);
+    } finally { restaurarIdentidad(); }
 });

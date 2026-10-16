@@ -8,7 +8,7 @@ import { querySimilar } from '../services/vector-store.js';
 import { saveJson, loadJson, saveMetricsToTable } from '../services/storage.js';
 import { resolveRagPrompt, getActivePrompt } from '../services/prompts.js';
 import { trackRAGInteraction, trackRAGError, trackUnansweredQuery } from '../services/telemetry.js';
-import { parseClientPrincipal, validateFrontDoorId, getAuthenticatedUser } from '../services/auth-utils.js';
+import { parseClientPrincipal, validateFrontDoorId, getAuthenticatedUser, hasResolvedIdentity } from '../services/auth-utils.js';
 import { normalizeCategorizedError, ErrorCategory } from '../services/error-categories.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { withRateLimit } from '../middleware/with-rate-limit.js';
@@ -238,6 +238,23 @@ app.http('rag-query', {
         const userId = user?.userId || 'anonymous';
         const sanitizedId = user?.sanitizedId || String(userId).replace(/[^a-zA-Z0-9]/g, '_');
         log.info('RAG query start', { correlationId, userId });
+
+        // ── 0. Identidad resuelta (fail closed, #481) ─────────────────────
+        // Los guards de matrícula y consentimiento llevan `&& principal`, así
+        // que con `principal === null` (nadie resolvió identidad) ninguno de los
+        // dos se evaluaba y la consulta seguía al pipeline: el anónimo consumía
+        // modelo pagado y saltaba matrícula y consentimiento. `getAuthenticatedUser`
+        // nunca devuelve null —fabrica { userId: 'anonymous', role: 'Anonymous'}—
+        // por eso la comprobación va sobre la identidad resuelta, no sobre la
+        // existencia de un objeto. Mismo criterio que los tres cierres de #434.
+        if (!hasResolvedIdentity(user)) {
+            log.info('rag-query denied: sin identidad resuelta');
+            return jsonResponse(401, {
+                error: 'AUTH_REQUIRED',
+                message: 'Se requiere autenticación para consultar al asistente.',
+                errorCategory: 'AUTH',
+            });
+        }
 
         // Capture start time for end-to-end latency measurement (Issue #69)
         const startTime = Date.now();
