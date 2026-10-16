@@ -200,7 +200,15 @@ async function handleRoute() {
             await renderFn(pageContent);
         } catch (err) {
             console.error('[Router] Page render error:', err);
-            pageContent.innerHTML = `<div class="card" style="max-width:480px;margin:var(--space-10) auto;text-align:center"><div class="empty-state-icon" aria-hidden="true">⚠️</div><h2 class="h3">Error al cargar la página</h2><p style="color:var(--color-text-secondary)">${err.message}</p><button class="btn btn-secondary" onclick="window.location.reload()" aria-label="Reintentar cargar la página">Reintentar</button></div>`;
+            // #379: nunca mostrar el mensaje crudo del error (el navegador filtraba
+            // "signal is aborted without reason"). Se traduce a copy del producto y
+            // el detalle técnico queda sólo en consola.
+            const renderIsTimeout = err?.code === 'TIMEOUT' || err?.name === 'TimeoutError' || err?.name === 'AbortError';
+            const renderTitle = renderIsTimeout ? 'La página tardó demasiado en cargar' : 'Error al cargar la página';
+            const renderMessage = renderIsTimeout
+                ? 'La conexión tardó más de lo esperado. Verificá tu conexión e intentá de nuevo.'
+                : 'No se pudo cargar la página. Intentá de nuevo en unos segundos.';
+            pageContent.innerHTML = `<div class="card" style="max-width:480px;margin:var(--space-10) auto;text-align:center"><div class="empty-state-icon" aria-hidden="true">⚠️</div><h2 class="h3">${renderTitle}</h2><p style="color:var(--color-text-secondary)">${renderMessage}</p><button class="btn btn-secondary" onclick="window.location.reload()" aria-label="Reintentar cargar la página">Reintentar</button></div>`;
         }
     } else {
         // Default redirect based on role (fail closed: roleless → login)
