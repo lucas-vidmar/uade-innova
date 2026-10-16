@@ -13,6 +13,7 @@ import { chatCompletion, generateClassSummary, generateClassMap, generateClassAu
 import { computeBudgetProjection as computeBudgetProjectionV2, getAzureCostForBudget } from '../services/azure-cost.js';
 
 import { CONFIG } from '../services/config.js';
+import { computeClassProcessingStats } from '../services/class-processing.js';
 const CONTAINER_CLASSES = CONFIG.containers.classes;
 const CONTAINER_PROCESSED = 'processed';
 const SUBJECTS_BLOB = CONFIG.blobs.subjects;
@@ -1358,7 +1359,15 @@ app.http('save-class-map', {
             const existingData = (subjectId
                 ? await loadSubjectScopedAsset(CONTAINER_MAPS, subjectId, classId)
                 : await loadJson(CONTAINER_MAPS, `${classId}.json`)) || { classId };
-            const updatedData = { ...existingData, mapCode: body.mapCode, lastModifiedAt: new Date().toISOString() };
+            const updatedData = {
+                ...existingData,
+                mapCode: body.mapCode,
+                lastModifiedAt: new Date().toISOString(),
+            };
+            // #419: el aval del docente sobre el mapa tiene que quedar
+            // registrado igual que el del resumen, si no "mapa avalado" no es un
+            // hecho almacenado y la métrica no lo puede leer.
+            if (typeof body.validated === 'boolean') updatedData.validated = body.validated;
             if (subjectId) {
                 updatedData.subjectId = subjectId;
                 // #328: scoped write — never overwrite another subject's legacy blob.
@@ -1788,15 +1797,11 @@ app.http('get-director-stats', {
             ? Math.min(100, Math.round(uniqueActiveUsers / enrolledBase * 100))
             : 0;
 
-        let classesProcessed = 0;
-        try {
-            const classesClient = getTableClient(CONFIG.tables.classes);
-            for await (const _ of classesClient.listEntities()) {
-                classesProcessed++;
-            }
-        } catch (err) {
-            logWarn(context, `[director/stats] Could not count classes: ${err.message}`);
-        }
+        // #419 (UJ-43): "cargadas" es el total de clases registradas; "procesadas"
+        // se calcula con el criterio acordado (al menos un derivado avalado por el
+        // docente). Las clases sin dato suficiente se informan como no calculables
+        // en vez de contarse.
+        const classProcessing = await computeClassProcessingStats(context);
 
         return {
             status: 200,
@@ -1804,7 +1809,10 @@ app.http('get-director-stats', {
             body: JSON.stringify({
                 dau: metrics.latest.dau,
                 dauDelta: metrics.deltas.dau,
-                totalClasses: classesProcessed,
+                totalClasses: classProcessing.totalClasses,
+                processedClasses: classProcessing.processedClasses,
+                processedClassesNotComputable: classProcessing.notComputableClasses,
+                processedClassesCriteria: classProcessing.criteria,
                 ragInteractions: metrics.latest.ragInteractions,
                 ragDelta: metrics.deltas.ragInteractions,
                 adoptionRate,

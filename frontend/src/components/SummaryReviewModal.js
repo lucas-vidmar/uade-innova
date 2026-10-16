@@ -304,7 +304,7 @@ export function createSummaryReviewModal(classId, className, subjectId, onSaved)
                     summarySource: opts.summarySource,
                     suitable: opts.suitable,
                 }),
-                api.saveClassMap ? api.saveClassMap(classId, { subjectId, mapCode: mapEditor.value }) : Promise.resolve()
+                api.saveClassMap ? api.saveClassMap(classId, { subjectId, mapCode: mapEditor.value, validated }) : Promise.resolve()
             ];
 
             const podcastScript = podcastEditor.value.trim();

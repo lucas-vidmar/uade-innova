@@ -516,7 +516,7 @@ export async function renderClassEditor(container) {
 
                 const promises = [
                     api.saveClassSummary(classId, { subjectId, summary: localState.summary, validated }),
-                    api.saveClassMap ? api.saveClassMap(classId, { subjectId, mapCode: localState.map || '' }) : Promise.resolve(),
+                    api.saveClassMap ? api.saveClassMap(classId, { subjectId, mapCode: localState.map || '', validated }) : Promise.resolve(),
                 ];
 
                     if (localState.podcast?.trim()) {
