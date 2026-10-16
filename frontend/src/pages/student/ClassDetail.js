@@ -84,6 +84,10 @@ export async function renderClassDetail(container) {
     // Fix #346: strip any query string before extracting the id — client nav
     // can append ?params, which previously poisoned the lookup and rendered
     // the not-found state until a hard reload.
+    // Fix #360 (UJ-04): keep the query string instead of discarding it — a link
+    // copied from another unit carries ?subjectId=<unidad> and must be honored,
+    // otherwise a class of another unit is never found.
+    const queryString = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : '';
     const hashPath = hash.split('?')[0];
     const parts = hashPath.split('/');
     const rawClassId = parts[parts.length - 1];
@@ -99,22 +103,74 @@ export async function renderClassDetail(container) {
 
     try {
         const activeSubjectId = auth.getActiveSubjectId();
-        const [classes, summaryData, mapData, timelineData, audioScriptData] = await Promise.all([
-            api.getClasses(activeSubjectId),
-            api.getClassSummary(classId, activeSubjectId),
-            api.getClassMap(classId, activeSubjectId),
-            api.getClassTimeline(classId, activeSubjectId),
-            api.getClassAudioScript(classId, activeSubjectId),
-        ]);
 
-        const classInfo = classes.find(c => c.id === classId);
+        // Fix #360 (UJ-04): a class link must open the class it points to, even
+        // when it belongs to another unit. We resolve the OWNING unit among the
+        // units the person can access (the link's ?subjectId first, then the
+        // active unit, then the rest of the person's units) and only then fetch
+        // the class-scoped data. A unit the person is NOT enrolled in is never
+        // used for lookups, so no lateral door is opened.
+        const requestedSubjectId = new URLSearchParams(queryString).get('subjectId');
+        const enrolledIds = auth.getEnrolledSubjects().map(s => s.id);
+        const scopedIds = auth.getScopeSubjectIds();
+        const accessibleIds = enrolledIds.length > 0 ? enrolledIds : scopedIds;
+        const requestedAccessible = !!requestedSubjectId && accessibleIds.includes(requestedSubjectId);
+
+        const candidateUnits = [...new Set([requestedSubjectId, activeSubjectId, ...accessibleIds].filter(Boolean))]
+            .filter(id => id === activeSubjectId || accessibleIds.includes(id));
+
+        let subjectId = requestedAccessible ? requestedSubjectId : activeSubjectId;
+        let classInfo = null;
+        for (const unit of candidateUnits) {
+            try {
+                const list = await api.getClasses(unit);
+                if (Array.isArray(list) && list.some(c => c.id === classId)) {
+                    subjectId = unit;
+                    classInfo = list.find(c => c.id === classId);
+                    break;
+                }
+            } catch (unitErr) {
+                // Una unidad inaccesible (403) no debe romper la resolucion: se salta.
+                console.warn(`[ClassDetail] No se pudo listar la unidad ${unit}:`, unitErr?.message || unitErr);
+            }
+        }
+
         if (!classInfo) {
-            container.innerHTML = `<div class="empty-state" style="padding:40px">No se encontró la información de la clase.</div>`;
+            // Distinguish "esta clase no existe en tu unidad" from "no cursás la
+            // unidad del enlace": the second case needs a reason and a path, not
+            // a generic not-found (UJ-04 paso 2/7).
+            const deniedByUnit = !!requestedSubjectId && !requestedAccessible;
+            container.innerHTML = deniedByUnit
+                ? `
+                <div class="empty-state" style="padding:60px 40px;text-align:center">
+                    <div style="font-size:48px;margin-bottom:16px">🔒</div>
+                    <h3>No cursás esta unidad</h3>
+                    <p style="color:var(--color-text-secondary);max-width:420px;margin:8px auto 0">
+                        Esta clase pertenece a una unidad en la que no estás matriculado, así que no podés ver su contenido.
+                        Si creés que deberías tener acceso, pedí el alta de la unidad a administración.
+                    </p>
+                    <a href="#/student/dashboard" class="btn btn-primary" style="margin-top:20px">Volver al Dashboard</a>
+                </div>
+            `
+                : `<div class="empty-state" style="padding:40px">No se encontró la información de la clase.</div>`;
             return;
         }
 
+        // La clase quedo resuelta en otra unidad: alinear la unidad activa para
+        // que encabezado, sidebar y chat muestren lo mismo que la clase abierta.
+        if (subjectId !== activeSubjectId) {
+            auth.setActiveSubjectId(subjectId);
+        }
+
+        const [summaryData, mapData, timelineData, audioScriptData] = await Promise.all([
+            api.getClassSummary(classId, subjectId),
+            api.getClassMap(classId, subjectId),
+            api.getClassTimeline(classId, subjectId),
+            api.getClassAudioScript(classId, subjectId),
+        ]);
+
         // Track class view (fire-and-forget)
-        api.trackClassView(classId, activeSubjectId);
+        api.trackClassView(classId, subjectId);
 
         if (!classInfo.summaryReady) {
             container.innerHTML = `
@@ -142,7 +198,7 @@ export async function renderClassDetail(container) {
         const showAllSections = sections.length <= MAX_VISIBLE_SECTIONS;
         const visibleSections = showAllSections ? sections : sections.slice(0, MAX_VISIBLE_SECTIONS);
 
-        const audioUrl = api.getClassAudioUrl(classId, activeSubjectId);
+        const audioUrl = api.getClassAudioUrl(classId, subjectId);
         const audioAvailable = sec.podcast !== false && audioScriptData?.validated && !!audioScriptData?.ttsGeneratedAt;
 
         let html = `
@@ -340,7 +396,7 @@ export async function renderClassDetail(container) {
                 quizInited = true;
                 renderAutoevaluacion(quizPanel, {
                     classId,
-                    subjectId: activeSubjectId,
+                    subjectId: subjectId,
                     className: classInfo.title,
                 });
             }
@@ -373,7 +429,7 @@ export async function renderClassDetail(container) {
                 // #337: forward the active subject so the backend loads the
                 // subject-scoped podcast script ({subjectId}/{classId}.json);
                 // without it scoped deployments 400 with "No hay guión".
-                await api.generateClassAudio(classId, activeSubjectId);
+                await api.generateClassAudio(classId, subjectId);
                 toast('success', 'Audio generado', 'El podcast de la clase está listo.');
                 await renderClassDetail(container);
             } catch (err) {
@@ -475,14 +531,14 @@ export async function renderClassDetail(container) {
             if (btn) { btn.disabled = true; btn.textContent = 'Generando...'; }
             try {
                 const { generateClassMap } = await import('../../services/classes.api.js');
-                await generateClassMap(classId, activeSubjectId);
+                await generateClassMap(classId, subjectId);
                 renderClassDetail(container);
             } catch {
                 if (btn) { btn.disabled = false; btn.textContent = 'Generar mapa conceptual'; }
             }
         });
 
-        initTranscriptionReport(container, classId, activeSubjectId);
+        initTranscriptionReport(container, classId, subjectId);
 
         container.querySelectorAll('.timeline-hit').forEach((hit) => {
             hit.addEventListener('click', () => {
