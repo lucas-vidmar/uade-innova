@@ -2,7 +2,11 @@
    OnboardingOverlay — guided tour tooltip UI component
    Renders the semi-transparent backdrop + step cards with
    positional arrows on desktop, full-screen on mobile.
+   Issue #377: el tooltip es un diálogo modal — toma y contiene el
+   foco, y el fondo queda inerte mientras la guía está abierta.
    ============================================================ */
+import { createDialogFocus } from '../services/dialog-focus.js';
+
 export class OnboardingOverlay {
   constructor({ engine, steps }) {
     this.engine = engine;
@@ -10,6 +14,7 @@ export class OnboardingOverlay {
     this.backdropEl = null;
     this.spotlightEl = null;
     this.tooltipEl = null;
+    this._releaseFocus = null;
     this._onResize = () => {
       this._positionSpotlight(this.engine.currentStep);
       this._reposition();
@@ -31,6 +36,7 @@ export class OnboardingOverlay {
     this._removeHighlight();
     this._positionSpotlight(step);
     this._highlightTarget(step);
+    if (this._releaseFocus) { this._releaseFocus(); this._releaseFocus = null; }
     if (this.tooltipEl) this.tooltipEl.remove();
     this.tooltipEl = this._createTooltip(step, index);
     document.body.appendChild(this.tooltipEl);
@@ -38,9 +44,23 @@ export class OnboardingOverlay {
       this._reposition(step);
       this.tooltipEl.classList.add('onboarding-tooltip--visible');
     });
+    this._applyFocus();
+  }
+
+  // El foco entra al paso y queda contenido ahí: el fondo (el shell de la app)
+  // se marca inerte mientras la guía está abierta.
+  _applyFocus() {
+    if (!this.tooltipEl) return;
+    this._releaseFocus = createDialogFocus({
+      dialog: this.tooltipEl,
+      background: [document.getElementById('app'), document.querySelector('.app-shell')].filter(Boolean),
+      initialFocus: 'dialog',
+      onEscape: () => this.engine.skip(),
+    });
   }
 
   destroy() {
+    if (this._releaseFocus) { this._releaseFocus(); this._releaseFocus = null; }
     this._removeHighlight();
     this._removeSpotlight();
     window.removeEventListener('resize', this._onResize);
@@ -94,6 +114,8 @@ export class OnboardingOverlay {
     const el = document.createElement('div');
     el.className = `onboarding-tooltip ${isMobile ? 'onboarding-tooltip--mobile' : `onboarding-tooltip--${step.position || 'bottom'}`}`;
     el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-modal', 'true');
+    el.setAttribute('tabindex', '-1');
     el.setAttribute('aria-label', `Paso ${index + 1} de ${this.steps.length}`);
 
     el.innerHTML = `
@@ -182,11 +204,10 @@ export class OnboardingOverlay {
   }
 
   /* ── Keyboard ──────────────────────────────────────────── */
+  // Escape lo maneja createDialogFocus (issue #377); acá quedan los atajos de paso.
   _handleKeyDown = (e) => {
     if (!this.engine.active) return;
-    if (e.key === 'Escape') {
-      this.engine.skip();
-    } else if (e.key === 'ArrowRight' || (e.key === 'Enter' && e.target.closest('.onboarding-tooltip'))) {
+    if (e.key === 'ArrowRight' || (e.key === 'Enter' && e.target.closest('.onboarding-tooltip'))) {
       e.preventDefault();
       this.engine.next();
     } else if (e.key === 'ArrowLeft') {
