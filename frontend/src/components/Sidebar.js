@@ -152,6 +152,7 @@ export function renderSidebar() {
                 <button class="notification-mark-read" id="notification-mark-read">Marcar todas leídas</button>
               </div>
               <div class="notification-dropdown-filters" id="notification-dropdown-filters"></div>
+              <div class="notification-stream-status" id="notification-stream-status" role="status" hidden></div>
               <div class="notification-list" id="notification-list">
                 <div class="notification-empty">Cargando notificaciones...</div>
               </div>
@@ -358,16 +359,48 @@ async function initializeNotificationCenter({ userId, subjectId }) {
   // Set when the notification backend reports a hard auth/config failure (403):
   // the dropdown renders an actionable message instead of a silent empty state.
   let streamError = null;
+  // Estado del canal en vivo (UJ-58). Se declara antes de render() y se asigna más
+  // abajo, cuando el canal se crea, para poder pedir una reconexión desde el aviso.
+  const streamRef = { current: null };
+  let streamState = { state: 'connecting' };
 
   const getFiltered = () => {
     if (activeFilter === 'all') return allNotifications;
     return allNotifications.filter((n) => n.type === activeFilter);
   };
 
+  const renderStreamStatus = () => {
+    const statusEl = document.getElementById('notification-stream-status');
+    if (!statusEl) return;
+    const retryBtn = statusEl.querySelector('#notification-stream-retry');
+    if (streamState?.state === 'reconnecting' || streamState?.state === 'stopped') {
+      const reconnectable = streamState.state === 'reconnecting';
+      statusEl.hidden = false;
+      statusEl.classList.add('reconnecting');
+      statusEl.innerHTML = `
+        <span>Sin conexión con los avisos: ${reconnectable ? 'reconectando…' : 'se detuvo'}.</span>
+        ${reconnectable ? '<button class="notification-stream-retry" id="notification-stream-retry" type="button">Reconectar ahora</button>' : ''}
+      `;
+      if (!retryBtn) {
+        statusEl.querySelector('#notification-stream-retry')?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          streamState = { state: 'connecting' };
+          render();
+          streamRef.current?.start({ userId, subjectId });
+        });
+      }
+      return;
+    }
+    statusEl.hidden = true;
+    statusEl.classList.remove('reconnecting');
+    statusEl.innerHTML = '';
+  };
+
   const render = () => {
     const unreadCount = allNotifications.filter((item) => item.unread).length;
     badge.textContent = String(unreadCount);
     badge.hidden = unreadCount === 0;
+    renderStreamStatus();
 
     const dropFiltersEl = document.getElementById('notification-dropdown-filters');
     if (dropFiltersEl) {
@@ -557,20 +590,32 @@ async function initializeNotificationCenter({ userId, subjectId }) {
   };
 
   const onExternalTrigger = (event) => {
-    if (import.meta.env.VITE_MOCK_AUTH_ENABLED !== 'true') return;
+    // UJ-58: el canal en vivo existe en producción, no sólo en el modo mock. Antes
+    // esta guarda (`VITE_MOCK_AUTH_ENABLED !== 'true'`) descartaba todo aviso real:
+    // el evento llegaba por el stream pero nunca entraba al hilo de la persona.
     const detail = event?.detail || {};
-    allNotifications = [
-      {
-        id: detail.id || `notif-ext-${Date.now()}`,
-        type: ['grade', 'summary', 'material', 'deadline'].includes(detail.type) ? detail.type : 'material',
-        title: String(detail.title || 'Nueva notificación'),
-        message: String(detail.message || 'Se actualizó información académica.'),
-        createdAt: detail.createdAt || new Date().toISOString(),
-        unread: true,
-        targetHash: detail.targetHash || '#/student/dashboard',
-      },
-      ...allNotifications,
-    ];
+    const id = detail.id || `notif-ext-${Date.now()}`;
+    const incoming = {
+      id,
+      type: ['grade', 'summary', 'material', 'deadline'].includes(detail.type) ? detail.type : 'material',
+      title: String(detail.title || 'Nueva notificación'),
+      message: String(detail.message || 'Se actualizó información académica.'),
+      createdAt: detail.createdAt || new Date().toISOString(),
+      unread: detail.unread !== false,
+      targetHash: detail.targetHash || '#/student/dashboard',
+      subjectId: detail.subjectId || subjectId || null,
+    };
+    // Un mismo aviso puede reemitirse (p. ej. la fecha de una entrega que se mueve):
+    // se reemplaza por id en vez de agregarlo otra vez, para no duplicar la fila.
+    const previous = allNotifications.find((item) => item.id === id);
+    const merged = previous ? { ...previous, ...incoming } : incoming;
+    allNotifications = [merged, ...allNotifications.filter((item) => item.id !== id)]
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    render();
+  };
+
+  const onStreamState = (event) => {
+    streamState = event?.detail || { state: 'connecting' };
     render();
   };
 
@@ -582,6 +627,7 @@ async function initializeNotificationCenter({ userId, subjectId }) {
   markReadBtn?.addEventListener('click', onMarkAllRead);
   simulateBtn?.addEventListener('click', onSimulate);
   window.addEventListener('student:trigger-notification', onExternalTrigger);
+  window.addEventListener('notification-stream:state', onStreamState);
 
   let notificationStream = null;
 
@@ -599,10 +645,12 @@ async function initializeNotificationCenter({ userId, subjectId }) {
     markReadBtn?.removeEventListener('click', onMarkAllRead);
     simulateBtn?.removeEventListener('click', onSimulate);
     window.removeEventListener('student:trigger-notification', onExternalTrigger);
+    window.removeEventListener('notification-stream:state', onStreamState);
     window.removeEventListener('notification-stream:error', onStreamError);
     if (notificationStream) {
       notificationStream.stop();
       notificationStream = null;
+      streamRef.current = null;
     }
   };
 
@@ -620,6 +668,7 @@ async function initializeNotificationCenter({ userId, subjectId }) {
   render();
 
   notificationStream = createNotificationStream();
+  streamRef.current = notificationStream;
   notificationStream.onSnapshot = (data) => {
     if (Array.isArray(data?.notifications)) {
       const merged = [...data.notifications];
@@ -634,6 +683,10 @@ async function initializeNotificationCenter({ userId, subjectId }) {
   };
   notificationStream.onError = (detail) => {
     streamError = detail;
+    render();
+  };
+  notificationStream.onState = (detail) => {
+    streamState = detail || { state: 'connecting' };
     render();
   };
   notificationStream.start({ userId, subjectId });

@@ -425,6 +425,38 @@
     border-top: 1px solid var(--color-border);
 }
 
+/* Estado del canal en vivo de avisos (UJ-58): un corte no puede parecer
+   "sin novedades". */
+.notification-stream-status {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  margin: 4px 12px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: var(--font-size-xs);
+  background: color-mix(in srgb, var(--color-warning, #f59e0b) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-warning, #f59e0b) 45%, transparent);
+  color: var(--color-text-primary);
+}
+
+.notification-stream-retry {
+  flex-shrink: 0;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-primary);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.notification-stream-retry:hover {
+  border-color: var(--color-primary);
+}
+
 .notification-view-all {
     font-size: var(--font-size-xs);
     font-weight: 700;

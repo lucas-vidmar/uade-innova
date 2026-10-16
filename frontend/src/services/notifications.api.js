@@ -102,10 +102,13 @@ export async function dispatchClassPublishNotification({ subjectId, classId } = 
     return res.json();
 }
 
-export async function subscribeNotificationStream({ userId, subjectId, signal } = {}, onEvent) {
+export async function subscribeNotificationStream({ userId, subjectId, signal, since } = {}, onEvent) {
     const params = new URLSearchParams();
     if (userId) params.set('userId', userId);
     if (subjectId) params.set('subjectId', subjectId);
+    // `since` (UJ-58): al reconectar se pide el tramo desde el último aviso recibido,
+    // así lo ocurrido durante el corte se reemite en vez de perderse.
+    if (since) params.set('since', since);
 
     const query = params.toString();
     const response = await apiFetch(`${BASE_URL}/notifications/stream${query ? `?${query}` : ''}`, { signal });
