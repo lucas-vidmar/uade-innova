@@ -8,7 +8,7 @@ const storageMocks = {
 
 mock.module('../services/storage.js', { namedExports: storageMocks });
 
-const { getGlossary, updateGlossary, findGlossaryTerm, invalidateGlossaryCache } = await import('./glossary-store.js');
+const { getGlossary, updateGlossary, findGlossaryTerm, invalidateGlossaryCache, findGlossaryConflicts, GlossaryValidationError } = await import('./glossary-store.js');
 
 const sampleGlossary = {
     subjectId: 'arq-software-2026',
@@ -73,3 +73,67 @@ test('findGlossaryTerm returns null when glossary has no terms or does not exist
     const missing = await findGlossaryTerm('sub-missing', 'DDD');
     assert.strictEqual(missing, null);
 });
+
+// ── UJ-16 pasos 4 y 8 (issue #373) ───────────────────────────────────────────
+
+test('findGlossaryConflicts detecta la forma preferida duplicada y el alias que ya es forma preferida', () => {
+    const conflicts = findGlossaryConflicts([
+        { term: 'probando', aliases: ['asd', 'ad'], definition: '' },
+        { term: 'asd', aliases: ['asd'], definition: 'Definición 2' },
+    ]);
+    const types = conflicts.map((c) => c.type).sort();
+    assert.deepStrictEqual(types, ['alias_is_preferred_form', 'shared_alias']);
+});
+
+test('findGlossaryConflicts no marca un vocabulario sin choques', () => {
+    const conflicts = findGlossaryConflicts([
+        { term: 'DDD', aliases: ['domain-driven design', 'ddd'], definition: 'x' },
+        { term: 'CQRS', aliases: [], definition: 'y' },
+    ]);
+    assert.deepStrictEqual(conflicts, []);
+});
+
+test('updateGlossary rechaza el vocabulario con choques antes de ponerlo en vigencia', async () => {
+    storageMocks.saveJson.mock.resetCalls();
+    await assert.rejects(
+        () => updateGlossary('sub-1', [
+            { term: 'probando', aliases: ['asd'], definition: '' },
+            { term: 'asd', aliases: [], definition: '' },
+        ], 'prof-002'),
+        (err) => {
+            assert.ok(err instanceof GlossaryValidationError);
+            assert.strictEqual(err.status, 400);
+            assert.ok(err.conflicts.length > 0);
+            return true;
+        },
+    );
+    assert.strictEqual(storageMocks.saveJson.mock.callCount(), 0, 'no se escribe nada con choques');
+});
+
+test('updateGlossary rechaza una fila con contenido pero sin forma preferida en vez de descartarla', async () => {
+    storageMocks.saveJson.mock.resetCalls();
+    await assert.rejects(
+        () => updateGlossary('sub-1', [
+            { term: 'DDD', aliases: [], definition: 'ok' },
+            { term: '', aliases: [], definition: 'definición huérfana' },
+        ], 'prof-002'),
+        (err) => {
+            assert.ok(err instanceof GlossaryValidationError);
+            assert.match(err.message, /sin forma preferida/);
+            return true;
+        },
+    );
+    assert.strictEqual(storageMocks.saveJson.mock.callCount(), 0);
+});
+
+test('updateGlossary guarda quién fijó el vocabulario y devuelve la versión vigente', async () => {
+    storageMocks.saveJson.mock.resetCalls();
+    const data = await updateGlossary('sub-1', [
+        { term: 'DDD', aliases: ['domain'], definition: 'Definición DDD' },
+    ], 'prof-002');
+    assert.strictEqual(data.updatedBy, 'prof-002');
+    assert.ok(data.updatedAt);
+    const saved = storageMocks.saveJson.mock.calls.at(-1).arguments[2];
+    assert.strictEqual(saved.updatedBy, 'prof-002');
+});
+
