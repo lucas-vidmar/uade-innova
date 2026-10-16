@@ -81,7 +81,10 @@ const aiMocks = {
 };
 
 const parserMocks = {
-    chunkText: mock.fn(() => [{ text: 'chunk 0' }, { text: 'chunk 1' }]),
+    // chunkText devuelve strings (backend/src/services/parser.js:110-137).
+    // El mock debe respetar la misma forma que producción, si no la prueba
+    // queda verde mientras el handler explota en runtime (#388).
+    chunkText: mock.fn(() => ['chunk 0', 'chunk 1']),
 };
 
 mock.module('../services/auth-utils.js', { namedExports: authUtilsMocks });
@@ -151,6 +154,48 @@ test('update-material-text upserts every re-embedded vector with quarantined:fal
         assert.strictEqual(v.metadata.materialType, 'notes');
         assert.ok(Array.isArray(v.values) && v.values.length === 3);
     }
+
+    // El texto de cada chunk vectorizado es el que devolvió chunkText (#388):
+    // el handler debe aceptar la forma real (strings) y no sólo objetos { text }.
+    assert.deepStrictEqual(
+        vectors.map(v => v.metadata.text),
+        ['chunk 0', 'chunk 1'],
+    );
+    assert.strictEqual(
+        aiMocks.generateEmbeddingsBatch.mock.calls[0].arguments[0].join('|'),
+        'chunk 0|chunk 1',
+    );
+});
+
+test('update-material-text acepta chunks como objetos { text } sin romper (#388)', async () => {
+    vectorStoreMocks.upsertChunks.mock.resetCalls();
+    parserMocks.chunkText.mock.mockImplementationOnce(() => [{ text: 'chunk 0' }, { text: 'chunk 1' }]);
+
+    const request = {
+        params: { materialId: 'mat-1' },
+        json: async () => ({ subjectId: 'arq-software-2026', text: 'Nuevo texto del material' }),
+        headers: { get: () => null },
+        method: 'PUT',
+    };
+    const response = await handlers['update-material-text'](request, { log: makeMockLog() });
+    assert.strictEqual(response.status, 200);
+    const vectors = vectorStoreMocks.upsertChunks.mock.calls.at(-1).arguments[0];
+    assert.deepStrictEqual(vectors.map(v => v.metadata.text), ['chunk 0', 'chunk 1']);
+});
+
+test('update-material-text responde 400 cuando el texto no produce chunks indexables (#388)', async () => {
+    vectorStoreMocks.upsertChunks.mock.resetCalls();
+    parserMocks.chunkText.mock.mockImplementationOnce(() => []);
+
+    const request = {
+        params: { materialId: 'mat-1' },
+        json: async () => ({ subjectId: 'arq-software-2026', text: '   ' }),
+        headers: { get: () => null },
+        method: 'PUT',
+    };
+    const response = await handlers['update-material-text'](request, { log: makeMockLog() });
+    assert.strictEqual(response.status, 400);
+    assert.strictEqual(vectorStoreMocks.upsertChunks.mock.callCount(), 0, 'no debe upsertear vectores vacíos');
 });
 
 test('update-material-text returns 403 when the caller is not Docente/Director', async () => {
