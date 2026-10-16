@@ -32,7 +32,7 @@ const aiMocks = {
     generatePodcastScript: mock.fn(async () => ({})),
 };
 
-mock.module('../services/auth-utils.js', { namedExports: authMocks });
+mock.module('../services/auth-utils.js', { namedExports: { ...authMocks, getAuthenticatedUser: mock.fn(() => ({ userId: 'prof-001' })) } });
 mock.module('../services/storage.js', { namedExports: storageMocks });
 mock.module('../services/ai.js', { namedExports: aiMocks });
 mock.module('../middleware/with-auth.js', {

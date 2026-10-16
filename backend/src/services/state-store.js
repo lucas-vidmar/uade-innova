@@ -31,6 +31,17 @@ function escapeODataValue(value) {
   return String(value).replace(/'/g, "''");
 }
 
+// Lee un campo que se guarda serializado en la tabla (UJ-10 paso 8).
+function parseJsonSafe(value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
 function normalizeStringArray(value) {
   if (Array.isArray(value)) return value.filter(Boolean).map(String);
   if (typeof value === 'string') {
@@ -86,6 +97,12 @@ function toMaterialEntity(material) {
       : undefined,
     uploadedBy: material.uploadedBy,
     fileSize: typeof material.fileSize === 'number' ? material.fileSize : undefined,
+    // UJ-10 paso 8: constancia de la última corrección del texto extraído
+    // (quién, cuándo, contra qué versión).
+    textCorrectedBy: material.textCorrectedBy,
+    textCorrectedAt: material.textCorrectedAt,
+    textCorrectionCount: typeof material.textCorrectionCount === 'number' ? material.textCorrectionCount : undefined,
+    lastTextCorrection: material.lastTextCorrection ? JSON.stringify(material.lastTextCorrection) : undefined,
   });
 }
 
@@ -134,6 +151,11 @@ function fromMaterialEntity(entity) {
     retirementHistory: parseRetirementHistory(entity.retirementHistory),
     uploadedBy: entity.uploadedBy,
     fileSize: typeof entity.fileSize === 'number' ? entity.fileSize : Number(entity.fileSize) || undefined,
+    // UJ-10 paso 8: constancia de la corrección del texto extraído.
+    textCorrectedBy: entity.textCorrectedBy,
+    textCorrectedAt: entity.textCorrectedAt,
+    textCorrectionCount: typeof entity.textCorrectionCount === 'number' ? entity.textCorrectionCount : Number(entity.textCorrectionCount) || undefined,
+    lastTextCorrection: parseJsonSafe(entity.lastTextCorrection),
   };
 }
 

@@ -4,7 +4,7 @@ import { withCorrelation } from '../middleware/with-correlation.js';
 import { createStructuredLogger } from '../services/structured-logger.js';
 import { loadJson, saveJson, listBlobs, deleteBlob, moveBlob, uploadFile, downloadFile, getTableClient } from '../services/storage.js';
 import { v4 as uuidv4 } from 'uuid';
-import { parseClientPrincipal, validateFrontDoorId, readDevIdentityHeader } from '../services/auth-utils.js';
+import { parseClientPrincipal, validateFrontDoorId, readDevIdentityHeader, getAuthenticatedUser } from '../services/auth-utils.js';
 import { listClassesBySubject, listMaterialsBySubject, listMaterialsByClass, replaceClassesForSubject, deleteMaterialStateById, getMaterialState, upsertMaterialState, deleteClassesBySubject, deleteMaterialsBySubject, getEnrollmentsByUser, getEnrollment, listClassViewsByStudent, deleteClassViewsBySubject, getMaterialStateById } from '../services/state-store.js';
 import * as vectorStore from '../services/vector-store.js';
 import { trackPollingEvent, trackAuthFallbackBlocked } from '../services/telemetry.js';
@@ -73,6 +73,13 @@ async function requireAssetSubjectAccess(request, context, subjectId) {
 
 import path from 'path';
 import { logWarn } from '../services/log.js';
+import { createHash } from 'node:crypto';
+
+// Hash del texto anterior de un material: deja constancia de contra qué versión se
+// corrigió, sin guardar una copia entera del texto viejo (UJ-10 paso 8).
+function sha256(text) {
+    return createHash('sha256').update(String(text), 'utf8').digest('hex');
+}
 
 const SESSION_METRICS_TABLE = 'SessionMetrics';
 const INTERVENTIONS_TABLE = CONFIG.tables.interventions;
@@ -2499,6 +2506,9 @@ app.http('update-material-text', {
             return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'subjectId y text son requeridos' }) };
         }
 
+        // UJ-10 paso 8: la constancia de la corrección lleva el nombre de quien la hizo.
+        const { userId } = getAuthenticatedUser(request);
+
         try {
             // 1. Load existing processed blob
             const processed = await loadJson(CONTAINER_PROCESSED, `${materialId}.json`) || {};
@@ -2561,14 +2571,34 @@ app.http('update-material-text', {
             await saveJson(CONTAINER_PROCESSED, `${materialId}.json`, processed);
 
             // 6. Update state
+            let correctionRecord = null;
             if (materialState) {
+                // UJ-10 paso 8: la corrección tiene que dejar constancia revisable de
+                // quién la hizo, cuándo y contra qué texto. Antes sólo quedaba el
+                // `processedAt` de la reindexación, sin autor ni versión anterior, así
+                // que nadie podía reconstruir el cambio sin haber estado presente.
+                const correctedAt = new Date().toISOString();
+                const previousText = processed.extractedText || '';
+                correctionRecord = {
+                    by: userId,
+                    at: correctedAt,
+                    previousLength: previousText.length,
+                    newLength: text.length,
+                    previousChunkCount: Number(materialState.chunkCount ?? 0) || 0,
+                    newChunkCount: chunks.length,
+                    previousTextHash: previousText ? sha256(previousText) : null,
+                };
                 await upsertMaterialState({
                     ...materialState,
                     materialId,
                     subjectId,
                     status: 'ready',
                     chunkCount: chunks.length,
-                    processedAt: new Date().toISOString(),
+                    processedAt: correctedAt,
+                    textCorrectedBy: userId,
+                    textCorrectedAt: correctedAt,
+                    textCorrectionCount: (Number(materialState.textCorrectionCount ?? 0) || 0) + 1,
+                    lastTextCorrection: correctionRecord,
                 }, 'Merge');
             }
 
@@ -2576,7 +2606,17 @@ app.http('update-material-text', {
             return {
                 status: 200,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ success: true, chunkCount: chunks.length })
+                body: JSON.stringify({
+                    success: true,
+                    chunkCount: chunks.length,
+                    // UJ-10 paso 8: quién, cuándo y contra qué versión.
+                    textCorrectedBy: userId,
+                    textCorrectedAt: correctionRecord?.at || null,
+                    textCorrectionCount: correctionRecord
+                        ? (Number(materialState?.textCorrectionCount ?? 0) || 0) + 1
+                        : 0,
+                    textCorrection: correctionRecord,
+                })
             };
         } catch (err) {
             context.error(`[UpdateMaterialText] Error for ${materialId}:`, err);

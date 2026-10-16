@@ -2,6 +2,7 @@ import { test, mock } from 'node:test';
 import assert from 'node:assert';
 
 const authUtilsMocks = {
+    getAuthenticatedUser: mock.fn(() => ({ userId: 'prof-001' })),
     validateFrontDoorId: mock.fn(() => true),
     setStashedIdentity: mock.fn(() => {}),
     readDevIdentityHeader: mock.fn((request, name) => request?.headers?.get?.(name) || null),

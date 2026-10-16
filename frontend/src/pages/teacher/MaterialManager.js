@@ -559,6 +559,14 @@ export async function renderMaterialManager(container) {
                             <span class="mat-text-info-label">Tipo:</span> ${typeIcon(mat.type)} ${escapeHtml(typeLabel(mat.type))}
                             <span style="margin-left:16px;" class="mat-text-info-label">Estado:</span> <span class="mat-status-badge mat-status-${escapeHtml(mat.status || 'pending')}">${escapeHtml(mat.status === 'ready' ? 'Listo' : mat.status || 'Pendiente')}</span>
                         </div>
+                        ${mat.textCorrectedAt ? `
+                        <div class="mat-text-constancia" id="mat-text-constancia" style="font-size:var(--font-size-xs);color:var(--color-text-secondary);margin-top:var(--space-2)">
+                            Última corrección: <strong>${escapeHtml(mat.textCorrectedBy || 'sin identificar')}</strong>
+                            · ${escapeHtml(new Date(mat.textCorrectedAt).toLocaleString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}
+                            ${mat.lastTextCorrection ? ` · ${mat.lastTextCorrection.previousLength} → ${mat.lastTextCorrection.newLength} caracteres` : ''}
+                            ${mat.textCorrectionCount ? ` · ${mat.textCorrectionCount} corrección(es)` : ''}
+                            ${mat.lastTextCorrection?.previousTextHash ? `<br/>Versión anterior (huella): <code>${escapeHtml(String(mat.lastTextCorrection.previousTextHash).slice(0, 16))}…</code>` : ''}
+                        </div>` : ''}
                         <textarea class="form-input mat-text-editor" id="mat-text-content" placeholder="Sin texto extraído...">${escapeHtml(extractedText)}</textarea>
                         <div class="mat-text-hint">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
