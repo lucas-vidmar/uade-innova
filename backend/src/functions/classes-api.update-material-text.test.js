@@ -10,6 +10,7 @@ const authUtilsMocks = {
     setStashedIdentity: mock.fn(() => {}),
     readDevIdentityHeader: mock.fn((request, name) => request?.headers?.get?.(name) || null),
     parseClientPrincipal: mock.fn(() => ({ userId: 'teacher-1', userRoles: ['Docente'] })),
+    getAuthenticatedUser: mock.fn(() => ({ userId: 'teacher-1' })),
 };
 
 const storageMocks = {
@@ -215,4 +216,44 @@ test('update-material-text returns 403 when the caller is not Docente/Director',
     const response = await handlers['update-material-text'](request, { log: makeMockLog() });
     assert.strictEqual(response.status, 403);
     assert.strictEqual(vectorStoreMocks.upsertChunks.mock.callCount(), 0);
+});
+
+test('update-material-text deja constancia de quién, cuándo y contra qué versión se corrigió (UJ-10 paso 8)', async () => {
+    stateStoreMocks.upsertMaterialState.mock.resetCalls();
+    // La prueba anterior deja el principal en Alumno: acá vuelve a ser docente.
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'teacher-1', userRoles: ['Docente'] }));
+    authUtilsMocks.getAuthenticatedUser.mock.mockImplementation(() => ({ userId: 'teacher-1' }));
+    storageMocks.loadJson.mock.mockImplementationOnce(async () => ({ filename: 'clase.txt', classIds: ['class-01'], materialType: 'notes', extractedText: 'texto viejo' }));
+    stateStoreMocks.getMaterialState.mock.mockImplementationOnce(async () => ({
+        subjectId: 'arq-software-2026',
+        materialId: 'mat-1',
+        classIds: ['class-01'],
+        type: 'notes',
+        filename: 'clase.txt',
+        chunkCount: 3,
+        textCorrectionCount: 1,
+    }));
+
+    const request = {
+        params: { materialId: 'mat-1' },
+        json: async () => ({ subjectId: 'arq-software-2026', text: 'texto nuevo' }),
+        headers: { get: () => null },
+        method: 'PUT',
+    };
+    const response = await handlers['update-material-text'](request, { log: makeMockLog() });
+
+    assert.strictEqual(response.status, 200);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.textCorrectedBy, 'teacher-1');
+    assert.ok(body.textCorrectedAt, 'la respuesta declara cuándo');
+    assert.strictEqual(body.textCorrectionCount, 2, 'la constancia acumula las correcciones');
+    assert.strictEqual(body.textCorrection.previousLength, 'texto viejo'.length);
+    assert.strictEqual(body.textCorrection.newLength, 'texto nuevo'.length);
+    assert.strictEqual(body.textCorrection.previousChunkCount, 3);
+    assert.ok(body.textCorrection.previousTextHash, 'deja la huella de la versión anterior');
+
+    const guardado = stateStoreMocks.upsertMaterialState.mock.calls.at(-1).arguments[0];
+    assert.strictEqual(guardado.textCorrectedBy, 'teacher-1');
+    assert.strictEqual(guardado.textCorrectionCount, 2);
+    assert.strictEqual(guardado.lastTextCorrection.previousTextHash, body.textCorrection.previousTextHash);
 });
