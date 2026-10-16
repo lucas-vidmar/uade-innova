@@ -2232,7 +2232,16 @@ app.http('update-material-text', {
             const chunks = chunkText(text);
 
             const { generateEmbeddingsBatch } = await import('../services/ai.js');
-            const chunkTexts = chunks.map(c => c.text);
+            // chunkText devuelve strings (parser.js), no objetos { text }.
+            // Mismo criterio que corrections-transcription/apply-correction (#388).
+            const chunkTexts = chunks.map(c => (typeof c === 'string' ? c : c?.text)).filter(Boolean);
+            if (chunkTexts.length === 0) {
+                return {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ error: 'El texto no contiene contenido indexable.' }),
+                };
+            }
             const { embeddings } = await generateEmbeddingsBatch(chunkTexts);
 
             // 4. Upsert to Pinecone
