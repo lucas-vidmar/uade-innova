@@ -926,7 +926,7 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         </div>
         <div class="modal-body">
           <div style="margin-bottom:12px;display:flex;flex-wrap:wrap;gap:8px;font-size:12px;color:var(--text-muted,#888);">
-            <span>${materialIcon(source.materialType)} ${escapeHtml(source.materialType)}</span>
+            <span>${materialIcon(source.materialType)} ${escapeHtml(materialTypeLabel(source.materialType))}</span>
             <span>· Chunk ${source.chunkIndex ?? '—'}</span>
             <span>· ${escapeHtml(source.sourceFilename)}</span>
             ${source.score ? `<span>· Relevancia: ${(source.score * 100).toFixed(0)}%</span>` : ''}
@@ -1088,6 +1088,16 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
   };
 
   const escapeHtml = (str) => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  // #380 (UJ-27): el tipo de material se muestra traducido, no como jerga interna.
+  const MATERIAL_TYPE_LABELS = {
+    transcript: 'Registro textual',
+    presentation: 'Presentación',
+    notes: 'Notas',
+    bibliography: 'Bibliografía',
+    'verified-answer': 'Respuesta verificada del docente',
+  };
+  const materialTypeLabel = (type) => MATERIAL_TYPE_LABELS[type] || 'Material';
 
   const materialIcon = (type) => {
     const map = {

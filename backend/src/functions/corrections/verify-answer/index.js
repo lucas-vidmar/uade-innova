@@ -192,6 +192,8 @@ app.http('verify-answer', {
             text: correctedAnswer.trim(),
             teacherId: userId,
             sourceFilename: `correction-${correctionId}`,
+            // #380: etiqueta legible para la persona; el id interno no se muestra.
+            title: 'Respuesta verificada por el docente',
             lectureDate: now,
             chunkIndex: 0,
             materialId: `corr-${correctionId}`,

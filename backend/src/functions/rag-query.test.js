@@ -601,21 +601,30 @@ test('rag-query should include slideTitle in sources when metadata contains it',
     assert.strictEqual(body.sources[0].slideTitle, 'Arquitectura Hexagonal');
 });
 
-test('rag-query should not break when slideTitle is missing in metadata', async () => {
-    vectorStoreMocks.querySimilar.mock.mockImplementationOnce(async () => [
-        {
-            id: 'note-1',
-            score: 0.9,
-            metadata: {
-                sourceFilename: 'apuntes.md',
-                text: 'Contenido de apuntes',
-                materialType: 'notes',
-                materialPriority: 'primary',
-                classIds: ['class1'],
-                chunkIndex: 0,
+test('rag-query should not break when slideTitle is missing in metadata', async (t) => {
+    t.after(() => {
+        vectorStoreMocks.querySimilar.mock.mockImplementation(defaultQuerySimilarImpl);
+    });
+    // #380: la pre-búsqueda de respuestas verificadas consume la primera llamada al
+    // vector store; acá se responde por filtro para que la prueba ejerza el camino
+    // normal (material sin slideTitle) y no el de la respuesta verificada.
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter) => {
+        if (filter?.materialType?.$eq === 'verified-answer') return [];
+        return [
+            {
+                id: 'note-1',
+                score: 0.9,
+                metadata: {
+                    sourceFilename: 'apuntes.md',
+                    text: 'Contenido de apuntes',
+                    materialType: 'notes',
+                    materialPriority: 'primary',
+                    classIds: ['class1'],
+                    chunkIndex: 0,
+                },
             },
-        },
-    ]);
+        ];
+    });
 
     const mockContext = {
         log: mock.fn(),
@@ -725,6 +734,47 @@ test('rag-query verified-answer source should carry subjectId (Story 3.7)', asyn
     assert.strictEqual(body.verified, true);
     assert.strictEqual(body.sources[0].subjectId, 'materia1');
     assert.strictEqual(body.sources[0].classId, 'class3');
+    // #380: la fuente que se muestra al alumno es legible, no `correction-<uuid>`.
+    assert.strictEqual(body.sources[0].slideTitle, 'Respuesta verificada por el docente');
+    assert.strictEqual(body.sources[0].sourceFilename, 'correction-1', 'el id interno se conserva para uso interno');
+});
+
+test('rag-query usa el título guardado en el vector de la respuesta verificada (#380)', async (t) => {
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter) => {
+        if (filter?.materialType?.$eq === 'verified-answer') {
+            return [{
+                id: 'corr-1',
+                score: 0.95,
+                metadata: {
+                    materialType: 'verified-answer',
+                    subjectId: 'materia1',
+                    classId: 'class3',
+                    text: 'Respuesta verificada.',
+                    teacherId: 'docente-01',
+                    sourceFilename: 'correction-1',
+                    title: 'Respuesta verificada por el docente — Clase 3',
+                    chunkIndex: 0,
+                },
+            }];
+        }
+        return [];
+    });
+
+    t.after(() => {
+        vectorStoreMocks.querySimilar.mock.mockImplementation(defaultQuerySimilarImpl);
+    });
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = {
+        json: async () => ({ question: 'Que dice la correccion?', subjectId: 'materia1', classIds: ['class1'] }),
+        user: { id: 'test-user' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.sources[0].slideTitle, 'Respuesta verificada por el docente — Clase 3');
+    assert.ok(!body.sources[0].slideTitle.includes('correction-'), 'no se filtra el id interno en la etiqueta');
 });
 
 test('rag-query should return verified answer directly when score > 0.85, bypassing LLM', async () => {
