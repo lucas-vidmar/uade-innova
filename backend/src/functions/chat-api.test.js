@@ -125,6 +125,38 @@ test('chat-report-issue should persist report and create teacher alert', async (
     assert.strictEqual(alert.status, 'open');
 });
 
+test('chat-report-issue persists a convergence groupKey from the cited fragment (UJ-40)', async () => {
+    resetState();
+    const chatBlobPath = 'student_1/arq-software-2026/msg-555.json';
+    storageState.chatLogs.set(chatBlobPath, {
+        id: 'msg-555',
+        question: '¿Qué es SAGA?',
+        answer: 'SAGA coordina transacciones distribuidas.',
+        sources: [{ materialId: 'mat-9', classId: 'class-04', chunkIndex: 3, sourceFilename: 'saga.pdf' }],
+    });
+    stateStoreMocks.upsertCorrection.mock.resetCalls();
+
+    principalMock = { userRoles: ['Alumno'], oid: 'student-1' };
+
+    const response = await handlers['chat-report-issue'](
+        {
+            json: async () => ({
+                messageId: 'msg-555',
+                subjectId: 'arq-software-2026',
+                issueDetail: 'La respuesta confunde SAGA con CQRS.',
+            }),
+        },
+        { log: () => {}, error: () => {}, warn: () => {} }
+    );
+
+    assert.strictEqual(response.status, 200);
+    const alert = storageState.alerts.get('arq-software-2026/ai-issue-msg-555.json');
+    assert.strictEqual(alert.groupKey, 'class-04|mat-9#3');
+
+    const correctionArg = stateStoreMocks.upsertCorrection.mock.calls.at(-1)?.arguments?.[0];
+    assert.strictEqual(correctionArg.groupKey, 'class-04|mat-9#3');
+});
+
 test('teacher-ai-feedback-alerts should require teacher or director role', async () => {
     resetState();
     principalMock = { userRoles: ['Alumno'], oid: 'student-2' };

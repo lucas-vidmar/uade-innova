@@ -353,6 +353,7 @@ app.http('chat-report-issue', {
             let resolvedQuestion = question || '';
             let resolvedAnswer = answer || '';
             let resolvedClassId = '';
+            let logSources = [];
             let blobFound = false;
 
             const blobPath = `${sanitizedId}/${subjectId}/${messageId}.json`;
@@ -362,7 +363,8 @@ app.http('chat-report-issue', {
                     blobFound = true;
                     resolvedQuestion = resolvedQuestion || log.question || '';
                     resolvedAnswer = resolvedAnswer || log.answer || '';
-                    resolvedClassId = log.classId || (Array.isArray(log.classes) ? log.classes[0] : '') || '';
+                    resolvedClassId = log.classId || (Array.isArray(log.classIds) ? log.classIds[0] : '') || (Array.isArray(log.classes) ? log.classes[0] : '') || '';
+                    logSources = Array.isArray(log.sources) ? log.sources : [];
                     log.reportedIssue = {
                         reportedAt: now,
                         detail,
@@ -377,6 +379,18 @@ app.http('chat-report-issue', {
 
             const alertId = `${reportType === 'missing-keyword' ? 'missing-kw' : 'ai-issue'}-${messageId}`;
             const resolvedClassIdFinal = reportClassId || resolvedClassId || '';
+
+            // Convergence key (UJ-40): reports about the same material fragment
+            // must be groupable downstream. Prefer the cited fragment
+            // (material + chunk); fall back to the encounter plus a normalized
+            // answer head so near-identical answers still converge.
+            const primarySource = logSources.find((s) => s && (s.materialId || s.sourceFilename)) || null;
+            const fragmentKey = primarySource
+                ? `${primarySource.classId || resolvedClassIdFinal || 'unknown'}|${primarySource.materialId || primarySource.sourceFilename || ''}#${primarySource.chunkIndex ?? ''}`
+                : '';
+            const answerKey = String(resolvedAnswer || resolvedQuestion || '').toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 120);
+            const groupKey = fragmentKey || `${resolvedClassIdFinal || 'unknown'}|${answerKey}`;
+
             const keywordMessage = reportType === 'missing-keyword'
                 ? missingKeywordTeacherMessage(detail, await resolveClassName(subjectId, resolvedClassIdFinal))
                 : '';
@@ -393,6 +407,7 @@ app.http('chat-report-issue', {
                 keyword: reportType === 'missing-keyword' ? detail : undefined,
                 message: keywordMessage || undefined,
                 classId: resolvedClassIdFinal,
+                groupKey,
                 createdAt: now,
             };
 
@@ -411,6 +426,7 @@ app.http('chat-report-issue', {
                 message: keywordMessage || '',
                 messageId,
                 type: reportType,
+                groupKey,
                 status: 'pending',
                 createdAt: now,
               });
