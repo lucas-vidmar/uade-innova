@@ -230,12 +230,12 @@ export async function applyTranscriptionCorrection(suggestionId, subjectId) {
     return res.json();
 }
 
-export async function rejectTranscriptionSuggestion(suggestionId, subjectId) {
+export async function rejectTranscriptionSuggestion(suggestionId, subjectId, reason) {
     if (!suggestionId || !subjectId) throw new Error('suggestionId and subjectId are required');
     const res = await apiFetch(`${BASE_URL}/corrections-transcription/reject`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ suggestionId, subjectId }),
+        body: JSON.stringify({ suggestionId, subjectId, reason: String(reason || '').trim() }),
     });
     if (!res.ok) {
         let message = 'Error al rechazar sugerencia';

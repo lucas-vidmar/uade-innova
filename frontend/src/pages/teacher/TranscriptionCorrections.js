@@ -57,16 +57,36 @@ export async function renderTranscriptionCorrections(container) {
         toast('info', 'Sin pendientes', 'No hay sugerencias pendientes para aplicar.');
         return;
       }
+
+      const { showConfirmDialog } = await import('../../components/Dialog.js');
+      const plural = pending.length === 1 ? 'enmienda' : 'enmiendas';
+      const confirmed = await showConfirmDialog({
+        title: 'Aplicar todas las enmiendas',
+        message: `¿Aplicar las ${pending.length} ${plural} pendientes?`,
+        detailsHtml: '<div style="display:flex;flex-direction:column;gap:6px;">' +
+          '<div>Cada tramo aceptado se reescribe en el registro textual y se vuelve a indexar el material, así que las respuestas de la unidad pasan a apoyarse en el texto enmendado.</div>' +
+          '<div>Las enmiendas que no correspondan se rechazan de a una, con su motivo.</div>' +
+          '</div>',
+        confirmText: `Aplicar ${pending.length}`,
+        cancelText: 'Cancelar',
+      });
+      if (!confirmed) return;
+
       const btn = container.querySelector('#btn-apply-all');
       if (btn) { btn.disabled = true; btn.textContent = 'Aplicando...'; }
       const results = await Promise.allSettled(
-        pending.map(s => api.applyTranscriptionCorrection({ suggestionId: s.rowKey || s.id, subjectId }))
+        pending.map(s => api.applyTranscriptionCorrection(s.rowKey || s.id, subjectId))
       );
       const applied = results.filter(r => r.status === 'fulfilled').length;
       const failed = results.filter(r => r.status === 'rejected').length;
       const { toast } = await import('../../components/Toast.js');
-      if (applied > 0) toast('success', `Aplicadas ${applied} correcciones`, failed > 0 ? `${failed} fallaron.` : '');
-      if (failed > 0 && applied === 0) toast('error', 'Error', `No se pudieron aplicar ${failed} correcciones.`);
+      if (applied > 0) {
+        toast('success', `Aplicadas ${applied} ${applied === 1 ? 'enmienda' : 'enmiendas'}`, failed > 0 ? `${failed} no se pudieron aplicar.` : '');
+      }
+      if (failed > 0 && applied === 0) {
+        const first = results.find(r => r.status === 'rejected');
+        toast('error', 'No se pudieron aplicar', `${failed} ${failed === 1 ? 'enmienda' : 'enmiendas'} sin aplicar. ${first?.reason?.message || ''}`.trim());
+      }
       loadSuggestions(currentStatus);
     } catch (err) {
       const { toast } = await import('../../components/Toast.js');
@@ -100,6 +120,17 @@ export async function renderTranscriptionCorrections(container) {
               <span>${s.materialId || ''}</span>
               <span>${s.classId || ''}</span>
             </div>
+            ${s.status === 'rejected' ? `
+            <div class="tc-suggestion-meta tc-suggestion-decision">
+              <span>Rechazada por ${escapeHtml(s.teacherId || 'docente')} · ${formatDate(s.resolvedAt)}</span>
+            </div>
+            ${s.rejectionReason ? `<div class="tc-suggestion-reason">Motivo: ${escapeHtml(s.rejectionReason)}</div>` : ''}
+            ` : ''}
+            ${s.status === 'applied' ? `
+            <div class="tc-suggestion-meta tc-suggestion-decision">
+              <span>Aplicada por ${escapeHtml(s.teacherId || 'docente')} · ${formatDate(s.resolvedAt)}</span>
+            </div>
+            ` : ''}
           </a>
         `).join('')}
       </div>
