@@ -522,7 +522,8 @@ export async function renderClassDetail(container) {
             }
         });
 
-        initTranscriptionReport(container, classId, subjectId);
+        initContentReport(container, classId, activeSubjectId);
+
 
         container.querySelectorAll('.timeline-hit').forEach((hit) => {
             hit.addEventListener('click', () => {
@@ -556,83 +557,164 @@ export async function renderClassDetail(container) {
     }
 }
 
-function initTranscriptionReport(container, classId, subjectId) {
+// #369: el reporte de contenido estaba atado sólo al registro textual, así que una
+// afirmación sin respaldo dentro de un derivado (resumen IA, mapa conceptual) no se
+// podía marcar ni registrar: no había forma de declarar el derivado afectado. La barra
+// de reporte ahora cubre los derivados y el caso nombre el derivado, la afirmación y el
+// tramo del registro donde debería estar respaldada.
+const REPORT_SURFACES = [
+    {
+        elementId: 'transcript-sections-list',
+        derivado: 'Transcripción',
+        action: 'Reportar error de transcripción',
+        heading: 'Reportar error de transcripción',
+        success: 'El docente recibió el reporte de error de transcripción.',
+    },
+    {
+        elementId: 'summary-content',
+        derivado: 'Resumen IA',
+        action: 'Reportar afirmación sin respaldo',
+        heading: 'Reportar afirmación sin respaldo',
+        success: 'El docente recibió el reporte sobre el resumen. La afirmación queda registrada con el tramo del registro.',
+    },
+    {
+        elementId: 'mermaid-container',
+        derivado: 'Mapa conceptual',
+        action: 'Reportar relación sin respaldo',
+        heading: 'Reportar relación sin respaldo',
+        success: 'El docente recibió el reporte sobre el mapa conceptual.',
+    },
+];
+
+function normalizeForMatch(text) {
+    return String(text || '')
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9 ]/g, ' ');
+}
+
+/**
+ * Tramo del registro más parecido a lo señalado, como sugerencia para quien reporta
+ * (el tramo donde la afirmación debería estar respaldada). Heurística explícita: se
+ * declara como sugerencia y no como certeza.
+ */
+function suggestTramo(container, selectedText) {
+    const words = normalizeForMatch(selectedText).split(/\s+/).filter(w => w.length > 3);
+    if (words.length === 0) return null;
+    let best = null;
+    container.querySelectorAll('.transcript-section').forEach(section => {
+        const text = normalizeForMatch(section.querySelector('.transcript-section-text')?.innerText || '');
+        if (!text) return;
+        const score = words.filter(w => text.includes(w)).length / words.length;
+        if (!best || score > best.score) {
+            best = {
+                score,
+                etiqueta: (section.querySelector('.badge')?.innerText || 'Bloque').trim(),
+                texto: (section.querySelector('.transcript-section-text')?.innerText || '').trim().slice(0, 80),
+            };
+        }
+    });
+    if (!best || best.score < 0.3) return null;
+    return best;
+}
+
+function initContentReport(container, classId, subjectId) {
     let toolbar = null;
+    const surfaceFor = (node) => {
+        if (!node) return null;
+        return REPORT_SURFACES.find(surface => {
+            const el = container.querySelector('#' + surface.elementId);
+            return !!el && el.contains(node);
+        }) || null;
+    };
+
     const onSelectionChange = () => {
         const selection = window.getSelection();
         const selectedText = selection ? selection.toString().trim() : '';
-        const isInTranscript = selection && container.querySelector('#transcript-sections-list')?.contains(selection.anchorNode);
+        const surface = (selectedText && selection) ? surfaceFor(selection.anchorNode) : null;
 
         if (toolbar) { toolbar.remove(); toolbar = null; }
 
-        if (selectedText.length > 0 && isInTranscript) {
-            const range = selection.getRangeAt(0);
-            const rect = range.getBoundingClientRect();
-            toolbar = document.createElement('div');
-            toolbar.className = 'transcript-report-toolbar';
-            toolbar.style.cssText = 'position:fixed;z-index:1000;background:var(--surface-2);border:1px solid var(--border-subtle);border-radius:var(--radius-md);padding:6px 12px;box-shadow:0 4px 12px rgba(0,0,0,0.3);';
-            toolbar.innerHTML = '<button class="btn btn-secondary btn-sm">Reportar error de transcripción</button>';
-            toolbar.style.left = Math.min(rect.left, window.innerWidth - 200) + 'px';
-            toolbar.style.top = (rect.bottom + 8) + 'px';
+        if (!surface || selectedText.length === 0) return;
 
-            toolbar.querySelector('button').addEventListener('click', async () => {
-                toolbar.remove();
-                toolbar = null;
-                window.getSelection().removeAllRanges();
+        const range = selection.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+        toolbar = document.createElement('div');
+        toolbar.className = 'transcript-report-toolbar';
+        toolbar.style.cssText = 'position:fixed;z-index:1000;background:var(--surface-2);border:1px solid var(--border-subtle);border-radius:var(--radius-md);padding:6px 12px;box-shadow:0 4px 12px rgba(0,0,0,0.3);';
+        toolbar.innerHTML = `<button class="btn btn-secondary btn-sm">${surface.action}</button>`;
+        toolbar.style.left = Math.min(rect.left, window.innerWidth - 200) + 'px';
+        toolbar.style.top = (rect.bottom + 8) + 'px';
 
-                const overlay = document.createElement('div');
-                overlay.className = 'modal-overlay';
-                overlay.innerHTML = `
-                    <div class="modal-content" style="max-width:500px;width:92%;">
-                        <div class="modal-header"><h3 class="h4" style="margin:0;">Reportar error de transcripción</h3>
-                        <button type="button" class="btn btn-ghost btn-sm dialog-close">✕</button></div>
-                        <div class="modal-body">
-                            <div style="margin-bottom:12px;"><strong>Texto seleccionado:</strong>
-                            <div class="chat-bubble chat-bubble-user" style="margin-top:4px;white-space:pre-wrap;font-size:14px;">${escapeHtml(selectedText)}</div></div>
-                            <div><label class="form-label" for="transcript-correction" style="font-weight:600;">Corrección sugerida</label>
-                            <textarea id="transcript-correction" class="form-input" style="min-height:80px;resize:vertical;" placeholder="Escribí la corrección..."></textarea>
-                            <p id="transcript-correction-error" style="display:none;margin-top:6px;color:var(--color-error);font-size:13px;"></p></div>
-                        </div>
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-ghost dialog-cancel">Cancelar</button>
-                            <button type="button" class="btn btn-primary" id="transcript-correction-submit" disabled>Enviar</button>
-                        </div>
-                    </div>`;
+        toolbar.querySelector('button').addEventListener('click', async () => {
+            toolbar.remove();
+            toolbar = null;
+            window.getSelection().removeAllRanges();
 
-                const ta = overlay.querySelector('#transcript-correction');
-                const errEl = overlay.querySelector('#transcript-correction-error');
-                const submitBtn = overlay.querySelector('#transcript-correction-submit');
+            const tramo = suggestTramo(container, selectedText);
 
-                const cleanup = () => overlay.remove();
-                ta.addEventListener('input', () => { submitBtn.disabled = (ta.value || '').trim().length < 3; errEl.style.display = 'none'; });
-                overlay.querySelector('.dialog-close')?.addEventListener('click', cleanup);
-                overlay.querySelector('.dialog-cancel')?.addEventListener('click', cleanup);
-                overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(); });
+            const overlay = document.createElement('div');
+            overlay.className = 'modal-overlay';
+            overlay.innerHTML = `
+                <div class="modal-content" style="max-width:500px;width:92%;">
+                    <div class="modal-header"><h3 class="h4" style="margin:0;">${surface.heading}</h3>
+                    <button type="button" class="btn btn-ghost btn-sm dialog-close">✕</button></div>
+                    <div class="modal-body">
+                        <div style="margin-bottom:12px;"><strong>Derivado afectado:</strong>
+                        <div style="font-size:14px;">${escapeHtml(surface.derivado)} — ${escapeHtml(classId)}</div></div>
+                        <div style="margin-bottom:12px;"><strong>Texto seleccionado:</strong>
+                        <div class="chat-bubble chat-bubble-user" style="margin-top:4px;white-space:pre-wrap;font-size:14px;">${escapeHtml(selectedText)}</div></div>
+                        <div style="margin-bottom:12px;"><strong>Tramo del registro más parecido (sugerencia):</strong>
+                        <div style="margin-top:4px;font-size:14px;">${tramo ? `${escapeHtml(tramo.etiqueta)} — «${escapeHtml(tramo.texto)}»` : 'Sin coincidencia con los tramos visibles'}</div></div>
+                        <div><label class="form-label" for="transcript-correction" style="font-weight:600;">Qué corregiría</label>
+                        <textarea id="transcript-correction" class="form-input" style="min-height:80px;resize:vertical;" placeholder="Contá qué está mal y con qué debería decirse..."></textarea>
+                        <p id="transcript-correction-error" style="display:none;margin-top:6px;color:var(--color-error);font-size:13px;"></p></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-ghost dialog-cancel">Cancelar</button>
+                        <button type="button" class="btn btn-primary" id="transcript-correction-submit" disabled>Enviar</button>
+                    </div>
+                </div>`;
 
-                submitBtn.addEventListener('click', async () => {
-                    const val = (ta.value || '').trim();
-                    if (val.length < 3) {
-                        errEl.textContent = 'Debe tener al menos 3 caracteres.';
-                        errEl.style.display = 'block'; ta.focus(); return;
-                    }
-                    submitBtn.disabled = true; submitBtn.textContent = 'Enviando...';
-                    try {
-                        const { toast } = await import('../../components/Toast.js');
-                        const messageId = `transcript-${Date.now()}`;
-                        await api.reportChatIssue({ messageId, subjectId, issueDetail: `Error en transcripción: "${selectedText.substring(0, 200)}" — Corrección sugerida: ${val}`, question: '', answer: selectedText });
-                        toast('success', 'Reporte enviado', 'El docente recibió el reporte de error de transcripción.');
-                        cleanup();
-                    } catch (err) {
-                        const { toast } = await import('../../components/Toast.js');
-                        toast('error', 'Error', err?.message || 'No se pudo enviar el reporte.');
-                        submitBtn.disabled = false; submitBtn.textContent = 'Enviar';
-                    }
-                });
-                document.body.appendChild(overlay);
-                setTimeout(() => ta.focus(), 100);
+            const ta = overlay.querySelector('#transcript-correction');
+            const errEl = overlay.querySelector('#transcript-correction-error');
+            const submitBtn = overlay.querySelector('#transcript-correction-submit');
+
+            const cleanup = () => overlay.remove();
+            ta.addEventListener('input', () => { submitBtn.disabled = (ta.value || '').trim().length < 3; errEl.style.display = 'none'; });
+            overlay.querySelector('.dialog-close')?.addEventListener('click', cleanup);
+            overlay.querySelector('.dialog-cancel')?.addEventListener('click', cleanup);
+            overlay.addEventListener('click', (e) => { if (e.target === e.currentTarget) cleanup(); });
+
+            submitBtn.addEventListener('click', async () => {
+                const val = (ta.value || '').trim();
+                if (val.length < 3) {
+                    errEl.textContent = 'Debe tener al menos 3 caracteres.';
+                    errEl.style.display = 'block'; ta.focus(); return;
+                }
+                submitBtn.disabled = true; submitBtn.textContent = 'Enviando...';
+                try {
+                    const { toast } = await import('../../components/Toast.js');
+                    const messageId = `content-${Date.now()}`;
+                    const tramoRef = tramo ? `${tramo.etiqueta} «${tramo.texto}»` : 'sin coincidencia en los tramos visibles';
+                    const issueDetail = surface.derivado === 'Transcripción'
+                        ? `Error en transcripción: "${selectedText.substring(0, 200)}" — Corrección sugerida: ${val}`
+                        : `Derivado afectado: ${surface.derivado} (encuentro ${classId}) — Afirmación sin respaldo: "${selectedText.substring(0, 200)}" — Tramo del registro más parecido: ${tramoRef} — Corrección sugerida: ${val}`;
+                    await api.reportChatIssue({ messageId, subjectId, issueDetail, question: '', answer: selectedText });
+                    toast('success', 'Reporte enviado', surface.success);
+                    cleanup();
+                } catch (err) {
+                    const { toast } = await import('../../components/Toast.js');
+                    toast('error', 'Error', err?.message || 'No se pudo enviar el reporte.');
+                    submitBtn.disabled = false; submitBtn.textContent = 'Enviar';
+                }
             });
-            document.body.appendChild(toolbar);
-        }
+            document.body.appendChild(overlay);
+            setTimeout(() => ta.focus(), 100);
+        });
+        document.body.appendChild(toolbar);
     };
+
     document.addEventListener('selectionchange', onSelectionChange);
 }
