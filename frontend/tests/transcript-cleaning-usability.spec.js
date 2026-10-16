@@ -32,7 +32,11 @@ test('teacher transcript upload accepts .srt and starts processing flow', async 
     });
   });
 
-  await page.route('**/api/ingest-material', async (route) => {
+  // El patrón tiene que tolerar la cadena de consulta: en el servidor de
+  // desarrollo apiFetch agrega ?_mock_role=...&_mock_uid=..., y un glob sin
+  // comodín final no coincide, con lo cual la petición se iba a la red y la
+  // prueba terminaba ejercitando el fallback falso que se eliminó en #386.
+  await page.route(/\/api\/ingest-material(\?|$)/, async (route) => {
     await route.fulfill({
       status: 202,
       contentType: 'application/json',
