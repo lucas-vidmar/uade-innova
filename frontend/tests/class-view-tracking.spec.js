@@ -62,7 +62,6 @@ test.describe('Class View Tracking', () => {
       sessionStorage.setItem('edu_logged_in', 'true');
       sessionStorage.setItem('edu_consent_accepted', 'true');
       sessionStorage.setItem('edu_ai_consent_accepted', 'true');
-      localStorage.setItem('onboarding-student-completed', 'true');
     });
 
     await page.route('**/api/subjects', async route => {
