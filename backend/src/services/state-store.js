@@ -1,5 +1,6 @@
 import { getTableClient } from './storage.js';
 import { CONFIG } from '../config.js';
+import { isPublished, normalizePublicationState, resolveClassPublicationState } from './publication-state.js';
 
 const MATERIALS_TABLE = CONFIG.tables.materials;
 const CLASSES_TABLE = CONFIG.tables.classes;
@@ -80,13 +81,20 @@ function toMaterialEntity(material) {
 }
 
 function toClassEntity(subjectId, classData) {
+  const publicationState = resolveClassPublicationState(classData);
   return compactObject({
     partitionKey: subjectId,
     rowKey: classData.id,
     title: classData.title,
     date: classData.date,
     topics: JSON.stringify(normalizeStringArray(classData.topics)),
-    summaryReady: classData.summaryReady === true,
+    // #428: el estado de publicación es el único dato real de visibilidad;
+    // `summaryReady` es su espejo derivado para el contrato heredado.
+    publicationState,
+    publicationChangedBy: classData.publicationChangedBy,
+    publicationChangedAt: classData.publicationChangedAt,
+    publicationChangedReason: classData.publicationChangedReason,
+    summaryReady: isPublished(publicationState),
     professorIds: JSON.stringify(normalizeStringArray(classData.professorIds)),
     studentIds: JSON.stringify(normalizeStringArray(classData.studentIds)),
   });
@@ -115,13 +123,19 @@ function fromMaterialEntity(entity) {
 }
 
 function fromClassEntity(entity) {
+  // #428: `summaryReady` heredado (sin publicationState) se interpreta como publicado.
+  const publicationState = normalizePublicationState(entity.publicationState, entity.summaryReady === true);
   return {
     id: entity.rowKey,
     subjectId: entity.partitionKey,
     title: entity.title,
     date: entity.date,
     topics: normalizeStringArray(entity.topics),
-    summaryReady: entity.summaryReady === true,
+    publicationState,
+    publicationChangedBy: entity.publicationChangedBy,
+    publicationChangedAt: entity.publicationChangedAt,
+    publicationChangedReason: entity.publicationChangedReason,
+    summaryReady: isPublished(publicationState),
     professorIds: normalizeStringArray(entity.professorIds),
     studentIds: normalizeStringArray(entity.studentIds),
   };
@@ -252,7 +266,19 @@ export async function replaceClassesForSubject(subjectId, classes) {
   for (const classData of classes) {
     if (!classData?.id) continue;
     incomingIds.add(classData.id);
-    const entity = toClassEntity(subjectId, classData);
+    const previous = existingById.get(classData.id);
+    // #428: guardar la lista de clases no publica ni retira. El estado sólo lo
+    // cambia la acción explícita de publicación, así que acá se conserva el que
+    // ya estaba guardado en lugar de tomar el del payload.
+    const entity = toClassEntity(subjectId, {
+      ...classData,
+      publicationState: previous
+        ? normalizePublicationState(previous.publicationState, previous.summaryReady === true)
+        : undefined,
+      publicationChangedBy: previous?.publicationChangedBy,
+      publicationChangedAt: previous?.publicationChangedAt,
+      publicationChangedReason: previous?.publicationChangedReason,
+    });
     await client.upsertEntity(entity, 'Replace');
   }
 
@@ -261,6 +287,66 @@ export async function replaceClassesForSubject(subjectId, classes) {
       await client.deleteEntity(entity.partitionKey, entity.rowKey);
     }
   }
+}
+
+/**
+ * #428 — Único camino de escritura del estado de publicación de una clase.
+ * Con `Merge` conserva el resto de la fila; si la clase sólo existía en el blob
+ * heredado, crea la fila completa a partir de los datos que ya se conocen.
+ */
+export async function upsertClassPublicationState(subjectId, classId, {
+  publicationState,
+  by,
+  at,
+  reason,
+  classData,
+} = {}) {
+  if (!subjectId || !classId) {
+    throw new Error('upsertClassPublicationState requires subjectId and classId');
+  }
+
+  const state = normalizePublicationState(publicationState);
+  await ensureTable(CLASSES_TABLE);
+  const client = getTableClient(CLASSES_TABLE);
+
+  let exists = true;
+  try {
+    await client.getEntity(subjectId, classId);
+  } catch {
+    exists = false;
+  }
+
+  const publicationFields = {
+    partitionKey: subjectId,
+    rowKey: classId,
+    publicationState: state,
+    publicationChangedBy: by,
+    publicationChangedAt: at,
+    publicationChangedReason: reason,
+    summaryReady: isPublished(state),
+  };
+
+  const entity = exists
+    ? compactObject(publicationFields)
+    : toClassEntity(subjectId, {
+        ...(classData || { id: classId }),
+        publicationState: state,
+        publicationChangedBy: by,
+        publicationChangedAt: at,
+        publicationChangedReason: reason,
+      });
+
+  await client.upsertEntity(entity, exists ? 'Merge' : 'Replace');
+
+  return {
+    subjectId,
+    classId,
+    publicationState: state,
+    summaryReady: isPublished(state),
+    publicationChangedBy: by,
+    publicationChangedAt: at,
+    publicationChangedReason: reason,
+  };
 }
 
 export async function listClassesBySubject(subjectId) {

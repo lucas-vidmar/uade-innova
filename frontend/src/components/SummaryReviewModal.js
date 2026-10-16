@@ -300,7 +300,9 @@ export function createSummaryReviewModal(classId, className, subjectId, onSaved)
                 api.saveClassSummary(classId, {
                     subjectId,
                     summary: getSummaryValue(),
-                    validated,
+                    // #428: publicar es un pedido explícito de estado. Guardar el
+                    // contenido ya no mueve la visibilidad por sí solo.
+                    publicationState: validated ? 'publicado' : undefined,
                     summarySource: opts.summarySource,
                     suitable: opts.suitable,
                 }),
@@ -312,7 +314,6 @@ export function createSummaryReviewModal(classId, className, subjectId, onSaved)
                 promises.push(api.saveClassAudioScript(classId, {
                     subjectId,
                     script: podcastScript,
-                    validated
                 }));
             }
 

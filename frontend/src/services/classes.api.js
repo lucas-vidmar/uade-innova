@@ -101,6 +101,25 @@ export async function saveClassSummary(classId, data) {
     return res.json();
 }
 
+/**
+ * #428: única acción que mueve la visibilidad del alumnado. `state` es uno de
+ * `borrador | pendiente_de_aval | publicado` y el servidor registra quién, cuándo
+ * y por qué.
+ */
+export async function setClassPublicationState(classId, { subjectId, state, reason } = {}) {
+    const res = await apiFetch(`${BASE_URL}/class-summary/${classId}/publication`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subjectId, state, reason }),
+    });
+    if (!res.ok) {
+        let message = `Error ${res.status}: no se pudo cambiar el estado de publicación`;
+        try { const err = await res.json(); if (err?.error) message = err.error; } catch {}
+        throw new Error(message);
+    }
+    return res.json();
+}
+
 export async function publishClassSummaryNow(classId, subjectId) {
     const res = await apiFetch(`${BASE_URL}/class-summary/${classId}/publish-now?subjectId=${encodeURIComponent(subjectId)}`, {
         method: 'POST',

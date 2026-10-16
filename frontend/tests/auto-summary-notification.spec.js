@@ -98,7 +98,9 @@ test('teacher publish triggers immediate notification dispatch and student sees 
       date: '2026-04-09',
       topics: ['Hexagonal', 'Ports & Adapters'],
       materials: [],
-      summaryReady: true,
+      // #428: el estado explícito reemplaza a `summaryReady` como dato propio.
+      publicationState: 'borrador',
+      summaryReady: false,
       studentIds: ['alu-001'],
     },
   ];
@@ -168,6 +170,27 @@ test('teacher publish triggers immediate notification dispatch and student sees 
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
 
+  // #428: publicar es un pedido explícito de estado y el aviso lo dispara el
+  // servidor como consecuencia de ese estado, no el cliente.
+  let publicationRequest = null;
+  await page.route('**/api/class-summary/class-03/publication', async (route) => {
+    publicationRequest = route.request().postDataJSON();
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        changed: true,
+        subjectId: 'arq-software-2026',
+        classId: 'class-03',
+        previousState: 'borrador',
+        publicationState: 'publicado',
+        summaryReady: true,
+        changedBy: 'prof01@uade.edu.ar',
+        changedAt: '2026-10-16T12:00:00.000Z',
+      }),
+    });
+  });
+
   await page.route('**/api/chat-history?**', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
@@ -178,14 +201,17 @@ test('teacher publish triggers immediate notification dispatch and student sees 
 
   await page.goto('/#/teacher/class/class-03');
 
+  await expect(page.locator('#publication-state-badge')).toHaveAttribute('data-state', 'borrador');
   await expect(page.locator('#btn-approve')).toBeVisible();
   await page.locator('#btn-approve').click();
 
   await page.waitForTimeout(800);
 
-  expect(dispatchRequest).not.toBeNull();
-  expect(dispatchRequest.subjectId).toBe('arq-software-2026');
-  expect(dispatchRequest.classId).toBe('class-03');
+  // #428: publicar pide el estado explícito; el aviso al alumnado es consecuencia
+  // de ese estado en el servidor y nombra a quien avaló.
+  expect(publicationRequest).not.toBeNull();
+  expect(publicationRequest.state).toBe('publicado');
+  expect(publicationRequest.subjectId).toBe('arq-software-2026');
 
   // Switch to student and verify the notification appears in the notification center
   await page.evaluate(() => {

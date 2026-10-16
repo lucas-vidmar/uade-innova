@@ -52,7 +52,19 @@ export async function renderClassEditor(container) {
 
         const sectionsEnabled = classInfo.sectionsEnabled || { summary: true, map: true, podcast: true };
         let dirty = false;
-        let saveStatus = classInfo.summaryReady ? 'published' : 'saved';
+        // #428: el estado de publicación es un dato único y explícito. La clase y
+        // cada derivado lo comparten, así que lo que el docente ve acá es exactamente
+        // lo que el alumnado puede abrir.
+        let publicationState = classInfo.publicationState
+            || (classInfo.summaryReady ? 'publicado' : 'borrador');
+        let publicationChangedBy = classInfo.publicationChangedBy || '';
+        let publicationChangedAt = classInfo.publicationChangedAt || '';
+        let publicationHistory = Array.isArray(summaryData?.publicationHistory) ? summaryData.publicationHistory : [];
+        const derivedStates = {
+            summary: summaryData?.publicationState || publicationState,
+            map: mapData?.publicationState || publicationState,
+            podcast: audioScriptData?.publicationState || publicationState,
+        };
 
         const rawSummary = summaryData?.summary?.content || summaryData?.summary || '';
         const initialMapCode = extractMermaidCode(mapData?.mapCode);
@@ -193,6 +205,8 @@ export async function renderClassEditor(container) {
                         </div>
                     </div>
 
+                    ${publicationBanner()}
+
                     <div class="tab-bar" style="display:flex; gap:2px; margin-bottom:var(--space-4); background:var(--color-bg-alt); border-radius:var(--radius-md) var(--radius-md) 0 0; overflow:hidden;">
                         <button class="editor-tab ${activeTab === 'summary' ? 'active' : ''}" data-tab="summary" style="flex:1; padding:12px 16px; border:none; background:${activeTab === 'summary' ? 'var(--color-surface)' : 'transparent'}; cursor:pointer; font-weight:${activeTab === 'summary' ? '700' : '500'}; font-size:0.9rem; color:${activeTab === 'summary' ? 'var(--color-text-primary)' : 'var(--color-text-muted)'}; transition:all 0.15s; border-bottom:${activeTab === 'summary' ? '2px solid var(--color-primary)' : '2px solid transparent'};">
                             📝 Resumen ${sectionsEnabled.summary ? '' : '🚫'}
@@ -211,10 +225,12 @@ export async function renderClassEditor(container) {
                         ${activeTab === 'podcast' ? renderPodcastTab() : ''}
                     </div>
 
-                    <div style="display:flex; justify-content:flex-end; align-items:center; margin-top:var(--space-8); padding-top:var(--space-6); border-top:1px solid var(--color-border); gap:12px;">
-                        <button class="btn btn-ghost" id="btn-publish-now" title="Disparar la notificación de 'resumen publicado' a los alumnos ahora (útil para clases pasadas)" style="color:var(--color-primary)">📣 Publicar ahora</button>
-                        <button class="btn btn-secondary" id="btn-save-draft">Guardar Borrador</button>
-                        <button class="btn btn-primary" id="btn-approve">Aprobar y Publicar</button>
+                    <div style="display:flex; justify-content:flex-end; align-items:center; margin-top:var(--space-8); padding-top:var(--space-6); border-top:1px solid var(--color-border); gap:12px; flex-wrap:wrap;">
+                        ${publicationState === 'publicado' ? '<button class="btn btn-ghost" id="btn-publish-now" title="Volver a disparar el aviso de resumen publicado a los alumnos (útil para clases pasadas)" style="color:var(--color-primary)">📣 Reenviar aviso</button>' : ''}
+                        <button class="btn btn-ghost" id="btn-send-review" title="Marca el contenido como listo para que lo avale quien corresponda">🕒 Enviar a revisión</button>
+                        <button class="btn btn-ghost" id="btn-retract" title="Retira la clase de la unidad sin borrar el contenido">⏪ Pasar a borrador</button>
+                        <button class="btn btn-secondary" id="btn-save-draft" title="Guarda el contenido sin cambiar la visibilidad">Guardar cambios</button>
+                        <button class="btn btn-primary" id="btn-approve">✅ Aprobar y Publicar</button>
                     </div>
                 </div>
             `;
@@ -228,10 +244,47 @@ export async function renderClassEditor(container) {
 
         function setDirty() { dirty = true; render(); }
 
+        const PUBLICATION_LABELS = {
+            borrador: '📝 Borrador',
+            pendiente_de_aval: '🕒 Pendiente de aval',
+            publicado: '✅ Publicado',
+        };
+
+        const PUBLICATION_DESCRIPTIONS = {
+            borrador: 'No visible para el alumnado.',
+            pendiente_de_aval: 'No visible para el alumnado: esperando el aval.',
+            publicado: 'Visible para el alumnado de la unidad.',
+        };
+
         function statusBadge() {
             if (dirty) return '<span class="badge badge-error" style="background:var(--color-error);color:white;">⚠️ Cambios no guardados</span>';
-            if (saveStatus === 'published') return '<span class="badge badge-success">✅ Publicado</span>';
-            return '<span class="badge badge-info">💾 Guardado</span>';
+            const cls = publicationState === 'publicado' ? 'badge-success' : (publicationState === 'pendiente_de_aval' ? 'badge-info' : 'badge-neutral');
+            return `<span class="badge ${cls}" id="publication-state-badge" data-state="${publicationState}">${PUBLICATION_LABELS[publicationState] || publicationState}</span>`;
+        }
+
+        function publicationBanner() {
+            const when = publicationChangedAt ? new Date(publicationChangedAt).toLocaleString('es-AR') : '';
+            const who = publicationChangedBy ? ` por ${publicationChangedBy}` : '';
+            const trace = publicationState === 'borrador' && !who ? '' : `${who}${when ? ` el ${when}` : ''}`;
+            const latest = publicationHistory.at(-1);
+            return `
+                <div class="card" id="publication-state-panel" data-state="${publicationState}" style="margin-bottom:var(--space-4);padding:var(--space-3) var(--space-4);border-left:4px solid var(--color-primary);">
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+                        <div>
+                            <strong style="font-size:0.9rem;">Estado de publicación: ${PUBLICATION_LABELS[publicationState] || publicationState}</strong>
+                            <p style="margin:4px 0 0;font-size:0.8rem;color:var(--color-text-secondary);">${PUBLICATION_DESCRIPTIONS[publicationState] || ''}${trace ? ` Registrado${trace}.` : ''}</p>
+                            ${latest?.reason ? `<p style="margin:4px 0 0;font-size:0.8rem;color:var(--color-text-secondary);">Motivo del último cambio: ${latest.reason}</p>` : ''}
+                        </div>
+                        <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--color-text-secondary);">
+                            Motivo (opcional)
+                            <input type="text" id="publication-reason" class="form-input" style="width:220px;font-size:0.8rem;padding:4px 8px;" placeholder="por qué cambia el estado">
+                        </label>
+                    </div>
+                    <p style="margin:8px 0 0;font-size:0.78rem;color:var(--color-text-muted);">
+                        Derivados: resumen ${PUBLICATION_LABELS[derivedStates.summary] || derivedStates.summary} · mapa ${PUBLICATION_LABELS[derivedStates.map] || derivedStates.map} · podcast ${PUBLICATION_LABELS[derivedStates.podcast] || derivedStates.podcast}
+                    </p>
+                </div>
+            `;
         }
 
         function sectionToggleHTML(sectionKey) {
@@ -439,12 +492,19 @@ export async function renderClassEditor(container) {
             const s = document.getElementById('btn-save-draft');
             const a = document.getElementById('btn-approve');
             const p = document.getElementById('btn-publish-now');
-            if (s) s.onclick = () => saveToDB(false);
-            if (a) a.onclick = () => saveToDB(true);
+            const rev = document.getElementById('btn-send-review');
+            const ret = document.getElementById('btn-retract');
+            // #428: guardar el contenido y cambiar la visibilidad son dos acciones
+            // distintas. Antes "Guardar Borrador" retiraba la clase sin decirlo y
+            // "Aprobar" la publicaba, con el estado repartido en dos lugares.
+            if (s) s.onclick = () => saveContent();
+            if (a) a.onclick = () => saveContent({ publicationState: 'publicado' });
+            if (rev) rev.onclick = () => changePublicationState('pendiente_de_aval');
+            if (ret) ret.onclick = () => changePublicationState('borrador');
             if (p) {
                 p.onclick = async () => {
                     p.disabled = true;
-                    p.textContent = '📣 Publicando...';
+                    p.textContent = '📣 Enviando...';
                     try {
                         await api.publishClassSummaryNow(classId, subjectId);
                         toast('success', 'Publicado', 'La notificación del resumen fue enviada a los alumnos.');
@@ -452,9 +512,61 @@ export async function renderClassEditor(container) {
                         toast('error', 'Error', e.message || 'No se pudo publicar ahora.');
                     } finally {
                         p.disabled = false;
-                        p.textContent = '📣 Publicar ahora';
+                        p.textContent = '📣 Reenviar aviso';
                     }
                 };
+            }
+        }
+
+        function readPublicationReason() {
+            const el = document.getElementById('publication-reason');
+            return el?.value?.trim() || undefined;
+        }
+
+        function applyPublicationResult(result) {
+            if (!result) return;
+            publicationState = result.publicationState || publicationState;
+            publicationChangedBy = result.changedBy || publicationChangedBy;
+            publicationChangedAt = result.changedAt || publicationChangedAt;
+            if (result.reason || (result.changed && publicationState === 'borrador')) {
+                publicationHistory = [...publicationHistory, {
+                    from: result.previousState,
+                    to: result.publicationState,
+                    by: result.changedBy,
+                    at: result.changedAt,
+                    reason: result.reason,
+                }].slice(-20);
+            }
+            // La clase y sus derivados comparten el estado: el servidor los escribió juntos.
+            derivedStates.summary = publicationState;
+            derivedStates.map = publicationState;
+            derivedStates.podcast = publicationState;
+            podcastValidated = publicationState === 'publicado';
+        }
+
+        async function changePublicationState(state) {
+            const buttons = ['btn-approve', 'btn-save-draft', 'btn-send-review', 'btn-retract']
+                .map((id) => document.getElementById(id)).filter(Boolean);
+            buttons.forEach((b) => { b.disabled = true; });
+            try {
+                const result = await api.setClassPublicationState(classId, {
+                    subjectId,
+                    state,
+                    reason: readPublicationReason(),
+                });
+                applyPublicationResult(result);
+                dirty = false;
+                render();
+                if (state === 'publicado') {
+                    toast('success', 'Publicado', 'El contenido ya es visible para los alumnos.');
+                } else if (state === 'pendiente_de_aval') {
+                    toast('success', 'En revisión', 'La clase quedó pendiente de aval: el alumnado todavía no la ve.');
+                } else {
+                    toast('success', 'Retirado de la unidad', 'La clase dejó de estar disponible para los alumnos. El contenido no se borró.');
+                }
+            } catch (e) {
+                toast('error', 'Error', e.message || 'No se pudo cambiar el estado de publicación.');
+                render();
             }
         }
 
@@ -505,7 +617,10 @@ export async function renderClassEditor(container) {
         }
 
         // ── Save to DB ──
-        async function saveToDB(validated) {
+        // #428: guarda el contenido y, si el docente pidió publicar, mueve el estado
+        // con la acción explícita. El aviso al alumnado lo emite el servidor como
+        // consecuencia del estado publicado, así que el cliente no lo dispara.
+        async function saveContent({ publicationState: requestedState } = {}) {
             const btnSaveDraft = document.getElementById('btn-save-draft');
             const btnApprove = document.getElementById('btn-approve');
             try {
@@ -514,66 +629,48 @@ export async function renderClassEditor(container) {
 
                 saveCurrentTabToLocal();
 
-                const promises = [
-                    api.saveClassSummary(classId, { subjectId, summary: localState.summary, validated }),
+                await Promise.all([
+                    api.saveClassSummary(classId, { subjectId, summary: localState.summary }),
                     api.saveClassMap ? api.saveClassMap(classId, { subjectId, mapCode: localState.map || '' }) : Promise.resolve(),
-                ];
+                    localState.podcast?.trim()
+                        ? api.saveClassAudioScript(classId, {
+                            subjectId,
+                            script: localState.podcast,
+                            // #428: el audio del podcast se genera al publicar; el estado
+                            // de la clase decide si el alumnado lo oye.
+                            generateAudio: requestedState === 'publicado' || publicationState === 'publicado',
+                        })
+                        : Promise.resolve(),
+                ]);
 
-                    if (localState.podcast?.trim()) {
-                        promises.push(api.saveClassAudioScript(classId, { subjectId, script: localState.podcast, validated }));
-                    }
-
-                    await Promise.all(promises);
-
-                    if (localState.podcast?.trim() && validated) {
-                        podcastValidated = true;
-                        const audioCheck = await api.getClassAudioScript(classId, subjectId);
-                        if (audioCheck?.ttsGeneratedAt) {
-                            podcastTtsGenerated = true;
-                        }
-                    }
-
-                    const classes = await api.getClasses(subjectId);
-                    const idx = classes.findIndex(c => c.id === classId);
-                    // #425: el estado de publicación de la clase sigue al aval del
-                    // contenido, en las dos direcciones. Guardar un borrador retira la
-                    // clase de la unidad; aprobar la publica. Antes sólo se encendía.
-                    let retirado = false;
-                    if (idx >= 0) {
-                        const estabaPublicada = classes[idx].summaryReady === true;
-                        classes[idx].sectionsEnabled = { ...sectionsEnabled };
-                        classes[idx].summaryReady = validated === true;
-                        retirado = estabaPublicada && !validated;
-                        if (validated) {
-                            const audioScript = await api.getClassAudioScript(classId, subjectId);
-                            if (audioScript?.script) {
-                                classes[idx].audioScriptReady = audioScript.validated && !!audioScript.ttsGeneratedAt;
-                            }
-                        }
-                        await api.saveClasses(subjectId, classes);
-                    }
-
-                    dirty = false;
-                    saveStatus = validated ? 'published' : 'saved';
-                    render();
-
-                if (retirado) {
-                    toast('success', 'Retirado de la unidad', 'La clase dejó de estar disponible para los alumnos. El contenido quedó como borrador.');
-                } else {
-                    toast('success', validated ? 'Publicado' : 'Guardado', validated ? 'El contenido ya es visible para los alumnos.' : 'Cambios guardados como borrador.');
+                const classes = await api.getClasses(subjectId);
+                const idx = classes.findIndex(c => c.id === classId);
+                if (idx >= 0) {
+                    // #428: `sectionsEnabled` sí es del cliente; el estado de publicación no.
+                    classes[idx].sectionsEnabled = { ...sectionsEnabled };
+                    await api.saveClasses(subjectId, classes);
                 }
 
-                if (validated) {
-                    api.dispatchClassPublishNotification({ subjectId, classId }).catch((err) => {
-                        console.warn('[ClassEditor] Publish notification dispatch failed (non-critical):', err?.message);
-                    });
-                    window.location.hash = backHash;
+                dirty = false;
+                render();
+
+                if (requestedState) {
+                    await changePublicationState(requestedState);
+                    if (requestedState === 'publicado') {
+                        const audioCheck = await api.getClassAudioScript(classId, subjectId);
+                        podcastTtsGenerated = !!audioCheck?.ttsGeneratedAt;
+                        window.location.hash = backHash;
+                    }
+                } else {
+                    toast('success', 'Guardado', 'Cambios guardados sin cambiar quién puede ver la clase.');
                 }
             } catch (e) {
-                toast('error', 'Error', 'No se pudo guardar el contenido.');
+                toast('error', 'Error', e.message || 'No se pudo guardar el contenido.');
             } finally {
-                if (btnSaveDraft) btnSaveDraft.disabled = false;
-                if (btnApprove) btnApprove.disabled = false;
+                const s = document.getElementById('btn-save-draft');
+                const a = document.getElementById('btn-approve');
+                if (s) s.disabled = false;
+                if (a) a.disabled = false;
             }
         }
 

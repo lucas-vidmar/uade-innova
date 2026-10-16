@@ -13,7 +13,7 @@ import {
 } from './subjects.api.js';
 import {
     getClasses, saveClasses, saveClass, deleteClass,
-    getClassSummary, saveClassSummary, publishClassSummaryNow, getClassAudioUrl,
+    getClassSummary, saveClassSummary, setClassPublicationState, publishClassSummaryNow, getClassAudioUrl,
     getClassMap, saveClassMap, getClassTimeline, saveClassTimeline,
     generateClassAssets,
     getClassAudioScript, saveClassAudioScript,
@@ -96,7 +96,7 @@ export const api = {
     getSubjects, saveSubject, deleteSubject,
 
     getClasses, saveClasses, saveClass, deleteClass,
-    getClassSummary, saveClassSummary, publishClassSummaryNow, getClassAudioUrl,
+    getClassSummary, saveClassSummary, setClassPublicationState, publishClassSummaryNow, getClassAudioUrl,
     getClassMap, saveClassMap, getClassTimeline, saveClassTimeline,
     generateClassAssets,
     getClassAudioScript, saveClassAudioScript,

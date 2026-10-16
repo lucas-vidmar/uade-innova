@@ -172,7 +172,12 @@ export async function renderClassDetail(container) {
         // Track class view (fire-and-forget)
         api.trackClassView(classId, subjectId);
 
-        if (!classInfo.summaryReady) {
+        // #428: el alumnado sólo abre lo publicado. El estado explícito manda y
+        // `summaryReady` es su espejo, así que se mira el estado cuando está.
+        const classPublished = classInfo.publicationState
+            ? classInfo.publicationState === 'publicado'
+            : !!classInfo.summaryReady;
+        if (!classPublished) {
             container.innerHTML = `
                 <div class="empty-state" style="padding:60px 40px;text-align:center">
                     <div style="font-size:48px;margin-bottom:16px">🔒</div>
