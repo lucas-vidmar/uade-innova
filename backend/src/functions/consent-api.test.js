@@ -8,6 +8,14 @@ const authUtilsMocks = {
     getAuthenticatedUser: mock.fn(() => null),
     // Mirrors the real resolveIdentityKey: session identity first, then headers.
     resolveIdentityKey: mock.fn((request, context) => context?.user?.userId || request.headers.get('x-edu-uid') || 'pilot-user'),
+    // Mirrors the real hasResolvedIdentity: nobody without a real identity (#434).
+    hasResolvedIdentity: mock.fn((user) => {
+        if (!user) return false;
+        const role = user.role;
+        if (!role || role === 'Anonymous' || role === 'Denied') return false;
+        const id = user.userId || user.id;
+        return Boolean(id) && id !== 'anonymous' && id !== 'pilot-user';
+    }),
 };
 
 let consentStore = {};
@@ -52,8 +60,13 @@ mock.module('@azure/functions', {
 
 await import('./consent-api.js');
 
-function makeContext() {
-    return { log: mock.fn(), error: mock.fn(), warn: mock.fn() };
+function makeContext(userId = 'alu-001') {
+    return { log: mock.fn(), error: mock.fn(), warn: mock.fn(), user: { userId, role: 'Alumno' } };
+}
+
+// #434: sin identidad resuelta no hay consentimiento que leer ni que registrar.
+function makeAnonymousContext() {
+    return { log: mock.fn(), error: mock.fn(), warn: mock.fn(), user: null };
 }
 
 function makeRequest(headers = {}, body = null) {
@@ -171,7 +184,7 @@ test('consent is keyed by session identity, not principal oid (#327)', async () 
     });
 
     try {
-        const ctx = makeContext();
+        const ctx = makeContext('alu-005');
         const postReq = makeRequest({ 'x-session-user': 'alu-005', 'content-type': 'application/json' }, { accepted: true });
         const postRes = await handlers['consent-post'](postReq, ctx);
         assert.strictEqual(postRes.status, 200);
@@ -180,10 +193,44 @@ test('consent is keyed by session identity, not principal oid (#327)', async () 
         assert.strictEqual(consentStore['alu-005:consent'].accepted, 'true');
         assert.ok(!consentStore['pilot-user:consent'], 'consent must NOT collapse onto the pilot-user row');
 
-        const getRes = await handlers['consent-get'](makeRequest({ 'x-session-user': 'alu-005' }), makeContext());
+        const getRes = await handlers['consent-get'](makeRequest({ 'x-session-user': 'alu-005' }), makeContext('alu-005'));
         assert.strictEqual(getRes.status, 200);
         assert.strictEqual(JSON.parse(getRes.body).data.accepted, true);
     } finally {
         authUtilsMocks.parseClientPrincipal.mock.mockImplementation(defaultPrincipal);
+    }
+});
+
+// ── #434: sin sesión no hay consentimiento ──────────────────────
+test('#434: un cliente sin identidad no lee el consentimiento (401, sin tocar la fila compartida)', async () => {
+    // Sin token y sin principal (el caso real del piloto: mock auth cerrado).
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => null);
+    try {
+        // La fila compartida existe con accepted=true: no debe alcanzarle a nadie sin sesión.
+        consentStore['pilot-user:consent'] = {
+            partitionKey: 'pilot-user', rowKey: 'consent',
+            accepted: 'true', acceptedAt: '2026-09-18T05:40:07.254Z', version: 'v1',
+        };
+        const res = await handlers['consent-get'](makeRequest({}), makeAnonymousContext());
+        assert.strictEqual(res.status, 401, `esperaba 401, llegó ${res.status}: ${res.body}`);
+        assert.strictEqual(JSON.parse(res.body).error.code, 'AUTH_REQUIRED');
+        delete consentStore['pilot-user:consent'];
+    } finally {
+        authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ oid: 'test-user', userRoles: ['Alumno'] }));
+    }
+});
+
+test('#434: un cliente sin identidad no escribe el consentimiento (401, sin tocar la fila compartida)', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => null);
+    try {
+        const res = await handlers['consent-post'](
+            makeRequest({ 'content-type': 'application/json' }, { accepted: true }),
+            makeAnonymousContext()
+        );
+        assert.strictEqual(res.status, 401, `esperaba 401, llegó ${res.status}: ${res.body}`);
+        assert.strictEqual(JSON.parse(res.body).error.code, 'AUTH_REQUIRED');
+        assert.ok(!consentStore['pilot-user:consent'], 'no debe escribirse la fila compartida');
+    } finally {
+        authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ oid: 'test-user', userRoles: ['Alumno'] }));
     }
 });

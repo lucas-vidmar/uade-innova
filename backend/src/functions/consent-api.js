@@ -1,6 +1,6 @@
 import { app } from '@azure/functions';
 import { withAuth } from '../middleware/with-auth.js';
-import { validateFrontDoorId, resolveIdentityKey } from '../services/auth-utils.js';
+import { validateFrontDoorId, resolveIdentityKey, hasResolvedIdentity } from '../services/auth-utils.js';
 import { getTableClient } from '../services/storage.js';
 import { downloadFile } from '../services/storage.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
@@ -52,6 +52,17 @@ app.http('consent-get', {
         const correlationId = context.correlationId;
         if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
 
+        // No identity resolved → there is no consent to read and none to record.
+        // Serving the shared 'pilot-user' row here returned `accepted:true` to a
+        // caller without a session (#434).
+        if (!hasResolvedIdentity(context.user)) {
+            return jsonResponse(401, {
+                success: false,
+                error: { code: 'AUTH_REQUIRED', message: 'Se requiere autenticación para acceder al consentimiento.' },
+                meta: { timestamp: new Date().toISOString(), requestId: correlationId },
+            });
+        }
+
         // Single per-user identity (#327): session-token principals have no
         // oid, so key by the resolved session identity — never principal.oid.
         const userId = resolveIdentityKey(request, context);
@@ -97,6 +108,16 @@ app.http('consent-post', {
     handler: withCorrelation(withAuth(async (request, context) => {
         const correlationId = context.correlationId;
         if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
+
+        // Same guard as the GET (#434): an anonymous caller must not write a
+        // consent decision onto the shared 'pilot-user' row.
+        if (!hasResolvedIdentity(context.user)) {
+            return jsonResponse(401, {
+                success: false,
+                error: { code: 'AUTH_REQUIRED', message: 'Se requiere autenticación para registrar el consentimiento.' },
+                meta: { timestamp: new Date().toISOString(), requestId: correlationId },
+            });
+        }
 
         // Single per-user identity (#327): see GET handler above.
         const userId = resolveIdentityKey(request, context);

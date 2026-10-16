@@ -231,6 +231,31 @@ export function resolveIdentityKey(request, context) {
 }
 
 /**
+ * True when the request resolved to a real person.
+ *
+ * `withAuth()` only enforces identity when a `roles` list is passed, so handlers
+ * that need a person but do not pass roles must check this explicitly (#434):
+ * without it, an anonymous caller reaches the handler with
+ * `{ userId: 'anonymous', role: 'Anonymous' }` (`getAuthenticatedUser`) and the
+ * shared `'pilot-user'` storage key (`resolveIdentityKey`), and gets served the
+ * profile, the consent decision and the unit configuration of that shared row.
+ *
+ * Fail closed: no user, no role, the anonymous/denied pseudo-roles, or the
+ * shared fallback ids are all "nobody".
+ *
+ * @param {Object|null|undefined} user withAuth-resolved user (or getAuthenticatedUser result)
+ * @returns {boolean}
+ */
+export function hasResolvedIdentity(user) {
+  if (!user) return false;
+  const { role } = user;
+  if (!role || role === 'Anonymous' || role === 'Denied') return false;
+  const id = user.userId || user.id;
+  if (!id) return false;
+  return id !== 'anonymous' && id !== 'pilot-user';
+}
+
+/**
  * Checks whether a principal has at least one of the given roles.
  * @param {Object|null} principal The resolved principal object.
  * @param {string[]} roles Role names to test (e.g. ['Docente', 'Director']).

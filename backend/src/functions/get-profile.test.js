@@ -31,6 +31,14 @@ const authUtilsMocks = {
   getAuthenticatedUser: mock.fn(() => null),
   // Mirrors the real resolveIdentityKey: session identity first.
   resolveIdentityKey: mock.fn((request, context) => context?.user?.userId || 'pilot-user'),
+  // Mirrors the real hasResolvedIdentity: nobody without a real identity (#434).
+  hasResolvedIdentity: mock.fn((user) => {
+    if (!user) return false;
+    const role = user.role;
+    if (!role || role === 'Anonymous' || role === 'Denied') return false;
+    const id = user.userId || user.id;
+    return Boolean(id) && id !== 'anonymous' && id !== 'pilot-user';
+  }),
 };
 mock.module('../services/auth-utils.js', { namedExports: authUtilsMocks });
 mock.module('../services/telemetry.js', {
@@ -152,5 +160,24 @@ test('get-profile reads the session-identity row (#329)', async () => {
   const res = await handlers['get-profile']({}, context);
   assert.deepEqual(lastGetEntityArgs, ['Profiles', 'alu-009']);
   assert.equal(res.jsonBody.botTone, 'didactic');
+  entityToReturn = null;
+});
+
+// #434: sin identidad no hay fila que leer. Antes, un pedido anónimo recibía la
+// fila compartida 'pilot-user' (consentAccepted:true, botTone:'didactic'): el
+// perfil guardado de otra persona. El contrato se responde con los defaults.
+test('#434: un pedido sin identidad no lee el perfil guardado de la fila compartida', async () => {
+  entityToReturn = { theme: 'dark', consentAccepted: 'true', botTone: 'didactic' };
+  lastGetEntityArgs = null;
+  const context = makeContext();
+  context.user = { userId: 'anonymous', role: 'Anonymous', email: undefined, scope: undefined, principal: null };
+
+  const res = await handlers['get-profile']({}, context);
+  const body = res.jsonBody;
+
+  assert.equal(lastGetEntityArgs, null, 'no debe leer UserProfiles sin identidad resuelta');
+  assert.equal(body.consentAccepted, false, 'no debe exponer el consentimiento de la fila compartida');
+  assert.equal(body.botTone, 'formal', 'no debe exponer las preferencias de la fila compartida');
+  assert.equal(body.role, 'student');
   entityToReturn = null;
 });

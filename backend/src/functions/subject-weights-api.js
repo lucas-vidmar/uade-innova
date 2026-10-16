@@ -5,6 +5,12 @@ import { getEnrollment } from '../services/state-store.js';
 import { getSubjectWeights, upsertSubjectWeights, DEFAULT_WEIGHTS } from '../services/subject-weights.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
 
+// La ponderación de fuentes configura el acervo de una unidad: la lee quien la
+// enseña o quien conduce. El GET se servía sin roles y el handler no miraba la
+// identidad, así que un cliente sin sesión recibía la configuración vigente
+// (#434). Mismo alcance que el PUT de la misma ruta.
+const WEIGHTS_ROLES = ['Docente', 'Director', 'Admin'];
+
 app.http('subject-weights-get', {
     methods: ['GET'],
     authLevel: 'anonymous',
@@ -13,6 +19,22 @@ app.http('subject-weights-get', {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         const subjectId = request.params.subjectId;
         if (!subjectId) return { status: 400, body: JSON.stringify({ error: 'subjectId es requerido.' }) };
+
+        const principal = parseClientPrincipal(request);
+        const userRoles = principal?.userRoles || [];
+        const isDirectorOrAdmin = userRoles.includes('Director') || userRoles.includes('Admin');
+        const isDev = process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
+        if (!isDirectorOrAdmin && !isDev) {
+            const isTeacher = userRoles.includes('Docente');
+            if (!isTeacher) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Se requiere rol Docente, Director o Admin.' }) };
+            // Una docente alcanza la unidad en la que está asignada como docente.
+            const { userId } = getAuthenticatedUser(request);
+            const enrollment = await getEnrollment(subjectId, userId).catch(() => null);
+            if (!enrollment || enrollment.role !== 'teacher' || enrollment.status !== 'active') {
+                return { status: 403, body: JSON.stringify({ error: 'Forbidden - No estás asignado como docente de esta materia.' }) };
+            }
+        }
+
         try {
             const result = await getSubjectWeights(subjectId);
             return {
@@ -24,7 +46,7 @@ app.http('subject-weights-get', {
             context.error('[SubjectWeights] Error getting weights:', err);
             return { status: 500, body: JSON.stringify({ error: 'Error al obtener la configuración de pesos.' }) };
         }
-    }))
+    }, { roles: WEIGHTS_ROLES })),
 });
 
 app.http('subject-weights-put', {

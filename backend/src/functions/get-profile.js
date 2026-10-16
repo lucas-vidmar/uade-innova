@@ -1,6 +1,6 @@
 import { app } from '@azure/functions';
 import { withAuth } from '../middleware/with-auth.js';
-import { parseClientPrincipal, validateFrontDoorId, getAuthenticatedUser, resolveIdentityKey } from '../services/auth-utils.js';
+import { parseClientPrincipal, validateFrontDoorId, getAuthenticatedUser, resolveIdentityKey, hasResolvedIdentity } from '../services/auth-utils.js';
 import { toFrontendRole } from '../services/allowlist.js';
 import { trackUserLogin } from '../services/telemetry.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
@@ -22,8 +22,26 @@ app.http('get-profile', {
             }
             const principal = user?.principal || parseClientPrincipal(request);
 
+            const profileDefaults = {
+                theme: "light",
+                language: "es",
+                consentAccepted: false,
+                botTone: "formal",
+                botLength: "detailed",
+                includeSources: true
+            };
+
             // Single per-user identity (#329): same key save-profile writes.
             const userId = resolveIdentityKey(request, context);
+
+            // No identity resolved: there is no row to read. Answer the profile
+            // contract with the defaults and the legacy 'student' role so a
+            // principal whose role could not be classified is not locked out,
+            // but never read (or expose) the shared 'pilot-user' row that
+            // resolveIdentityKey falls back to (#434).
+            if (!hasResolvedIdentity(user)) {
+                return { jsonBody: { ...profileDefaults, role: 'student' } };
+            }
 
             // Emit UserLogin telemetry event for login-frequency analysis (Issue #69)
             if (principal) {
@@ -35,15 +53,6 @@ app.http('get-profile', {
 
             const { getTableClient } = await import('../services/storage.js');
             const tableClient = getTableClient(tableName);
-
-            const profileDefaults = {
-                theme: "light",
-                language: "es",
-                consentAccepted: false,
-                botTone: "formal",
-                botLength: "detailed",
-                includeSources: true
-            };
 
             const VALID_TONES = ['formal', 'didactic', 'concise'];
             const VALID_LENGTHS = ['concise', 'detailed'];
