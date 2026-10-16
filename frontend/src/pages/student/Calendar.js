@@ -29,6 +29,27 @@ export async function renderStudentCalendar(container) {
   let currentDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   let viewMode = 'month';
 
+  const renderDeadlineItem = (d) => `
+            <div class="class-list-item" style="padding:var(--space-3) var(--space-4)">
+              <div class="class-list-info">
+                <div class="class-list-title">${d.title}</div>
+                <div class="class-list-files">Vence ${new Date(d.dueDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}</div>
+              </div>
+              <span class="badge badge-warning">${d.notifyOnDayBefore ? 'Aviso previo' : 'Aviso el día'}</span>
+            </div>
+  `;
+
+  // fix #353: a date can carry a deadline without carrying a class, and a class
+  // day can carry deadlines not linked to that class. The panel must show all
+  // of the day's commitments, never claim there are none.
+  const deadlinesForDay = (dateStr) => deadlineMap[dateStr] || [];
+  const deadlinesForClass = (cls) => {
+    const byId = new Map();
+    deadlinesForDay(cls.date).forEach(d => byId.set(d.id, d));
+    deadlines.filter(d => d.classId === cls.id).forEach(d => byId.set(d.id, d));
+    return [...byId.values()];
+  };
+
   const showClassDetail = (cls) => {
     const existingOverlay = document.getElementById('class-detail-overlay');
     if (existingOverlay) existingOverlay.remove();
@@ -72,18 +93,10 @@ export async function renderStudentCalendar(container) {
         </a>
       </div>
 
-      ${deadlines.filter(d => d.classId === cls.id).length > 0 ? `
-        <div class="section-title" style="margin-top:var(--space-8)"><h2>Deadlines</h2><div class="line"></div></div>
+      ${deadlinesForClass(cls).length > 0 ? `
+        <div class="section-title" style="margin-top:var(--space-8)"><h2>Fechas comprometidas</h2><div class="line"></div></div>
         <div style="display:flex;flex-direction:column;gap:var(--space-3)">
-          ${deadlines.filter(d => d.classId === cls.id).map(d => `
-            <div class="class-list-item" style="padding:var(--space-3) var(--space-4)">
-              <div class="class-list-info">
-                <div class="class-list-title">${d.title}</div>
-                <div class="class-list-files">Vence ${new Date(d.dueDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}</div>
-              </div>
-              <span class="badge badge-warning">${d.notifyOnDayBefore ? 'Aviso previo' : 'Aviso el día'}</span>
-            </div>
-          `).join('')}
+          ${deadlinesForClass(cls).map(renderDeadlineItem).join('')}
         </div>
       ` : ''}
     `;
@@ -95,7 +108,7 @@ export async function renderStudentCalendar(container) {
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
   };
 
-  const showEmptyDay = (dateStr) => {
+  const showDayPanel = (dateStr) => {
     const overlay = document.createElement('div');
     overlay.className = 'slide-panel-overlay';
     overlay.id = 'class-detail-overlay';
@@ -103,15 +116,21 @@ export async function renderStudentCalendar(container) {
     const panel = document.createElement('div');
     panel.className = 'slide-panel';
     const d = new Date(dateStr + 'T12:00:00');
+    const dayDeadlines = deadlinesForDay(dateStr);
+    const heading = dayDeadlines.length === 0
+      ? 'Sin clase programada'
+      : (dayDeadlines.length === 1 ? 'Fecha comprometida' : 'Fechas comprometidas');
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:var(--space-6)">
         <div>
           <span class="badge badge-primary" style="margin-bottom:var(--space-2)">📅 ${d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
-          <h2 style="font-size:var(--font-size-lg);margin-top:var(--space-2)">Sin clase programada</h2>
+          <h2 style="font-size:var(--font-size-lg);margin-top:var(--space-2)">${heading}</h2>
         </div>
         <button class="btn btn-icon btn-ghost" id="close-panel">✕</button>
       </div>
-      <p style="color:var(--color-text-muted);font-size:var(--font-size-sm)">No hay actividades registradas para esta fecha.</p>
+      ${dayDeadlines.length > 0
+        ? `<div style="display:flex;flex-direction:column;gap:var(--space-3)">${dayDeadlines.map(renderDeadlineItem).join('')}</div>`
+        : `<p style="color:var(--color-text-muted);font-size:var(--font-size-sm)">No hay actividades registradas para esta fecha.</p>`}
     `;
 
     overlay.appendChild(panel);
@@ -312,7 +331,7 @@ export async function renderStudentCalendar(container) {
         if (cls) {
           showClassDetail(cls);
         } else {
-          showEmptyDay(dateStr);
+          showDayPanel(dateStr);
         }
       });
     });
