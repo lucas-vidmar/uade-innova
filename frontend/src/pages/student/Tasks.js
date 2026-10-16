@@ -50,7 +50,12 @@ export async function renderStudentTasks(container) {
             description: d.description || '',
             subjectId: d.subjectId,
             type: 'deadline',
-            weight: (d.weight || 0) * 100,
+            // El peso de una entrega ya viene en la misma escala porcentual
+            // (0–100) que usa el resto de la app —el docente lo carga como
+            // "Peso / Porcentaje" y el dashboard lo muestra sin escalar—, así
+            // que multiplicarlo por 100 acá lo mostraba como 1000%. Se usa el
+            // valor tal cual (UJ-34).
+            weight: d.weight || 0,
             dueDate: d.dueDate,
             status: 'pending',
             classIds: Array.isArray(d.classIds) && d.classIds.length > 0 ? d.classIds : (d.classId ? [d.classId] : []),
