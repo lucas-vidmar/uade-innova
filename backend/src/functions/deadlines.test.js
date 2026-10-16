@@ -138,3 +138,37 @@ test('mover la fecha conserva la anterior y el aviso nombra ambas (UJ-36)', asyn
     assert.ok(notif.message.includes(fmt('2026-05-15')), 'el aviso debe nombrar la fecha nueva');
     assert.ok(notif.message.includes('se superpone con el parcial'), 'el aviso debe incluir el motivo');
 });
+
+// Regresión introducida por el fix de UJ-36 (#421): el aviso de "cambio de fecha"
+// se construía siempre, y en un alta `existingDeadline` es undefined, así que
+// `${fmt(existingDeadline.dueDate)}` lanzaba un TypeError que el try/catch
+// silenciaba. Resultado: crear una fecha no generaba NINGÚN aviso. Este test
+// falla con el código anterior (no hay escritura de 'notifications').
+test('crear una fecha genera el aviso "Nueva tarea" (regresión #421)', async () => {
+    storageMocks.saveJson.mock.resetCalls();
+    storageMocks.loadJson.mock.mockImplementation(async () => []);
+
+    const response = await savedHandler(
+        {
+            json: async () => ({
+                id: 'd-new',
+                title: 'TP Nuevo',
+                subjectId: 'arq-software-2026',
+                classId: 'class-14',
+                dueDate: '2026-06-01',
+            }),
+        },
+        { log: mock.fn(), warn: mock.fn(), error: mock.fn() }
+    );
+
+    assert.strictEqual(response.status, 200);
+
+    const notifWrites = storageMocks.saveJson.mock.calls.filter((c) => c.arguments[0] === 'notifications');
+    assert.ok(notifWrites.length > 0, 'crear una fecha debe persistir su aviso');
+
+    const notifications = notifWrites[notifWrites.length - 1].arguments[2];
+    const notif = notifications.find((n) => n.id === 'notif-deadline-change-d-new');
+    assert.ok(notif, 'debe existir el aviso de la tarea nueva');
+    assert.strictEqual(notif.title, 'Nueva tarea: TP Nuevo');
+    assert.ok(notif.message.includes('TP Nuevo'), 'el aviso debe nombrar la tarea');
+});
