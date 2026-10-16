@@ -380,6 +380,7 @@ export async function renderClassDetail(container) {
         // ── Class detail tabs (Contenido / Autoevaluación) ──
         const contentPanel = container.querySelector('#class-tab-panel-content');
         const quizPanel = container.querySelector('#class-tab-panel-quiz');
+        const fabContainer = container.querySelector('.fab-container');
         const tabButtons = container.querySelectorAll('[data-class-tab]');
         let quizInited = false;
 
@@ -392,6 +393,11 @@ export async function renderClassDetail(container) {
             });
             if (contentPanel) contentPanel.hidden = isQuiz;
             if (quizPanel) quizPanel.hidden = !isQuiz;
+            // El FAB es fijo y cae justo sobre la fila «Siguiente / Ver resultados»
+            // de la práctica, que no se puede scrollear: con la pestaña de
+            // Autoevaluación abierta se oculta para dejar los botones alcanzables
+            // (el chat sigue a un clic en la barra lateral y en cada sección).
+            if (fabContainer) fabContainer.hidden = isQuiz;
             if (isQuiz && !quizInited) {
                 quizInited = true;
                 renderAutoevaluacion(quizPanel, {
