@@ -38,6 +38,19 @@ export async function renderDirectorDashboard(container) {
     const earlyAlertSummary = { ...defaultEarlyAlertSummary, ...(data.earlyAlertSummary || {}) };
     _kpiData = data;
 
+    // #419 (UJ-43): "Clases cargadas" y "Clases procesadas" informaban el mismo
+    // número (totalClasses) y la segunda métrica no distinguía nada. El conteo
+    // de procesadas sale del criterio acordado y se declara junto al número; si
+    // el servidor no lo informa, se dice que no es calculable en vez de repetir
+    // el total.
+    const processedClasses = Number.isFinite(Number(data.processedClasses)) ? Number(data.processedClasses) : null;
+    const processedClassesKnown = processedClasses !== null;
+    const processedClassesNotComputable = Number.isFinite(Number(data.processedClassesNotComputable))
+        ? Number(data.processedClassesNotComputable)
+        : 0;
+    const processedClassesCriteria = data.processedClassesCriteria
+        || 'Clase procesada: tiene al menos una síntesis o un mapa avalado por el docente. Una clase con material cargado pero sin derivado avalado cuenta como cargada, no como procesada.';
+
     container.innerHTML = `
     <!-- Export controls -->
     <div style="display:flex;justify-content:flex-end;gap:var(--space-3);margin-bottom:var(--space-4)" id="kpi-export-bar">
@@ -92,7 +105,10 @@ export async function renderDirectorDashboard(container) {
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Clases procesadas</div>
-        <div class="kpi-value">${data.totalClasses || 0}</div>
+        <div class="kpi-value">${processedClassesKnown ? processedClasses : '—'}</div>
+        <small id="kpi-classes-processed-criteria" style="display:block;margin-top:var(--space-2);font-size:11px;line-height:1.4;color:var(--color-text-secondary)">${escapeHtml(processedClassesCriteria)}</small>
+        ${processedClassesKnown ? '' : '<small style="display:block;margin-top:var(--space-1);font-size:11px;color:var(--color-warning)">El servidor no informa este conteo: no calculable.</small>'}
+        ${processedClassesNotComputable > 0 ? `<small style="display:block;margin-top:var(--space-1);font-size:11px;color:var(--color-text-muted)">${processedClassesNotComputable} clase(s) sin dato suficiente: no se cuentan.</small>` : ''}
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Adopción global</div>
@@ -521,7 +537,12 @@ function buildKpiCsv(data) {
   lines.push('seccion,metrica,valor');
   push('General','Usuarios activos (hoy)', data.dau || 0);
   push('General','Clases cargadas', data.totalClasses || 0);
-  push('General','Clases procesadas', data.totalClasses || 0);
+  // #419: cada tarjeta con su propio número, y el criterio declarado en el archivo.
+  push('General','Clases procesadas', Number.isFinite(Number(data.processedClasses)) ? Number(data.processedClasses) : 'no calculable');
+  if (Number(data.processedClassesNotComputable) > 0) {
+    push('General','Clases procesadas no calculables', Number(data.processedClassesNotComputable));
+  }
+  push('General','Criterio de clases procesadas', '"' + String(data.processedClassesCriteria || '').replace(/"/g, '""') + '"');
   push('General','Interacciones RAG', data.ragInteractions || 0);
   push('General','Adopcion global', (data.adoptionRate || 0) + '%');
   lines.push('');
@@ -630,7 +651,7 @@ function buildPrintHtml(data) {
   <div class="kpi-grid">
     <div class="kpi-item"><div class="kpi-value">${t(data.dau)}</div><div class="kpi-label">Usuarios activos (hoy)</div></div>
     <div class="kpi-item"><div class="kpi-value">${t(data.totalClasses)}</div><div class="kpi-label">Clases cargadas</div></div>
-    <div class="kpi-item"><div class="kpi-value">${t(data.totalClasses)}</div><div class="kpi-label">Clases procesadas</div></div>
+    <div class="kpi-item"><div class="kpi-value">${Number.isFinite(Number(data.processedClasses)) ? t(data.processedClasses) : 'no calculable'}</div><div class="kpi-label">Clases procesadas</div><div class="kpi-note">${t(data.processedClassesCriteria || '')}</div></div>
     <div class="kpi-item"><div class="kpi-value">${t(data.ragInteractions)}</div><div class="kpi-label">Interacciones RAG</div></div>
     <div class="kpi-item"><div class="kpi-value">${t(data.adoptionRate)}%</div><div class="kpi-label">Adopci&oacute;n global</div></div>
   </div>

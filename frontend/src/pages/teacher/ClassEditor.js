@@ -629,15 +629,14 @@ export async function renderClassEditor(container) {
 
                 saveCurrentTabToLocal();
 
+                const validated = requestedState === 'publicado' || (!requestedState && publicationState === 'publicado');
                 await Promise.all([
-                    api.saveClassSummary(classId, { subjectId, summary: localState.summary }),
-                    api.saveClassMap ? api.saveClassMap(classId, { subjectId, mapCode: localState.map || '' }) : Promise.resolve(),
+                    api.saveClassSummary(classId, { subjectId, summary: localState.summary, validated }),
+                    api.saveClassMap ? api.saveClassMap(classId, { subjectId, mapCode: localState.map || '', validated }) : Promise.resolve(),
                     localState.podcast?.trim()
                         ? api.saveClassAudioScript(classId, {
                             subjectId,
                             script: localState.podcast,
-                            // #428: el audio del podcast se genera al publicar; el estado
-                            // de la clase decide si el alumnado lo oye.
                             generateAudio: requestedState === 'publicado' || publicationState === 'publicado',
                         })
                         : Promise.resolve(),

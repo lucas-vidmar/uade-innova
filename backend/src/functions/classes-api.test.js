@@ -332,6 +332,45 @@ test('classes-api get-director-stats returns aggregate summary without student i
     assert.strictEqual(payload.name, undefined);
     assert.strictEqual(payload.studentId, undefined);
     assert.strictEqual(payload.subject, undefined);
+
+    // #419: el panel tiene que poder declarar el criterio del conteo.
+    assert.match(payload.processedClassesCriteria, /síntesis o un mapa avalado por el docente/);
+    assert.strictEqual(typeof payload.processedClasses, 'number');
+    assert.strictEqual(typeof payload.processedClassesNotComputable, 'number');
+});
+
+test('classes-api get-director-stats counts procesadas from approved derivatives, not from the class total (#419)', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: makeListEntitiesResult([
+            { partitionKey: 'arq-software-2026', rowKey: 'class-01', summaryReady: false },
+            { partitionKey: 'arq-software-2026', rowKey: 'class-02', summaryReady: false },
+            { partitionKey: 'arq-software-2026', rowKey: 'class-03', summaryReady: false },
+        ])
+    }));
+    storageMocks.listBlobs.mock.mockImplementation(async (container) => (container === 'class-summaries'
+        ? ['arq-software-2026/class-01.json', 'arq-software-2026/class-02.json']
+        : []));
+    storageMocks.loadJson.mock.mockImplementation(async (container, name) => {
+        if (name === 'arq-software-2026/class-01.json') return { classId: 'class-01', summary: 'Avalada', validated: true };
+        return { classId: 'class-02', summary: 'Borrador del docente', validated: false };
+    });
+
+    try {
+        const response = await handlers['get-director-stats']({ params: {}, query: new Map() }, { log: makeMockLog(), error: mock.fn() });
+        assert.strictEqual(response.status, 200);
+
+        const payload = JSON.parse(response.body);
+        assert.strictEqual(payload.totalClasses, 3, 'las tres clases están cargadas');
+        assert.strictEqual(payload.processedClasses, 1, 'sólo la clase con derivado avalado está procesada');
+        assert.strictEqual(payload.processedClassesNotComputable, 0);
+        assert.notStrictEqual(payload.processedClasses, payload.totalClasses);
+    } finally {
+        storageMocks.getTableClient.mock.mockImplementation(() => ({ listEntities: defaultListEntities }));
+        storageMocks.listBlobs.mock.mockImplementation(async () => []);
+        storageMocks.loadJson.mock.mockImplementation(async () => ({}));
+    }
 });
 
 test('classes-api get-director-stats computes adoption against real active student enrollments (#417)', async () => {

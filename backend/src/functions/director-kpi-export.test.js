@@ -43,6 +43,10 @@ function makeTableClient(tableName) {
 
 const storageMocks = {
     getTableClient: mock.fn((tableName) => makeTableClient(tableName)),
+    // #419: el conteo de clases procesadas lee los derivados (síntesis y mapas)
+    // para aplicar el criterio, así que el módulo necesita estas dos lecturas.
+    listBlobs: mock.fn(async () => []),
+    loadJson: mock.fn(async () => null),
 };
 
 const middlewareMocks = {

@@ -3,8 +3,7 @@ import { withAuth } from '../middleware/with-auth.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
 import { trackNotificationInteraction } from '../services/telemetry.js';
-import { getTableClient } from '../services/storage.js';
-import { CONFIG } from '../services/config.js';
+import { computeClassProcessingStats } from '../services/class-processing.js';
 import { logWarn } from '../services/log.js';
 
 const DIRECTOR_ROLES = ['Director'];
@@ -53,7 +52,12 @@ function buildCsv(data) {
 
   lines.push('seccion,metrica,valor');
   lines.push(`General,Usuarios activos (hoy),${toNum(d.dau)}`);
+  lines.push(`General,Clases cargadas,${toNum(d.classesLoaded)}`);
   lines.push(`General,Clases procesadas,${toNum(d.classesProcessed)}`);
+  if (toNum(d.classesNotComputable) > 0) {
+    lines.push(`General,Clases procesadas no calculables,${toNum(d.classesNotComputable)}`);
+  }
+  lines.push('General,Criterio de clases procesadas,' + csvCell(d.classesProcessedCriteria || ''));
   lines.push(`General,Interacciones RAG,${toNum(d.ragInteractions)}`);
   lines.push(`General,Adopcion global,${toNum(d.adoptionRate)}%`);
   lines.push(`General,Costo por alumno activo,$${toNum(d.costPerActiveStudent).toFixed(4)}`);
@@ -141,6 +145,7 @@ function buildHtml(data) {
   .kpi-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 14px; min-width: 140px; }
   .kpi-value { font-size: 16pt; font-weight: 700; color: #0077AB; }
   .kpi-label { font-size: 9pt; color: #64748b; }
+  .kpi-note { font-size: 7.5pt; color: #64748b; margin-top: 2px; max-width: 220px; }
   .footer { margin-top: 24px; font-size: 9pt; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 8px; }
 </style></head>
 <body>
@@ -150,7 +155,8 @@ function buildHtml(data) {
   <h2>M&eacute;tricas Generales</h2>
   <div class="kpi-grid">
     <div class="kpi-item"><div class="kpi-value">${t(d.dau)}</div><div class="kpi-label">Usuarios activos (hoy)</div></div>
-    <div class="kpi-item"><div class="kpi-value">${t(d.classesProcessed)}</div><div class="kpi-label">Clases procesadas</div></div>
+    <div class="kpi-item"><div class="kpi-value">${t(d.classesLoaded)}</div><div class="kpi-label">Clases cargadas</div></div>
+    <div class="kpi-item"><div class="kpi-value">${t(d.classesProcessed)}</div><div class="kpi-label">Clases procesadas</div><div class="kpi-note">${t(d.classesProcessedCriteria)}</div>${toNum(d.classesNotComputable) > 0 ? `<div class="kpi-note">${toNum(d.classesNotComputable)} sin dato suficiente: no calculables</div>` : ''}</div>
     <div class="kpi-item"><div class="kpi-value">${t(d.ragInteractions)}</div><div class="kpi-label">Interacciones RAG</div></div>
     <div class="kpi-item"><div class="kpi-value">${t(d.adoptionRate)}%</div><div class="kpi-label">Adopci&oacute;n global</div></div>
     <div class="kpi-item"><div class="kpi-value">$${num(d.costPerActiveStudent, 4)}</div><div class="kpi-label">Costo por alumno activo</div></div>
@@ -250,14 +256,15 @@ app.http('get-director-kpi-export', {
       const effectiveTotalCost = useAzureCost ? (azureCost.currentMonthSpend || 0) : (totals.totalCost || 0);
       const costPerActiveStudent = uniqueActiveUsers > 0 ? Number((effectiveTotalCost / uniqueActiveUsers).toFixed(6)) : 0;
 
-      let classesCount = 0;
+      // #419 (UJ-43): la exportación usaba el mismo conteo de filas de la tabla
+      // de clases para "Clases procesadas". Ahora usa el criterio compartido:
+      // cargadas = clases registradas; procesadas = con al menos un derivado
+      // avalado por el docente; el resto se informa como no calculable.
+      let classProcessing = { totalClasses: 0, processedClasses: 0, notComputableClasses: 0, criteria: '' };
       try {
-        const classesClient = getTableClient(CONFIG.tables.classes);
-        for await (const _ of classesClient.listEntities()) {
-          classesCount++;
-        }
+        classProcessing = await computeClassProcessingStats(context);
       } catch (err) {
-        logWarn(context, `[KpiExport] Could not count classes: ${err.message}`);
+        context.log.warn(`[KpiExport] Could not compute class processing: ${err.message}`);
       }
 
       // #417: adoption base = real active student enrollments, matching the
@@ -299,7 +306,10 @@ app.http('get-director-kpi-export', {
 
       const data = {
         dau: latest.dau || 0,
-        classesProcessed: classesCount,
+        classesLoaded: classProcessing.totalClasses,
+        classesProcessed: classProcessing.processedClasses,
+        classesNotComputable: classProcessing.notComputableClasses,
+        classesProcessedCriteria: classProcessing.criteria,
         ragInteractions: latest.ragInteractions || 0,
         adoptionRate,
         costPerActiveStudent,
