@@ -267,3 +267,87 @@ test('#328: global-search drops material matches with a mismatched subjectId', a
     assert.ok(materialResults.length > 0);
     assert.ok(!materialResults.some((r) => r.sourceFilename === 'DASI Cronograma.docx'));
 });
+
+test('#357/UJ-26: global-search drops material matches with no keyword hit and low semantic score (no-match query returns empty)', async (t) => {
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async () => [
+        {
+            score: 0.24,
+            metadata: {
+                materialId: 'm-irrelevant', classIds: ['class-02'], materialType: 'presentation',
+                sourceFilename: 'otra-clase.pptx', text: 'Contenido sin relacion alguna con la consulta.',
+            },
+        },
+    ]);
+    t.after(() => {
+        vectorStoreMocks.querySimilar.mock.mockImplementation(async () => ([
+            {
+                score: 0.81,
+                metadata: {
+                    materialId: 'm-1', classIds: ['class-01'], materialType: 'transcript',
+                    materialPriority: 'primary', sourceFilename: 'class-01-transcript.txt',
+                    chunkIndex: 0, text: 'Architecture decisions are tied to quality attributes and trade-offs.',
+                },
+            },
+            {
+                score: 0.79,
+                metadata: {
+                    materialId: 'm-2', classIds: ['class-03'], materialType: 'bibliography',
+                    materialPriority: 'secondary', sourceFilename: 'clean-architecture.pdf',
+                    chunkIndex: 4, text: 'Architecture should protect business rules from framework details.',
+                },
+            },
+        ]));
+    });
+
+    const response = await capturedHandler(
+        mockRequest({ query: 'xyzzyqwerty123ningunmaterial', subjectId: 'arq-software-2026' }),
+        { error: mock.fn(), warn: mock.fn(), log: mock.fn() }
+    );
+
+    assert.strictEqual(response.status, 200);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.results.length, 0, 'una consulta sin coincidencias no debe devolver materiales irrelevantes');
+    assert.strictEqual(body.total, 0);
+});
+
+test('#357/UJ-26: global-search keeps a literal match even below the semantic floor', async (t) => {
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async () => [
+        {
+            score: 0.2,
+            metadata: {
+                materialId: 'm-saga', classIds: ['class-01'], materialType: 'notes',
+                sourceFilename: 'clase-saga.pdf', text: 'El patron SAGA coordina transacciones de larga duracion.',
+            },
+        },
+    ]);
+    t.after(() => {
+        vectorStoreMocks.querySimilar.mock.mockImplementation(async () => ([
+            {
+                score: 0.81,
+                metadata: {
+                    materialId: 'm-1', classIds: ['class-01'], materialType: 'transcript',
+                    materialPriority: 'primary', sourceFilename: 'class-01-transcript.txt',
+                    chunkIndex: 0, text: 'Architecture decisions are tied to quality attributes and trade-offs.',
+                },
+            },
+            {
+                score: 0.79,
+                metadata: {
+                    materialId: 'm-2', classIds: ['class-03'], materialType: 'bibliography',
+                    materialPriority: 'secondary', sourceFilename: 'clean-architecture.pdf',
+                    chunkIndex: 4, text: 'Architecture should protect business rules from framework details.',
+                },
+            },
+        ]));
+    });
+
+    const response = await capturedHandler(
+        mockRequest({ query: 'SAGA', subjectId: 'arq-software-2026' }),
+        { error: mock.fn(), warn: mock.fn(), log: mock.fn() }
+    );
+
+    assert.strictEqual(response.status, 200);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.results.length, 1, 'una coincidencia literal debe conservarse aunque el score semantico sea bajo');
+    assert.strictEqual(body.results[0].sourceFilename, 'clase-saga.pdf');
+});
