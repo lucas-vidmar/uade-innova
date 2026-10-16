@@ -50,6 +50,9 @@ const stateStoreMocks = {
     getEnrollment: mock.fn(async () => null),
     listClassViewsByStudent: mock.fn(async () => []),
     deleteClassViewsBySubject: mock.fn(async () => true),
+    // #428: servicios compartidos que ahora entran en el grafo de classes-api.js.
+    getEnrollmentsBySubject: mock.fn(async () => []),
+    upsertClassPublicationState: mock.fn(async () => ({})),
 };
 
 const vectorStoreMocks = {

@@ -4,6 +4,22 @@ import { auth } from '../../services/auth.js';
 import { toast } from '../../components/Toast.js';
 import { showConfirmDialog } from '../../components/Dialog.js';
 
+const PUBLICATION_CHIPS = {
+    borrador: { label: '📝 Borrador', cls: 'badge-neutral', hint: 'No visible para el alumnado' },
+    pendiente_de_aval: { label: '🕒 Pendiente de aval', cls: 'badge-info', hint: 'No visible para el alumnado: esperando el aval' },
+    publicado: { label: '✅ Publicado', cls: 'badge-success', hint: 'Visible para el alumnado de la unidad' },
+};
+
+/**
+ * #428: el estado de publicación es único y explícito, así que la lista de
+ * clases lo muestra tal cual en lugar de deducirlo de `summaryReady`.
+ */
+function publicationChip(classData) {
+    const state = classData?.publicationState || (classData?.summaryReady ? 'publicado' : 'borrador');
+    const chip = PUBLICATION_CHIPS[state] || PUBLICATION_CHIPS.borrador;
+    return `<span class="badge ${chip.cls} class-publication-chip" data-state="${state}" title="${chip.hint}" style="margin-left:6px;font-size:10px;">${chip.label}</span>`;
+}
+
 /**
  * Builds a unique id for a new class from the ids already present, instead of
  * deriving it from the array length. Length-based ids (`class-${n+1}`) collide
@@ -190,6 +206,7 @@ export async function renderClassManager(container) {
                                                         data-current-value="${escapeHtml(c.title || '')}"
                                                         title="Click para editar"
                                                     >${escapeHtml(c.title || 'Sin titulo')}</span>
+                                                    ${publicationChip(c)}
                                                 </td>
                                                 <td class="class-col-date">
                                                     <span

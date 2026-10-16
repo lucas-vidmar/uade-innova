@@ -13,9 +13,27 @@ import { chatCompletion, generateClassSummary, generateClassMap, generateClassAu
 import { computeBudgetProjection as computeBudgetProjectionV2, getAzureCostForBudget } from '../services/azure-cost.js';
 
 import { CONFIG } from '../services/config.js';
+import {
+    isPublicationState,
+    isPublished,
+    resolveAssetPublicationState,
+    resolveClassPublicationState,
+} from '../services/publication-state.js';
+import {
+    applyClassPublicationChange,
+    loadClassData,
+    loadSubjectScopedAsset,
+    PublicationStateError,
+} from '../services/class-publication.js';
 const CONTAINER_CLASSES = CONFIG.containers.classes;
 const CONTAINER_PROCESSED = 'processed';
 const SUBJECTS_BLOB = CONFIG.blobs.subjects;
+
+function isTeachingPrincipal(principal) {
+    const roles = principal?.userRoles || [];
+    return roles.some((role) => ['Docente', 'Director', 'Admin'].includes(role))
+        || process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development';
+}
 
 // ── #328: (subjectId, classId)-scoped class asset helpers ─────────────
 // Class AI assets (summaries, maps, audio scripts) were keyed only by classId
@@ -23,15 +41,8 @@ const SUBJECTS_BLOB = CONFIG.blobs.subjects;
 // leaked cross-subject content. Scoped reads prefer
 // `{subjectId}/{classId}.json` and only honor a legacy `{classId}.json` blob
 // when its embedded subjectId matches the request (or is absent).
-async function loadSubjectScopedAsset(container, subjectId, classId) {
-    const scoped = await loadJson(container, `${subjectId}/${classId}.json`).catch(() => null);
-    if (scoped) return scoped;
-    const legacy = await loadJson(container, `${classId}.json`).catch(() => null);
-    if (!legacy) return null;
-    if (legacy.subjectId && String(legacy.subjectId) !== String(subjectId)) return null;
-    return legacy;
-}
-
+// #428: la lectura vive en `services/class-publication.js` porque el estado de
+// publicación tiene que escribir exactamente el mismo documento que se lee.
 function scopedAssetResponse(status, payload) {
     return { status, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) };
 }
@@ -890,10 +901,15 @@ app.http('get-classes', {
             const resultClasses = classesConfig.map(c => {
                 if (!c.date) logWarn(context, `[get-classes] Class ${c.id} ("${c.title}") is missing the date field.`);
                 const view = studentViewsMap.get(c.id);
+                // #428: el estado de publicación es el único dato que gobierna la
+                // visibilidad; `summaryReady` se deriva de él (antes podían
+                // contradecirse y el docente no sabía qué veía el alumnado).
+                const publicationState = resolveClassPublicationState(c);
                 return { 
                     ...c, 
                     materials: [], 
-                    summaryReady: c.summaryReady || false,
+                    publicationState,
+                    summaryReady: isPublished(publicationState),
                     professorIds: c.professorIds || [],
                     studentIds: c.studentIds || [],
                     studentViewedAt: view?.viewedAt || null,
@@ -1264,6 +1280,31 @@ app.http('save-classes', {
             // Si la clase no tiene ID, le generamos uno
             classesToSave.forEach(c => { if (!c.id) c.id = `class-${uuidv4().substring(0, 8)}`; });
 
+            // #428: guardar la lista de clases no publica ni retira. El estado de
+            // publicación sólo lo cambia la acción explícita, así que acá se
+            // conserva el guardado y `summaryReady` se recalcula de él. Antes el
+            // payload podía mover `summaryReady` por su cuenta y desincronizar la
+            // visibilidad del alumnado.
+            const storedList = await loadJson(CONTAINER_CLASSES, `${subjectId}.json`).catch(() => null);
+            const storedById = new Map(
+                (Array.isArray(storedList) ? storedList : []).filter(c => c?.id).map(c => [String(c.id), c])
+            );
+            let tableById = new Map();
+            try {
+                tableById = new Map((await listClassesBySubject(subjectId)).map(c => [String(c.id), c]));
+            } catch (tableReadErr) {
+                context.log.warn(`[save-classes] No se pudo leer el estado persistido de clases: ${tableReadErr.message}`);
+            }
+            classesToSave.forEach(c => {
+                const persisted = tableById.get(String(c.id)) || storedById.get(String(c.id)) || null;
+                const publicationState = persisted ? resolveClassPublicationState(persisted) : 'borrador';
+                c.publicationState = publicationState;
+                c.summaryReady = isPublished(publicationState);
+                c.publicationChangedBy = persisted?.publicationChangedBy;
+                c.publicationChangedAt = persisted?.publicationChangedAt;
+                c.publicationChangedReason = persisted?.publicationChangedReason;
+            });
+
             try {
                 await replaceClassesForSubject(subjectId, classesToSave);
             } catch (tableErr) {
@@ -1301,8 +1342,14 @@ app.http('get-class-summary', {
         try {
             const summaryData = await loadSubjectScopedAsset(CONTAINER_SUMMARIES, subjectId, classId);
             // Retornamos 200 con { summary: null } en lugar de 404 para evitar que el frontend rompa
-            if (!summaryData) return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, subjectId, summary: null }) };
-            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(summaryData) };
+            if (!summaryData) return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, subjectId, summary: null, publicationState: 'borrador' }) };
+            const publicationState = resolveAssetPublicationState(summaryData);
+            // #428: mientras la clase no esté publicada el alumnado no ve el
+            // contenido. El docente sí, para poder revisarlo.
+            if (!isTeachingPrincipal(parseClientPrincipal(request)) && !isPublished(publicationState)) {
+                return scopedAssetResponse(200, { classId, subjectId, summary: null, publicationState, hidden: true });
+            }
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...summaryData, publicationState }) };
         } catch (err) {
             return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, subjectId, summary: null, error: err.message }) };
         }
@@ -1328,8 +1375,13 @@ app.http('get-class-map', {
         const CONTAINER_MAPS = 'class-maps';
         try {
             const mapData = await loadSubjectScopedAsset(CONTAINER_MAPS, subjectId, classId);
-            if (!mapData) return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, subjectId, mapCode: null }) };
-            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mapData) };
+            if (!mapData) return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, subjectId, mapCode: null, publicationState: 'borrador' }) };
+            const publicationState = resolveAssetPublicationState(mapData);
+            // #428: el mapa comparte el estado de la clase; sin publicar no llega al alumnado.
+            if (!isTeachingPrincipal(parseClientPrincipal(request)) && !isPublished(publicationState)) {
+                return scopedAssetResponse(200, { classId, subjectId, mapCode: null, publicationState, hidden: true });
+            }
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...mapData, publicationState }) };
         } catch (err) {
             return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, subjectId, mapCode: null, error: err.message }) };
         }
@@ -1358,7 +1410,12 @@ app.http('save-class-map', {
             const existingData = (subjectId
                 ? await loadSubjectScopedAsset(CONTAINER_MAPS, subjectId, classId)
                 : await loadJson(CONTAINER_MAPS, `${classId}.json`)) || { classId };
-            const updatedData = { ...existingData, mapCode: body.mapCode, lastModifiedAt: new Date().toISOString() };
+            // #428: el mapa comparte el estado de publicación de la clase.
+            const classData = subjectId ? await loadClassData(subjectId, classId).catch(() => null) : null;
+            const publicationState = classData
+                ? resolveClassPublicationState(classData)
+                : resolveAssetPublicationState(existingData);
+            const updatedData = { ...existingData, mapCode: body.mapCode, publicationState, lastModifiedAt: new Date().toISOString() };
             if (subjectId) {
                 updatedData.subjectId = subjectId;
                 // #328: scoped write — never overwrite another subject's legacy blob.
@@ -1390,8 +1447,14 @@ app.http('get-class-audio-script', {
         if (denied) return denied;
         try {
             const scriptData = await loadSubjectScopedAsset('class-audio-scripts', subjectId, classId);
-            if (!scriptData) return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, subjectId, script: null }) };
-            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(scriptData) };
+            if (!scriptData) return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, subjectId, script: null, publicationState: 'borrador' }) };
+            const publicationState = resolveAssetPublicationState(scriptData);
+            // #428: el guión de podcast comparte el estado de publicación de la clase,
+            // así que sin publicar no llega al alumnado (el docente sí lo revisa).
+            if (!isTeachingPrincipal(parseClientPrincipal(request)) && !isPublished(publicationState)) {
+                return scopedAssetResponse(200, { classId, subjectId, script: null, validated: false, publicationState, hidden: true });
+            }
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...scriptData, publicationState }) };
         } catch (err) {
             return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, subjectId, script: null, error: err.message }) };
         }
@@ -1421,6 +1484,12 @@ app.http('save-class-audio-script', {
                 return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'subjectId es requerido' }) };
             }
             const existingData = await loadSubjectScopedAsset('class-audio-scripts', subjectId, classId) || { classId };
+            // #428: el guión comparte el estado de publicación de la clase; `validated`
+            // es su espejo y no se baja por guardar el contenido.
+            const classData = await loadClassData(subjectId, classId).catch(() => null);
+            const publicationState = classData
+                ? resolveClassPublicationState(classData)
+                : resolveAssetPublicationState(existingData);
 
             const updatedData = {
                 ...existingData,
@@ -1429,14 +1498,17 @@ app.http('save-class-audio-script', {
                 script: body.script,
                 lastModifiedAt: new Date().toISOString(),
                 lastModifiedBy: principal?.userDetails || 'docente',
-                validated: body.validated || false,
+                publicationState,
+                validated: isPublished(publicationState),
             };
 
             // #328: scoped write.
             await saveJson('class-audio-scripts', `${subjectId}/${classId}.json`, updatedData);
 
-            // Si se validó, disparar TTS
-            if (body.validated && body.script) {
+            // Si se pidió el audio, disparar TTS (docente y estado de la clase deciden
+            // si el guion se oye; la generación no cambia la visibilidad).
+            const wantsAudio = body.generateAudio === true || body.validated === true;
+            if (wantsAudio && body.script) {
                 context.log(`[AudioScript] Validado para ${classId}, generando TTS...`);
                 try {
                     const audioBuffer = await generateClassAudio(body.script, 'nova');
@@ -1485,6 +1557,11 @@ app.http('generate-class-audio-script', {
 
             const result = await generatePodcastScript(rawSummary, '', classId);
 
+            // #428: regenerar el guión no cambia la visibilidad; el estado de la clase
+            // manda y `validated` lo espeja (antes la regeneración retiraba el podcast).
+            const classData = await loadClassData(subjectId, classId).catch(() => null);
+            const publicationState = classData ? resolveClassPublicationState(classData) : 'borrador';
+
             const scriptData = {
                 classId, subjectId,
                 script: result.content,
@@ -1492,7 +1569,8 @@ app.http('generate-class-audio-script', {
                 generatedFrom: 'regenerate',
                 lastModifiedAt: new Date().toISOString(),
                 lastModifiedBy: 'AI',
-                validated: false,
+                publicationState,
+                validated: isPublished(publicationState),
             };
             // #328: scoped write.
             await saveJson('class-audio-scripts', `${subjectId}/${classId}.json`, scriptData);
@@ -1630,6 +1708,9 @@ app.http('generate-class-assets', {
                 generateClassMap(combinedText)
             ]);
 
+            const classDataForState = await loadClassData(subjectId, classId).catch(() => null);
+            const regeneratedState = classDataForState ? resolveClassPublicationState(classDataForState) : 'borrador';
+
             const summaryData = {
                 classId, subjectId,
                 summary: summaryResult.content,
@@ -1637,7 +1718,10 @@ app.http('generate-class-assets', {
                 generatedFrom: 'regenerate',
                 lastModifiedAt: new Date().toISOString(),
                 lastModifiedBy: 'AI',
-                validated: false,
+                // #428: regenerar el contenido no cambia la visibilidad: el estado de la
+                // clase manda y estos campos sólo lo espejan.
+                publicationState: regeneratedState,
+                validated: isPublished(regeneratedState),
             };
             // #328: scoped writes — never overwrite another subject's legacy blob.
             await saveJson('class-summaries', `${subjectId}/${classId}.json`, summaryData);
@@ -1685,15 +1769,27 @@ app.http('save-class-summary', {
                 return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'subjectId es requerido' }) };
             }
             const existingData = await loadSubjectScopedAsset(CONTAINER_SUMMARIES, subjectId, classId) || { classId };
-            
+            const lastModifiedBy = principal?.userDetails || 'docente';
+            // #428: guardar el contenido no publica ni retira. El estado sólo lo
+            // cambia una acción explícita; si el cliente no pide uno, se conserva
+            // el de la clase para que el resumen no abra un estado propio.
+            const requestedState = isPublicationState(body.publicationState) ? String(body.publicationState).trim() : undefined;
+            const classData = await loadClassData(subjectId, classId).catch(() => null);
+            const currentState = classData
+                ? resolveClassPublicationState(classData)
+                : resolveAssetPublicationState(existingData);
+            const effectiveState = requestedState || currentState;
+
             const updatedData = {
                 ...existingData,
                 classId,
                 subjectId,
                 summary: body.summary,
                 lastModifiedAt: new Date().toISOString(),
-                lastModifiedBy: principal?.userDetails || 'docente',
-                validated: body.validated || false,
+                lastModifiedBy,
+                // `validated` es el espejo de lectura del estado único, no un dato propio.
+                publicationState: effectiveState,
+                validated: isPublished(effectiveState),
                 // 11-4-9: summarySource distinguishes AI-generated vs manual teacher-written summaries.
                 // "manual" means the teacher marked the AI summary as not suitable and wrote it by hand.
                 summarySource: body.summarySource || existingData.summarySource || (body.suitable === false ? 'manual' : undefined),
@@ -1703,26 +1799,79 @@ app.http('save-class-summary', {
             // #328: scoped write.
             await saveJson(CONTAINER_SUMMARIES, `${subjectId}/${classId}.json`, updatedData);
 
-            // #425: el aval del resumen y la publicación de la clase son el mismo
-            // hecho, así que el servidor los mantiene juntos. Sin esto, "Guardar
-            // Borrador" dejaba la clase visible para la unidad (summaryReady seguía
-            // en true) y "Aprobar y Publicar" desde el modal de material no publicaba
-            // (validated pasaba a true pero summaryReady no). Sólo se escribe la clase
-            // cuando el flag cambia, para no pisar cambios concurrentes de la lista.
-            const desiredPublished = body.validated === true;
-            const classes = await loadJson(CONTAINER_CLASSES, `${subjectId}.json`);
-            if (Array.isArray(classes)) {
-                const idx = classes.findIndex((cls) => String(cls?.id) === String(classId));
-                if (idx >= 0 && (classes[idx].summaryReady === true) !== desiredPublished) {
-                    const next = [...classes];
-                    next[idx] = { ...next[idx], summaryReady: desiredPublished };
-                    await saveJson(CONTAINER_CLASSES, `${subjectId}.json`, next);
-                }
+            // #425 + #428: el resumen, sus derivados y la clase comparten un único
+            // estado de publicación, así que el servidor los mantiene juntos con un
+            // solo camino de escritura (aclara quién, cuándo y por qué).
+            let publication = null;
+            if (requestedState) {
+                publication = await applyClassPublicationChange({
+                    subjectId,
+                    classId,
+                    state: requestedState,
+                    by: lastModifiedBy,
+                    reason: body.publicationReason,
+                    origin: 'save-class-summary',
+                });
             }
 
-            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updatedData) };
+            return {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...updatedData, publicationState: publication?.publicationState || effectiveState, summaryReady: isPublished(effectiveState) }),
+            };
         } catch (err) {
             return { status: 500, body: JSON.stringify({ error: `Error guardando resumen: ${err.message}` }) };
+        }
+    }))
+});
+
+// ── POST /api/class-summary/{classId}/publication ──────────────────
+// #428: acción explícita que fija el estado de publicación. Es el único camino
+// que mueve la visibilidad del alumnado y deja constancia de quién y cuándo.
+app.http('set-class-publication-state', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'class-summary/{classId}/publication',
+    handler: withCorrelation(withAuth(async (request, context) => {
+        if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
+
+        const principal = parseClientPrincipal(request);
+        const isAuthorized = isTeachingPrincipal(principal);
+        if (!isAuthorized) {
+            return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Teacher access required' }) };
+        }
+
+        const classId = request.params.classId;
+        let body;
+        try {
+            body = await request.json();
+        } catch {
+            return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Body JSON inválido' }) };
+        }
+
+        const subjectId = body.subjectId;
+        const state = body.state;
+        if (!subjectId || !state) {
+            return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'subjectId y state son requeridos' }) };
+        }
+
+        try {
+            const result = await applyClassPublicationChange({
+                subjectId,
+                classId,
+                state,
+                by: principal?.userDetails || readDevIdentityHeader(request, 'x-edu-uid') || 'docente',
+                reason: body.reason,
+                origin: 'class-publication-endpoint',
+            });
+            context.log(`[setClassPublicationState] class=${classId} subject=${subjectId} ${result.previousState} -> ${result.publicationState} changed=${result.changed} by=${result.changedBy || 'n/a'}`);
+            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(result) };
+        } catch (err) {
+            if (err instanceof PublicationStateError) {
+                return { status: err.status, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: err.message }) };
+            }
+            context.error(`[setClassPublicationState] class=${classId} error=${err.message}`);
+            return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: `Error al cambiar el estado de publicación: ${err.message}` }) };
         }
     }))
 });

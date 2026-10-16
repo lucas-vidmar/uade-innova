@@ -265,5 +265,5 @@ test('publish-class-summary-now should reject a class whose summary is missing i
   else process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
 
   assert.strictEqual(res.status, 409);
-  assert.ok(JSON.parse(res.body).error.includes('no tiene un resumen validado'));
+  assert.ok(JSON.parse(res.body).error.includes('no está publicada'));
 });

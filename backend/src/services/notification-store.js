@@ -126,9 +126,17 @@ export function notificationIdForClass(subjectId, classId) {
   return `notif-auto-summary-${subjectId}-${classId}`;
 }
 
-export function summaryMessageForClass(classData) {
+/**
+ * #428: el aviso nombra a quien avaló y cuándo, para que lo que se comunicó
+ * coincida con lo que se ve en pantalla.
+ */
+export function summaryMessageForClass(classData, change = {}) {
   const classLabel = classData?.title || classData?.id || 'Clase';
-  return `${classLabel} ya tiene resumen validado.`;
+  const by = change?.by || classData?.publicationChangedBy;
+  const at = change?.at || classData?.publicationChangedAt;
+  const cuando = at ? ` el ${String(at).slice(0, 10)}` : '';
+  const quien = by ? ` por ${by}` : ' por el docente';
+  return `${classLabel} ya tiene resumen validado${quien}${cuando}.`;
 }
 
 export async function resolveEnrolledStudentIds(subjectId, classData) {
@@ -146,7 +154,7 @@ export async function resolveEnrolledStudentIds(subjectId, classData) {
   }
 }
 
-export async function dispatchClassSummaryNotification({ subjectId, classData, origin = 'class-publish' }) {
+export async function dispatchClassSummaryNotification({ subjectId, classData, origin = 'class-publish', change = {} }) {
   if (!subjectId || !classData?.id) {
     return { success: false, retryAttempts: 0, deadLetterWrites: 0, dispatched: 0 };
   }
@@ -158,7 +166,7 @@ export async function dispatchClassSummaryNotification({ subjectId, classData, o
     id: notificationIdForClass(subjectId, classId),
     type: 'summary',
     title: 'Resumen validado por docente',
-    message: summaryMessageForClass(classData),
+    message: summaryMessageForClass(classData, change),
     createdAt: new Date().toISOString(),
     unread: true,
     targetHash: `#/student/class/${classId}`,
@@ -168,6 +176,28 @@ export async function dispatchClassSummaryNotification({ subjectId, classData, o
   });
 
   return { success: !deadLetterWrites, retryAttempts, deadLetterWrites, dispatched: 1, recipientCount: recipientUserIds.length };
+}
+
+/**
+ * #428 — Retirar la publicación retira también su aviso: con la clase en
+ * borrador el alumnado ya no puede abrir el contenido, así que dejar el aviso
+ * anunciaría algo que no existe. La constancia del retiro queda en el estado de
+ * publicación de la clase y de sus derivados, no en el aviso.
+ */
+export async function retractClassSummaryNotification(subjectId, classId) {
+  if (!subjectId || !classId) return { retracted: 0, success: false };
+
+  const current = await listNotificationsBySubject(subjectId);
+  const next = current.filter((item) => item.id !== notificationIdForClass(subjectId, classId));
+  if (next.length === current.length) return { retracted: 0, success: true };
+
+  const result = await saveJsonWithRetry(CONTAINER_NOTIFICATIONS, `${subjectId}.json`, next);
+  return {
+    retracted: 1,
+    success: !result.deadLetterWritten && !result.dlWriteError,
+    retryAttempts: result.retryAttempts,
+    deadLetterWrites: result.deadLetterWritten ? 1 : 0,
+  };
 }
 
 export async function markNotificationReadForUser(subjectId, notificationId, userId) {

@@ -78,6 +78,10 @@ const stateStoreMocks = {
     listClassViewsByStudent: mock.fn(async () => []),
     deleteClassViewsBySubject: mock.fn(async () => true),
     countActiveStudentEnrollments: mock.fn(async () => 0),
+    // #428: la publicación de una clase pasa por estos dos servicios compartidos,
+    // que ahora forman parte del grafo de importación de classes-api.js.
+    getEnrollmentsBySubject: mock.fn(async () => []),
+    upsertClassPublicationState: mock.fn(async () => ({})),
 };
 
 // Mock dependencies
@@ -1111,11 +1115,13 @@ test('#328: save-class-summary writes to the scoped path and requires subjectId'
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
 });
 
-// #425: el aval del resumen y la publicación de la clase tienen que ser el mismo
-// hecho. Antes, guardar un borrador dejaba la clase visible para la unidad y
-// aprobar desde el modal de material no publicaba.
-test('#425: save-class-summary retira la clase cuando el resumen deja de estar validado', async () => {
-    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'] }));
+// #428: un solo estado de publicación explícito (`borrador` | `pendiente_de_aval`
+// | `publicado`) para la clase y sus derivados. Guardar el contenido ya no mueve
+// la visibilidad: sólo la mueve la acción explícita, que deja constancia de quién
+// y cuándo. Antes el estado vivía en dos lugares (`summaryReady` y `validated`) y
+// podían contradecirse.
+test('#428: save-class-summary sin estado explícito conserva el estado de publicación de la clase', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'], userDetails: 'prof01@uade.edu.ar' }));
     const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
     const restoreLoadJson = storageMocks.loadJson.mock.mockImplementation;
@@ -1134,19 +1140,27 @@ test('#425: save-class-summary retira la clase cuando el resumen deja de estar v
             { log: makeMockLog(), error: mock.fn() }
         );
         assert.strictEqual(res.status, 200);
+        const body = JSON.parse(res.body);
+        assert.strictEqual(body.publicationState, 'publicado', 'la clase sigue publicada: guardar contenido no la retira');
+        assert.strictEqual(body.validated, true, '`validated` es espejo del estado, no un dato propio');
+
         const classWrite = storageMocks.saveJson.mock.calls.find(
             (call) => call.arguments[0] === 'classes-config' && call.arguments[1] === 'arq-software-2026.json'
         );
-        assert.ok(classWrite, 'debe reescribir la lista de clases');
-        assert.strictEqual(classWrite.arguments[2][0].summaryReady, false, 'la clase debe dejar de estar publicada');
+        assert.strictEqual(classWrite, undefined, 'no debe tocar el estado de publicación de la clase');
+
+        const summaryWrite = storageMocks.saveJson.mock.calls.find(
+            (call) => call.arguments[0] === 'class-summaries' && call.arguments[1] === 'arq-software-2026/class-01.json'
+        );
+        assert.strictEqual(summaryWrite.arguments[2].publicationState, 'publicado');
     } finally {
         storageMocks.loadJson.mock.mockImplementation(restoreLoadJson);
         process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
     }
 });
 
-test('#425: save-class-summary publica la clase cuando el resumen se valida', async () => {
-    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'] }));
+test('#428: save-class-summary con `pendiente_de_aval` no publica y no avisa al alumnado', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'], userDetails: 'prof01@uade.edu.ar' }));
     const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
     const restoreLoadJson = storageMocks.loadJson.mock.mockImplementation;
@@ -1155,49 +1169,192 @@ test('#425: save-class-summary publica la clase cuando el resumen se valida', as
         if (container === 'classes-config' && blob === 'arq-software-2026.json') {
             return [{ id: 'class-01', title: 'Clase 1', summaryReady: false }];
         }
+        if (container === 'class-summaries') return { classId: 'class-01', summary: 'previo', validated: false };
         return {};
     });
 
     try {
         const res = await handlers['save-class-summary'](
-            { params: { classId: 'class-01' }, json: async () => ({ subjectId: 'arq-software-2026', summary: 'listo', validated: true }) },
+            { params: { classId: 'class-01' }, json: async () => ({ subjectId: 'arq-software-2026', summary: 'listo para revisar', publicationState: 'pendiente_de_aval' }) },
             { log: makeMockLog(), error: mock.fn() }
         );
         assert.strictEqual(res.status, 200);
+        const body = JSON.parse(res.body);
+        assert.strictEqual(body.publicationState, 'pendiente_de_aval', 'la clase queda esperando el aval');
+        assert.strictEqual(body.summaryReady, false, 'sin aval el alumnado no la ve');
+
         const classWrite = storageMocks.saveJson.mock.calls.find(
             (call) => call.arguments[0] === 'classes-config' && call.arguments[1] === 'arq-software-2026.json'
         );
-        assert.ok(classWrite, 'debe reescribir la lista de clases');
-        assert.strictEqual(classWrite.arguments[2][0].summaryReady, true, 'la clase debe quedar publicada');
+        assert.ok(classWrite, 'debe registrar el estado en la clase');
+        assert.strictEqual(classWrite.arguments[2][0].publicationState, 'pendiente_de_aval');
+        assert.strictEqual(classWrite.arguments[2][0].summaryReady, false);
+
+        const notificationWrite = storageMocks.saveJson.mock.calls.find((call) => call.arguments[0] === 'notifications');
+        assert.strictEqual(notificationWrite, undefined, 'no se emite el aviso de resumen validado');
     } finally {
         storageMocks.loadJson.mock.mockImplementation(restoreLoadJson);
         process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
     }
 });
 
-test('#425: save-class-summary no reescribe la lista de clases si el estado de publicación no cambia', async () => {
-    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'] }));
+test('#428: pasar a borrador retira la clase, deja constancia de quién y cuándo, y retira el aviso', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'], userDetails: 'prof01@uade.edu.ar' }));
     const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
     const restoreLoadJson = storageMocks.loadJson.mock.mockImplementation;
     storageMocks.saveJson.mock.resetCalls();
     storageMocks.loadJson.mock.mockImplementation(async (container, blob) => {
         if (container === 'classes-config' && blob === 'arq-software-2026.json') {
-            return [{ id: 'class-01', title: 'Clase 1', summaryReady: true }];
+            return [{ id: 'class-01', title: 'Clase 1', summaryReady: true, publicationState: 'publicado' }];
         }
-        return {};
+        if (container === 'class-summaries' && blob === 'arq-software-2026/class-01.json') {
+            return { classId: 'class-01', subjectId: 'arq-software-2026', summary: '# Resumen', validated: true, publicationState: 'publicado' };
+        }
+        if (container === 'notifications') {
+            return [{ id: 'notif-auto-summary-arq-software-2026-class-01', type: 'summary', title: 'Resumen validado por docente', message: 'Clase 1 ya tiene resumen validado.', createdAt: '2026-10-10T10:00:00Z', subjectId: 'arq-software-2026' }];
+        }
+        return null;
     });
 
     try {
-        const res = await handlers['save-class-summary'](
-            { params: { classId: 'class-01' }, json: async () => ({ subjectId: 'arq-software-2026', summary: 'sin cambios de estado', validated: true }) },
+        const res = await handlers['set-class-publication-state'](
+            { params: { classId: 'class-01' }, json: async () => ({ subjectId: 'arq-software-2026', state: 'borrador', reason: 'reemplazada por la guía nueva' }) },
             { log: makeMockLog(), error: mock.fn() }
         );
         assert.strictEqual(res.status, 200);
-        const classWrite = storageMocks.saveJson.mock.calls.find((call) => call.arguments[0] === 'classes-config');
-        assert.strictEqual(classWrite, undefined, 'no debe reescribir la clase sin cambios');
+        const body = JSON.parse(res.body);
+        assert.strictEqual(body.changed, true);
+        assert.strictEqual(body.previousState, 'publicado');
+        assert.strictEqual(body.publicationState, 'borrador');
+        assert.strictEqual(body.summaryReady, false);
+        assert.strictEqual(body.changedBy, 'prof01@uade.edu.ar', 'queda registrado quién retiró');
+        assert.ok(body.changedAt, 'queda registrado cuándo');
+
+        const summaryWrite = storageMocks.saveJson.mock.calls.find(
+            (call) => call.arguments[0] === 'class-summaries' && call.arguments[1] === 'arq-software-2026/class-01.json'
+        );
+        const summaryAsset = summaryWrite.arguments[2];
+        assert.strictEqual(summaryAsset.publicationState, 'borrador');
+        assert.strictEqual(summaryAsset.validated, false, 'el espejo deja de afirmar que está validado');
+        assert.strictEqual(summaryAsset.publicationChangedReason, 'reemplazada por la guía nueva');
+        assert.strictEqual(summaryAsset.publicationHistory.at(-1).by, 'prof01@uade.edu.ar');
+        assert.strictEqual(summaryAsset.publicationHistory.at(-1).reason, 'reemplazada por la guía nueva');
+
+        const classWrite = storageMocks.saveJson.mock.calls.find(
+            (call) => call.arguments[0] === 'classes-config' && call.arguments[1] === 'arq-software-2026.json'
+        );
+        assert.strictEqual(classWrite.arguments[2][0].publicationState, 'borrador');
+        assert.strictEqual(classWrite.arguments[2][0].summaryReady, false);
+
+        // El aviso deja de anunciar algo que el alumnado ya no puede abrir.
+        const notificationWrite = storageMocks.saveJson.mock.calls.find((call) => call.arguments[0] === 'notifications');
+        assert.ok(notificationWrite, 'debe reescribir los avisos de la materia');
+        assert.strictEqual(
+            notificationWrite.arguments[2].some((item) => item.id === 'notif-auto-summary-arq-software-2026-class-01'),
+            false,
+            'el aviso del resumen retirado ya no está'
+        );
     } finally {
         storageMocks.loadJson.mock.mockImplementation(restoreLoadJson);
+        process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+    }
+});
+
+test('#428: no se puede publicar una clase sin resumen ni pasar un estado inventado', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'], userDetails: 'prof01@uade.edu.ar' }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+    const restoreLoadJson = storageMocks.loadJson.mock.mockImplementation;
+    storageMocks.loadJson.mock.mockImplementation(async (container, blob) => {
+        if (container === 'classes-config' && blob === 'arq-software-2026.json') {
+            return [{ id: 'class-01', title: 'Clase 1', summaryReady: false }];
+        }
+        return null;
+    });
+
+    try {
+        const noContent = await handlers['set-class-publication-state'](
+            { params: { classId: 'class-01' }, json: async () => ({ subjectId: 'arq-software-2026', state: 'publicado' }) },
+            { log: makeMockLog(), error: mock.fn() }
+        );
+        assert.strictEqual(noContent.status, 409);
+
+        const badState = await handlers['set-class-publication-state'](
+            { params: { classId: 'class-01' }, json: async () => ({ subjectId: 'arq-software-2026', state: 'en-produccion' }) },
+            { log: makeMockLog(), error: mock.fn() }
+        );
+        assert.strictEqual(badState.status, 400);
+    } finally {
+        storageMocks.loadJson.mock.mockImplementation(restoreLoadJson);
+        process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+    }
+});
+
+test('#428: el alumnado no recibe el resumen de una clase sin publicar (el docente sí)', async () => {
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+    const restoreLoadJson = storageMocks.loadJson.mock.mockImplementation;
+    storageMocks.loadJson.mock.mockImplementation(async (container, blob) => {
+        if (container === 'class-summaries' && blob === 'arq-software-2026/class-01.json') {
+            return { classId: 'class-01', subjectId: 'arq-software-2026', summary: '# Borrador', publicationState: 'borrador', validated: false };
+        }
+        return null;
+    });
+    const request = {
+        params: { classId: 'class-01' },
+        query: { get: (key) => (key === 'subjectId' ? 'arq-software-2026' : null) },
+    };
+    const restoreEnrollment = stateStoreMocks.getEnrollment.mock.mockImplementation;
+    stateStoreMocks.getEnrollment.mock.mockImplementation(async () => ({ status: 'active', role: 'student' }));
+
+    try {
+        authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Estudiante'], userId: 'alu-001' }));
+        const asStudent = await handlers['get-class-summary'](request, { log: makeMockLog(), error: mock.fn() });
+        const studentBody = JSON.parse(asStudent.body);
+        assert.strictEqual(asStudent.status, 200);
+        assert.strictEqual(studentBody.summary, null, 'el borrador no llega al alumnado');
+        assert.strictEqual(studentBody.publicationState, 'borrador');
+
+        authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'], userDetails: 'prof01@uade.edu.ar' }));
+        const asTeacher = await handlers['get-class-summary'](request, { log: makeMockLog(), error: mock.fn() });
+        const teacherBody = JSON.parse(asTeacher.body);
+        assert.strictEqual(teacherBody.summary, '# Borrador', 'el docente revisa el borrador');
+        assert.strictEqual(teacherBody.publicationState, 'borrador');
+    } finally {
+        storageMocks.loadJson.mock.mockImplementation(restoreLoadJson);
+        stateStoreMocks.getEnrollment.mock.mockImplementation(restoreEnrollment);
+        process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+        authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: [] }));
+    }
+});
+
+test('#428: guardar la lista de clases no puede publicar ni retirar por su cuenta', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'], userId: 'prof-001', userDetails: 'prof01@uade.edu.ar' }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+    const restoreLoadJson = storageMocks.loadJson.mock.mockImplementation;
+    const restoreEnrollment = stateStoreMocks.getEnrollment.mock.mockImplementation;
+    storageMocks.loadJson.mock.mockImplementation(async (container, blob) => {
+        if (container === 'classes-config' && blob === 'arq-software-2026.json') {
+            return [{ id: 'class-01', title: 'Clase 1', publicationState: 'publicado', summaryReady: true }];
+        }
+        return null;
+    });
+    stateStoreMocks.getEnrollment.mock.mockImplementation(async () => ({ status: 'active', role: 'teacher' }));
+
+    try {
+        const res = await handlers['save-classes'](
+            { params: { subjectId: 'arq-software-2026' }, json: async () => ([{ id: 'class-01', title: 'Clase 1 renombrada', summaryReady: false, publicationState: 'borrador' }]) },
+            { log: makeMockLog(), error: mock.fn() }
+        );
+        assert.strictEqual(res.status, 200);
+        const savedClass = JSON.parse(res.body).classes[0];
+        assert.strictEqual(savedClass.publicationState, 'publicado', 'el estado guardado se conserva');
+        assert.strictEqual(savedClass.summaryReady, true, 'el espejo sigue al estado, no al payload');
+    } finally {
+        storageMocks.loadJson.mock.mockImplementation(restoreLoadJson);
+        stateStoreMocks.getEnrollment.mock.mockImplementation(restoreEnrollment);
         process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
     }
 });

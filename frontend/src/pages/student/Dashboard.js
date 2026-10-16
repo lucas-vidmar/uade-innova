@@ -656,7 +656,9 @@ export async function renderStudentDashboard(container) {
       const dateStr = c.date ? new Date(c.date).toLocaleDateString('es-AR', { day: 'numeric', month: 'numeric' }) : null;
       const hasViewed = localViews[c.id] || c.studentViewedAt;
       let badgeHtml = '';
-      if (!c.summaryReady) {
+      // #428: el estado explícito manda; `summaryReady` sólo lo espeja.
+      const classPublished = c.publicationState ? c.publicationState === 'publicado' : !!c.summaryReady;
+      if (!classPublished) {
         badgeHtml = '<span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 8px;flex-shrink:0;color:#6b7280;background:rgba(107,114,128,0.1);border:1px solid rgba(107,114,128,0.25);">No listo</span>';
       } else if (hasViewed) {
         badgeHtml = '<span style="font-size:10px;font-weight:600;border-radius:999px;padding:2px 8px;flex-shrink:0;color:#10b981;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.25);">Visto</span>';

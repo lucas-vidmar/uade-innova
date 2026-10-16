@@ -3,6 +3,7 @@ import { withAuth } from '../middleware/with-auth.js';
 import { withCorrelation, withCorrelationTimer } from '../middleware/with-correlation.js';
 import { loadJson, listBlobs } from '../services/storage.js';
 import { dispatchClassSummaryNotification } from '../services/notification-store.js';
+import { isPublished, resolveAssetPublicationState, resolveClassPublicationState } from '../services/publication-state.js';
 import { trackDispatcherRun } from '../services/telemetry.js';
 import { CONFIG } from '../services/config.js';
 
@@ -54,9 +55,10 @@ async function shouldDispatchForClass(classData, subjectId) {
   const summary = await loadScopedSummary(subjectId, String(classData.id));
   if (!summary) return false;
 
-  if (classData.summaryReady === true) return true;
-
-  return summary.validated === true;
+  // #428: el aviso es consecuencia del estado explícito de publicación, que la
+  // clase y su resumen comparten. Sólo se anuncia lo publicado.
+  return isPublished(resolveClassPublicationState(classData))
+    && isPublished(resolveAssetPublicationState(summary));
 }
 
 export async function runPostClassSummaryDispatcher(context = { log: () => {}, error: () => {} }) {
@@ -170,15 +172,22 @@ app.http('publish-class-summary-now', {
       // require it to exist: publishing a summary that is not there announces
       // an empty class.
       const summary = await loadScopedSummary(subjectId, classId);
-      const validated = !!summary && (classData.summaryReady === true || summary.validated === true);
-      if (!validated) {
-        return { status: 409, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'La clase no tiene un resumen validado para publicar.' }) };
+      // #428: sólo se re-avisa un contenido efectivamente publicado.
+      const published = !!summary
+        && isPublished(resolveClassPublicationState(classData))
+        && isPublished(resolveAssetPublicationState(summary));
+      if (!published) {
+        return { status: 409, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'La clase no está publicada: no hay un resumen publicado para avisar.' }) };
       }
 
       const result = await dispatchClassSummaryNotification({
         subjectId,
         classData,
         origin: 'publish-now-manual',
+        change: {
+          by: classData.publicationChangedBy,
+          at: classData.publicationChangedAt,
+        },
       });
 
       context.log(`[publish-class-summary-now] class=${classId} subject=${subjectId} dispatched=${result.dispatched} recipients=${result.recipientCount || 0}`);
