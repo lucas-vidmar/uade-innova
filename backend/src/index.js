@@ -28,6 +28,7 @@ import './functions/auth-api.js';
 import './functions/get-roles.js';
 import './functions/save-profile.js';
 import './functions/vector-health.js';
+import './functions/vector-index-api.js';
 import './functions/global-search.js';
 import './functions/notifications.js';
 import './functions/sga-api.js';
