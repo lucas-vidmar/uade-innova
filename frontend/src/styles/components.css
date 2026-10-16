@@ -1033,7 +1033,13 @@
 
 @media (max-width: 640px) {
     .onboarding-tooltip--mobile {
-        bottom: 0;
+        /* La navegación inferior del teléfono ocupa la última franja de la
+           pantalla (pages.css `.mobile-bottom-nav`: bottom 12px + alto 68px =
+           80px). La tarjeta de la guía se apoya por encima de esa franja: con
+           la guía abierta el puntero tiene que seguir llegando a la navegación
+           (#474, QA-008); anclada en `bottom: 0` la tapaba por completo. */
+        --mobile-bottom-nav-space: 80px;
+        bottom: calc(var(--mobile-bottom-nav-space) + var(--space-3, 12px));
         left: 0;
         right: 0;
         border-radius: var(--radius-xl) var(--radius-xl) 0 0;
