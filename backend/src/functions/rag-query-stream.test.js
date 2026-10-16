@@ -61,7 +61,7 @@ const storageMocks = {
 
 const promptsMocks = {
     getActivePrompt: mock.fn(async () => null),
-    getShadowPrompt: mock.fn(() => ({ id: 'v1', content: 'System Prompt' }))
+    resolveRagPrompt: mock.fn(async () => ({ id: 'v1', content: 'System Prompt', source: 'active' }))
 };
 
 const authUtilsMocks = {

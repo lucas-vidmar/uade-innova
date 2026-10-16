@@ -6,7 +6,7 @@ import { app } from '@azure/functions';
 import { generateEmbedding, chatCompletion, getChatModelName, getModelDisplayName, resolveModelForTask } from '../services/ai.js';
 import { querySimilar } from '../services/vector-store.js';
 import { saveJson, loadJson, saveMetricsToTable } from '../services/storage.js';
-import { getShadowPrompt, getActivePrompt } from '../services/prompts.js';
+import { resolveRagPrompt, getActivePrompt } from '../services/prompts.js';
 import { trackRAGInteraction, trackRAGError, trackUnansweredQuery } from '../services/telemetry.js';
 import { parseClientPrincipal, validateFrontDoorId, getAuthenticatedUser } from '../services/auth-utils.js';
 import { normalizeCategorizedError, ErrorCategory } from '../services/error-categories.js';
@@ -250,7 +250,7 @@ app.http('rag-query', {
             return jsonResponse(400, { error: 'Body JSON inválido' });
         }
 
-        const { question, classIds, subjectId, sessionId, stream = false, conversationHistory, historyWindowSize, transcriptFocus, sandbox = false, simulateStudent = false, botTone, botLength, includeSources } = body;
+        const { question, classIds, subjectId, sessionId, stream = false, conversationHistory, historyWindowSize, transcriptFocus, sandbox = false, simulateStudent = false, botTone, botLength, includeSources, promptVersion } = body;
 
         if (!question || !subjectId) {
                 return jsonResponse(400, { error: 'Faltan campos requeridos: question, subjectId' });
@@ -703,9 +703,21 @@ app.http('rag-query', {
         // Response length cap for concise preference (story #223 / 11-5-1)
         const maxTokens = botLength === 'concise' ? Math.min(CONFIG.ai.maxTokens.chat, 400) : CONFIG.ai.maxTokens.chat;
 
-        const { id: promptId, content: systemPromptBase } = getShadowPrompt();
+        // La versión ACTIVA es la que responde a cualquiera (UJ-48 paso 6). El banco de
+        // pruebas puede pedir una versión concreta (`promptVersion`) para enfrentarla
+        // contra la vigente SIN activarla, y así no llega a ningún hilo real (UJ-49).
+        const requestedPromptVersion = sandboxMode
+          ? (promptVersion || request.query?.get?.('promptVersion') || null)
+          : null;
+        const { id: promptId, content: systemPromptBase, source: promptSource } = await resolveRagPrompt({ versionId: requestedPromptVersion });
+        if (requestedPromptVersion && promptSource !== 'requested') {
+          return jsonResponse(400, {
+            error: 'PROMPT_VERSION_NOT_FOUND',
+            message: `La versión "${requestedPromptVersion}" no existe para el prompt del asistente.`,
+          });
+        }
         // Log telemetry explicit event inside standard console output for App Insights Analytics mapping
-        context.log(`[A/B Test] Interaction initialized using prompt version: ${promptId}`);
+        context.log(`[PromptGovernance] Respuesta gobernada por versionId=${promptId} (origen=${promptSource}${sandboxMode ? ', sandbox' : ''})`);
         const ragModel = await resolveModelForTask('rag-master');
 
         // ── 6b. Cargar feedback docente (correcciones revisadas) ──
@@ -770,7 +782,7 @@ ${contextText}
                     const encoder = new TextEncoder();
 
                     // Enviar metadatos iniciales
-                    controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ interactionId, sources, model: getModelDisplayName(ragModel) })}\n\n`));
+                    controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ interactionId, sources, model: getModelDisplayName(ragModel), promptVersion: promptId })}\n\n`));
 
                     let fullAnswer = '';
                     let finalUsage = null;

@@ -75,7 +75,7 @@ const stateStoreMocks = {
 };
 
 const promptsMocks = {
-    getShadowPrompt: mock.fn(() => ({ id: 'test-prompt', content: 'System prompt' })),
+    resolveRagPrompt: mock.fn(async () => ({ id: 'test-prompt', content: 'System prompt', source: 'active' })),
     getActivePrompt: mock.fn(() => ({ id: 'test-prompt', content: 'System prompt' })),
 };
 
