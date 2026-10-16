@@ -63,8 +63,11 @@ const storageMocks = {
 
 const promptsMocks = {
     getActivePrompt: mock.fn(async () => null),
-    getShadowPrompt: mock.fn(() => ({
+    // La resolución del prompt vigilante es asíncrona en producción (#453): el mock
+    // tiene que serlo también, o el defecto (destructurar la promesa sin await) pasa.
+    resolveRagPrompt: mock.fn(async () => ({
         id: 'v1-baseline',
+        source: 'active',
     content: `<rol>
     Eres el Asistente Academico Oficial del Dashboard UADE Innova para la materia consultada.
     </rol>
@@ -1565,4 +1568,94 @@ test('rag-query stream error event propagates the error code (#338)', async () =
     assert.ok(dataLine, 'error event must carry a data payload');
     const payload = JSON.parse(dataLine.slice('data: '.length));
     assert.ok(payload.code, 'SSE error payload must propagate the machine-readable code');
+});
+
+/* ── Gobernanza del prompt: UJ-48 / UJ-49 (#453) ─────────────────────────────
+   La resolución del prompt de sistema es asíncrona. Con el mock síncrono
+   anterior, el defecto (destructurar la promesa sin `await`) no se veía en la
+   suite; con el mock asíncrono estos casos reproducen el fallo en `main`. */
+
+test('la versión ACTIVA gobierna el prompt de sistema y la respuesta queda atribuida a ella', async () => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    storageMocks.saveJson.mock.resetCalls();
+    promptsMocks.resolveRagPrompt.mock.mockImplementation(async () => ({
+        id: 'v-activa-qa', content: '<rol>PROMPT DE LA VERSION ACTIVA</rol>', model: null, source: 'active',
+    }));
+
+    const response = await capturedHandler({
+        json: async () => ({ question: '¿Qué es la UADE?', subjectId: 'materia1', classIds: ['class1'] }),
+        user: { id: 'test-user' },
+        headers: { get: () => null },
+    }, { log: mock.fn(), error: mock.fn() });
+
+    assert.strictEqual(response.status, 200);
+
+    const systemMessage = openaiMocks.chatCompletion.mock.calls.at(-1).arguments[0]
+        .find((message) => message.role === 'system').content;
+    assert.ok(systemMessage.includes('PROMPT DE LA VERSION ACTIVA'), 'el prompt de sistema debe ser el de la versión activa');
+    assert.ok(!systemMessage.startsWith('undefined'), 'el prompt de sistema no puede empezar con undefined (#453)');
+
+    const chatLogCall = storageMocks.saveJson.mock.calls.find((call) => call.arguments[0] === 'chat-logs');
+    assert.ok(chatLogCall, 'la interacción contestada debe guardarse');
+    assert.strictEqual(
+        chatLogCall.arguments[2].promptVersion,
+        'v-activa-qa',
+        'la respuesta debe quedar atribuida a la versión que la gobernó',
+    );
+});
+
+test('el banco de pruebas usa la versión propuesta SIN activarla y no toca los hilos reales', async () => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    storageMocks.saveJson.mock.resetCalls();
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ oid: 'doc-1', userRoles: ['authenticated', 'Docente'] }));
+    promptsMocks.resolveRagPrompt.mock.mockImplementation(async ({ versionId } = {}) => (
+        versionId
+            ? { id: versionId, content: '<rol>PROPUESTA SIN ACTIVAR</rol>', model: null, source: 'requested' }
+            : { id: 'v-activa-qa', content: '<rol>VIGENTE</rol>', model: null, source: 'active' }
+    ));
+
+    const response = await capturedHandler({
+        json: async () => ({
+            question: '¿Qué es la UADE?', subjectId: 'materia1', classIds: ['class1'],
+            sandbox: true, promptVersion: 'v-propuesta',
+        }),
+        user: { id: 'test-user' },
+        headers: { get: () => null },
+    }, { log: mock.fn(), error: mock.fn() });
+
+    assert.strictEqual(response.status, 200);
+    assert.deepStrictEqual(
+        promptsMocks.resolveRagPrompt.mock.calls.at(-1).arguments[0],
+        { versionId: 'v-propuesta' },
+        'el banco de pruebas debe poder pedir una versión concreta',
+    );
+    const systemMessage = openaiMocks.chatCompletion.mock.calls.at(-1).arguments[0]
+        .find((message) => message.role === 'system').content;
+    assert.ok(systemMessage.includes('PROPUESTA SIN ACTIVAR'), 'la versión propuesta se prueba sin activarla');
+    assert.strictEqual(
+        storageMocks.saveJson.mock.calls.filter((call) => call.arguments[0] === 'chat-logs').length,
+        0,
+        'una consulta del banco de pruebas no deja hilos reales',
+    );
+
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ oid: 'test-user-oid', userRoles: ['Alumno'] }));
+});
+
+test('una versión pedida que no existe se rechaza con 400 en vez de responder con otra', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ oid: 'doc-1', userRoles: ['authenticated', 'Docente'] }));
+    promptsMocks.resolveRagPrompt.mock.mockImplementation(async () => ({ id: 'v-activa-qa', content: 'VIGENTE', model: null, source: 'active' }));
+
+    const response = await capturedHandler({
+        json: async () => ({
+            question: '¿Qué es la UADE?', subjectId: 'materia1', classIds: ['class1'],
+            sandbox: true, promptVersion: 'v-inexistente',
+        }),
+        user: { id: 'test-user' },
+        headers: { get: () => null },
+    }, { log: mock.fn(), error: mock.fn() });
+
+    assert.strictEqual(response.status, 400);
+    assert.strictEqual(JSON.parse(response.body).error, 'PROMPT_VERSION_NOT_FOUND');
+
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ oid: 'test-user-oid', userRoles: ['Alumno'] }));
 });
