@@ -82,44 +82,45 @@ export async function getMaterialStatus(subjectId, materialId) {
 }
 
 export async function ingestMaterial(formData) {
+    let res;
     try {
-        const res = await apiFetch(`${BASE_URL}/ingest-material`, { method: 'POST', body: formData });
-
-        if (!res.ok) {
-            let message = `Error ${res.status}: no se pudo subir el material`;
-            let errorCategory = null;
-            try {
-                const contentType = res.headers.get('content-type') || '';
-                if (contentType.includes('application/json')) {
-                    const err = await res.json();
-                    if (err?.error) message = err.error;
-                    if (err?.errorCategory) errorCategory = err.errorCategory;
-                } else {
-                    const text = await res.text();
-                    if (text) message = text;
-                }
-            } catch {}
-
-            const apiError = new Error(message);
-            apiError.status = res.status;
-            apiError.errorCategory = errorCategory;
-            throw apiError;
-        }
-
-        return res.json();
+        res = await apiFetch(`${BASE_URL}/ingest-material`, { method: 'POST', body: formData });
     } catch (err) {
-        if (err instanceof Error) {
-            const lowered = err.message.toLowerCase();
-            if (lowered.includes('failed to fetch') || lowered.includes('networkerror')) {
-                return {
-                    materialId: `m-local-${Date.now()}`,
-                    status: 'processing',
-                    fallback: true,
-                };
-            }
-        }
-        throw err;
+        // Un fallo de red al subir NO es un alta exitosa. Antes se devolvía acá
+        // un id local con status 'processing' y la pantalla mostraba el archivo
+        // como cargado aunque el servidor nunca lo hubiera recibido (#386).
+        const apiError = new Error('No se pudo contactar al servidor para subir el archivo. Revisá tu conexión y volvé a intentar.');
+        apiError.errorCategory = 'NETWORK';
+        apiError.code = 'INGEST_NETWORK_ERROR';
+        apiError.cause = err;
+        throw apiError;
     }
+
+    if (!res.ok) {
+        let message = `Error ${res.status}: no se pudo subir el material`;
+        let errorCategory = null;
+        let code = null;
+        try {
+            const contentType = res.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+                const err = await res.json();
+                if (err?.error) message = err.error;
+                if (err?.errorCategory) errorCategory = err.errorCategory;
+                if (err?.code) code = err.code;
+            } else {
+                const text = await res.text();
+                if (text) message = text;
+            }
+        } catch {}
+
+        const apiError = new Error(message);
+        apiError.status = res.status;
+        apiError.errorCategory = errorCategory;
+        apiError.code = code;
+        throw apiError;
+    }
+
+    return res.json();
 }
 
 export async function deleteMaterial(materialId) {
