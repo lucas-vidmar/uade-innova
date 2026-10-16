@@ -31,6 +31,8 @@ export async function renderStudentNotifications(container) {
   let searchQuery = '';
   let isLoadingMore = false;
   let hasMore = true;
+  // #379: si la lectura falla (p. ej. timeout de red), la página sigue en pie y lo dice.
+  let loadError = false;
 
   async function loadPage(skip) {
     const items = await api.getNotifications({
@@ -43,9 +45,17 @@ export async function renderStudentNotifications(container) {
   }
 
   async function loadInitial() {
-    const items = await loadPage(0);
-    allNotifications = items;
-    hasMore = items.length >= PAGE_SIZE;
+    try {
+      const items = await loadPage(0);
+      allNotifications = items;
+      hasMore = items.length >= PAGE_SIZE;
+      loadError = false;
+    } catch (err) {
+      console.error('[Notifications] Failed to load notifications:', err);
+      loadError = true;
+      allNotifications = [];
+      hasMore = false;
+    }
     applyFilters();
   }
 
@@ -79,7 +89,7 @@ export async function renderStudentNotifications(container) {
         <div class="notifications-header">
           <div class="notifications-header-left">
             <h2 class="section-title" style="margin:0">Historial de Notificaciones</h2>
-            <span class="notifications-count">${allNotifications.length} totales · ${unreadCount} sin leer</span>
+            <span class="notifications-count">${loadError ? 'No se pudo leer el total' : `${allNotifications.length} totales · ${unreadCount} sin leer`}</span>
           </div>
           <button class="btn btn-secondary btn-sm" id="notif-mark-all-read" ${unreadCount === 0 ? 'disabled' : ''}>
             Marcar todas leídas
@@ -129,6 +139,14 @@ export async function renderStudentNotifications(container) {
   }
 
   function renderNotificationItems() {
+    if (loadError) {
+      return `<div class="card"><div class="empty-state" style="padding:32px">
+        <span class="empty-state-icon" aria-hidden="true">⚠️</span>
+        <p style="font-weight:600">No se pudieron cargar los avisos</p>
+        <p style="color:var(--color-text-secondary);font-size:13px">La conexión tardó más de lo esperado. Revisá tu conexión e intentá de nuevo.</p>
+        <button class="btn btn-secondary" id="notif-retry-btn" style="margin-top:12px">Reintentar</button>
+      </div></div>`;
+    }
     if (displayedNotifications.length === 0) {
       if (searchQuery.trim()) {
         return '<div class="card"><div class="empty-state" style="padding:32px"><p>No se encontraron notificaciones con ese texto.</p></div></div>';
@@ -180,6 +198,15 @@ export async function renderStudentNotifications(container) {
       searchInput.addEventListener('input', () => {
         searchQuery = searchInput.value;
         applyFilters();
+      });
+    }
+
+    const retryBtn = document.getElementById('notif-retry-btn');
+    if (retryBtn) {
+      retryBtn.addEventListener('click', async () => {
+        retryBtn.disabled = true;
+        retryBtn.textContent = 'Reintentando...';
+        await loadInitial();
       });
     }
 

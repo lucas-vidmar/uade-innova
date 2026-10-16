@@ -184,14 +184,32 @@ export async function fetchWithTimeout(resource, options = {}) {
     const { timeout = 5000 } = options;
 
     const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), timeout);
+    let timedOut = false;
+    const id = setTimeout(() => { timedOut = true; controller.abort(); }, timeout);
 
-    const response = await apiFetch(resource, {
-        ...options,
-        signal: controller.signal
-    });
-    clearTimeout(id);
-    return response;
+    try {
+        return await apiFetch(resource, {
+            ...options,
+            signal: controller.signal
+        });
+    } catch (err) {
+        // #379 (UJ-28/UJ-29): un timeout propio no es un fallo de la página. Se
+        // clasifica como error de conexión reintentable para que la interfaz pueda
+        // mostrar un mensaje claro en vez del error crudo del navegador
+        // ("signal is aborted without reason") ni reemplazar la pantalla entera.
+        if (timedOut && err?.name === 'AbortError') {
+            const timeoutError = new Error('La conexión tardó demasiado. Revisá tu conexión e intentá de nuevo.');
+            timeoutError.name = 'TimeoutError';
+            timeoutError.code = 'TIMEOUT';
+            timeoutError.errorCategory = 'TIMEOUT';
+            timeoutError.retryable = true;
+            timeoutError.status = 408;
+            throw timeoutError;
+        }
+        throw err;
+    } finally {
+        clearTimeout(id);
+    }
 }
 
 export function readLocalJson(key, fallbackValue) {
