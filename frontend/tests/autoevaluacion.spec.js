@@ -94,12 +94,31 @@ test('student generates quiz, answers questions and sees results with weak topic
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
 
-  // Quiz result: GET returns null initially (no prior attempt)
+  // Quiz result: GET returns null initially (no prior attempt).
+  // El servidor corrige: recibe quizId + las opciones elegidas, y devuelve el
+  // resultado ya calculado (el cliente no manda puntaje).
   await page.route('**/api/quiz-result**', async route => {
     const method = route.request().method();
     if (method === 'POST') {
       const body = route.request().postDataJSON();
       capturedRequests.push(body);
+      const byId = new Map(QUIZ_QUESTIONS.map(q => [q.id, q]));
+      const answers = (body.answers || []).map(a => {
+        const q = byId.get(a.questionId);
+        return {
+          questionId: a.questionId,
+          question: q?.question ?? '',
+          options: q?.options ?? [],
+          correctIndex: q?.correctIndex ?? 0,
+          selectedIndex: a.selectedIndex,
+          isCorrect: q ? a.selectedIndex === q.correctIndex : false,
+          explanation: q?.explanation ?? '',
+          topic: q?.topic ?? '',
+        };
+      });
+      const correctCount = answers.filter(a => a.isCorrect).length;
+      const score = answers.length ? Math.round((correctCount / answers.length) * 100) : 0;
+      const weakTopics = [...new Set(answers.filter(a => !a.isCorrect && a.topic).map(a => a.topic))];
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -107,12 +126,13 @@ test('student generates quiz, answers questions and sees results with weak topic
           subjectId: body.subjectId,
           userId: 'alu-001',
           classId: body.classId,
-          score: body.score,
-          totalQuestions: body.totalQuestions,
-          correctCount: body.correctCount,
-          passed: body.passed,
-          weakTopics: body.weakTopics,
-          answers: body.answers,
+          quizId: body.quizId,
+          score,
+          totalQuestions: answers.length,
+          correctCount,
+          passed: score >= 60,
+          weakTopics,
+          answers,
           attemptCount: 1,
         }),
       });
@@ -124,10 +144,12 @@ test('student generates quiz, answers questions and sees results with weak topic
   await page.route('**/api/generate-quiz*', async route => {
     const body = route.request().postDataJSON();
     capturedRequests.push(body);
+    // El servidor no entrega correctIndex ni explanation: se conocen recién al corregir.
+    const publicQuestions = QUIZ_QUESTIONS.map(({ id, question, options, topic }) => ({ id, question, options, topic }));
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ quizId: 'quiz-1', subjectId: body.subjectId, classId: body.classId, questionCount: QUIZ_QUESTIONS.length, questions: QUIZ_QUESTIONS, model: 'deepseek-v4-flash' }),
+      body: JSON.stringify({ quizId: 'quiz-1', subjectId: body.subjectId, classId: body.classId, questionCount: publicQuestions.length, questions: publicQuestions, model: 'deepseek-v4-flash' }),
     });
   });
 
@@ -183,11 +205,17 @@ test('student generates quiz, answers questions and sees results with weak topic
   expect(generateReq.subjectId).toBe('arq-software-2026');
   expect(generateReq.questionCount).toBe(5);
 
-  const resultReq = capturedRequests.find(r => typeof r.score === 'number');
+  // El cierre manda quizId + la opción elegida: nunca el puntaje.
+  const resultReq = capturedRequests.find(r => Array.isArray(r.answers));
   expect(resultReq).toBeTruthy();
-  expect(resultReq.score).toBe(50);
-  expect(resultReq.passed).toBe(false);
-  expect(resultReq.weakTopics).toContain('RAG');
+  expect(resultReq.quizId).toBe('quiz-1');
+  expect(resultReq.score).toBeUndefined();
+  expect(resultReq.passed).toBeUndefined();
+  expect(resultReq.correctCount).toBeUndefined();
+  expect(resultReq.answers).toEqual([
+    { questionId: 'q1', selectedIndex: 1 },
+    { questionId: 'q2', selectedIndex: 0 },
+  ]);
 });
 
 test('student sees prior saved quiz score on autoevaluación tab', async ({ page }) => {

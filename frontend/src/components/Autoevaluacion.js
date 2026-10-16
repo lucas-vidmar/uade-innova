@@ -64,6 +64,7 @@ let state = {
     answers: [],
     currentIndex: 0,
     questionCount: 5,
+    quizId: null,
     result: null,
     busy: false,
 };
@@ -76,6 +77,7 @@ function resetState() {
         answers: [],
         currentIndex: 0,
         questionCount: 5,
+        quizId: null,
         result: null,
         busy: false,
     };
@@ -158,6 +160,9 @@ function renderIdle(mount, { classId, subjectId, className, latestResult }) {
             state.questions = quiz.questions || [];
             state.answers = state.questions.map(() => null);
             state.currentIndex = 0;
+            // El cuestionario quedó guardado en el servidor con sus respuestas
+            // correctas; el intento se cierra contra ese registro.
+            state.quizId = quiz.quizId || null;
             if (state.questions.length === 0) {
                 throw new Error('El cuestionario llegó vacío. Intentá de nuevo.');
             }
@@ -251,48 +256,28 @@ function renderQuestion(mount, { classId, subjectId, className }) {
         submitBtn.disabled = true;
         submitBtn.textContent = 'Calculando...';
         try {
-            const correctCount = state.questions.reduce((acc, q, i) => {
-                return acc + (state.answers[i] === q.correctIndex ? 1 : 0);
-            }, 0);
-            const score = Math.round((correctCount / state.questions.length) * 100);
-            const passed = score >= 60;
-
-            const weakTopicSet = new Set();
-            const answersDetail = state.questions.map((q, i) => {
-                const selectedIndex = state.answers[i];
-                const isCorrect = selectedIndex === q.correctIndex;
-                if (!isCorrect && q.topic) weakTopicSet.add(q.topic);
-                return {
-                    questionId: q.id,
-                    question: q.question,
-                    options: q.options,
-                    correctIndex: q.correctIndex,
-                    selectedIndex,
-                    isCorrect,
-                    explanation: q.explanation || '',
-                    topic: q.topic || '',
-                };
-            });
+            // El cliente sólo declara qué opción eligió: la corrección, el
+            // puntaje y los temas flojos los resuelve el servidor contra el
+            // cuestionario que emitió (#UJ-30).
+            const submittedAnswers = state.questions.map((q, i) => ({
+                questionId: q.id,
+                selectedIndex: state.answers[i],
+            }));
 
             const saved = await api.saveQuizResult({
                 subjectId,
                 classId,
-                quizId: null,
-                score,
-                totalQuestions: state.questions.length,
-                correctCount,
-                passed,
-                weakTopics: Array.from(weakTopicSet),
-                answers: answersDetail,
+                quizId: state.quizId,
+                answers: submittedAnswers,
             });
 
             state.result = {
-                score: saved.score ?? score,
-                passed: saved.passed ?? passed,
-                correctCount: saved.correctCount ?? correctCount,
+                score: saved.score ?? 0,
+                passed: saved.passed === true,
+                correctCount: saved.correctCount ?? 0,
                 totalQuestions: saved.totalQuestions ?? state.questions.length,
-                weakTopics: Array.isArray(saved.weakTopics) && saved.weakTopics.length ? saved.weakTopics : Array.from(weakTopicSet),
-                answers: answersDetail,
+                weakTopics: Array.isArray(saved.weakTopics) ? saved.weakTopics : [],
+                answers: Array.isArray(saved.answers) ? saved.answers : [],
             };
             renderResults(mount, { classId, subjectId, className });
         } catch (err) {
