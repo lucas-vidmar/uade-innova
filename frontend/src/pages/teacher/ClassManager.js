@@ -4,6 +4,45 @@ import { auth } from '../../services/auth.js';
 import { toast } from '../../components/Toast.js';
 import { showConfirmDialog } from '../../components/Dialog.js';
 
+/**
+ * Builds a unique id for a new class from the ids already present, instead of
+ * deriving it from the array length. Length-based ids (`class-${n+1}`) collide
+ * whenever the subject has non-contiguous ids (e.g. after deleting a class) or
+ * uses a different prefix — issue #416.
+ *
+ * Preserves the dominant `<prefix><n>` convention of the subject and returns
+ * the smallest free number above the highest one in use.
+ */
+export function buildNextClassId(existingClasses = []) {
+    const ids = (Array.isArray(existingClasses) ? existingClasses : [])
+        .map((c) => String(c?.id || '').trim())
+        .filter(Boolean);
+    const used = new Set(ids);
+
+    const prefixCounts = new Map();
+    let maxNumber = 0;
+    for (const id of ids) {
+        const match = id.match(/^(.*?)(\d+)$/);
+        if (!match) continue;
+        const prefix = match[1] || 'class-';
+        prefixCounts.set(prefix, (prefixCounts.get(prefix) || 0) + 1);
+        const n = Number(match[2]);
+        if (Number.isFinite(n) && n > maxNumber) maxNumber = n;
+    }
+
+    const prefix = prefixCounts.size > 0
+        ? [...prefixCounts.entries()].sort((a, b) => b[1] - a[1])[0][0]
+        : 'class-';
+
+    let next = maxNumber + 1;
+    let candidate = `${prefix}${String(next).padStart(2, '0')}`;
+    while (used.has(candidate)) {
+        next += 1;
+        candidate = `${prefix}${String(next).padStart(2, '0')}`;
+    }
+    return candidate;
+}
+
 export async function renderClassManager(container) {
     renderHeader('Gestión de Clases');
     container.innerHTML = `<div class="loading-state">Cargando clases...</div>`;
@@ -260,7 +299,7 @@ export async function renderClassManager(container) {
                     const date = overlay.querySelector('#new-class-date').value;
                     const topicsStr = overlay.querySelector('#new-class-topics').value.trim();
                     if (!title || !date) { toast('error', 'Campos requeridos', 'Completá título y fecha.'); return; }
-                    const newId = `class-${String(classes.length + 1).padStart(2, '0')}`;
+                    const newId = buildNextClassId(classes);
                     const topics = topicsStr ? topicsStr.split('\n').map(t => t.trim()).filter(Boolean) : [];
                     classes.push({ id: newId, subjectId, title, date, topics, materials: [] });
                     saveAllClasses(classes);
