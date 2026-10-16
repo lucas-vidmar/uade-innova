@@ -135,6 +135,37 @@ test('grade-dispute-resolve resolves a dispute and updates the student task', as
     assert.match(notif.message, /fue resuelta/);
 });
 
+test('grade-disputes-list with status=all returns open and closed disputes (UJ-41)', async () => {
+    storageState.disputes['arq-software-2026.json'] = [
+        { disputeId: 'd-1', status: 'open', taskId: 't-1' },
+        { disputeId: 'd-2', status: 'resolved', taskId: 't-2', resolvedBy: 'doc_001' },
+    ];
+    const res = await handlers['grade-disputes-list'](makeRequest({ query: { subjectId: 'arq-software-2026', status: 'all' } }), makeContext());
+    assert.equal(res.status, 200);
+    const payload = JSON.parse(res.body);
+    assert.equal(payload.length, 2);
+});
+
+test('grade-dispute-resolve records the rationale and who resolved (UJ-41)', async () => {
+    storageState.disputes['arq-software-2026.json'] = [
+        { disputeId: 'd-9', status: 'open', taskId: 't-9', studentId: 'alu-001', taskTitle: 'TP 2', reason: 'razon' },
+    ];
+    storageState.tasks['alu_001.json'] = [{ id: 't-9', title: 'TP 2', grade: 5, status: 'disputed', weight: 20 }];
+
+    const res = await handlers['grade-dispute-resolve'](
+        makeRequest({ method: 'POST', body: { disputeId: 'd-9', subjectId: 'arq-software-2026', decision: 'resolved', newGrade: 8, reason: 'El ejercicio 3 cumple el criterio del material de la Clase 1.' } }),
+        makeContext()
+    );
+    assert.equal(res.status, 200);
+    const stored = storageState.disputes['arq-software-2026.json'][0];
+    assert.equal(stored.resolutionNote, 'El ejercicio 3 cumple el criterio del material de la Clase 1.');
+    assert.equal(stored.resolvedBy, 'doc_001');
+    assert.ok(stored.resolvedAt);
+
+    const notif = notificationMocks.upsertNotificationForSubject.mock.calls[notificationMocks.upsertNotificationForSubject.mock.calls.length - 1].arguments[1];
+    assert.match(notif.message, /Clase 1/);
+});
+
 test('grade-dispute-resolve rejects and keeps original grade', async () => {
     storageState.disputes['arq-software-2026.json'] = [
         { disputeId: 'd-2', status: 'open', taskId: 't-2', studentId: 'alu-001', taskTitle: 'Parcial 1', reason: 'razon' },
