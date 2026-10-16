@@ -42,11 +42,16 @@ app.http('get-profile', {
                 consentAccepted: false,
                 botTone: "formal",
                 botLength: "detailed",
-                includeSources: true
+                includeSources: true,
+                onboardingStatus: null,
+                onboardingAt: null,
+                onboardingStep: null
             };
 
             const VALID_TONES = ['formal', 'didactic', 'concise'];
             const VALID_LENGTHS = ['concise', 'detailed'];
+            // #375: constancia de la entrada guiada ('completed' | 'dismissed').
+            const VALID_ONBOARDING_STATUSES = ['completed', 'dismissed'];
 
             // Table Storage may return booleans as native booleans or as the
             // strings "true"/"false" depending on writer; normalize defensively.
@@ -67,7 +72,10 @@ app.http('get-profile', {
                     consentAccepted: asBool(entity.consentAccepted, false),
                     botTone: VALID_TONES.includes(entity.botTone) ? entity.botTone : "formal",
                     botLength: VALID_LENGTHS.includes(entity.botLength) ? entity.botLength : "detailed",
-                    includeSources: asBool(entity.includeSources, true)
+                    includeSources: asBool(entity.includeSources, true),
+                    onboardingStatus: VALID_ONBOARDING_STATUSES.includes(entity.onboardingStatus) ? entity.onboardingStatus : null,
+                    onboardingAt: typeof entity.onboardingAt === 'string' && !Number.isNaN(Date.parse(entity.onboardingAt)) ? entity.onboardingAt : null,
+                    onboardingStep: Number.isInteger(entity.onboardingStep) ? entity.onboardingStep : null
                 };
             } catch (err) {
                 if (err.statusCode === 404) {

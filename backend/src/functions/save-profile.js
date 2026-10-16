@@ -11,12 +11,24 @@ const storageAccountUrl = `https://${process.env.AZURE_STORAGE_ACCOUNT_NAME}.tab
 const BOT_TONES = ['formal', 'didactic', 'concise'];
 const BOT_LENGTHS = ['concise', 'detailed'];
 
+// Onboarding record (#375): la constancia de la entrada guiada viaja con el
+// perfil. Se aplana porque Azure Table Storage no guarda objetos anidados.
+const ONBOARDING_STATUSES = ['completed', 'dismissed'];
+
 function normalizeBotPrefs(value) {
     const normalized = {};
     if (BOT_TONES.includes(value.botTone)) normalized.botTone = value.botTone;
     if (BOT_LENGTHS.includes(value.botLength)) normalized.botLength = value.botLength;
     if (typeof value.includeSources === 'boolean') normalized.includeSources = value.includeSources;
     return normalized;
+}
+
+function normalizeOnboarding(value) {
+    if (!value || typeof value !== 'object') return null;
+    if (!ONBOARDING_STATUSES.includes(value.status)) return null;
+    const at = typeof value.at === 'string' && !Number.isNaN(Date.parse(value.at)) ? value.at : null;
+    const step = Number.isInteger(value.step) && value.step >= 0 ? value.step : null;
+    return { status: value.status, at, step };
 }
 
 app.http('save-profile', {
@@ -52,6 +64,13 @@ app.http('save-profile', {
             if (botPrefs.botLength) entity.botLength = botPrefs.botLength;
             if (botPrefs.includeSources !== undefined) entity.includeSources = botPrefs.includeSources;
 
+            const onboarding = normalizeOnboarding(reqBody?.onboarding);
+            if (onboarding) {
+                entity.onboardingStatus = onboarding.status;
+                if (onboarding.at) entity.onboardingAt = onboarding.at;
+                if (onboarding.step !== null) entity.onboardingStep = onboarding.step;
+            }
+
             const { getTableClient } = await import('../services/storage.js');
             const tableClient = getTableClient(tableName);
 
@@ -62,7 +81,7 @@ app.http('save-profile', {
             // Upsert the data seamlessly handling initial creation or subsequent updates
             await tableClient.upsertEntity(entity, "Merge");
 
-            context.log(`[SaveProfile] Profile saved userId=${userId} theme=${entity.theme} botTone=${entity.botTone} botLength=${entity.botLength} includeSources=${entity.includeSources}`);
+            context.log(`[SaveProfile] Profile saved userId=${userId} theme=${entity.theme} botTone=${entity.botTone} botLength=${entity.botLength} includeSources=${entity.includeSources} onboardingStatus=${entity.onboardingStatus}`);
 
             return {
                 status: 200,

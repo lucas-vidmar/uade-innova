@@ -7,7 +7,7 @@ import { renderHeader } from '../../components/Header.js';
 import { renderBottomNav } from '../../components/BottomNav.js';
 import { createChatWidget } from '../../components/ChatWidget.js';
 import { toast } from '../../components/Toast.js';
-import { OnboardingEngine, isOnboardingCompleted } from '../../services/onboarding.js';
+import { OnboardingEngine, shouldAutoStartOnboarding } from '../../services/onboarding.js';
 import { STUDENT_ONBOARDING_STEPS } from './OnboardingSteps.js';
 
 function renderSearchResult(result, classesById) {
@@ -479,7 +479,9 @@ export async function renderStudentDashboard(container) {
   };
 
   const startOnboardingIfNeeded = () => {
-    if (!isOnboardingCompleted('student') && auth.getAIConsentAccepted()) {
+    // #375: la guía solo se abre sola si nunca se vio ni se omitió. Omitirla
+    // deja constancia de la omisión y no vuelve a interrumpir la próxima visita.
+    if (shouldAutoStartOnboarding('student') && auth.getAIConsentAccepted()) {
       const engine = new OnboardingEngine({ role: 'student', steps: STUDENT_ONBOARDING_STEPS });
       engine.start();
     }

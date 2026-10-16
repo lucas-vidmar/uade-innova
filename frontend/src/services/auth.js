@@ -11,6 +11,7 @@ import { api } from './api.js';
 import { enrollments as enrollmentService } from './enrollments.js';
 import { safeSetItem, safeGetItem } from './local-storage.js';
 import { mergeSubjectsWithLocal, DEFAULT_SUBJECT } from './subjects.api.js';
+import { hydrateOnboardingRecord } from './onboarding.js';
 
 const AI_CONSENT_KEY = 'edu_ai_consent_accepted';
 const SESSION_TOKEN_KEY = 'edu_token';
@@ -603,6 +604,8 @@ export const auth = {
                 if (profile.theme) sessionStorage.setItem('edu_theme', profile.theme);
                 if (profile.language) sessionStorage.setItem('edu_lang', profile.language);
                 this.hydrateBotPreferences(profile);
+                // #375: la constancia de la entrada guiada viaja con el perfil.
+                hydrateOnboardingRecord({ ...profile, role: profile.role || this.getRole() });
             }
             if (profile && profile.role) {
                 sessionStorage.setItem('edu_role', profile.role);
