@@ -5,6 +5,7 @@ import { validateFrontDoorId } from '../../../services/auth-utils.js';
 import { getEnrollment, getCorrection, upsertCorrection, deletePendingCorrection } from '../../../services/state-store.js';
 import { generateEmbedding } from '../../../services/ai.js';
 import { upsertChunks } from '../../../services/vector-store.js';
+import { logWarn } from '../../../services/log.js';
 
 const MAX_EXPLANATION_LENGTH = 5000;
 
@@ -140,7 +141,7 @@ app.http('verify-answer', {
       // Race condition guard: re-read to confirm this request won the update
       const reRead = await getCorrection(subjectId, correctionId);
       if (!reRead || reRead.teacherId !== userId) {
-        context.log.warn(`[verify-answer] Race condition detected for correctionId=${correctionId}. Another request may have verified first. Skipping Pinecone upsert.`);
+        logWarn(context, `[verify-answer] Race condition detected for correctionId=${correctionId}. Another request may have verified first. Skipping Pinecone upsert.`);
         return {
           status: 200,
           headers: { 'Content-Type': 'application/json' },

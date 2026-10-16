@@ -55,6 +55,7 @@ async function requireAssetSubjectAccess(request, context, subjectId) {
 }
 
 import path from 'path';
+import { logWarn } from '../services/log.js';
 
 const SESSION_METRICS_TABLE = 'SessionMetrics';
 const INTERVENTIONS_TABLE = CONFIG.tables.interventions;
@@ -134,7 +135,7 @@ async function loadSessionMetricsRows(context, windowDays) {
         }
         return rows;
     } catch (err) {
-        context.log.warn(`[PowerBI] Could not read ${SESSION_METRICS_TABLE}: ${err.message}`);
+        logWarn(context, `[PowerBI] Could not read ${SESSION_METRICS_TABLE}: ${err.message}`);
         return [];
     }
 }
@@ -166,7 +167,7 @@ async function loadSessionMetricsRowsPaginated(context, { limit = 1000, continua
 
         return { rows, continuationToken: nextToken };
     } catch (err) {
-        context.log.warn(`[SessionMetrics] Could not read paginated ${SESSION_METRICS_TABLE}: ${err.message}`);
+        logWarn(context, `[SessionMetrics] Could not read paginated ${SESSION_METRICS_TABLE}: ${err.message}`);
         return { rows: [], continuationToken: null };
     }
 }
@@ -200,7 +201,7 @@ export async function loadEarlyAlertSummary(context) {
         }
         return summary;
     } catch (err) {
-        context.log.warn(`[director/stats] Could not load interventions summary: ${err.message}`);
+        logWarn(context, `[director/stats] Could not load interventions summary: ${err.message}`);
         return {
             totalStudentsAtRisk: 0, highRiskCount: 0, mediumRiskCount: 0,
             lowAttendanceCount: 0, lowGradeCount: 0,
@@ -610,7 +611,7 @@ app.http('get-subjects', {
                 filteredSubjects = allSubjects.filter(s => !s.group || groups.includes(s.group));
             }
         } catch (enrollmentErr) {
-            context.log.warn(`[get-subjects] Enrollment lookup failed, falling back to group filtering: ${enrollmentErr.message}`);
+            logWarn(context, `[get-subjects] Enrollment lookup failed, falling back to group filtering: ${enrollmentErr.message}`);
             // Fallback: group-based filtering
             if (principal && !isTeacher && !isUnscoped) {
                 filteredSubjects = allSubjects.filter(s => !s.group || groups.includes(s.group));
@@ -636,7 +637,7 @@ app.http('save-subject', {
 
         const principal = parseClientPrincipal(request);
         if (!canManageSubjects(principal)) {
-            context.log.warn(`Unauthorized attempt to save subject. User: ${principal?.userDetails || 'Anonymous'}. Roles: ${principal?.userRoles?.join(',') || 'None'}`);
+            logWarn(context, `Unauthorized attempt to save subject. User: ${principal?.userDetails || 'Anonymous'}. Roles: ${principal?.userRoles?.join(',') || 'None'}`);
             return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Director access required' }) };
         }
 
@@ -690,7 +691,7 @@ app.http('delete-subject', {
 
         const principal = parseClientPrincipal(request);
         if (!canManageSubjects(principal)) {
-            context.log.warn(`Unauthorized attempt to delete subject ${subjectId || 'unknown'}. User: ${principal?.userDetails || 'Anonymous'}. Roles: ${principal?.userRoles?.join(',') || 'None'}`);
+            logWarn(context, `Unauthorized attempt to delete subject ${subjectId || 'unknown'}. User: ${principal?.userDetails || 'Anonymous'}. Roles: ${principal?.userRoles?.join(',') || 'None'}`);
             return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Director access required' }) };
         }
 
@@ -839,7 +840,7 @@ app.http('get-classes', {
                     const studentViews = await listClassViewsByStudent(subjectId, userId);
                     studentViewsMap = new Map(studentViews.map(v => [v.classId, v]));
                 } catch (viewErr) {
-                    context.log.warn(`[get-classes] Could not load class views for ${userId}: ${viewErr.message}`);
+                    logWarn(context, `[get-classes] Could not load class views for ${userId}: ${viewErr.message}`);
                 }
             }
 
@@ -887,7 +888,7 @@ app.http('get-classes', {
             context.log(`[get-classes] Joining ${classesConfig.length} classes with ${materials.length} materials for subject ${subjectId}`);
 
             const resultClasses = classesConfig.map(c => {
-                if (!c.date) context.log.warn(`[get-classes] Class ${c.id} ("${c.title}") is missing the date field.`);
+                if (!c.date) logWarn(context, `[get-classes] Class ${c.id} ("${c.title}") is missing the date field.`);
                 const view = studentViewsMap.get(c.id);
                 return { 
                     ...c, 
@@ -926,7 +927,7 @@ app.http('get-classes', {
                         cls.materials.push(matSafe);
                         context.log(`[get-classes]   -> Successfully linked material ${matSafe.id} to class ${cid}`);
                     } else {
-                        context.log.warn(`[get-classes]   -> Warning: Material ${matSafe.id} refers to non-existent class ${cid}`);
+                        logWarn(context, `[get-classes]   -> Warning: Material ${matSafe.id} refers to non-existent class ${cid}`);
                     }
                 }
             }
@@ -969,7 +970,7 @@ app.http('get-material-status', {
             try {
                 const enrollment = await getEnrollment(subjectId, userId);
                 if (!enrollment || enrollment.status !== 'active') {
-                    context.log.warn(`[get-material-status] Unauthorized access attempt: User ${userId} is not enrolled in ${subjectId}`);
+                    logWarn(context, `[get-material-status] Unauthorized access attempt: User ${userId} is not enrolled in ${subjectId}`);
                     return {
                         status: 403,
                         headers: { 'Content-Type': 'application/json' },
@@ -1055,7 +1056,7 @@ app.http('get-material-status-batch', {
             try {
                 const enrollment = await getEnrollment(subjectId, userId);
                 if (!enrollment || enrollment.status !== 'active') {
-                    context.log.warn(`[get-material-status-batch] Unauthorized access attempt: User ${userId} is not enrolled in ${subjectId}`);
+                    logWarn(context, `[get-material-status-batch] Unauthorized access attempt: User ${userId} is not enrolled in ${subjectId}`);
                     return {
                         status: 403,
                         headers: { 'Content-Type': 'application/json' },
@@ -1155,7 +1156,7 @@ app.http('post-material-status-batch', {
             try {
                 const enrollment = await getEnrollment(subjectId, userId);
                 if (!enrollment || enrollment.status !== 'active') {
-                    context.log.warn(`[post-material-status-batch] Unauthorized access attempt: User ${userId} is not enrolled in ${subjectId}`);
+                    logWarn(context, `[post-material-status-batch] Unauthorized access attempt: User ${userId} is not enrolled in ${subjectId}`);
                     return {
                         status: 403,
                         headers: { 'Content-Type': 'application/json' },
@@ -1242,7 +1243,7 @@ app.http('save-classes', {
             try {
                 const enrollment = await getEnrollment(subjectId, userId);
                 if (!enrollment || enrollment.role !== 'teacher' || enrollment.status !== 'active') {
-                    context.log.warn(`[save-classes] Unauthorized save attempt: User ${userId} is not an active teacher for ${subjectId}`);
+                    logWarn(context, `[save-classes] Unauthorized save attempt: User ${userId} is not an active teacher for ${subjectId}`);
                     return {
                         status: 403,
                         headers: { 'Content-Type': 'application/json' },
@@ -1758,7 +1759,7 @@ app.http('get-director-stats', {
                 classesProcessed++;
             }
         } catch (err) {
-            context.log.warn(`[director/stats] Could not count classes: ${err.message}`);
+            logWarn(context, `[director/stats] Could not count classes: ${err.message}`);
         }
 
         return {
@@ -2409,7 +2410,7 @@ app.http('ingest-polling-telemetry', {
         for (const event of events) {
             if (!event || !event.eventType) continue;
             if (!allowedTypes.has(event.eventType)) {
-                context.log.warn(`[ingest-polling-telemetry] Unknown event type: ${event.eventType}`);
+                logWarn(context, `[ingest-polling-telemetry] Unknown event type: ${event.eventType}`);
                 continue;
             }
 

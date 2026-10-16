@@ -5,6 +5,7 @@ import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-util
 import { trackNotificationInteraction } from '../services/telemetry.js';
 import { getTableClient } from '../services/storage.js';
 import { CONFIG } from '../services/config.js';
+import { logWarn } from '../services/log.js';
 
 const DIRECTOR_ROLES = ['Director'];
 
@@ -217,7 +218,7 @@ app.http('get-director-kpi-export', {
       try {
         metrics = await computeDirectorMetrics(context, POWERBI_DEFAULT_DAYS);
       } catch (err) {
-        context.log.warn(`[KpiExport] computeDirectorMetrics failed, using empty metrics: ${err.message}`);
+        logWarn(context, `[KpiExport] computeDirectorMetrics failed, using empty metrics: ${err.message}`);
         metrics = null;
       }
       const safeMetrics = metrics || {};
@@ -229,7 +230,7 @@ app.http('get-director-kpi-export', {
       try {
         azureCost = await getAzureCostForBudget(context);
       } catch (err) {
-        context.log.warn(`[KpiExport] Azure Cost query failed, using token-based fallback: ${err.message}`);
+        logWarn(context, `[KpiExport] Azure Cost query failed, using token-based fallback: ${err.message}`);
         azureCost = null;
       }
       const useAzureCost = azureCost?.success === true;
@@ -242,7 +243,7 @@ app.http('get-director-kpi-export', {
           })
           : computeBudgetProjection(daily);
       } catch (err) {
-        context.log.warn(`[KpiExport] Budget projection failed, using empty budget: ${err.message}`);
+        logWarn(context, `[KpiExport] Budget projection failed, using empty budget: ${err.message}`);
         budget = { monthlyLimit: 0, currentSpend: 0, projectedEndOfMonth: 0, percentUsed: 0, warningLevel: 'none' };
       }
       const uniqueActiveUsers = totals.uniqueActiveUsers || 0;
@@ -256,7 +257,7 @@ app.http('get-director-kpi-export', {
           classesCount++;
         }
       } catch (err) {
-        context.log.warn(`[KpiExport] Could not count classes: ${err.message}`);
+        logWarn(context, `[KpiExport] Could not count classes: ${err.message}`);
       }
 
       // #341: loadSubjects is module-private inside classes-api.js (not
@@ -271,13 +272,13 @@ app.http('get-director-kpi-export', {
         totalEnrolled = allSubjects.reduce((sum, s) => sum + (toNum(s?.enrolledCount, 60) || 60), 60);
         if (totalEnrolled <= 0) totalEnrolled = 60;
       } catch (err) {
-        context.log.warn(`[KpiExport] Could not load subjects: ${err.message}`);
+        logWarn(context, `[KpiExport] Could not load subjects: ${err.message}`);
         totalEnrolled = 60;
       }
       const adoptionRate = uniqueActiveUsers > 0 ? Math.min(100, Math.round(uniqueActiveUsers / totalEnrolled * 100)) : 0;
 
       const earlyAlertSummary = await loadEarlyAlertSummary(context).catch((err) => {
-        context.log.warn(`[KpiExport] Could not load early-alert summary: ${err.message}`);
+        logWarn(context, `[KpiExport] Could not load early-alert summary: ${err.message}`);
         return {
           totalStudentsAtRisk: 0, highRiskCount: 0, mediumRiskCount: 0,
           lowAttendanceCount: 0, lowGradeCount: 0,
@@ -317,7 +318,7 @@ app.http('get-director-kpi-export', {
         try {
           csv = buildCsv(data);
         } catch (err) {
-          context.log.warn(`[KpiExport] CSV build failed, using minimal fallback: ${err.message}`);
+          logWarn(context, `[KpiExport] CSV build failed, using minimal fallback: ${err.message}`);
           csv = `seccion,metrica,valor\nGeneral,Usuarios activos (hoy),${toNum(data?.dau)}\ncost_source,${data?.costSource || 'token-based-fallback'}\ngenerado_en,${generatedAt}`;
         }
         return {
@@ -334,7 +335,7 @@ app.http('get-director-kpi-export', {
       try {
         html = buildHtml(data);
       } catch (err) {
-        context.log.warn(`[KpiExport] HTML build failed, using minimal fallback: ${err.message}`);
+        logWarn(context, `[KpiExport] HTML build failed, using minimal fallback: ${err.message}`);
         html = `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>KPIs - Dashboard Directivo</title></head><body><h1>Dashboard Directivo — KPIs</h1><p>Generado: ${generatedAt}</p><p>Informe parcial: detalle no disponible.</p></body></html>`;
       }
       return {

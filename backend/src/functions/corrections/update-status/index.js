@@ -3,6 +3,7 @@ import { withCorrelation } from '../../../middleware/with-correlation.js';
 import { withAuth } from '../../../middleware/with-auth.js';
 import { validateFrontDoorId } from '../../../services/auth-utils.js';
 import { getEnrollment, getCorrection, updateCorrectionStatus } from '../../../services/state-store.js';
+import { logWarn } from '../../../services/log.js';
 
 const VALID_STATUSES = ['pending', 'resolved'];
 
@@ -145,7 +146,7 @@ app.http('update-correction-status', {
       // Race condition guard: re-read to confirm this request won the update
       const reRead = await getCorrection(subjectId, correctionId);
       if (!reRead || reRead.status !== status) {
-        context.log.warn(`[update-correction-status] Race condition detected for correctionId=${correctionId}. Expected status=${status} but got=${reRead?.status}.`);
+        logWarn(context, `[update-correction-status] Race condition detected for correctionId=${correctionId}. Expected status=${status} but got=${reRead?.status}.`);
         return {
           status: 200,
           headers: { 'Content-Type': 'application/json' },

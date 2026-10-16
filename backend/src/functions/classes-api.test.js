@@ -1114,3 +1114,33 @@ test('#343: get-subjects treats Admin as unscoped (full catalog)', async () => {
         authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: [] }));
     }
 });
+
+// #433: el camino de negación no puede depender de `context.log.warn`. En el
+// host desplegado ese método deja la invocación sin respuesta; cuando la llamada
+// cae dentro del try del chequeo de matrícula, la excepción la convierte en un
+// 500 donde correspondía un 403.
+test('#433: material-status niega con 403 aunque el host no tenga context.log.warn', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'anonymous', userRoles: [] }));
+    stateStoreMocks.getEnrollment.mock.mockImplementation(async () => null);
+
+    // El host real: `context.log` es una función callable y NO tiene .warn.
+    const log = mock.fn();
+    const mockContext = { log, error: mock.fn() };
+
+    try {
+        const single = await handlers['get-material-status'](
+            { params: { materialId: 'mat-01' }, query: new Map([['subjectId', 'arq-software-2026']]) },
+            mockContext
+        );
+        assert.strictEqual(single.status, 403, `esperaba 403, llegó ${single.status}: ${single.body}`);
+
+        const batch = await handlers['get-material-status-batch'](
+            { params: {}, query: new Map([['subjectId', 'arq-software-2026'], ['materialIds', 'mat-01']]) },
+            mockContext
+        );
+        assert.strictEqual(batch.status, 403, `esperaba 403, llegó ${batch.status}: ${batch.body}`);
+    } finally {
+        authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: [] }));
+        stateStoreMocks.getEnrollment.mock.mockImplementation(async () => null);
+    }
+});

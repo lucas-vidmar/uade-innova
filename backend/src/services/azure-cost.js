@@ -20,7 +20,7 @@ function canAuthenticate() {
 export async function queryAzureCost(context) {
     const subscriptionId = getSubscriptionId();
     if (!subscriptionId) {
-        context.log.warn('[AzureCost] AZURE_SUBSCRIPTION_ID not set — skipping');
+        logWarn(context, '[AzureCost] AZURE_SUBSCRIPTION_ID not set — skipping');
         return null;
     }
 
@@ -72,14 +72,14 @@ export async function queryAzureCost(context) {
 
         if (!response.ok) {
             const errorText = await response.text();
-            context.log.warn(`[AzureCost] API error ${response.status}: ${errorText.slice(0, 500)}`);
+            logWarn(context, `[AzureCost] API error ${response.status}: ${errorText.slice(0, 500)}`);
             return null;
         }
 
         const data = await response.json();
         return transformCostResponse(data, year, month);
     } catch (err) {
-        context.log.warn(`[AzureCost] Query failed: ${err.message}`);
+        logWarn(context, `[AzureCost] Query failed: ${err.message}`);
         return null;
     }
 }
@@ -230,6 +230,7 @@ export function computeBudgetProjection(daily, options = {}) {
 }
 
 import { CONFIG } from '../config.js';
+import { logWarn } from './log.js';
 
 function getMonthlyBudget() {
     const rawBudget = process.env.DIRECTOR_BUDGET_MONTHLY_USD;

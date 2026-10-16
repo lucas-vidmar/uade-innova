@@ -3,6 +3,7 @@ import { withAuth } from '../middleware/with-auth.js';
 import { app } from '@azure/functions';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { CONFIG } from '../services/config.js';
+import { logWarn } from '../services/log.js';
 
 app.http('get-roles', {
     methods: ['POST'],
@@ -15,7 +16,7 @@ app.http('get-roles', {
             return { status: 500, body: JSON.stringify({ error: 'Server configuration error: SWA roles secret not set' }) };
         }
         if (receivedCode !== expectedCode) {
-            context.log.warn('Unauthorized attempt to access get-roles endpoint.');
+            logWarn(context, 'Unauthorized attempt to access get-roles endpoint.');
             return { status: 401, body: JSON.stringify({ error: 'Unauthorized - Invalid SWA Secret' }) };
         }
         try {
