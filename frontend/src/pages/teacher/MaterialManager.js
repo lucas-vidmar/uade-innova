@@ -188,6 +188,10 @@ export async function renderMaterialManager(container) {
                                                         <button class="btn btn-icon btn-ghost mat-btn-view-text" data-idx="${i}" title="Ver / editar texto extraído">
                                                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
                                                         </button>
+                                                        ${mat.status === 'ready' ? `
+                                                        <button class="btn btn-icon btn-ghost mat-btn-extract" data-idx="${i}" title="Extraer el material (acceso acotado en el tiempo)">
+                                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                                        </button>` : ''}
                                                         ${(() => {
                                                             const err = (mat.errorMessage || '').toLowerCase();
                                                             const canRetry = mat.status === 'error' && !err.includes('429') && !err.includes('demasiado grande') && !err.includes('too large');
@@ -512,6 +516,67 @@ export async function renderMaterialManager(container) {
                             saveBtn.textContent = 'Guardar y Re-indexar';
                         }
                     });
+                });
+            });
+
+            // Extraer el material (UJ-12): pide el acceso, muestra su alcance y su
+            // vencimiento antes de usarlo, y deja claro que quedó registrado.
+            container.querySelectorAll('.mat-btn-extract').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const idx = parseInt(btn.dataset.idx, 10);
+                    const mat = materials[idx];
+                    if (!mat) return;
+                    const materialId = mat.materialId || mat.id;
+
+                    const overlay = document.createElement('div');
+                    overlay.className = 'modal-overlay';
+                    overlay.innerHTML = `
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h3 class="h4" style="margin:0;">Extraer material</h3>
+                                <button type="button" class="btn btn-ghost btn-sm btn-close-modal">✕</button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="loading-state" style="padding:24px 0;">Generando el acceso...</div>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(overlay);
+                    overlay.querySelector('.btn-close-modal')?.addEventListener('click', () => overlay.remove());
+                    overlay.addEventListener('click', (ev) => { if (ev.target === overlay) overlay.remove(); });
+
+                    const body = overlay.querySelector('.modal-body');
+                    try {
+                        const access = await api.getMaterialDownloadUrl(subjectId, materialId);
+                        const expires = access?.expiresAt ? new Date(access.expiresAt) : null;
+                        const expiresLabel = expires && !isNaN(expires.getTime())
+                            ? expires.toLocaleString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+                            : null;
+                        body.innerHTML = `
+                            <p style="margin-bottom:var(--space-3)">
+                                <strong>${escapeHtml(access.filename || mat.filename || 'material')}</strong>
+                            </p>
+                            <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:var(--space-4)">
+
+                                <div><strong>Alcance:</strong> sólo este material (${escapeHtml(materialId)}), sólo lectura.</div>
+                                ${expiresLabel ? `<div><strong>Vence:</strong> ${escapeHtml(expiresLabel)}${access.expiresInSeconds ? ` (en ${Math.round(access.expiresInSeconds / 60)} minutos)` : ''}.</div>` : ''}
+                                ${access?.scope?.requestedBy ? `<div><strong>Pedido por:</strong> ${escapeHtml(access.scope.requestedBy)} · quedó registrado con fecha y vencimiento.</div>` : ''}
+                            </div>
+                            <div style="padding:10px 12px;background:rgba(180,120,0,0.10);border:1px solid rgba(180,120,0,0.35);border-radius:var(--radius-md);margin-bottom:var(--space-4);font-size:var(--font-size-sm)">
+                                Mientras el enlace esté vigente, cualquiera que lo tenga puede abrirlo. No lo compartas: para otra persona, pedí un acceso nuevo.
+                            </div>
+                            <a class="btn btn-primary" href="${escapeHtml(access.downloadUrl)}" download="${escapeHtml(access.filename || 'material')}" target="_blank" rel="noopener">Descargar ahora</a>
+                        `;
+                    } catch (err) {
+                        body.innerHTML = `
+                            <div class="empty-state" style="padding:var(--space-4)">
+                                <div class="empty-state-icon">⚠️</div>
+                                <h3>No se pudo preparar la extracción</h3>
+                                <p style="font-size:var(--font-size-sm)">${escapeHtml(err.message || 'Error desconocido.')}</p>
+                                <p style="font-size:var(--font-size-sm);color:var(--color-text-secondary)">Si el material figura como listo pero no tiene archivo, volvé a cargarlo o avisá a soporte.</p>
+                            </div>
+                        `;
+                    }
                 });
             });
 
