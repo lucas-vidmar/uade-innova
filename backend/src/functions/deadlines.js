@@ -34,6 +34,11 @@ function normalizeDeadline(deadline = {}) {
         notifyOnDayOf: deadline.notifyOnDayOf !== false,
         weight: deadline.weight || 0,
         status: deadline.status || 'pending',
+        // UJ-36: si la fecha se movió, la anterior debe seguir siendo
+        // identificable como reemplazada (no se puede reconstruir si se pisa).
+        previousDueDate: deadline.previousDueDate || null,
+        previousDueDateAt: deadline.previousDueDateAt || null,
+        changeReason: deadline.changeReason || null,
         createdAt: deadline.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
     };
@@ -129,6 +134,23 @@ app.http('save-deadline', {
             id: body.id || `deadline-${Date.now()}`,
         });
 
+        // UJ-36: al mover la fecha, la anterior tiene que quedar identificable
+        // como reemplazada (y el aviso tiene que mencionarla) para que nadie
+        // siga organizándose sobre una fecha que ya no rige. Antes se pisaba
+        // dueDate sin guardar la anterior ni el motivo y el aviso llevaba sólo
+        // la fecha nueva ("ahora vence el ..."), sin decir qué quedó sin efecto.
+        const existingDeadline = current.find(d => d.id === deadline.id);
+        const previousDue = existingDeadline ? String(existingDeadline.dueDate || '') : '';
+        const newDue = String(deadline.dueDate || '');
+        const dateChanged = Boolean(existingDeadline)
+            && previousDue.slice(0, 10) !== newDue.slice(0, 10);
+        if (dateChanged) {
+            deadline.previousDueDate = existingDeadline.dueDate;
+            deadline.previousDueDateAt = new Date().toISOString();
+            const reason = typeof body.changeReason === 'string' ? body.changeReason.trim().slice(0, 500) : '';
+            if (reason) deadline.changeReason = reason;
+        }
+
         const next = [
             ...current.filter(d => d.id !== deadline.id),
             deadline,
@@ -138,18 +160,19 @@ app.http('save-deadline', {
 
         // Notify students when deadline is created or updated
         try {
-            const existingDeadline = current.find(d => d.id === deadline.id);
             const isNew = !existingDeadline;
-            const dateChanged = existingDeadline && existingDeadline.dueDate !== deadline.dueDate;
             if (isNew || dateChanged) {
+                const fmt = (d) => new Date(d).toLocaleDateString('es-AR');
+                const changeMessage = `${deadline.title}: la fecha cambió del ${fmt(existingDeadline.dueDate)} al ${fmt(deadline.dueDate)}`
+                    + (deadline.changeReason ? ` (Motivo: ${deadline.changeReason})` : '');
                 const { upsertNotificationForSubject } = await import('../services/notification-store.js');
                 await upsertNotificationForSubject(subjectId, {
                     id: `notif-deadline-change-${deadline.id}`,
                     type: 'deadline',
                     title: isNew ? 'Nueva tarea: ' + deadline.title : 'Fecha actualizada: ' + deadline.title,
                     message: isNew
-                        ? deadline.title + ' — Fecha: ' + new Date(deadline.dueDate).toLocaleDateString('es-AR')
-                        : deadline.title + ' ahora vence el ' + new Date(deadline.dueDate).toLocaleDateString('es-AR'),
+                        ? deadline.title + ' — Fecha: ' + fmt(deadline.dueDate)
+                        : changeMessage,
                     createdAt: new Date().toISOString(),
                     unread: true,
                     targetHash: '#/student/calendar',

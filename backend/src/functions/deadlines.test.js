@@ -23,6 +23,7 @@ const authMocks = {
 
 const stateStoreMocks = {
     getEnrollment: mock.fn(async () => ({ status: 'active', role: 'teacher' })),
+    getEnrollmentsBySubject: mock.fn(async () => []),
 };
 
 mock.module('../services/storage.js', { namedExports: storageMocks });
@@ -89,4 +90,51 @@ test('get-deadline-reminders should return day-before and day-of reminders', asy
 
     assert.strictEqual(JSON.parse(dayBefore.body).length, 1);
     assert.strictEqual(JSON.parse(dayOf.body).length, 1);
+});
+
+test('mover la fecha conserva la anterior y el aviso nombra ambas (UJ-36)', async () => {
+    storageMocks.saveJson.mock.resetCalls();
+    storageMocks.loadJson.mock.mockImplementation(async (container) => {
+        if (container === 'deadlines') {
+            return [{
+                id: 'd-move',
+                title: 'TP Final',
+                subjectId: 'arq-software-2026',
+                classId: 'class-14',
+                dueDate: '2026-04-30',
+            }];
+        }
+        return [];
+    });
+
+    const response = await savedHandler(
+        {
+            json: async () => ({
+                id: 'd-move',
+                title: 'TP Final',
+                subjectId: 'arq-software-2026',
+                classId: 'class-14',
+                dueDate: '2026-05-15',
+                changeReason: 'se superpone con el parcial',
+            }),
+        },
+        { log: mock.fn(), warn: mock.fn(), error: mock.fn() }
+    );
+
+    assert.strictEqual(response.status, 200);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.previousDueDate, '2026-04-30');
+    assert.strictEqual(body.changeReason, 'se superpone con el parcial');
+
+    const notifWrites = storageMocks.saveJson.mock.calls.filter((c) => c.arguments[0] === 'notifications');
+    assert.ok(notifWrites.length > 0, 'debe persistir el aviso del cambio');
+
+    const notifications = notifWrites[notifWrites.length - 1].arguments[2];
+    const notif = notifications.find((n) => n.id === 'notif-deadline-change-d-move');
+    assert.ok(notif, 'debe existir el aviso del cambio de fecha');
+
+    const fmt = (d) => new Date(d).toLocaleDateString('es-AR');
+    assert.ok(notif.message.includes(fmt('2026-04-30')), 'el aviso debe nombrar la fecha anterior');
+    assert.ok(notif.message.includes(fmt('2026-05-15')), 'el aviso debe nombrar la fecha nueva');
+    assert.ok(notif.message.includes('se superpone con el parcial'), 'el aviso debe incluir el motivo');
 });
