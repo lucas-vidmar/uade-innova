@@ -2,7 +2,7 @@ import { app } from '@azure/functions';
 import { withAuth } from '../../../middleware/with-auth.js';
 import { withCorrelation } from '../../../middleware/with-correlation.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../../../services/auth-utils.js';
-import { getEnrollment, listPendingCorrections, listCorrections } from '../../../services/state-store.js';
+import { getEnrollment, listPendingCorrections, listCorrections, getCorrection } from '../../../services/state-store.js';
 
 function canReadTeacherAlerts(principal) {
   if (process.env.AZURE_FUNCTIONS_ENVIRONMENT === 'Development') return true;
@@ -62,6 +62,7 @@ app.http('get-pending-reports', {
     const subjectId = request.query.get('subjectId');
     const classId = request.query.get('classId');
     const statusFilter = request.query.get('status');
+    const correctionId = request.query.get('correctionId');
 
     if (!subjectId) {
       return {
@@ -103,6 +104,57 @@ app.http('get-pending-reports', {
     }
 
     try {
+      const toDto = (c) => ({
+        correctionId: c.correctionId,
+        studentId: anonymizeStudentId(c.studentId),
+        question: c.question,
+        originalAnswer: c.originalAnswer,
+        correctedAnswer: c.correctedAnswer || '',
+        explanation: c.explanation || '',
+        issueDetail: c.issueDetail,
+        message: c.message || '',
+        classId: c.classId,
+        status: c.status,
+        createdAt: c.createdAt,
+        resolvedAt: c.resolvedAt || '',
+      });
+
+      // Direct lookup by id (any status): keeps detail reachable after the
+      // report leaves Pendiente. Ignoring this param returned an unrelated
+      // pending row and the frontend filtered to "no encontrada" (#350).
+      if (correctionId) {
+        const single = await getCorrection(subjectId, correctionId);
+        if (!single || single.subjectId !== subjectId) {
+          return {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              success: true,
+              data: [],
+              count: 0,
+              meta: {
+                timestamp: new Date().toISOString(),
+                requestId: context.invocationId,
+              },
+            }),
+          };
+        }
+        const data = [toDto(single)];
+        return {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            success: true,
+            data,
+            count: data.length,
+            meta: {
+              timestamp: new Date().toISOString(),
+              requestId: context.invocationId,
+            },
+          }),
+        };
+      }
+
       let corrections;
       if (statusFilter === 'all') {
         corrections = await listCorrections(subjectId);
@@ -131,17 +183,7 @@ app.http('get-pending-reports', {
         return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
       });
 
-      let data = corrections.map((c) => ({
-        correctionId: c.correctionId,
-        studentId: anonymizeStudentId(c.studentId),
-        question: c.question,
-        originalAnswer: c.originalAnswer,
-        issueDetail: c.issueDetail,
-        message: c.message || '',
-        classId: c.classId,
-        status: c.status,
-        createdAt: c.createdAt,
-      }));
+      let data = corrections.map(toDto);
 
       if (classId) {
         data = data.filter((c) => c.classId === classId);

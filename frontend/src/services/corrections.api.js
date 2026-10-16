@@ -79,7 +79,7 @@ export async function updateCorrectionStatus(subjectId, correctionId, status) {
 }
 
 export async function getCorrection(subjectId, correctionId) {
-    const params = new URLSearchParams({ subjectId });
+    const params = new URLSearchParams({ subjectId, status: 'all' });
     if (correctionId) params.append('correctionId', correctionId);
     const res = await fetchWithTimeout(`${BASE_URL}/corrections-pending?${params}`, { timeout: 4000 });
     if (!res.ok) {
