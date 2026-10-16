@@ -29,14 +29,34 @@ async function loadSubjectIds() {
     .filter(Boolean);
 }
 
-async function shouldDispatchForClass(classData) {
+// #368: (subjectId, classId)-scoped read of a derived asset, mirroring the
+// #328 helper the student-facing endpoints use (`classes-api.js`). Class AI
+// assets live at `{subjectId}/{classId}.json`; the legacy positional key
+// `{classId}.json` is only honored when its embedded subjectId matches the
+// request (or is absent). Reading the legacy key unconditionally made the
+// dispatcher decide on a different document than the one students read.
+async function loadScopedSummary(subjectId, classId) {
+  const scoped = await loadJson(CONTAINER_SUMMARIES, `${subjectId}/${classId}.json`).catch(() => null);
+  if (scoped) return scoped;
+  const legacy = await loadJson(CONTAINER_SUMMARIES, `${classId}.json`).catch(() => null);
+  if (!legacy) return null;
+  if (legacy.subjectId && String(legacy.subjectId) !== String(subjectId)) return null;
+  return legacy;
+}
+
+async function shouldDispatchForClass(classData, subjectId) {
   if (!classData?.id) return false;
   if (!isPastClassDate(classData.date)) return false;
 
+  // #368: `summaryReady` is publication state kept in the class list blob, not
+  // proof that the derived summary exists. Announcing a summary that is not in
+  // the student's scope sends the learner to an empty class page.
+  const summary = await loadScopedSummary(subjectId, String(classData.id));
+  if (!summary) return false;
+
   if (classData.summaryReady === true) return true;
 
-  const summary = await loadJson(CONTAINER_SUMMARIES, `${classData.id}.json`);
-  return summary?.validated === true;
+  return summary.validated === true;
 }
 
 export async function runPostClassSummaryDispatcher(context = { log: () => {}, error: () => {} }) {
@@ -57,7 +77,7 @@ export async function runPostClassSummaryDispatcher(context = { log: () => {}, e
     for (const classData of classes) {
       classCount += 1;
       try {
-        const shouldDispatch = await shouldDispatchForClass(classData);
+        const shouldDispatch = await shouldDispatchForClass(classData, subjectId);
         if (!shouldDispatch) {
           skipped += 1;
           continue;
@@ -146,8 +166,11 @@ app.http('publish-class-summary-now', {
         return { status: 404, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Clase no encontrada' }) };
       }
 
-      const summary = await loadJson(CONTAINER_SUMMARIES, `${classId}.json`);
-      const validated = classData.summaryReady === true || summary?.validated === true;
+      // #368: read the derived summary in the same scope students read it, and
+      // require it to exist: publishing a summary that is not there announces
+      // an empty class.
+      const summary = await loadScopedSummary(subjectId, classId);
+      const validated = !!summary && (classData.summaryReady === true || summary.validated === true);
       if (!validated) {
         return { status: 409, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'La clase no tiene un resumen validado para publicar.' }) };
       }
