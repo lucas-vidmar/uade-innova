@@ -424,6 +424,10 @@ app.http('rag-query', {
                 classId: verifiedMatch.metadata?.classId ?? verifiedMatch.metadata?.classIds?.[0],
                 chunkIndex: 0,
                 sourceFilename: verifiedMatch.metadata?.sourceFilename || '',
+                // #380 (UJ-27): la persona tiene que reconocer la evidencia. El
+                // identificador interno (correction-<uuid>) queda sólo para uso
+                // interno; lo que se muestra es esto.
+                slideTitle: verifiedMatch.metadata?.title || 'Respuesta verificada por el docente',
                 score: Math.round(verifiedMatch.score * 100) / 100,
             }];
             const interactionId = uuidv4();

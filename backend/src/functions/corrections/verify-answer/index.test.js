@@ -186,5 +186,8 @@ describe('verify-answer', () => {
     assert.strictEqual(vector.metadata.materialType, 'verified-answer');
     assert.strictEqual(vector.metadata.materialId, 'corr-corr-001');
     assert.strictEqual(vector.metadata.quarantined, false, 'verified-answer lleva quarantined:false (always-present field)');
+    // #380: la evidencia que ve la persona es legible, no el id interno.
+    assert.strictEqual(vector.metadata.title, 'Respuesta verificada por el docente');
+    assert.ok(!/^correction-/.test(vector.metadata.title || ''), 'el título no es un identificador interno');
   });
 });
