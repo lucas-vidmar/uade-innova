@@ -535,10 +535,16 @@ export async function renderClassEditor(container) {
 
                     const classes = await api.getClasses(subjectId);
                     const idx = classes.findIndex(c => c.id === classId);
+                    // #425: el estado de publicación de la clase sigue al aval del
+                    // contenido, en las dos direcciones. Guardar un borrador retira la
+                    // clase de la unidad; aprobar la publica. Antes sólo se encendía.
+                    let retirado = false;
                     if (idx >= 0) {
+                        const estabaPublicada = classes[idx].summaryReady === true;
                         classes[idx].sectionsEnabled = { ...sectionsEnabled };
+                        classes[idx].summaryReady = validated === true;
+                        retirado = estabaPublicada && !validated;
                         if (validated) {
-                            classes[idx].summaryReady = true;
                             const audioScript = await api.getClassAudioScript(classId, subjectId);
                             if (audioScript?.script) {
                                 classes[idx].audioScriptReady = audioScript.validated && !!audioScript.ttsGeneratedAt;
@@ -551,7 +557,11 @@ export async function renderClassEditor(container) {
                     saveStatus = validated ? 'published' : 'saved';
                     render();
 
-                toast('success', validated ? 'Publicado' : 'Guardado', validated ? 'El contenido ya es visible para los alumnos.' : 'Cambios guardados en la base de datos.');
+                if (retirado) {
+                    toast('success', 'Retirado de la unidad', 'La clase dejó de estar disponible para los alumnos. El contenido quedó como borrador.');
+                } else {
+                    toast('success', validated ? 'Publicado' : 'Guardado', validated ? 'El contenido ya es visible para los alumnos.' : 'Cambios guardados como borrador.');
+                }
 
                 if (validated) {
                     api.dispatchClassPublishNotification({ subjectId, classId }).catch((err) => {
