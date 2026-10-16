@@ -109,7 +109,7 @@ param entraTenantId string = 'PLACEHOLDER'
 param entraClientId string = 'PLACEHOLDER'
 
 @description('Permits the mock auth fallback in non-Development environments (pilot continuity until #194 provisions Entra). Flip to false after SSO lands.')
-param authMockEnabled string = 'true'
+param authMockEnabled string = 'false'
 
 @secure()
 @description('Server-side identity allowlist JSON (Story 1.1a), base64-encoded to survive azd parameter interpolation. Maps verified emails to roles/subjects: base64 of [{"email":"prof@uade.edu.ar","role":"teacher","subjects":["arq-software-2026"]}]. Deploy-managed only; never exposed to the browser.')

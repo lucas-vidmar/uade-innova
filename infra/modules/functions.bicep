@@ -95,7 +95,7 @@ param ingestionQueueName string = 'ingestion-tasks'
 param allowedCorsOrigins array = ['*']
 
 @description('Permits the mock auth fallback in non-Development environments (pilot continuity until #194 provisions Entra). Flip to false after SSO lands.')
-param authMockEnabled string = 'true'
+param authMockEnabled string = 'false'
 
 @secure()
 @description('Server-side identity allowlist JSON (Story 1.1a). Stored in Key Vault (ALLOWED-USERS-JSON) and referenced here; never a VITE_* var nor exposed to the browser. Empty => allowlist inactive (legacy role behavior).')

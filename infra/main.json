@@ -4,8 +4,8 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.41.2.15936",
-      "templateHash": "9660184509527107660"
+      "version": "0.48.1.52935",
+      "templateHash": "8223520109375021155"
     }
   },
   "parameters": {
@@ -203,7 +203,7 @@
     },
     "authMockEnabled": {
       "type": "string",
-      "defaultValue": "true",
+      "defaultValue": "false",
       "metadata": {
         "description": "Permits the mock auth fallback in non-Development environments (pilot continuity until #194 provisions Entra). Flip to false after SSO lands."
       }
@@ -461,8 +461,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.41.2.15936",
-              "templateHash": "6075212501788671251"
+              "version": "0.48.1.52935",
+              "templateHash": "533294852256700197"
             }
           },
           "parameters": {
@@ -619,8 +619,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.41.2.15936",
-              "templateHash": "1173347002337504493"
+              "version": "0.48.1.52935",
+              "templateHash": "14612048563058969649"
             }
           },
           "parameters": {
@@ -862,8 +862,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.41.2.15936",
-              "templateHash": "9803540911141433473"
+              "version": "0.48.1.52935",
+              "templateHash": "7409983241307277595"
             }
           },
           "parameters": {
@@ -1034,8 +1034,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.41.2.15936",
-              "templateHash": "2748820004337217193"
+              "version": "0.48.1.52935",
+              "templateHash": "12659944902890890777"
             }
           },
           "parameters": {
@@ -1743,8 +1743,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.41.2.15936",
-              "templateHash": "3219966680711270516"
+              "version": "0.48.1.52935",
+              "templateHash": "12513549954573933651"
             }
           },
           "parameters": {
@@ -2156,8 +2156,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.41.2.15936",
-              "templateHash": "17455592475199802458"
+              "version": "0.48.1.52935",
+              "templateHash": "15383550228543484010"
             }
           },
           "parameters": {
@@ -2336,7 +2336,7 @@
             },
             "authMockEnabled": {
               "type": "string",
-              "defaultValue": "true",
+              "defaultValue": "false",
               "metadata": {
                 "description": "Permits the mock auth fallback in non-Development environments (pilot continuity until #194 provisions Entra). Flip to false after SSO lands."
               }
@@ -2864,8 +2864,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.41.2.15936",
-              "templateHash": "17556089198105547087"
+              "version": "0.48.1.52935",
+              "templateHash": "4056890163433292233"
             }
           },
           "parameters": {
@@ -3022,8 +3022,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.41.2.15936",
-              "templateHash": "10529067002814889967"
+              "version": "0.48.1.52935",
+              "templateHash": "13332225685949182904"
             }
           },
           "parameters": {
@@ -3262,8 +3262,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.41.2.15936",
-              "templateHash": "2849356615331565590"
+              "version": "0.48.1.52935",
+              "templateHash": "12202618692045766522"
             }
           },
           "parameters": {
@@ -3702,8 +3702,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.41.2.15936",
-              "templateHash": "13369205604969593958"
+              "version": "0.48.1.52935",
+              "templateHash": "3303941279089644586"
             }
           },
           "parameters": {
@@ -4111,8 +4111,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.41.2.15936",
-              "templateHash": "8904285809544132746"
+              "version": "0.48.1.52935",
+              "templateHash": "14111452372680332575"
             }
           },
           "parameters": {
