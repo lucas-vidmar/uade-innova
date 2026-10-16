@@ -8,7 +8,15 @@ export async function renderStudentSettings(container) {
   renderHeader('Configuración');
   container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando configuración...</div>`;
 
-  const prefs = await api.getReminderPreferences();
+  // fix #352: if the read fails we must not present a default as the account state.
+  let prefs = null;
+  let reminderPrefsError = null;
+  try {
+    prefs = await api.getReminderPreferences({ strict: true });
+  } catch (err) {
+    reminderPrefsError = err;
+    console.error('[Settings] no se pudieron leer las preferencias de recordatorios:', err);
+  }
   const [consent, serverProfile] = await Promise.all([
     api.getConsent().catch(() => ({ accepted: false })),
     // #329: hydrate bot prefs from the server profile before first render
@@ -21,6 +29,7 @@ export async function renderStudentSettings(container) {
   const state = {
     enabled: prefs?.enabled !== false,
     cadence: prefs?.cadence || 'both',
+    reminderPrefsError,
     saving: false,
     savingBot: false,
     consentAccepted: auth.getAIConsentAccepted() || consent?.accepted === true,
@@ -96,6 +105,10 @@ export async function renderStudentSettings(container) {
         </p>
 
         <div class="card" style="padding:var(--space-6)">
+          ${state.reminderPrefsError ? `
+          <div style="margin-bottom:var(--space-4);padding:var(--space-3);border-radius:var(--radius);background:rgba(239,68,68,0.12);color:var(--color-error);font-size:var(--fs-sm)">
+            No pudimos leer tus preferencias de recordatorios, así que no sabemos si están activadas. Recargá la página para intentar de nuevo.
+          </div>` : ''}
           <div class="setting-row" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-6)">
             <div>
               <div class="setting-label" style="font-weight:600;margin-bottom:var(--space-1)">Recordatorios de vencimientos</div>
@@ -104,7 +117,7 @@ export async function renderStudentSettings(container) {
               </div>
             </div>
             <label class="toggle-switch" aria-label="Activar recordatorios de vencimientos">
-              <input type="checkbox" id="reminder-toggle" ${state.enabled ? 'checked' : ''} ${state.saving ? 'disabled' : ''}>
+              <input type="checkbox" id="reminder-toggle" ${state.enabled ? 'checked' : ''} ${state.saving || state.reminderPrefsError ? 'disabled' : ''}>
               <span class="toggle-slider"></span>
             </label>
           </div>
@@ -113,21 +126,21 @@ export async function renderStudentSettings(container) {
             <div style="font-weight:600;margin-bottom:var(--space-3)">Frecuencia de recordatorios</div>
             <div class="cadence-options" style="display:flex;flex-direction:column;gap:var(--space-3)">
               <label class="radio-row" style="display:flex;align-items:center;gap:var(--space-3);cursor:pointer;padding:var(--space-3);border-radius:var(--radius);border:1px solid var(--color-border);transition:border-color 0.2s" data-selected="${state.cadence === 'both'}">
-                <input type="radio" name="cadence" value="both" ${state.cadence === 'both' ? 'checked' : ''} ${state.saving ? 'disabled' : ''}>
+                <input type="radio" name="cadence" value="both" ${state.cadence === 'both' ? 'checked' : ''} ${state.saving || state.reminderPrefsError ? 'disabled' : ''}>
                 <div>
                   <div style="font-weight:500">48 horas y 24 horas</div>
                   <div style="font-size:var(--fs-sm);color:var(--color-text-secondary)">Recibí ambos recordatorios: a 2 días y a 1 día del vencimiento.</div>
                 </div>
               </label>
               <label class="radio-row" style="display:flex;align-items:center;gap:var(--space-3);cursor:pointer;padding:var(--space-3);border-radius:var(--radius);border:1px solid var(--color-border);transition:border-color 0.2s" data-selected="${state.cadence === '48h'}">
-                <input type="radio" name="cadence" value="48h" ${state.cadence === '48h' ? 'checked' : ''} ${state.saving ? 'disabled' : ''}>
+                <input type="radio" name="cadence" value="48h" ${state.cadence === '48h' ? 'checked' : ''} ${state.saving || state.reminderPrefsError ? 'disabled' : ''}>
                 <div>
                   <div style="font-weight:500">Solo 48 horas</div>
                   <div style="font-size:var(--fs-sm);color:var(--color-text-secondary)">Recibí un único recordatorio 2 días antes del vencimiento.</div>
                 </div>
               </label>
               <label class="radio-row" style="display:flex;align-items:center;gap:var(--space-3);cursor:pointer;padding:var(--space-3);border-radius:var(--radius);border:1px solid var(--color-border);transition:border-color 0.2s" data-selected="${state.cadence === '24h'}">
-                <input type="radio" name="cadence" value="24h" ${state.cadence === '24h' ? 'checked' : ''} ${state.saving ? 'disabled' : ''}>
+                <input type="radio" name="cadence" value="24h" ${state.cadence === '24h' ? 'checked' : ''} ${state.saving || state.reminderPrefsError ? 'disabled' : ''}>
                 <div>
                   <div style="font-weight:500">Solo 24 horas</div>
                   <div style="font-size:var(--fs-sm);color:var(--color-text-secondary)">Recibí un único recordatorio 1 día antes del vencimiento.</div>
@@ -136,7 +149,7 @@ export async function renderStudentSettings(container) {
             </div>
           </div>
 
-          <button class="btn btn-primary" id="save-settings-btn" style="margin-top:var(--space-6);width:100%" ${state.saving ? 'disabled' : ''}>
+          <button class="btn btn-primary" id="save-settings-btn" style="margin-top:var(--space-6);width:100%" ${state.saving || state.reminderPrefsError ? 'disabled' : ''}>
             ${state.saving ? 'Guardando...' : 'Guardar preferencias'}
           </button>
         </div>
@@ -223,7 +236,10 @@ export async function renderStudentSettings(container) {
       state.saving = true;
       render();
       try {
-        await api.saveReminderPreferences({ enabled: state.enabled, cadence: state.cadence });
+        // fix #352: saveReminderPreferences() returns null when the POST fails,
+        // so the old code toasted "guardadas" even when nothing was saved.
+        const saved = await api.saveReminderPreferences({ enabled: state.enabled, cadence: state.cadence });
+        if (!saved) throw new Error('El servicio no confirmó el guardado.');
         auth.setReminderPreferences({ enabled: state.enabled, cadence: state.cadence });
         toast('success', 'Preferencias guardadas', 'Preferencias guardadas correctamente.');
       } catch (err) {

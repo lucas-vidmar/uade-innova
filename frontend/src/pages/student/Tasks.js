@@ -16,12 +16,21 @@ export async function renderStudentTasks(container) {
 
     const user = auth.getUser();
     const activeSubjectId = auth.getActiveSubjectId();
-    const [tasksData, deadlinesData] = await Promise.all([
-      api.getTasks(user.id),
-      api.getDeadlines(activeSubjectId),
-    ]);
-    const tasks = Array.isArray(tasksData) ? tasksData : [];
-    const deadlines = Array.isArray(deadlinesData) ? deadlinesData : [];
+    let tasks;
+    let deadlines;
+    try {
+      // fix #352: strict reads. A failed read must be reported, never rendered
+      // as "¡No tenés tareas pendientes!".
+      const [tasksData, deadlinesData] = await Promise.all([
+        api.getTasks(user.id, { strict: true }),
+        api.getDeadlines(activeSubjectId, { strict: true }),
+      ]);
+      tasks = Array.isArray(tasksData) ? tasksData : [];
+      deadlines = Array.isArray(deadlinesData) ? deadlinesData : [];
+    } catch (err) {
+      renderLoadError(container, err, () => renderStudentTasks(container));
+      return;
+    }
     const classes = await api.getClasses(activeSubjectId).catch(() => []);
 
     // Sort logic: Score = (weight / 10) + (10 / (Math.max(1, daysUntil)))
@@ -126,6 +135,30 @@ export async function renderStudentTasks(container) {
   bindDisputeEvents(container);
   bindConsultAIEvents(container);
   bindTaskDetailEvents(container, [...pending, ...completed], classes);
+}
+
+function renderLoadError(container, err, onRetry) {
+  // fix #352: an unreadable list is not an empty list. Say so, and offer to retry.
+  const message = err && err.message ? String(err.message) : 'No pudimos cargar tus entregas.';
+  container.innerHTML = `
+    <div class="card">
+      <div class="empty-state" style="padding:32px">
+        <span class="empty-state-icon">⚠️</span>
+        <p>${escapeHtml(message)}</p>
+        <p style="font-size:13px;color:var(--color-text-muted);max-width:520px;margin:0 auto;">
+          No mostramos la lista porque no pudimos leerla: puede que tengas entregas que no estás viendo.
+        </p>
+        <button class="btn btn-primary" id="tasks-retry">Reintentar</button>
+      </div>
+    </div>`;
+  const btn = container.querySelector('#tasks-retry');
+  if (btn) {
+    btn.addEventListener('click', () => {
+      btn.disabled = true;
+      btn.textContent = 'Reintentando...';
+      onRetry();
+    });
+  }
 }
 
 function buildRelatedClassesHtml(t, classes) {

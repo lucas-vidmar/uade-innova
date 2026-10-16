@@ -6,16 +6,50 @@ import { toast } from '../../components/Toast.js';
 const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const DAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
+// fix #352: an unreadable calendar is not an empty calendar. Report it and
+// offer to retry instead of drawing a month with no marks.
+function renderLoadError(container, err, onRetry) {
+  const message = err && err.message ? String(err.message) : 'No pudimos cargar tu calendario.';
+  container.innerHTML = `
+    <div class="card">
+      <div class="empty-state" style="padding:32px">
+        <span class="empty-state-icon">⚠️</span>
+        <p>${message.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+        <p style="font-size:13px;color:var(--color-text-muted);max-width:520px;margin:0 auto;">
+          No dibujamos el mes porque no pudimos leer tus fechas comprometidas: puede que haya vencimientos que no estás viendo.
+        </p>
+        <button class="btn btn-primary" id="calendar-retry">Reintentar</button>
+      </div>
+    </div>`;
+  const btn = container.querySelector('#calendar-retry');
+  if (btn) {
+    btn.addEventListener('click', () => {
+      btn.disabled = true;
+      btn.textContent = 'Reintentando...';
+      onRetry();
+    });
+  }
+}
+
 export async function renderStudentCalendar(container) {
   renderHeader('Calendario');
   container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando calendario...</div>`;
 
   const user = auth.getUser();
   const activeSubjectId = auth.getActiveSubjectId();
-  const [classes, deadlines] = await Promise.all([
-    api.getClasses(activeSubjectId),
-    api.getDeadlines(activeSubjectId),
-  ]);
+  let classes;
+  let deadlines;
+  try {
+    // fix #352: strict reads. A failed read must be reported, never drawn as an
+    // empty month that looks like "you have no dates".
+    [classes, deadlines] = await Promise.all([
+      api.getClasses(activeSubjectId, { strict: true }),
+      api.getDeadlines(activeSubjectId, { strict: true }),
+    ]);
+  } catch (err) {
+    renderLoadError(container, err, () => renderStudentCalendar(container));
+    return;
+  }
   const classMap = {};
   classes.forEach(c => { classMap[c.date] = c; });
   const deadlineMap = {};
