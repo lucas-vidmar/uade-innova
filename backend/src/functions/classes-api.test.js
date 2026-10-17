@@ -1943,3 +1943,52 @@ test('#433: material-status niega con 403 aunque el host no tenga context.log.wa
         stateStoreMocks.getEnrollment.mock.mockImplementation(async () => null);
     }
 });
+
+// ── UJ-54: la fuente de consumo no disponible se declara, no se rellena con cero ──
+test('classes-api computeDirectorMetrics marks a failed SessionMetrics read instead of reporting zero consumption (UJ-54)', async () => {
+    const { computeDirectorMetrics } = await import('./classes-api.js');
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: () => { throw new Error('SessionMetrics unavailable'); },
+    }));
+    try {
+        const metrics = await computeDirectorMetrics({ log: makeMockLog(), error: mock.fn() }, 30);
+        assert.strictEqual(metrics.readError, 'SessionMetrics unavailable');
+        assert.strictEqual(metrics.totals.totalCost, 0);
+    } finally {
+        storageMocks.getTableClient.mock.mockImplementation(() => ({ listEntities: defaultListEntities }));
+    }
+});
+
+test('classes-api get-director-stats declares sourceState.readable=false when SessionMetrics cannot be read (UJ-54)', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+    storageMocks.getTableClient.mock.mockImplementation((table) => {
+        if (table === 'SessionMetrics') return { listEntities: () => { throw new Error('SessionMetrics unavailable'); } };
+        return { listEntities: defaultListEntities, createTable: async () => {} };
+    });
+    try {
+        const response = await handlers['get-director-stats']({ params: {}, query: new Map() }, { log: makeMockLog(), error: mock.fn() });
+        assert.strictEqual(response.status, 200);
+        const payload = JSON.parse(response.body);
+        assert.strictEqual(payload.sourceState.readable, false);
+        assert.match(payload.sourceState.error, /unavailable/);
+        assert.deepStrictEqual(payload.costBySubject, []);
+        assert.strictEqual(payload.budget.currentSpend, 0);
+    } finally {
+        storageMocks.getTableClient.mock.mockImplementation(() => ({ listEntities: defaultListEntities }));
+        authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: [] }));
+    }
+});
+
+test('classes-api get-director-stats declares sourceState.readable=true when SessionMetrics is read (UJ-54)', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+    storageMocks.getTableClient.mock.mockImplementation(() => ({ listEntities: defaultListEntities, createTable: async () => {} }));
+    try {
+        const response = await handlers['get-director-stats']({ params: {}, query: new Map() }, { log: makeMockLog(), error: mock.fn() });
+        assert.strictEqual(response.status, 200);
+        const payload = JSON.parse(response.body);
+        assert.strictEqual(payload.sourceState.readable, true);
+        assert.strictEqual(payload.sourceState.error, null);
+    } finally {
+        authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: [] }));
+    }
+});
