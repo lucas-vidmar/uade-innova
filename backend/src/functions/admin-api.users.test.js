@@ -46,6 +46,7 @@ const usersStoreMocks = {
   createUser: mock.fn(async () => ({ userId: 'alu-009', name: 'Nuevo', surname: 'User', email: 'nuevo@uade.edu.ar', role: 'student', status: 'active' })),
   updateUser: mock.fn(async () => ({ userId: 'alu-001', name: 'Alumno', surname: 'Uno', email: 'alu001@uade.edu.ar', role: 'teacher', status: 'active' })),
   deleteUser: mock.fn(async () => true),
+  getUserById: mock.fn(async () => null),
   setUserPassword: mock.fn(async () => true),
   generateRandomPassword: mock.fn(() => 'R4nd0m-P4ss'),
 };
@@ -55,6 +56,12 @@ const sessionStoreMocks = {
   deleteSessionsForUser: mock.fn(async () => 0),
 };
 mock.module('../services/sessions-store.js', { namedExports: sessionStoreMocks });
+
+const identityAuditMocks = {
+  recordIdentityChange: mock.fn(async () => ({ recorded: true, at: '2026-10-17T22:00:00.000Z' })),
+  listIdentityChanges: mock.fn(async () => []),
+};
+mock.module('../services/identity-audit-store.js', { namedExports: identityAuditMocks });
 
 await import('./admin-api.js');
 
@@ -83,6 +90,12 @@ beforeEach(() => {
   usersStoreMocks.setUserPassword.mock.mockImplementation(async () => true);
   sessionStoreMocks.deleteSessionsForUser.mock.resetCalls();
   sessionStoreMocks.deleteSessionsForUser.mock.mockImplementation(async () => 0);
+  identityAuditMocks.recordIdentityChange.mock.resetCalls();
+  identityAuditMocks.recordIdentityChange.mock.mockImplementation(async () => ({ recorded: true, at: '2026-10-17T22:00:00.000Z' }));
+  identityAuditMocks.listIdentityChanges.mock.resetCalls();
+  identityAuditMocks.listIdentityChanges.mock.mockImplementation(async () => []);
+  usersStoreMocks.getUserById.mock.resetCalls();
+  usersStoreMocks.getUserById.mock.mockImplementation(async () => null);
 });
 
 test('ADMIN_LIST_USERS — returns users with lowercase roles from the Users table', async () => {
@@ -228,6 +241,86 @@ test('ADMIN_DELETE_USER_NOT_FOUND — unknown user => 404', async () => {
   usersStoreMocks.deleteUser.mock.mockImplementation(async () => false);
   const res = await handlers['admin-delete-user'](makeRequest({ params: { id: 'ghost' } }), makeContext());
   assert.equal(res.status, 404);
+});
+
+test('ADMIN_DISABLE_ASIENTA_CONSTANCIA — UJ-52 paso 9: el corte queda con fecha, motivo y alcance', async () => {
+  usersStoreMocks.getUserById.mock.mockImplementation(async () => ({ userId: 'alu-001', role: 'student', status: 'active', email: 'alu001@uade.edu.ar' }));
+  usersStoreMocks.updateUser.mock.mockImplementation(async (id, updates) => ({
+    userId: id, name: 'Alumno', surname: 'Uno', email: 'alu001@uade.edu.ar',
+    role: 'student', status: updates.status || 'active',
+  }));
+
+  const res = await handlers['admin-update-user'](
+    makeRequest({ body: { status: 'disabled', reason: 'Deja la institución el 2026-10-31' }, params: { id: 'alu-001' } }),
+    makeContext()
+  );
+  assert.equal(res.status, 200);
+  const body = JSON.parse(res.body);
+  assert.equal(body.constancia.recorded, true);
+  assert.equal(identityAuditMocks.recordIdentityChange.mock.callCount(), 1);
+  const entry = identityAuditMocks.recordIdentityChange.mock.calls[0].arguments[0];
+  assert.equal(entry.action, 'disable');
+  assert.equal(entry.target, 'alu-001');
+  assert.equal(entry.actor, 'adm-001');
+  assert.equal(entry.actorRole, 'Admin');
+  assert.equal(entry.reason, 'Deja la institución el 2026-10-31');
+  assert.deepEqual(entry.before, { role: 'student', status: 'active' });
+  assert.deepEqual(entry.after, { role: 'student', status: 'disabled' });
+  assert.deepEqual(entry.scope, { access: 'cerrado' });
+});
+
+test('ADMIN_UPDATE_SIN_CORTE_ASIENTA_UPDATE — un cambio que no corta se asienta como update, no como disable', async () => {
+  usersStoreMocks.getUserById.mock.mockImplementation(async () => ({ userId: 'alu-001', role: 'student', status: 'active' }));
+  usersStoreMocks.updateUser.mock.mockImplementation(async (id, updates) => ({
+    userId: id, name: 'Otro', surname: 'Uno', email: 'alu001@uade.edu.ar',
+    role: 'student', status: updates.status || 'active',
+  }));
+  const res = await handlers['admin-update-user'](
+    makeRequest({ body: { name: 'Otro' }, params: { id: 'alu-001' } }), makeContext()
+  );
+  assert.equal(res.status, 200);
+  const entry = identityAuditMocks.recordIdentityChange.mock.calls[0].arguments[0];
+  assert.equal(entry.action, 'update');
+  assert.equal(entry.scope, null);
+});
+
+test('ADMIN_DELETE_ASIENTA_CONSTANCIA — la baja queda con su motivo y su alcance', async () => {
+  usersStoreMocks.getUserById.mock.mockImplementation(async () => ({ userId: 'alu-001', role: 'student', status: 'active', email: 'alu001@uade.edu.ar' }));
+  usersStoreMocks.deleteUser.mock.mockImplementation(async () => true);
+
+  const res = await handlers['admin-delete-user'](
+    makeRequest({ body: { reason: 'Baja definitiva' }, params: { id: 'alu-001' } }), makeContext()
+  );
+  assert.equal(res.status, 200);
+  const entry = identityAuditMocks.recordIdentityChange.mock.calls[0].arguments[0];
+  assert.equal(entry.action, 'delete');
+  assert.equal(entry.target, 'alu-001');
+  assert.equal(entry.targetEmail, 'alu001@uade.edu.ar');
+  assert.equal(entry.reason, 'Baja definitiva');
+  assert.deepEqual(entry.before, { role: 'student', status: 'active' });
+  assert.deepEqual(entry.scope, { access: 'cerrado', sessions: 'revocadas' });
+});
+
+test('ADMIN_IDENTITY_AUDIT — la constancia del corte se puede leer (UJ-52 paso 9)', async () => {
+  identityAuditMocks.listIdentityChanges.mock.mockImplementation(async () => [
+    { at: '2026-10-17T22:00:00.000Z', actor: 'adm-001', action: 'disable', target: 'alu-001', reason: 'Deja la institución' },
+  ]);
+  const req = makeRequest();
+  req.query = { get: (n) => (n === 'userId' ? 'alu-001' : null) };
+  const res = await handlers['admin-identity-audit'](req, makeContext());
+  assert.equal(res.status, 200);
+  const body = JSON.parse(res.body);
+  assert.equal(body.data.length, 1);
+  assert.equal(body.data[0].action, 'disable');
+  assert.equal(body.data[0].reason, 'Deja la institución');
+  assert.equal(identityAuditMocks.listIdentityChanges.mock.calls[0].arguments[0], 'alu-001');
+});
+
+test('ADMIN_IDENTITY_AUDIT_SIN_USER — sin userId => 400', async () => {
+  const req = makeRequest();
+  req.query = { get: () => null };
+  const res = await handlers['admin-identity-audit'](req, makeContext());
+  assert.equal(res.status, 400);
 });
 
 test('ADMIN_RESET_PASSWORD — resets password, sets mustChangePassword, revokes target sessions', async () => {

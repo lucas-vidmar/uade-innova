@@ -110,6 +110,17 @@ export async function deleteAdminUser(userId) {
     return res.json();
 }
 
+/**
+ * UJ-52 paso 9: la constancia del corte. Alguien que no participó tiene que
+ * poder reconstruir qué se cerró, cuándo y por qué para una identidad.
+ */
+export async function getIdentityAudit(userId) {
+    const res = await apiFetch(`${BASE_URL}/dashboard-admin/identity-audit?userId=${encodeURIComponent(userId)}`);
+    if (!res.ok) throw await parseApiError(res, 'No se pudo leer la constancia de la identidad.');
+    const data = await res.json();
+    return Array.isArray(data) ? data : (data?.data || []);
+}
+
 export async function resetAdminUserPassword(userId, password) {
     const res = await apiFetch(`${BASE_URL}/dashboard-admin/users/${encodeURIComponent(userId)}/reset-password`, {
         method: 'POST',

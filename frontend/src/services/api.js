@@ -61,6 +61,7 @@ import {
     getSubjectWeights, saveSubjectWeights,
     getAdminConfig, saveAdminConfig, resetAdminConfig,
     createAdminUser, updateAdminUser, deleteAdminUser, resetAdminUserPassword,
+    getIdentityAudit,
     getVectorIndex, quarantineVectorIndex
 } from './admin.api.js';
 import {
@@ -138,6 +139,7 @@ export const api = {
     getSubjectWeights, saveSubjectWeights,
     getAdminConfig, saveAdminConfig, resetAdminConfig,
     createAdminUser, updateAdminUser, deleteAdminUser, resetAdminUserPassword,
+    getIdentityAudit,
 
     login: authLogin,
     logout: authLogout,
