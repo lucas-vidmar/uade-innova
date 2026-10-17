@@ -426,8 +426,9 @@ app.http('chat-report-issue', {
             const fragmentKey = primarySource
                 ? `${primarySource.classId || resolvedClassIdFinal || 'unknown'}|${primarySource.materialId || primarySource.sourceFilename || ''}#${primarySource.chunkIndex ?? ''}`
                 : '';
-            const answerKey = String(resolvedAnswer || resolvedQuestion || '').toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 120);
-            const groupKey = fragmentKey || `${resolvedClassIdFinal || 'unknown'}|${answerKey}`;
+            const questionKey = String(resolvedQuestion || '').toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 120);
+            const answerKey = String(resolvedAnswer || '').toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 120);
+            const groupKey = fragmentKey || `${resolvedClassIdFinal || 'unknown'}|${questionKey || answerKey}`;
 
             const keywordMessage = reportType === 'missing-keyword'
                 ? missingKeywordTeacherMessage(detail, await resolveClassName(subjectId, resolvedClassIdFinal))
