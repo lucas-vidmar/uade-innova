@@ -124,26 +124,37 @@ export async function renderSubjectManagement(container) {
             .map((e) => e.userId);
     };
 
-    const getSubjectProfessorIds = (subject) => {
+    const getEnrolledTeacherIds = (subject) => {
+        const entries = subjectEnrollmentMap[subject.id] || [];
+        return entries
+            .filter((e) => ['teacher', 'professor', 'docente'].includes(String(e.role || '').toLowerCase()) && e.status === 'active')
+            .map((e) => e.userId);
+    };
+
+    // Responsable efectivo de la materia: ids declarados en la materia + los de
+    // sus encuentros + nombres legacy resueltos + matrículas docentes activas.
+    // Las matrículas son la fuente de verdad del acceso docente: sin ellas el
+    // directorio afirmaba "Sin profesores" para una unidad con responsables
+    // asignados (#418).
+    const getBaseProfessorIds = (subject) => {
         const mapped = subjectProfessorMap[subject.id];
         if (Array.isArray(mapped)) return mapped;
         if (Array.isArray(subject.professorIds)) return subject.professorIds;
         if (subject.professorId) return [subject.professorId];
         return resolveLegacyProfessorIds(subject, getTeacherUsers());
     };
+
+    const getSubjectProfessorIds = (subject) => Array.from(new Set([
+        ...getBaseProfessorIds(subject),
+        ...getEnrolledTeacherIds(subject),
+    ]));
 
     const getSubjectOneLiner = (subject) => {
         const value = String(subject.oneLiner || subject.comment || subject.description || '').trim();
         return value || 'Sin comentario';
     };
 
-    const getPreviousProfessorIds = (subject) => {
-        const mapped = subjectProfessorMap[subject.id];
-        if (Array.isArray(mapped)) return mapped;
-        if (Array.isArray(subject.professorIds)) return subject.professorIds;
-        if (subject.professorId) return [subject.professorId];
-        return resolveLegacyProfessorIds(subject, getTeacherUsers());
-    };
+    const getPreviousProfessorIds = (subject) => getSubjectProfessorIds(subject);
 
     const saveSubjectProfessorIds = async (subjectId, selectedIds) => {
         const subject = subjects.find((item) => item.id === subjectId);
@@ -436,9 +447,15 @@ export async function renderSubjectManagement(container) {
                                 <tbody>
                                     ${pageItems.map((subject) => {
                                         const selectedProfessorIds = getSubjectProfessorIds(subject);
-                                        const assignedTeachers = selectedProfessorIds
-                                            .map((profId) => teacherUsers.find((teacher) => teacher.id === profId))
-                                            .filter(Boolean);
+                                        // No descartar ids sin ficha en el catálogo de usuarios:
+                                        // se muestran con su identificador en vez de ocultarse tras
+                                        // "Sin profesores" (#418).
+                                        const assignedTeachers = selectedProfessorIds.map((profId) => {
+                                            const teacher = teacherUsers.find((t) => t.id === profId);
+                                            return teacher
+                                                ? { id: profId, name: teacher.name || teacher.id, resolved: true }
+                                                : { id: profId, name: profId, resolved: false };
+                                        });
                                         const availableTeachers = teacherUsers.filter((teacher) => !selectedProfessorIds.includes(teacher.id));
                                         return `
                                             <tr>
@@ -466,7 +483,7 @@ export async function renderSubjectManagement(container) {
                                                         <div class="subject-prof-pills">
                                                             ${assignedTeachers.length > 0
                                                                 ? assignedTeachers.map((teacher) => `
-                                                                    <span class="subject-prof-pill">
+                                                                    <span class="subject-prof-pill"${teacher.resolved ? '' : ' data-unresolved="true" title="Responsable sin ficha en el catálogo de usuarios: se muestra su identificador"'}>
                                                                         <span class="subject-prof-pill-name">${escapeHtml(teacher.name || teacher.id)}</span>
                                                                         <button class="subject-prof-remove" data-subject-id="${escapeHtml(subject.id)}" data-professor-id="${escapeHtml(teacher.id)}" title="Quitar profesor">×</button>
                                                                     </span>
