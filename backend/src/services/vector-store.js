@@ -461,18 +461,26 @@ async function withVectorTelemetry(deps, operation, fallbackCode, fn) {
  */
 export async function listVectorIds(options = {}, deps = {}) {
     const limit = options.limit != null ? Number(options.limit) : 100;
-    const payload = { limit };
 
-    if (options.paginationToken) payload.paginationToken = options.paginationToken;
-    if (options.prefix) payload.prefix = options.prefix;
+    // #452/UJ-56: la operación `list` de Pinecone es `GET /vectors/list` y sus
+    // parámetros van en el query string (prefix, limit, paginationToken,
+    // namespace) — nunca en el cuerpo JSON. Enviarla como POST con body hizo que
+    // el índice real del piloto contestara una página vacía mientras declaraba
+    // 478 vectores: el escaneo enumeraba 0 y toda superficie construida encima
+    // (vector-index, cuarentena, reindexado de material) leía "la unidad no
+    // tiene nada indexado" sin error. Referencia: docs.pinecone.io list-vectors.
+    const queryParams = { limit };
+
+    if (options.paginationToken) queryParams.paginationToken = options.paginationToken;
+    if (options.prefix) queryParams.prefix = options.prefix;
 
     const namespace = options.namespace || getNamespace();
-    if (namespace) payload.namespace = namespace;
+    if (namespace) queryParams.namespace = namespace;
 
     console.log(`[VectorStore] Listing vector IDs (limit=${limit}, prefix=${options.prefix || 'none'})...`);
 
     const run = async () => {
-        const response = await rawPineconeRequest('/vectors/list', { method: 'POST', payload });
+        const response = await rawPineconeRequest('/vectors/list', { method: 'GET', queryParams });
 
         const vectorIds = Array.isArray(response?.vectors)
             ? response.vectors.map(v => v?.id).filter(Boolean)
