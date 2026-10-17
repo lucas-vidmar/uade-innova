@@ -400,7 +400,20 @@ function showEditor(container, version) {
       const userPromptTemplate = document.getElementById('pe-user-template')?.value || '';
       const model = document.getElementById('pe-model')?.value || null;
 
+      // Guardar y activar es UNA sola acción: el paso de una versión a otra tiene que
+      // quedar asentado con su motivo (UJ-48 paso 5), así que se pide antes de guardar.
+      // Sin motivo no se guarda ni se activa nada — igual que el botón "Activar".
+      const reason = await showPromptDialog({
+        title: `Guardar y activar ${v.versionId}`,
+        label: 'Motivo de la activación (queda registrado)',
+        placeholder: 'Por qué esta versión pasa a regir',
+        confirmText: 'Guardar y activar',
+      });
+      if (!reason) return;
+
+      const reemplazada = (state.versions.find(x => x.isActive) || {}).versionId || 'ninguna';
       try {
+        saveActivateBtn.disabled = true; // un doble clic no puede disparar dos activaciones
         await api.updatePromptVersion(state.selectedType, v.versionId, {
           content,
           systemPrompt,
@@ -409,11 +422,12 @@ function showEditor(container, version) {
           description: description || v.description,
           model: model || null,
         });
-        await api.activatePromptVersion(state.selectedType, v.versionId);
-        toast('success', 'Guardado y activado', `La versión ${v.versionId} se actualizó y activó.`);
+        const record = await api.activatePromptVersion(state.selectedType, v.versionId, { reason });
+        toast('success', 'Guardado y activado', `La versión ${v.versionId} se actualizó y rige desde ${formatDate(record?.activatedAt)} (antes regía: ${reemplazada}).`);
         await showTypeDetail(container, state.selectedType);
       } catch (err) {
-        toast('error', 'Error', err.message);
+        toast('error', 'Error al guardar y activar', err.message);
+        saveActivateBtn.disabled = false;
       }
     });
   }
