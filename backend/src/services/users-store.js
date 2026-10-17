@@ -12,6 +12,14 @@
  *   (student|teacher|director|admin), status (active|disabled), passwordHash,
  *   mustChangePassword, createdAt.
  *
+ * UJ-53 — evidencia del acto: el permiso vigente de una identidad no se
+ * sostiene por el solo hecho de figurar en la tabla. El acto que lo otorgó
+ * (dueño, fecha y motivo) se guarda junto al rol (`grantedBy`, `grantedAt`,
+ * `grantReason`) y el acto que movió el estado junto al estado
+ * (`statusChangedBy`, `statusChangedAt`, `statusChangeReason`). Una identidad a
+ * la que le falta cualquiera de los tres datos queda sin acto que la respalde:
+ * la revisión de accesos la tiene que mostrar como huérfana, nunca disimularla.
+ *
  * Emails are enforced server-side: trim + case-insensitive + unique + domain.
  */
 
@@ -42,6 +50,12 @@ const USERS_TABLE = CONFIG.tables.users;
 const USERS_PARTITION = 'users';
 const STATUS_ACTIVE = 'active';
 const STATUS_DISABLED = 'disabled';
+
+// UJ-53: campos de evidencia del acto (dueño, fecha, motivo). Se exportan para
+// que la revisión de accesos y las pruebas usen la misma lista.
+export const GRANT_EVIDENCE_FIELDS = ['grantedBy', 'grantedAt', 'grantReason'];
+export const STATUS_EVIDENCE_FIELDS = ['statusChangedBy', 'statusChangedAt', 'statusChangeReason'];
+export const EVIDENCE_FIELDS = [...GRANT_EVIDENCE_FIELDS, ...STATUS_EVIDENCE_FIELDS];
 
 const ensuredTables = new Set();
 
@@ -123,7 +137,7 @@ export function generateRandomPassword(length = 12) {
 }
 
 function toEntity(user) {
-  return {
+  const entity = {
     partitionKey: USERS_PARTITION,
     rowKey: user.userId,
     name: user.name,
@@ -135,11 +149,17 @@ function toEntity(user) {
     mustChangePassword: user.mustChangePassword === true,
     createdAt: user.createdAt || new Date().toISOString(),
   };
+  // La evidencia del acto sólo se escribe cuando existe: un permiso sin acto
+  // queda sin campo, que es justamente lo que la revisión tiene que ver.
+  for (const field of EVIDENCE_FIELDS) {
+    if (user[field] !== undefined && user[field] !== null) entity[field] = user[field];
+  }
+  return entity;
 }
 
 function fromEntity(entity) {
   if (!entity) return null;
-  return {
+  const user = {
     userId: entity.rowKey,
     name: entity.name,
     surname: entity.surname || '',
@@ -150,6 +170,10 @@ function fromEntity(entity) {
     mustChangePassword: entity.mustChangePassword === true,
     createdAt: entity.createdAt,
   };
+  for (const field of EVIDENCE_FIELDS) {
+    if (entity[field] !== undefined && entity[field] !== null) user[field] = entity[field];
+  }
+  return user;
 }
 
 function validationError(status, code, message) {
@@ -279,6 +303,20 @@ export async function createUser(input = {}) {
     createdAt: new Date().toISOString(),
   };
 
+  // UJ-53: el alta es un acto de otorgamiento. Se asienta quién lo hizo y por
+  // qué; si el llamador no lo declara, el permiso queda sin evidencia y la
+  // revisión lo verá como huérfano en vez de darlo por bueno.
+  const grantedBy = String(input.grantedBy || input.actor || '').trim();
+  const grantReason = String(input.grantReason || input.reason || '').trim();
+  user.grantedAt = user.createdAt;
+  if (grantedBy) user.grantedBy = grantedBy;
+  if (grantReason) user.grantReason = grantReason;
+  if (grantedBy) {
+    user.statusChangedBy = grantedBy;
+    user.statusChangedAt = user.createdAt;
+    if (grantReason) user.statusChangeReason = grantReason;
+  }
+
   await ensureTable();
   const client = getTableClient(USERS_TABLE);
   await client.upsertEntity(toEntity(user), 'Replace');
@@ -289,6 +327,12 @@ export async function createUser(input = {}) {
 /**
  * Updates a user's editable fields (name, surname, role, status, email).
  * Enforces email domain/unique on change.
+ *
+ * UJ-53: un cambio de rol o de estado es un acto sobre un permiso, así que
+ * queda asentado con su dueño (`updates.actor`), su motivo (`updates.reason`) y
+ * su fecha. El llamador no puede pedir el cambio y dejar el permiso sin acto:
+ * si no declara actor/motivo, la evidencia del permiso queda incompleta y la
+ * revisión de accesos lo muestra como huérfano.
  * @param {string} userId
  * @param {Object} updates
  * @returns {Promise<Object>} updated user (no passwordHash)
@@ -298,6 +342,10 @@ export async function updateUser(userId, updates = {}) {
   if (!existing) {
     throw validationError(404, 'USER_NOT_FOUND', `No existe un usuario con id "${userId}".`);
   }
+
+  const actor = String(updates.actor || '').trim();
+  const reason = String(updates.reason || '').trim();
+  const now = new Date().toISOString();
 
   const next = { ...existing };
   if (updates.name !== undefined) {
@@ -311,13 +359,25 @@ export async function updateUser(userId, updates = {}) {
     if (!VALID_ROLES.includes(role)) {
       throw validationError(400, 'INVALID_ROLE', `El rol debe ser uno de: ${VALID_ROLES.join(', ')}.`);
     }
-    next.role = role;
+    if (role !== existing.role) {
+      next.role = role;
+      // El acto de otorgamiento del permiso vigente se reescribe: el anterior
+      // no se puede heredar, porque respaldaba otro permiso.
+      next.grantedBy = actor || null;
+      next.grantedAt = now;
+      next.grantReason = reason || null;
+    }
   }
   if (updates.status !== undefined) {
     if (![STATUS_ACTIVE, STATUS_DISABLED].includes(updates.status)) {
       throw validationError(400, 'INVALID_STATUS', 'status debe ser "active" o "disabled".');
     }
-    next.status = updates.status;
+    if (updates.status !== (existing.status || STATUS_ACTIVE)) {
+      next.status = updates.status;
+      next.statusChangedBy = actor || null;
+      next.statusChangedAt = now;
+      next.statusChangeReason = reason || null;
+    }
   }
   if (updates.email !== undefined) {
     const email = normalizeEmail(updates.email);

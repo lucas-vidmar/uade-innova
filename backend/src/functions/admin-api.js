@@ -64,6 +64,17 @@ function toAdminUserView(user, profile) {
     language: profile?.language,
     consentAccepted: profile?.consentAccepted || false,
     lastActive: profile?.timestamp,
+    // UJ-53: el acto con que se otorgó el permiso vigente y el que fijó su
+    // estado. Sin estos campos la superficie muestra un rol como si se
+    // sostuviera solo; con ellos la revisión de accesos puede decir de cada
+    // permiso si tiene dueño, motivo y fecha, o si quedó huérfano.
+    createdAt: user.createdAt || null,
+    grantedBy: user.grantedBy || null,
+    grantedAt: user.grantedAt || null,
+    grantReason: user.grantReason || null,
+    statusChangedBy: user.statusChangedBy || null,
+    statusChangedAt: user.statusChangedAt || null,
+    statusChangeReason: user.statusChangeReason || null,
   };
 }
 
@@ -144,6 +155,9 @@ app.http('admin-create-user', {
         password: finalPassword,
         status,
         mustChangePassword: mustChangePassword !== false,
+        // UJ-53: el alta es un acto de otorgamiento — queda su dueño y su motivo.
+        grantedBy: context.user?.id || context.user?.userId || null,
+        grantReason: String(body?.reason || '').trim() || null,
       });
       context.log(`[AdminAPI] User created: ${created.userId} (${created.email})`);
       return jsonResponse(201, {
@@ -174,7 +188,13 @@ app.http('admin-update-user', {
       return jsonResponse(400, { success: false, error: { code: 'INVALID_BODY', message: 'Invalid JSON body' } });
     }
     try {
-      const updated = await updateUser(id, body || {});
+      // UJ-53: el cambio de rol o de estado se asienta con su dueño (quien opera)
+      // y con el motivo declarado, para que el permiso no quede sin acto.
+      const updated = await updateUser(id, {
+        ...(body || {}),
+        actor: context.user?.id || context.user?.userId || null,
+        reason: String(body?.reason || '').trim() || null,
+      });
       context.log(`[AdminAPI] User updated: ${updated.userId}`);
       return jsonResponse(200, { success: true, data: updated });
     } catch (err) {

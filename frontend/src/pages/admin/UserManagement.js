@@ -178,7 +178,10 @@ export async function renderUserManagement(container) {
             <p class="text-secondary">Gestioná las cuentas institucionales, roles y contraseñas de la plataforma.</p>
         </div>
 
-        <div style="display:flex;justify-content:flex-end;margin-bottom:var(--space-4)">
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:var(--space-4)">
+            <button class="btn btn-secondary" id="btn-access-review" title="Inventario de permisos con su evidencia, huérfanos y acta">
+                Revisión de permisos
+            </button>
             <button class="btn btn-primary" id="btn-create-user">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:6px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 Nuevo usuario
@@ -562,6 +565,15 @@ export async function renderUserManagement(container) {
                                 <option value="disabled" ${user.status === 'disabled' ? 'selected' : ''}>Deshabilitado</option>
                             </select>
                         </div>
+                        <div class="form-group" style="margin:0">
+                            <label class="form-label" for="eu-reason">Motivo del cambio</label>
+                            <input id="eu-reason" class="form-input" type="text" placeholder="Por qué cambia el rol o el estado" />
+                            <p class="text-secondary" style="font-size:0.75rem;margin:6px 0 0;">
+                                ${user.grantReason
+                                    ? `Acto vigente: ${escapeHtml(user.grantedBy || 'sin dueño')} · ${escapeHtml(String(user.grantedAt || '').slice(0, 10))} · ${escapeHtml(user.grantReason)}`
+                                    : '<span style="color:var(--color-error);">El permiso vigente no tiene acto que lo respalde (huérfano): el motivo de este cambio queda como su evidencia.</span>'}
+                            </p>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -592,6 +604,8 @@ export async function renderUserManagement(container) {
                 email: String(overlay.querySelector('#eu-email').value || '').trim(),
                 role: overlay.querySelector('#eu-role').value,
                 status: overlay.querySelector('#eu-status').value,
+                // UJ-53: el cambio de rol o estado se asienta con su motivo.
+                reason: String(overlay.querySelector('#eu-reason')?.value || '').trim(),
             };
             const saveBtn = overlay.querySelector('.edit-user-save');
             saveBtn.disabled = true;
@@ -610,6 +624,276 @@ export async function renderUserManagement(container) {
 
         document.body.appendChild(overlay);
     }
+
+    /**
+     * UJ-53 — Revisión periódica de permisos con evidencia.
+     *
+     * El inventario que se muestra es el que arma el backend con lo que la tabla
+     * tiene: cada permiso con su acto (dueño, motivo y fecha) o marcado como
+     * huérfano con el dato que le falta. Sobre cada permiso se decide sostener,
+     * reducir o retirar; la decisión exige motivo y queda asentada con su efecto.
+     * Al final el acta se exporta y se firma contra el digest de lo aplicado.
+     */
+    async function openAccessReviewModal() {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = `
+            <div class="modal-content" style="max-width:1000px;width:96%;">
+                <div class="modal-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+                    <h3 class="h4" style="margin:0;">Revisión de permisos</h3>
+                    <button type="button" class="btn btn-ghost btn-sm ar-close" aria-label="Cerrar">✕</button>
+                </div>
+                <div class="modal-body">
+                    <p id="ar-error" style="display:none;color:var(--color-error);font-size:0.85rem;margin:0 0 12px;"></p>
+                    <div id="ar-head" class="text-secondary" style="font-size:var(--fs-sm);margin-bottom:12px;"></div>
+                    <div id="ar-loading" class="loading-state"><div class="animate-pulse">Armando el inventario…</div></div>
+                    <div id="ar-table" style="display:none;max-height:420px;overflow:auto;"></div>
+                    <div id="ar-decisions" style="display:none;margin-top:16px;"></div>
+                </div>
+                <div class="modal-footer" style="display:flex;gap:8px;align-items:center;">
+                    <span id="ar-firma" class="text-secondary" style="margin-right:auto;font-size:var(--fs-sm);"></span>
+                    <button type="button" class="btn btn-ghost ar-export">Exportar acta (CSV)</button>
+                    <button type="button" class="btn btn-ghost ar-open-round" style="display:none;">Abrir ronda siguiente</button>
+                    <button type="button" class="btn btn-primary ar-sign">Firmar acta</button>
+                    <button type="button" class="btn btn-ghost ar-close">Cerrar</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        const close = () => overlay.remove();
+        const errorEl = overlay.querySelector('#ar-error');
+        const headEl = overlay.querySelector('#ar-head');
+        const loadingEl = overlay.querySelector('#ar-loading');
+        const tableEl = overlay.querySelector('#ar-table');
+        const decisionsEl = overlay.querySelector('#ar-decisions');
+        const firmaEl = overlay.querySelector('#ar-firma');
+        const signBtn = overlay.querySelector('.ar-sign');
+        const openRoundBtn = overlay.querySelector('.ar-open-round');
+
+        const showError = (message) => {
+            errorEl.textContent = message;
+            errorEl.style.display = 'block';
+        };
+        const clearError = () => { errorEl.style.display = 'none'; };
+
+        const evidenciaDe = (entry) => {
+            if (entry.huerfano) {
+                return `<span class="badge badge-error" title="Sin acto que respalde el permiso">Huérfano: falta ${escapeHtml((entry.falta || []).join(', '))}</span>`;
+            }
+            const e = entry.evidencia || {};
+            return `<span class="badge badge-success">Con evidencia</span>
+                <div style="font-size:0.75rem;color:var(--color-text-secondary);">
+                    ${escapeHtml(e.dueño || '')} · ${escapeHtml((e.fecha || '').slice(0, 10))}<br />
+                    ${escapeHtml(e.motivo || '')}
+                </div>`;
+        };
+
+        let inventario = null;
+
+        const load = async () => {
+            loadingEl.style.display = 'block';
+            tableEl.style.display = 'none';
+            decisionsEl.style.display = 'none';
+            try {
+                inventario = await api.getAccessReview();
+            } catch (err) {
+                loadingEl.style.display = 'none';
+                showError(err?.message || 'No se pudo leer el inventario de permisos.');
+                return;
+            }
+            loadingEl.style.display = 'none';
+            if (!inventario) {
+                showError('El inventario de permisos llegó vacío.');
+                return;
+            }
+
+            const r = inventario.resumen || {};
+            headEl.innerHTML = `Ronda <code>${escapeHtml(inventario.reviewId)}</code> · acta ${escapeHtml(inventario.estadoActa)} ·
+                ${r.activas || 0} identidades activas · ${r.permisosVigentes || 0} permisos vigentes ·
+                <strong>${r.huerfanos || 0} huérfanos</strong> ·
+                <span title="Un tercero recalcula este digest sobre el inventario y lo compara">digest <code>${escapeHtml(String(inventario.digest || '').slice(0, 16))}…</code></span>`;
+
+            tableEl.innerHTML = `
+                <table class="table">
+                    <thead>
+                        <tr><th>Identidad</th><th>Rol</th><th>Permisos vigentes</th><th>Acto de otorgamiento</th><th style="text-align:center">Decisión</th></tr>
+                    </thead>
+                    <tbody>
+                        ${(inventario.entries || []).map((entry) => `
+                            <tr data-ar-user="${escapeHtml(entry.userId)}" ${entry.activa ? '' : 'style="opacity:0.55"'}>
+                                <td>
+                                    <div><strong>${escapeHtml(`${entry.name || ''}`.trim() || entry.userId)}</strong></div>
+                                    <code style="font-size:0.75rem;">${escapeHtml(entry.userId)}</code>
+                                </td>
+                                <td>${roleBadge(entry.role)}${entry.activa ? '' : ' <span class="badge badge-neutral">Deshabilitado</span>'}</td>
+                                <td title="${escapeHtml((entry.permisos || []).join(' · '))}">${(entry.permisos || []).length} permisos</td>
+                                <td>${evidenciaDe(entry)}</td>
+                                <td style="text-align:center;white-space:nowrap">
+                                    ${inventario.estadoActa === 'firmada' ? '<span class="text-secondary" style="font-size:0.75rem;">acta firmada</span>' : `
+                                        <button class="btn btn-secondary btn-sm ar-decide" data-decision="sostener">Sostener</button>
+                                        <button class="btn btn-secondary btn-sm ar-decide" data-decision="reducir">Reducir</button>
+                                        <button class="btn btn-danger btn-sm ar-decide" data-decision="retirar">Retirar</button>
+                                    `}
+                                </td>
+                            </tr>
+                            <tr class="ar-reason-row" data-ar-reason="${escapeHtml(entry.userId)}" style="display:none;">
+                                <td colspan="5" style="background:var(--color-surface-alt,transparent);">
+                                    <div style="display:flex;gap:8px;align-items:flex-start;">
+                                        <input class="form-input ar-reason" data-ar-input="${escapeHtml(entry.userId)}" placeholder="Motivo de la decisión (obligatorio)" style="flex:1;" />
+                                        <button class="btn btn-primary btn-sm ar-apply" data-ar-apply="${escapeHtml(entry.userId)}">Aplicar</button>
+                                        <button class="btn btn-ghost btn-sm ar-cancel" data-ar-cancel="${escapeHtml(entry.userId)}">Cancelar</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+            tableEl.style.display = 'block';
+
+            const decisiones = inventario.decisiones || [];
+            if (decisiones.length > 0) {
+                decisionsEl.style.display = 'block';
+                decisionsEl.innerHTML = `
+                    <h4 class="h4" style="margin:0 0 8px;">Decisiones asentadas (${decisiones.length})</h4>
+                    <table class="table">
+                        <thead><tr><th>Identidad</th><th>Decisión</th><th>Motivo</th><th>Responsable</th><th>Efecto aplicado</th></tr></thead>
+                        <tbody>
+                            ${decisiones.map((d) => `
+                                <tr>
+                                    <td><code>${escapeHtml(d.userId)}</code></td>
+                                    <td>${escapeHtml(d.decision)}</td>
+                                    <td>${escapeHtml(d.reason || '')}</td>
+                                    <td>${escapeHtml(d.decidedBy || '')}<div style="font-size:0.75rem;color:var(--color-text-secondary)">${escapeHtml((d.decidedAt || '').slice(0, 19).replace('T', ' '))}</div></td>
+                                    <td><code>${escapeHtml(d.efecto?.rolAntes || '')} → ${escapeHtml(d.efecto?.rolDespues || '')}</code>
+                                        <div style="font-size:0.75rem;color:var(--color-text-secondary)"><code>${escapeHtml(d.efecto?.estadoAntes || '')} → ${escapeHtml(d.efecto?.estadoDespues || '')}</code></div></td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+            }
+
+            if (inventario.estadoActa === 'firmada' && inventario.firma) {
+                firmaEl.textContent = `Acta firmada por ${inventario.firma.signedBy || '—'} el ${(inventario.firma.signedAt || '').slice(0, 19).replace('T', ' ')}`;
+                signBtn.style.display = 'none';
+                openRoundBtn.style.display = 'inline-block';
+            } else {
+                firmaEl.textContent = 'El acta se puede firmar cuando lo aplicado coincida con lo comprobado.';
+                signBtn.style.display = 'inline-block';
+                openRoundBtn.style.display = 'none';
+            }
+
+            tableEl.querySelectorAll('.ar-decide').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const userId = btn.closest('tr').getAttribute('data-ar-user');
+                    const row = tableEl.querySelector(`.ar-reason-row[data-ar-reason="${CSS.escape(userId)}"]`);
+                    row.dataset.decision = btn.dataset.decision;
+                    row.style.display = 'table-row';
+                    row.querySelector('.ar-reason').focus();
+                });
+            });
+
+            tableEl.querySelectorAll('.ar-cancel').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const row = btn.closest('.ar-reason-row');
+                    row.style.display = 'none';
+                    row.querySelector('.ar-reason').value = '';
+                });
+            });
+
+            tableEl.querySelectorAll('.ar-apply').forEach((btn) => {
+                btn.addEventListener('click', async () => {
+                    const userId = btn.dataset.arApply;
+                    const row = tableEl.querySelector(`.ar-reason-row[data-ar-reason="${CSS.escape(userId)}"]`);
+                    const decision = row.dataset.decision;
+                    const motivo = String(row.querySelector('.ar-reason').value || '').trim();
+                    clearError();
+                    if (!motivo) {
+                        showError('Toda decisión sobre un permiso requiere motivo: sin motivo el permiso vuelve a quedar huérfano.');
+                        return;
+                    }
+                    btn.disabled = true;
+                    btn.textContent = 'Aplicando…';
+                    try {
+                        const result = await api.decideAccessReview(userId, decision, motivo);
+                        const a = result?.aplicado || {};
+                        toast('success', 'Decisión aplicada',
+                            `${userId}: ${decision} — quedó ${a.role} / ${a.status}. Responsable: ${result?.decision?.decidedBy || '—'}.`);
+                        await load();
+                        await refresh();
+                    } catch (err) {
+                        showError(err?.message || 'No se pudo aplicar la decisión.');
+                        btn.disabled = false;
+                        btn.textContent = 'Aplicar';
+                    }
+                });
+            });
+        };
+
+        overlay.querySelectorAll('.ar-close').forEach((b) => b.addEventListener('click', close));
+        overlay.addEventListener('click', (event) => { if (event.target === overlay) close(); });
+
+        overlay.querySelector('.ar-export')?.addEventListener('click', async () => {
+            clearError();
+            try {
+                const csv = await api.getAccessReviewCsv();
+                const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `acta-revision-permisos-${(inventario?.reviewId || 'ronda')}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+                toast('success', 'Acta exportada', 'El CSV lleva el inventario, la evidencia, los huérfanos, el digest y las decisiones.');
+            } catch (err) {
+                showError(err?.message || 'No se pudo exportar el acta.');
+            }
+        });
+
+        overlay.querySelector('.ar-open-round')?.addEventListener('click', async () => {
+            clearError();
+            try {
+                const r = await api.openAccessReview();
+                toast('success', 'Ronda abierta', `Nueva ronda ${r?.reviewId} (anterior ${r?.previousReviewId}).`);
+                await load();
+            } catch (err) {
+                showError(err?.message || 'No se pudo abrir la ronda siguiente.');
+            }
+        });
+
+        signBtn?.addEventListener('click', async () => {
+            clearError();
+            if (!inventario) return;
+            const confirmed = await showConfirmDialog({
+                title: 'Firmar el acta de revisión',
+                message: `Se va a firmar el acta de la ronda ${inventario.reviewId} con ${inventario.resumen?.huerfanos || 0} faltas heredadas y ${(inventario.decisiones || []).length} decisiones. El acta queda cerrada hasta abrir la ronda siguiente.`,
+                confirmText: 'Firmar',
+                cancelText: 'Cancelar',
+            });
+            if (!confirmed) return;
+            signBtn.disabled = true;
+            signBtn.textContent = 'Firmando…';
+            try {
+                const result = await api.signAccessReview(inventario.digest, `Revisión de permisos ${inventario.reviewId}`);
+                toast('success', 'Acta firmada',
+                    `${result?.firma?.signedBy || '—'} · ${result?.decisiones || 0} decisiones · ${(result?.faltasHeredadas || []).length} faltas heredadas.`);
+                await load();
+            } catch (err) {
+                showError(err?.message || 'No se pudo firmar el acta.');
+                signBtn.disabled = false;
+                signBtn.textContent = 'Firmar acta';
+            }
+        });
+
+        await load();
+    }
+
+    document.getElementById('btn-access-review')?.addEventListener('click', () => {
+        openAccessReviewModal();
+    });
 
     document.getElementById('btn-create-user')?.addEventListener('click', async () => {
         const result = await openCreateUserModal();

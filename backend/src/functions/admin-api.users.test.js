@@ -214,6 +214,66 @@ test('ADMIN_UPDATE_USER — edits role/status by id', async () => {
   assert.equal(updates.role, 'teacher');
 });
 
+test('ADMIN_UPDATE_USER — el cambio de permiso viaja con su dueño y su motivo (UJ-53)', async () => {
+  usersStoreMocks.updateUser.mock.mockImplementation(async (id, updates) => ({
+    userId: id, name: 'Alumno', surname: 'Uno', email: 'alu001@uade.edu.ar',
+    role: updates.role || 'student', status: updates.status || 'active',
+  }));
+  const res = await handlers['admin-update-user'](
+    makeRequest({ body: { role: 'teacher', reason: 'pasa a dictar la comisión de los jueves' }, params: { id: 'alu-001' } }),
+    makeContext(),
+  );
+  assert.equal(res.status, 200);
+  const [, updates] = usersStoreMocks.updateUser.mock.calls[0].arguments;
+  assert.equal(updates.actor, 'adm-001', 'el acto tiene que llevar quién lo hizo');
+  assert.equal(updates.reason, 'pasa a dictar la comisión de los jueves', 'el acto tiene que llevar su motivo');
+});
+
+test('ADMIN_UPDATE_USER — sin motivo declarado el motivo llega nulo, no inventado (UJ-53)', async () => {
+  usersStoreMocks.updateUser.mock.mockImplementation(async (id, updates) => ({ userId: id, role: updates.role || 'student', status: 'active' }));
+  await handlers['admin-update-user'](makeRequest({ body: { role: 'teacher' }, params: { id: 'alu-001' } }), makeContext());
+  const [, updates] = usersStoreMocks.updateUser.mock.calls[0].arguments;
+  assert.equal(updates.reason, null);
+  assert.equal(updates.actor, 'adm-001');
+});
+
+test('ADMIN_LIST_USERS — el inventario expone el acto de otorgamiento de cada permiso (UJ-53)', async () => {
+  usersStoreMocks.listUsers.mock.mockImplementation(async () => [
+    {
+      userId: 'prof-001', name: 'X', surname: 'Torres', email: 'x@uade.edu.ar', role: 'teacher', status: 'active',
+      mustChangePassword: false, createdAt: '2026-06-01T10:00:00.000Z',
+      grantedBy: 'adm-001', grantedAt: '2026-06-01T10:00:00.000Z', grantReason: 'alta de la cohorte 2026-1',
+      statusChangedBy: 'adm-001', statusChangedAt: '2026-06-01T10:00:00.000Z', statusChangeReason: 'alta de la cohorte 2026-1',
+    },
+    { userId: 'alu-001', name: 'A', surname: 'Uno', email: 'a@uade.edu.ar', role: 'student', status: 'active', mustChangePassword: false },
+  ]);
+  const body = JSON.parse((await handlers['admin-list-users'](makeRequest(), makeContext())).body);
+
+  const docente = body.data.find((u) => u.id === 'prof-001');
+  assert.equal(docente.grantedBy, 'adm-001');
+  assert.equal(docente.grantReason, 'alta de la cohorte 2026-1');
+  assert.equal(docente.grantedAt, '2026-06-01T10:00:00.000Z');
+  assert.equal(docente.createdAt, '2026-06-01T10:00:00.000Z');
+
+  // Un permiso sin acto sale con los campos nulos: la superficie no puede
+  // mostrar la fila como si el permiso se sostuviera solo.
+  const alumna = body.data.find((u) => u.id === 'alu-001');
+  assert.equal(alumna.grantedBy, null);
+  assert.equal(alumna.grantedAt, null);
+  assert.equal(alumna.grantReason, null);
+});
+
+test('ADMIN_CREATE_USER — el alta asienta quién la hizo y su motivo (UJ-53)', async () => {
+  usersStoreMocks.createUser.mock.mockImplementation(async (input) => ({ userId: input.userId, role: input.role, status: 'active' }));
+  await handlers['admin-create-user'](makeRequest({ body: {
+    userId: 'alu-009', name: 'Nuevo', surname: 'User', email: 'nuevo@uade.edu.ar', role: 'student',
+    password: 'manual-pass-1', reason: 'matrícula 2026-2',
+  } }), makeContext());
+  const [input] = usersStoreMocks.createUser.mock.calls[0].arguments;
+  assert.equal(input.grantedBy, 'adm-001');
+  assert.equal(input.grantReason, 'matrícula 2026-2');
+});
+
 test('ADMIN_DELETE_USER — deletes user and revokes sessions', async () => {
   usersStoreMocks.deleteUser.mock.mockImplementation(async () => true);
   const res = await handlers['admin-delete-user'](makeRequest({ params: { id: 'alu-001' } }), makeContext());
