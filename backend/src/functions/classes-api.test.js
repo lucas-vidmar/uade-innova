@@ -1373,6 +1373,82 @@ test('#428: el alumnado no recibe el resumen de una clase sin publicar (el docen
     }
 });
 
+// #498: un derivado comparte el estado de su clase. Las filas anteriores a #428
+// pueden tener el derivado sin `publicationState` explícito mientras la clase ya
+// está publicada; antes el derivado caía a `borrador` y el alumnado abría una
+// clase publicada sin su resumen.
+test('#498: un derivado sin estado explícito hereda el de la clase publicada (el alumnado recibe el resumen)', async () => {
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+    const restoreLoadJson = storageMocks.loadJson.mock.mockImplementation;
+    const restoreEnrollment = stateStoreMocks.getEnrollment.mock.mockImplementation;
+    storageMocks.loadJson.mock.mockImplementation(async (container, blob) => {
+        if (container === 'class-summaries' && blob === 'arq-software-2026/class-01.json') {
+            // Fila legada: sin `publicationState` ni `validated`.
+            return { classId: 'class-01', subjectId: 'arq-software-2026', summary: '# Resumen legado' };
+        }
+        if (container === 'classes-config' && blob === 'arq-software-2026.json') {
+            return [{ id: 'class-01', title: 'Clase 1', publicationState: 'publicado', summaryReady: true }];
+        }
+        return null;
+    });
+    stateStoreMocks.getEnrollment.mock.mockImplementation(async () => ({ status: 'active', role: 'student' }));
+    const request = {
+        params: { classId: 'class-01' },
+        query: { get: (key) => (key === 'subjectId' ? 'arq-software-2026' : null) },
+    };
+
+    try {
+        authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Estudiante'], userId: 'alu-005' }));
+        const asStudent = await handlers['get-class-summary'](request, { log: makeMockLog(), error: mock.fn() });
+        const studentBody = JSON.parse(asStudent.body);
+        assert.strictEqual(asStudent.status, 200);
+        assert.strictEqual(studentBody.publicationState, 'publicado', 'el derivado hereda el estado de la clase');
+        assert.strictEqual(studentBody.summary, '# Resumen legado', 'el alumnado recibe el resumen de una clase publicada');
+    } finally {
+        storageMocks.loadJson.mock.mockImplementation(restoreLoadJson);
+        stateStoreMocks.getEnrollment.mock.mockImplementation(restoreEnrollment);
+        process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+        authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: [] }));
+    }
+});
+
+test('#498: un derivado con estado explícito en borrador se respeta aunque la clase esté publicada', async () => {
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+    const restoreLoadJson = storageMocks.loadJson.mock.mockImplementation;
+    const restoreEnrollment = stateStoreMocks.getEnrollment.mock.mockImplementation;
+    storageMocks.loadJson.mock.mockImplementation(async (container, blob) => {
+        if (container === 'class-summaries' && blob === 'arq-software-2026/class-01.json') {
+            // Estado explícito (por ejemplo, un resumen regenerado): no se toca.
+            return { classId: 'class-01', subjectId: 'arq-software-2026', summary: '# Regenerado', publicationState: 'borrador', validated: false };
+        }
+        if (container === 'classes-config' && blob === 'arq-software-2026.json') {
+            return [{ id: 'class-01', title: 'Clase 1', publicationState: 'publicado', summaryReady: true }];
+        }
+        return null;
+    });
+    stateStoreMocks.getEnrollment.mock.mockImplementation(async () => ({ status: 'active', role: 'student' }));
+    const request = {
+        params: { classId: 'class-01' },
+        query: { get: (key) => (key === 'subjectId' ? 'arq-software-2026' : null) },
+    };
+
+    try {
+        authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Estudiante'], userId: 'alu-005' }));
+        const asStudent = await handlers['get-class-summary'](request, { log: makeMockLog(), error: mock.fn() });
+        const studentBody = JSON.parse(asStudent.body);
+        assert.strictEqual(asStudent.status, 200);
+        assert.strictEqual(studentBody.publicationState, 'borrador', 'el estado explícito del derivado manda');
+        assert.strictEqual(studentBody.summary, null, 'el borrador explícito sigue oculto para el alumnado');
+    } finally {
+        storageMocks.loadJson.mock.mockImplementation(restoreLoadJson);
+        stateStoreMocks.getEnrollment.mock.mockImplementation(restoreEnrollment);
+        process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+        authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: [] }));
+    }
+});
+
 test('#428: guardar la lista de clases no puede publicar ni retirar por su cuenta', async () => {
     authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'], userId: 'prof-001', userDetails: 'prof01@uade.edu.ar' }));
     const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
