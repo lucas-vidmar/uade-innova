@@ -74,6 +74,14 @@ describe('AI Service (DeepSeek Migration)', () => {
         assert.equal(ai.getModelDisplayName('deepseek-v4-flash'), 'deepseek-v4-flash');
     });
 
+    test('getModelDisplayName no rotula con el nombre de catálogo de DeepSeek a otro motor', () => {
+        // UJ-55: si el deployment que responde no es DeepSeek, la etiqueta no
+        // puede ser el nombre de catálogo de DeepSeek — la superficie estaría
+        // informando un motor distinto del que contesta.
+        process.env.AI_FOUNDRY_DEEPSEEK_DISPLAY_NAME = 'DeepSeek-V4.1-Flash';
+        assert.equal(ai.getModelDisplayName('gpt-4o-mini'), 'gpt-4o-mini');
+    });
+
     test('getChatModelName surfaces the display name for the Powered-by label', () => {
         process.env.AI_FOUNDRY_DEEPSEEK_ENDPOINT = 'https://deepseek.models.ai.azure.com';
         process.env.AI_FOUNDRY_DEEPSEEK_KEY = 'ds-key';
