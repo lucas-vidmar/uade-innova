@@ -2,6 +2,9 @@ import { app } from '@azure/functions';
 import { withAuth } from '../middleware/with-auth.js';
 import { validateFrontDoorId, getAuthenticatedUser } from '../services/auth-utils.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
+import { resolveRagPrompt } from '../services/prompts.js';
+import { resolveModelForTask, getModelDisplayName } from '../services/ai.js';
+import { CONFIG } from '../config.js';
 import {
     getAdminSettings,
     upsertAdminSettings,
@@ -24,16 +27,47 @@ function errorResponse(status, message) {
     return { status, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: message }) };
 }
 
-function toResponse(result) {
+/**
+ * Motor que GOBIERNA las respuestas del asistente en este momento (UJ-55 paso 9:
+ * lo registrado tiene que coincidir con lo que efectivamente quedó activo).
+ *
+ * Se resuelve por el mismo camino que usa el chat RAG (`rag-query.js`), no por
+ * el scope `model` de esta pantalla: la selección persistida acá todavía no
+ * alimenta al motor, así que la superficie no puede reportarla como si rigiera.
+ * Es una lectura: no cambia qué motor responde.
+ */
+async function resolveEffectiveEngine() {
+    const active = await resolveRagPrompt().catch(() => null);
+    const deployment = await resolveModelForTask('rag-master').catch(() => null)
+        || CONFIG.ai.models?.['rag-master']
+        || CONFIG.ai.deepSeekModel
+        || null;
+    return {
+        deployment,
+        model: getModelDisplayName(deployment),
+        // 'prompt-version' cuando el motor lo fija la versión activa del prompt
+        // del asistente; 'default' cuando sale de la configuración del servicio.
+        source: active?.model ? 'prompt-version' : 'default',
+        promptVersion: active?.id || null,
+    };
+}
+
+async function toResponse(scope, result) {
+    const body = {
+        data: result.data,
+        defaults: result.defaults,
+        updatedAt: result.updatedAt,
+        updatedBy: result.updatedBy,
+    };
+    // El motor vigente sólo se informa en el scope que gobierna las respuestas:
+    // quien opera necesita distinguir "lo que guardé" de "lo que responde".
+    if (scope === 'model') {
+        body.effective = await resolveEffectiveEngine();
+    }
     return {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            data: result.data,
-            defaults: result.defaults,
-            updatedAt: result.updatedAt,
-            updatedBy: result.updatedBy,
-        }),
+        body: JSON.stringify(body),
     };
 }
 
@@ -47,7 +81,7 @@ app.http('admin-config-get', {
         if (isInvalidScope(scope)) return scopeError(scope);
         try {
             const result = await getAdminSettings(scope);
-            return toResponse(result);
+            return toResponse(scope, result);
         } catch (err) {
             context.error(`[AdminConfig] Error getting config (scope=${scope}):`, err);
             return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Error al obtener la configuración.' }) };
@@ -73,7 +107,7 @@ app.http('admin-config-put', {
         const { userId } = getAuthenticatedUser(request);
         try {
             const result = await upsertAdminSettings(scope, values, userId);
-            return toResponse(result);
+            return toResponse(scope, result);
         } catch (err) {
             if (err instanceof AdminSettingsValidationError) {
                 return errorResponse(400, err.message);
@@ -94,7 +128,7 @@ app.http('admin-config-delete', {
         if (isInvalidScope(scope)) return scopeError(scope);
         try {
             const result = await resetAdminSettings(scope);
-            return toResponse(result);
+            return toResponse(scope, result);
         } catch (err) {
             if (err instanceof AdminSettingsValidationError) {
                 return errorResponse(400, err.message);

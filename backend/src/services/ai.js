@@ -239,11 +239,19 @@ export function getChatModelName(taskType) {
  * Display label for the chat "Powered by …" indicator. Returns the real
  * catalog model name (AI_FOUNDRY_DEEPSEEK_DISPLAY_NAME) instead of the
  * deployment alias, so the UI tracks model bumps with no code change.
+ *
+ * The configured catalog name describes the DeepSeek engine only: for any other
+ * deployment (e.g. a candidate engine from another family) the label must be the
+ * deployment name itself. Otherwise the surface reports an engine that is not the
+ * one answering — exactly the confusion UJ-55 has to rule out.
+ *
  * Falls back to the deployment name when unconfigured.
  */
 export function getModelDisplayName(deploymentName) {
-    const configured = process.env.AI_FOUNDRY_DEEPSEEK_DISPLAY_NAME || CONFIG.ai.deepSeekDisplayName;
-    if (configured) return configured;
+    if (isDeepSeekModel(deploymentName)) {
+        const configured = process.env.AI_FOUNDRY_DEEPSEEK_DISPLAY_NAME || CONFIG.ai.deepSeekDisplayName;
+        if (configured) return configured;
+    }
     return deploymentName || CONFIG.ai.deepSeekModel || 'deepseek-v4-flash';
 }
 

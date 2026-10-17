@@ -1,6 +1,20 @@
 import { api } from '../../services/api.js';
 import { toast } from '../../components/Toast.js';
 
+// Motores que el backend acepta para el asistente (`ALLOWED_MODELS` en
+// `backend/src/services/admin-settings.js`). Se listan todos: esconder uno hacía
+// que la pantalla mostrara "Activo" sobre un motor distinto del guardado (UJ-55).
+const MOTORES_SELECCIONABLES = ['deepseek-v4-flash', 'gpt-4o-mini'];
+
+const ETIQUETA_MOTOR = {
+  'deepseek-v4-flash': 'DeepSeek V4 Flash',
+  'gpt-4o-mini': 'GPT-4o mini',
+};
+
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+));
+
 export async function renderAdminModelConfig(container) {
   let config = {
     model: 'deepseek-v4-flash',
@@ -9,17 +23,82 @@ export async function renderAdminModelConfig(container) {
     topP: 0.95,
     embeddingModel: 'text-embedding-3-small',
   };
+  // Registro del cambio (quién y cuándo) y motor que efectivamente responde.
+  // Ambos vienen en la respuesta del backend y antes se descartaban: la pantalla
+  // no podía distinguir "lo que guardé" de "lo que responde" (UJ-55 paso 9).
+  let meta = { defaults: null, updatedAt: null, updatedBy: null, effective: null, disponible: false };
 
   async function loadConfig() {
     try {
       const result = await api.getAdminConfig('model');
-      if (result?.data) config = { ...config, ...result.data };
+      if (result?.data) {
+        config = { ...config, ...result.data };
+        meta = {
+          defaults: result.defaults ?? null,
+          updatedAt: result.updatedAt ?? null,
+          updatedBy: result.updatedBy ?? null,
+          effective: result.effective ?? null,
+          disponible: true,
+        };
+      }
     } catch (err) {
       console.warn('[ModelConfig] No se pudo cargar la configuración del modelo:', err);
     }
   }
 
   await loadConfig();
+
+  const motorEfectivo = meta.effective?.model || null;
+  const seleccionGobierna = !!motorEfectivo && motorEfectivo === config.model;
+
+  function registroTexto() {
+    if (!meta.disponible) return 'No se pudo leer el registro del cambio.';
+    if (meta.defaults === true || !meta.updatedAt) {
+      return 'Sin modificaciones registradas: rige el valor por defecto.';
+    }
+    const cuando = new Date(meta.updatedAt).toLocaleString('es-AR');
+    return `Última modificación registrada: ${cuando}${meta.updatedBy ? ` por ${esc(meta.updatedBy)}` : ''}.`;
+  }
+
+  function vigenteTexto() {
+    if (!meta.disponible) return 'Motor vigente no disponible (no se pudo leer la configuración).';
+    if (!motorEfectivo) return 'Motor vigente no informado por el servicio.';
+    const origen = meta.effective?.source === 'prompt-version'
+      ? `fijado por la versión activa del prompt del asistente${meta.effective?.promptVersion ? ` (${esc(meta.effective.promptVersion)})` : ''}`
+      : 'tomado de la configuración del servicio';
+    return `${esc(motorEfectivo)} — ${origen}.`;
+  }
+
+  function avisoSeleccion() {
+    if (!meta.disponible || !motorEfectivo || seleccionGobierna) return '';
+    return `
+      <div class="card animate-in" style="margin-bottom:var(--space-6);border-left:4px solid var(--color-warning)">
+        <div style="display:flex;gap:var(--space-3);align-items:flex-start;padding:var(--space-4)">
+          <span aria-hidden="true" style="font-size:1.25rem">⚠️</span>
+          <div>
+            <strong>La selección guardada no gobierna las respuestas.</strong>
+            <div class="text-xs text-text-muted" style="margin-top:2px">
+              Lo guardado en esta pantalla es <code>${esc(config.model)}</code>, pero el motor que responde hoy es
+              <strong>${esc(motorEfectivo)}</strong>. Para cambiar el motor del asistente hay que usar
+              <a href="#/admin/prompts">Gestión de Prompts</a>: el motor lo fija la versión activa del prompt.
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function renderMotores() {
+    return MOTORES_SELECCIONABLES.map((valor) => `
+        <label class="card" style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-4);cursor:pointer;border:2px solid ${config.model === valor ? 'var(--color-primary)' : 'transparent'};border-radius:var(--radius-md)" id="model-${valor}">
+          <input type="radio" name="ai-model" value="${valor}" ${config.model === valor ? 'checked' : ''} style="accent-color:var(--color-primary)">
+          <div>
+            <strong>${ETIQUETA_MOTOR[valor] || valor}</strong>
+            <p class="text-xs text-text-muted" style="margin:2px 0 0">${valor === 'deepseek-v4-flash' ? 'Rápido y eficiente. Ideal para respuestas cotidianas. Consumido desde Azure AI Foundry.' : 'Motor candidato alternativo. Consumido desde Azure OpenAI.'}</p>
+          </div>
+          ${motorEfectivo === valor ? '<span class="badge badge-success" style="margin-left:auto">Vigente</span>' : ''}
+          ${config.model === valor ? '<span class="badge" style="margin-left:auto;background:var(--color-surface-3);color:var(--color-text-muted)">Seleccionado</span>' : ''}
+        </label>`).join('');
+  }
 
   container.innerHTML = `
     <div class="page-header">
@@ -29,28 +108,36 @@ export async function renderAdminModelConfig(container) {
 
     <div class="card animate-in" style="margin-bottom:var(--space-6)">
       <h3 style="margin-bottom:var(--space-4)">Modelo de Chat Activo</h3>
+      <div style="display:grid;gap:var(--space-3);margin-bottom:var(--space-4)">
+        <div>
+          <span class="form-label" style="font-weight:600">Motor que responde hoy</span>
+          <p class="text-sm" style="margin:2px 0 0" id="motor-vigente">${vigenteTexto()}</p>
+        </div>
+        <div>
+          <span class="form-label" style="font-weight:600">Selección guardada en esta pantalla</span>
+          <p class="text-sm" style="margin:2px 0 0" id="motor-seleccionado">${esc(config.model)}${seleccionGobierna ? ' — es el motor vigente.' : ''}</p>
+        </div>
+        <div>
+          <span class="form-label" style="font-weight:600">Registro del cambio</span>
+          <p class="text-sm text-text-muted" style="margin:2px 0 0" id="registro-cambio">${registroTexto()}</p>
+        </div>
+      </div>
       <p class="text-xs text-text-muted" style="margin-bottom:var(--space-4)">
-        El modelo seleccionado se usará para generar respuestas en el chat RAG.
+        El motor que responde lo fija la versión activa del prompt del asistente. Elegir otro motor acá
+        todavía no cambia las respuestas.
       </p>
-      <div style="display:grid;gap:var(--space-3)">
-        <label class="card" style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-4);cursor:pointer;border:2px solid ${config.model === 'deepseek-v4-flash' ? 'var(--color-primary)' : 'transparent'};border-radius:var(--radius-md)" id="model-deepseek">
-          <input type="radio" name="ai-model" value="deepseek-v4-flash" ${config.model === 'deepseek-v4-flash' ? 'checked' : ''} style="accent-color:var(--color-primary)">
-          <div>
-            <strong>DeepSeek V4 Flash</strong>
-            <p class="text-xs text-text-muted" style="margin:2px 0 0">Rápido y eficiente. Ideal para respuestas cotidianas. Consumido desde Azure AI Foundry.</p>
-          </div>
-          <span class="badge badge-success" style="margin-left:auto">Activo</span>
-        </label>
-
-
+      <div style="display:grid;gap:var(--space-3)" id="lista-motores">
+        ${renderMotores()}
       </div>
     </div>
+
+    ${avisoSeleccion()}
 
     <div class="card animate-in" style="margin-bottom:var(--space-6)">
       <h3 style="margin-bottom:var(--space-4)">Modelo de Embeddings</h3>
       <div style="display:flex;align-items:center;gap:var(--space-3)">
         <div>
-          <strong>${config.embeddingModel}</strong>
+          <strong>${esc(config.embeddingModel)}</strong>
           <p class="text-xs text-text-muted" style="margin:2px 0 0">Dimensión: 1536 · Azure OpenAI (RS-OPENAI-LLM)</p>
         </div>
         <span class="badge" style="margin-left:auto;background:var(--color-surface-3);color:var(--color-text-muted)">Prototipo · Fijo</span>
@@ -93,10 +180,10 @@ export async function renderAdminModelConfig(container) {
   });
 
   function renderValues() {
-    const deepseekRadio = document.querySelector('input[name="ai-model"][value="deepseek-v4-flash"]');
-    const gptRadio = document.querySelector('input[name="ai-model"][value="gpt-4o-mini"]');
-    if (deepseekRadio) deepseekRadio.checked = config.model === 'deepseek-v4-flash';
-    if (gptRadio) gptRadio.checked = config.model === 'gpt-4o-mini';
+    for (const valor of MOTORES_SELECCIONABLES) {
+      const radio = document.querySelector(`input[name="ai-model"][value="${valor}"]`);
+      if (radio) radio.checked = config.model === valor;
+    }
     document.getElementById('setting-temperature').value = config.temperature;
     document.getElementById('temperature-value').textContent = config.temperature;
     document.getElementById('setting-max-tokens').value = config.maxTokens;
@@ -122,9 +209,25 @@ export async function renderAdminModelConfig(container) {
       const result = await api.saveAdminConfig('model', readValues());
       if (result?.data) {
         config = { ...config, ...result.data };
+        meta = {
+          defaults: result.defaults ?? null,
+          updatedAt: result.updatedAt ?? null,
+          updatedBy: result.updatedBy ?? null,
+          effective: result.effective ?? meta.effective,
+          disponible: true,
+        };
         renderValues();
       }
-      toast('success', 'Configuración guardada', 'El modelo y parámetros se actualizarán en las próximas respuestas.');
+      // No se promete un efecto sobre las respuestas: el motor vigente lo fija
+      // la versión activa del prompt y esta pantalla todavía no lo cambia (UJ-55).
+      const vigente = meta.effective?.model;
+      toast(
+        'success',
+        'Selección guardada',
+        vigente
+          ? `Quedó registrada la selección. El motor que responde sigue siendo ${vigente}.`
+          : 'Quedó registrada la selección.',
+      );
     } catch (err) {
       toast('error', 'Error al guardar la configuración', err.message || 'No se pudo persistir la configuración del modelo.');
     } finally {
@@ -140,6 +243,13 @@ export async function renderAdminModelConfig(container) {
       const result = await api.resetAdminConfig('model');
       if (result?.data) {
         config = { ...config, ...result.data };
+        meta = {
+          defaults: result.defaults ?? null,
+          updatedAt: result.updatedAt ?? null,
+          updatedBy: result.updatedBy ?? null,
+          effective: result.effective ?? meta.effective,
+          disponible: true,
+        };
         renderValues();
       }
       toast('success', 'Valores restablecidos', 'Se restauraron los valores por defecto del modelo.');
