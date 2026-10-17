@@ -61,10 +61,14 @@ export async function getSafetyRate(subjectId, days = 30) {
     return res.json();
 }
 
-export async function getAdminUsers() {
+export async function getAdminUsers(options = {}) {
     try {
         const res = await apiFetch(`${BASE_URL}/dashboard-admin/users`);
         if (!res.ok) {
+            // fix #500 (resto): un caller estricto no debe recibir una lista vacía
+            // como si la institución no tuviera personas (la pantalla de
+            // participantes afirmaría "0 alumnos" para una cohorte que sí las tiene).
+            if (options.strict) throw await parseApiError(res, `No se pudieron leer las personas (HTTP ${res.status}).`);
             console.warn(`[API] getAdminUsers returned ${res.status}.`);
             return [];
         }
@@ -72,6 +76,7 @@ export async function getAdminUsers() {
         const users = Array.isArray(data) ? data : (data?.data || []);
         return Array.isArray(users) ? users : [];
     } catch (err) {
+        if (options.strict) throw err;
         console.error('[API] getAdminUsers failed:', err);
         return [];
     }

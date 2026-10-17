@@ -32,12 +32,22 @@ export async function renderDirectorStudentManagement(container) {
   let subjectEnrollmentMap = {};
   let query = '';
   let focusSubjectId = parseHashQuery().get('subjectId') || null;
+  // fix #500 (resto): qué lectura falló, para declararlo con precisión en vez de
+  // afirmar "0 alumnos" cuando el listado de personas no se pudo leer.
+  let readsError = null;
 
   const refreshData = async () => {
-    const [users, subjectList] = await Promise.all([
-      api.getAdminUsers(),
-      api.getSubjects(),
-    ]);
+    readsError = null;
+    let users, subjectList;
+    try {
+      [users, subjectList] = await Promise.all([
+        api.getAdminUsers({ strict: true }),
+        api.getSubjects(),
+      ]);
+    } catch (err) {
+      readsError = 'No se pudo leer el listado de alumnos';
+      throw err;
+    }
     students = safeArray(users).filter((u) => {
       const role = String(u.role || '').toLowerCase();
       return role === 'student' || role === 'alumno';
@@ -47,8 +57,13 @@ export async function renderDirectorStudentManagement(container) {
     const entries = await Promise.all(subjects.map(async (subject) => {
       // fix #500: strict read. A failed read of the enrollments must be declared,
       // never drawn as "0 INSCRIPTOS" for a unit that does have students.
-      const enrollments = safeArray(await api.getEnrollmentsBySubject(subject.id, { strict: true }));
-      return [subject.id, enrollments];
+      try {
+        const enrollments = safeArray(await api.getEnrollmentsBySubject(subject.id, { strict: true }));
+        return [subject.id, enrollments];
+      } catch (err) {
+        readsError = readsError || 'No se pudieron leer las matrículas';
+        throw err;
+      }
     }));
     subjectEnrollmentMap = Object.fromEntries(entries);
   };
@@ -75,8 +90,13 @@ export async function renderDirectorStudentManagement(container) {
         await api.deleteEnrollment(subjectId, studentId);
       }
       enrollmentService.clearCache(studentId);
-      const enrollments = safeArray(await api.getEnrollmentsBySubject(subjectId));
-      subjectEnrollmentMap = { ...subjectEnrollmentMap, [subjectId]: enrollments };
+      // fix #500 (resto): una relectura fallida no debe pisar el conteo con un cero.
+      try {
+        const enrollments = safeArray(await api.getEnrollmentsBySubject(subjectId, { strict: true }));
+        subjectEnrollmentMap = { ...subjectEnrollmentMap, [subjectId]: enrollments };
+      } catch (readErr) {
+        console.warn('[StudentManagement] No se pudo releer las matrículas tras el cambio:', readErr);
+      }
       toast('success', assign ? 'Alumno asignado' : 'Alumno desasignado',
         assign
           ? `${displayName(student || {})} fue asignado a la materia.`
@@ -223,7 +243,7 @@ export async function renderDirectorStudentManagement(container) {
     container.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">⚠️</div>
-        <h3>No se pudieron leer las matrículas</h3>
+        <h3>${escapeHtml(readsError || 'No se pudieron leer las matrículas')}</h3>
         <p>La lectura de las inscripciones de las materias falló. No se muestran conteos para no afirmar que no hay alumnos inscriptos.</p>
         <button id="btn-retry-students" class="btn btn-primary" style="margin-top:12px;">Reintentar</button>
       </div>

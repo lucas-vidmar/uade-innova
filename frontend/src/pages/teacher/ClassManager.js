@@ -91,6 +91,9 @@ export async function renderClassManager(container) {
         let pendingCellHighlight = null;
         let students = [];
         let subjectStudents = [];
+        // fix #500 (resto): una lectura fallida de la nómina tiene que declararse,
+        // nunca dibujarse como "0 alumno(s) asignado(s)" para una unidad que sí los tiene.
+        let studentsReadError = null;
         // students moved to dedicated #/teacher/students tab — ClassManager keeps count only
         const escapeHtml = (value = '') => String(value)
             .replace(/&/g, '&amp;')
@@ -101,19 +104,22 @@ export async function renderClassManager(container) {
 
         // Enrolled students + student catalog for this subject (Story 1.6).
         const refreshStudents = async () => {
+            studentsReadError = null;
             try {
-                const allUsers = await api.getAdminUsers();
+                const allUsers = await api.getAdminUsers({ strict: true });
                 students = allUsers.filter((u) => String(u.role || '').toLowerCase() === 'student');
             } catch (err) {
                 console.warn('[ClassManager] No se pudieron cargar los usuarios:', err);
                 students = [];
+                studentsReadError = 'No se pudo leer el listado de personas de la institución.';
             }
             try {
-                const enrollments = await api.getEnrollmentsBySubject(subjectId);
+                const enrollments = await api.getEnrollmentsBySubject(subjectId, { strict: true });
                 subjectStudents = enrollments.filter((e) => e.role === 'student' && e.status === 'active');
             } catch (err) {
                 console.warn('[ClassManager] No se pudieron cargar las inscripciones:', err);
                 subjectStudents = [];
+                studentsReadError = studentsReadError || 'No se pudieron leer las inscripciones de esta unidad.';
             }
         };
 
@@ -149,13 +155,26 @@ export async function renderClassManager(container) {
         const render = () => {
             container.innerHTML = `
                 <div class="page-container">
-                    <div class="card" style="padding:var(--space-4);margin-bottom:var(--space-5);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-                        <div>
-                            <h3 style="margin:0 0 4px;">Alumnos de la materia</h3>
-                            <p style="font-size:var(--fs-sm);color:var(--color-text-secondary);margin:0;">${subjectStudents.length} alumno(s) asignado(s) — gestioná en la sección Estudiantes.</p>
+                    ${studentsReadError ? `
+                        <div class="card" style="padding:var(--space-4);margin-bottom:var(--space-5);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+                            <div>
+                                <h3 style="margin:0 0 4px;">Alumnos de la materia</h3>
+                                <p style="font-size:var(--fs-sm);color:var(--color-text-secondary);margin:0;">⚠️ ${escapeHtml(studentsReadError)} No se muestra el conteo para no afirmar que la unidad no tiene alumnos.</p>
+                            </div>
+                            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                                <button id="btn-retry-students-count" class="btn btn-secondary btn-sm">Reintentar</button>
+                                <a href="#/teacher/students" class="btn btn-ghost btn-sm" data-students-link>Ir a Estudiantes →</a>
+                            </div>
                         </div>
-                        <a href="#/teacher/students" class="btn btn-secondary btn-sm" data-students-link>Ir a Estudiantes →</a>
-                    </div>
+                    ` : `
+                        <div class="card" style="padding:var(--space-4);margin-bottom:var(--space-5);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+                            <div>
+                                <h3 style="margin:0 0 4px;">Alumnos de la materia</h3>
+                                <p style="font-size:var(--fs-sm);color:var(--color-text-secondary);margin:0;">${subjectStudents.length} alumno(s) asignado(s) — gestioná en la sección Estudiantes.</p>
+                            </div>
+                            <a href="#/teacher/students" class="btn btn-secondary btn-sm" data-students-link>Ir a Estudiantes →</a>
+                        </div>
+                    `}
 
                     ${Array.isArray(classes) && classes.length === 0 ? `
                         <div class="empty-state">
@@ -428,6 +447,12 @@ export async function renderClassManager(container) {
             if (studentsLink && auth.getRole() === 'director') {
                 studentsLink.setAttribute('href', '#/director/students');
             }
+
+            // fix #500 (resto): reintentar la lectura de la nómina sin recargar la página.
+            container.querySelector('#btn-retry-students-count')?.addEventListener('click', async () => {
+                await refreshStudents();
+                render();
+            });
 
             container.querySelectorAll('.btn-edit-timeline').forEach(btn => {
                 btn.addEventListener('click', async (e) => {
