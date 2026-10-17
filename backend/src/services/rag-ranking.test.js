@@ -97,6 +97,19 @@ test('getMaterialWeight', async (t) => {
         assert.strictEqual(getMaterialWeight('transcript', custom), 0.5);
         assert.strictEqual(getMaterialWeight('bibliography', custom), 1);
     });
+
+    await t.test('honors an explicit 0 weight (excluir) instead of falling back to 1', () => {
+        assert.strictEqual(getMaterialWeight('transcript', { transcript: 0 }), 0);
+        assert.strictEqual(getMaterialWeight('notes', { notes: 0, transcript: 2 }), 0);
+        assert.strictEqual(getMaterialWeight('presentation', { presentation: 0 }), 0);
+    });
+
+    await t.test('keeps 1 when the type is absent, null or empty in the custom weights', () => {
+        assert.strictEqual(getMaterialWeight('bibliography', { notes: 2, transcript: 0.5 }), 1);
+        assert.strictEqual(getMaterialWeight('notes', { notes: null }), 1);
+        assert.strictEqual(getMaterialWeight('notes', { notes: '' }), 1);
+        assert.strictEqual(getMaterialWeight('notes', { notes: 'no-es-un-numero' }), 1);
+    });
 });
 
 test('getPriorityWeight', async (t) => {
@@ -247,6 +260,37 @@ test('buildHybridContext', async (t) => {
         const priorityMap = { 'mat-1': 'secondary' };
         const result = buildHybridContext(matches, 4, priorityMap);
         assert.strictEqual(result.length, 2);
+    });
+
+    await t.test('excludes matches whose material type has weight 0 (excluir)', () => {
+        const matches = [
+            makeMatch('notes', 'a.pdf', 0),
+            makeMatch('transcript', 'b.pdf', 0),
+            makeMatch('bibliography', 'c.pdf', 0),
+        ];
+        const weights = { notes: 1, transcript: 0, bibliography: 1, presentation: 1 };
+        const result = buildHybridContext(matches, 4, {}, weights);
+        assert.deepStrictEqual(result.map((m) => m.metadata.materialType), ['notes', 'bibliography']);
+    });
+
+    await t.test('drops a zero-weight notes even though notes is picked first by type', () => {
+        const matches = [
+            makeMatch('notes', 'a.pdf', 0),
+            makeMatch('transcript', 'b.pdf', 0),
+            makeMatch('transcript', 'c.pdf', 1),
+            makeMatch('bibliography', 'd.pdf', 0),
+            makeMatch('transcript', 'e.pdf', 2),
+        ];
+        const weights = { notes: 0, transcript: 1, bibliography: 1, presentation: 1 };
+        const result = buildHybridContext(matches, 4, {}, weights);
+        assert.strictEqual(result.length, 4);
+        assert.ok(result.every((m) => m.metadata.materialType !== 'notes'));
+    });
+
+    await t.test('returns an empty context when every type is excluded', () => {
+        const matches = [makeMatch('notes', 'a.pdf', 0), makeMatch('transcript', 'b.pdf', 0)];
+        const weights = { notes: 0, transcript: 0, bibliography: 0, presentation: 0 };
+        assert.deepStrictEqual(buildHybridContext(matches, 4, {}, weights), []);
     });
 });
 

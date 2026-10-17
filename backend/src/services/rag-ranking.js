@@ -35,7 +35,13 @@ export function filterMatchesByTranscriptFocus(matches, transcriptFocus) {
 
 export function getMaterialWeight(materialType, customWeights) {
     const weights = customWeights || MATERIAL_TYPE_WEIGHT;
-    return weights[materialType] || 1;
+    const value = weights?.[materialType];
+    // Un 0 es un valor declarado, no un "sin configurar": la escala de la
+    // ponderación de fuentes dice "0 (excluir)". Con `|| 1` un 0 guardado caía
+    // en el 1 y el control no excluía nada (UJ-11, #492).
+    if (value === null || value === undefined || value === '') return 1;
+    const num = Number(value);
+    return Number.isFinite(num) && num >= 0 ? num : 1;
 }
 
 export function getPriorityWeight(materialPriority) {
@@ -65,7 +71,12 @@ export function rankMatches(matches = [], priorityMap = {}, materialWeights) {
 }
 
 export function buildHybridContext(matches = [], maxChunks = MAX_RAG_CHUNKS, priorityMap = {}, materialWeights) {
-    const ranked = rankMatches(matches, priorityMap, materialWeights);
+    // "0 (excluir)" en la ponderación de fuentes: un tipo puesto en 0 no entra
+    // al contexto ni se cita. Filtrar acá (y no sólo ordenar) es necesario
+    // porque `pickFirstByType` mete un apunte y una bibliografía sin mirar el
+    // peso, y porque con pocos candidatos se devuelven todos (UJ-11, #492).
+    const ranked = rankMatches(matches, priorityMap, materialWeights)
+        .filter((match) => getMaterialWeight(match?.metadata?.materialType, materialWeights) > 0);
     if (ranked.length <= maxChunks) return ranked;
 
     const selected = [];
