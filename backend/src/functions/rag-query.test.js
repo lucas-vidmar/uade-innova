@@ -27,6 +27,17 @@ const defaultQuerySimilarImpl = async (embedding, filter, topK) => {
     if (filter?.materialType?.$eq === 'verified-answer') {
         return [];
     }
+    // #399: metadata coherente con el alcance pedido — el post-filter de clase
+    // descarta lo que no intersecta el alcance (como haría Pinecone con el
+    // filtro real). Sin $or → alcance de materia entera.
+    const scope = Array.isArray(filter?.$or)
+        ? filter.$or.flatMap((clause) => {
+            if (clause.classId?.$eq !== undefined) return [String(clause.classId.$eq)];
+            if (Array.isArray(clause.classIds?.$in)) return clause.classIds.$in.map(String);
+            return [];
+        })
+        : [];
+    const classIds = scope.length > 0 ? [...new Set(scope)] : ['class1'];
     return [
         {
             score: 0.9,
@@ -34,7 +45,7 @@ const defaultQuerySimilarImpl = async (embedding, filter, topK) => {
                 sourceFilename: 'clase1.pdf',
                 text: 'Contenido de la clase 1',
                 materialType: 'pdf',
-                classIds: ['class1'],
+                classIds,
                 chunkIndex: 0
             }
         }
@@ -753,7 +764,7 @@ test('rag-query verified-answer source should carry subjectId (Story 3.7)', asyn
 
     const mockContext = { log: mock.fn(), error: mock.fn() };
     const mockRequest = {
-        json: async () => ({ question: 'Que dice la correccion?', subjectId: 'materia1', classIds: ['class1'] }),
+        json: async () => ({ question: 'Que dice la correccion?', subjectId: 'materia1', classIds: ['class3'] }),
         user: { id: 'test-user' },
     };
 
@@ -795,7 +806,7 @@ test('rag-query usa el título guardado en el vector de la respuesta verificada 
 
     const mockContext = { log: mock.fn(), error: mock.fn() };
     const mockRequest = {
-        json: async () => ({ question: 'Que dice la correccion?', subjectId: 'materia1', classIds: ['class1'] }),
+        json: async () => ({ question: 'Que dice la correccion?', subjectId: 'materia1', classIds: ['class3'] }),
         user: { id: 'test-user' },
     };
 
@@ -1425,6 +1436,9 @@ test('rag-query sandbox mode should keep subjectId scope in Pinecone filter', as
 
     t.after(() => {
         authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ oid: 'test-user-oid', userRoles: ['Alumno'] }));
+        // #399: restaurar también el mock de retrieval — sin esto, el test que
+        // sigue hereda metadata ['class1'] y el post-filter de clase la descarta.
+        vectorStoreMocks.querySimilar.mock.mockImplementation(defaultQuerySimilarImpl);
     });
 });
 
@@ -1889,4 +1903,150 @@ test('#481 el sandbox tampoco se abre al anonimo', async () => {
         assert.strictEqual(response.status, 401);
         assert.strictEqual(openaiMocks.chatCompletion.mock.callCount(), 0);
     } finally { restaurarIdentidad(); }
+});
+
+// ============================================================================
+// #399 — Alcance acotado a una clase: la bibliografía de OTRO encuentro no
+// debe entrar (contexto ni fuentes), y la bibliografía sin clase asignada
+// (legado) sigue entrando. Es la fuga reportada: con classIds:['class-01'] la
+// respuesta citaba `uj07-bibliografia-clase5.docx`.
+// ============================================================================
+
+test('#399: con alcance acotado a Clase 1, el material de la Clase 5 no llega ni al contexto ni a las fuentes', async (t) => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.mockImplementation(async () => ({
+        content: 'Respuesta acotada al alcance.',
+        usage: { prompt_tokens: 30, completion_tokens: 20, total_tokens: 50 },
+    }));
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter) => {
+        if (filter?.materialType?.$eq === 'verified-answer') return [];
+        return [
+            // En alcance: material de la Clase 1.
+            {
+                score: 0.91,
+                metadata: {
+                    materialType: 'notes',
+                    sourceFilename: 'clase01-apuntes.docx',
+                    text: 'Apuntes de la Clase 1.',
+                    subjectId: 'arq-software-2026',
+                    classId: 'class-01',
+                    classIds: ['class-01'],
+                    chunkIndex: 0,
+                },
+            },
+            // Fuera de alcance: la bibliografía de la Clase 5 (la fuga de #399).
+            {
+                score: 0.95,
+                metadata: {
+                    materialType: 'bibliography',
+                    sourceFilename: 'uj07-bibliografia-clase5.docx',
+                    text: 'Bibliografía de la Clase 5.',
+                    subjectId: 'arq-software-2026',
+                    classId: 'class-05',
+                    classIds: ['class-05', 'class-06'],
+                    chunkIndex: 0,
+                },
+            },
+            // Legado sin clase asignada: el fallback de bibliografía lo conserva.
+            {
+                score: 0.88,
+                metadata: {
+                    materialType: 'bibliography',
+                    sourceFilename: 'bibliografia-materia-legacy.docx',
+                    text: 'Bibliografía de nivel materia sin clase.',
+                    subjectId: 'arq-software-2026',
+                    classId: '',
+                    classIds: [],
+                    chunkIndex: 0,
+                },
+            },
+        ];
+    });
+    t.after(() => {
+        vectorStoreMocks.querySimilar.mock.mockImplementation(defaultQuerySimilarImpl);
+        openaiMocks.chatCompletion.mock.mockImplementation(async () => ({
+            content: 'Respuesta simulada.',
+            usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 },
+        }));
+    });
+
+    const response = await capturedHandler({
+        json: async () => ({
+            question: 'seguimos en la Clase 1. Explicame el patron SAGA y CQRS segun el material.',
+            subjectId: 'arq-software-2026',
+            classIds: ['class-01'],
+        }),
+        user: { id: 'alu-003' },
+    }, { log: mock.fn(), error: mock.fn(), warn: mock.fn() });
+
+    assert.strictEqual(response.status, 200);
+    const body = JSON.parse(response.body);
+    const filenames = (body.sources || []).map((s) => s.sourceFilename);
+
+    assert.ok(filenames.includes('clase01-apuntes.docx'), 'el material del alcance sí debe citarse');
+    assert.ok(
+        !filenames.includes('uj07-bibliografia-clase5.docx'),
+        `la bibliografía de otra clase no debe citarse con alcance Clase 1 (#399); fuentes: ${JSON.stringify(filenames)}`,
+    );
+    assert.ok(
+        filenames.includes('bibliografia-materia-legacy.docx'),
+        'la bibliografía sin clase asignada (legado) sigue entrando por el fallback',
+    );
+
+    const messages = openaiMocks.chatCompletion.mock.calls[0]?.arguments?.[0];
+    assert.ok(messages, 'debe llegar al LLM con el material en alcance');
+    const systemPrompt = messages.find((m) => m.role === 'system').content;
+    assert.ok(systemPrompt.includes('clase01-apuntes.docx'), 'el contexto debe incluir el material de la Clase 1');
+    assert.ok(
+        !systemPrompt.includes('uj07-bibliografia-clase5'),
+        'el contexto del LLM no debe contener material fuera de alcance',
+    );
+});
+
+test('#399: una respuesta verificada de otra clase no se sirve con alcance acotado (cae al RAG)', async (t) => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    const context = { log: mock.fn(), error: mock.fn(), warn: mock.fn() };
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter) => {
+        if (filter?.materialType?.$eq === 'verified-answer') {
+            return [{
+                id: 'corr-399',
+                score: 0.97,
+                metadata: {
+                    materialType: 'verified-answer',
+                    subjectId: 'arq-software-2026',
+                    classId: 'class-05',
+                    text: 'Respuesta verificada de la Clase 5.',
+                    teacherId: 'prof-001',
+                    sourceFilename: 'correction-399',
+                    chunkIndex: 0,
+                },
+            }];
+        }
+        // La búsqueda estándar no encuentra nada en este escenario.
+        return [];
+    });
+    t.after(() => {
+        vectorStoreMocks.querySimilar.mock.mockImplementation(defaultQuerySimilarImpl);
+    });
+
+    const response = await capturedHandler({
+        json: async () => ({
+            question: 'seguimos en la Clase 1: ¿qué dice la corrección?',
+            subjectId: 'arq-software-2026',
+            classIds: ['class-01'],
+        }),
+        user: { id: 'alu-003' },
+    }, context);
+
+    assert.strictEqual(response.status, 200);
+    const body = JSON.parse(response.body);
+    assert.notStrictEqual(body.verified, true, 'la respuesta verificada de otra clase no debe servirse (#399)');
+    assert.ok(
+        !JSON.stringify(body.answer || '').includes('Respuesta verificada de la Clase 5'),
+        'el texto verificado fuera de alcance no debe aparecer',
+    );
+    const logged = context.log.mock.calls.some((c) => String(c.arguments?.[0] || '').includes('fuera de alcance'));
+    assert.ok(logged, 'debe registrar el descarte por alcance en los logs');
 });

@@ -25,7 +25,7 @@ import {
     filterMatchesByTranscriptFocus, buildHybridContext, diversifyBySourceFile,
     resolveMaterialPriority, resolveSourceMix, resolveSelectedClassCount, resolveFilterType
 } from '../services/rag-ranking.js';
-import { isQuarantined } from '../services/vector-audit.js';
+import { isQuarantined, normalizeClassIds } from '../services/vector-audit.js';
 import { excludeRetiredMatches, partitionMaterialsByRetirement } from '../services/material-retirement.js';
 const MIN_HISTORY_TURNS = CONFIG.history.minTurns;
 const MAX_HISTORY_TURNS = CONFIG.history.maxTurns;
@@ -193,7 +193,15 @@ function buildPineconeFilter(subjectId, classIds, disableBibliographyFallback = 
     }
 
     if (!disableBibliographyFallback) {
-        clauses.push({ materialType: { $eq: 'bibliography' } });
+        // #399: el fallback de bibliografía ya NO abre la materia entera cuando
+        // el alcance está acotado — era la vía de fuga (la bibliografía de la
+        // Clase 5 entraba con alcance Clase 1).
+        // La bibliografía de las clases seleccionadas alcanza por las cláusulas
+        // de clase de arriba; este fallback sólo cubre la bibliografía SIN clase
+        // asignada (classId vacío: material legado — el alta exige classIds y la
+        // auditoría marca metadata-incomplete, pero se conserva para no perder
+        // recall si aún existe). La de otro encuentro no entra.
+        clauses.push({ materialType: { $eq: 'bibliography' }, classId: { $eq: '' } });
     }
 
     return {
@@ -201,6 +209,16 @@ function buildPineconeFilter(subjectId, classIds, disableBibliographyFallback = 
         $or: clauses,
         quarantined: { $ne: true },
     };
+}
+
+/**
+ * Set de clases explícitas de un vector (#399): usa `classIds` (lista) o, si
+ * no hay lista, el escalar `classId`. Devuelve [] cuando el vector no trae
+ * información de clase (caso mismatch-only: no se descarta por esa sola razón).
+ */
+function vectorClassSet(metadata) {
+    const meta = metadata || {};
+    return normalizeClassIds(meta.classIds ?? (meta.classId ? [meta.classId] : []));
 }
 
 function handleErrorResponse(status, message, category, isStream, code = null) {
@@ -416,6 +434,13 @@ app.http('rag-query', {
         const filter = buildPineconeFilter(subjectId, classIds, disableBibliographyFallback);
         const filterType = resolveFilterType(classIds);
 
+        // #399: alcance por clase acotado (null = alcance de materia entera:
+        // classIds vacío o con 'all'). Se usa para acotar también el fast path
+        // de respuestas verificadas y para el post-filter de clase (4a3).
+        const classScope = Array.isArray(classIds) && classIds.length > 0 && !classIds.includes('all')
+            ? classIds.map(String)
+            : null;
+
         // ── 3b. Verified-answer-first pre-search ──────────────────
         const VERIFIED_SCORE_THRESHOLD = 0.85;
         const verifiedFilter = {
@@ -436,9 +461,19 @@ app.http('rag-query', {
             // Loopback 1/4.3: un verifiedMatch cuarentenado se descarta (el fast
             // path no debe devolver contenido que pudo quedar flaggeado).
             if (topVerified) {
-                verifiedMatch = topVerified;
-                verifiedAnswerText = topVerified.metadata?.text || topVerified.metadata?.correctedAnswer || '';
-                context.log(`[RAG] Verified answer match (score=${topVerified.score.toFixed(3)}) — bypassing LLM`);
+                // #399: con alcance acotado a una clase, la respuesta verificada
+                // sólo sirve si su clase pertenece al alcance — un `correction-<uuid>`
+                // de otro encuentro es material de otro encuentro. Mismatch-only:
+                // si no trae clase explícita, se conserva (su caso lo resuelve el
+                // runner de cuarentena) para no romper el recall del fast path.
+                const verifiedClasses = vectorClassSet(topVerified.metadata);
+                if (classScope && verifiedClasses.length > 0 && !verifiedClasses.some((c) => classScope.includes(String(c)))) {
+                    context.log(`[RAG] Verified answer fuera de alcance (classId=[${verifiedClasses.join(',')}] vs alcance [${classScope.join(',')}]) — se omite el fast path (#399)`);
+                } else {
+                    verifiedMatch = topVerified;
+                    verifiedAnswerText = topVerified.metadata?.text || topVerified.metadata?.correctedAnswer || '';
+                    context.log(`[RAG] Verified answer match (score=${topVerified.score.toFixed(3)}) — bypassing LLM`);
+                }
             }
         } catch (err) {
             context.error('[RAG] Error in verified-answer pre-search (non-blocking):', err);
@@ -536,6 +571,25 @@ app.http('rag-query', {
         if (matches.length !== preSubjectCount) {
             const dropped = preSubjectCount - matches.length;
             context.log(`[RAG] Subject post-filter: se descartaron ${dropped} matches fuera de subjectId=${subjectId} (correlationId=${correlationId})`);
+        }
+
+        // ── 4a3. Post-filter de alcance por clase (#399, mismatch-only) ──
+        // Con alcance acotado a uno o más encuentros, un vector con información
+        // de clase explícita que NO intersecta el alcance no debe llegar al LLM:
+        // era la fuga de #399 (la bibliografía de la Clase 5 entraba con alcance
+        // Clase 1 por el fallback del filtro). Mismatch-only, igual que #328:
+        // los que no traen clase se dejan pasar (su caso lo resuelve el runner
+        // de cuarentena, vector-audit metadata-incomplete) sin romper el recall.
+        if (classScope) {
+            const preClassCount = matches.length;
+            matches = matches.filter((m) => {
+                const vectorClasses = vectorClassSet(m.metadata);
+                return vectorClasses.length === 0 || vectorClasses.some((c) => classScope.includes(String(c)));
+            });
+            if (matches.length !== preClassCount) {
+                const dropped = preClassCount - matches.length;
+                context.log(`[RAG] Class post-filter: se descartaron ${dropped} matches fuera del alcance [${classScope.join(',')}] (subjectId=${subjectId}, correlationId=${correlationId})`);
+            }
         }
 
         // ── 4b. Filtrar materiales no revisados y fuentes retiradas ───

@@ -18,13 +18,14 @@
  * provisioned). Once enabled, every configured role must carry an allowlisted
  * email — a missing one fails closed (AC #3).
  *
- * Bibliography + verified-answer: the Pinecone filter has a bibliography
- * fallback clause (`$or: [{classId:{$eq}},{materialType: bibliography}]`,
- * rag-query.js buildPineconeFilter) and the verified-answer pre-search is
- * subject-only (rag-query.js verifiedFilter), so those sources may legitimately
- * belong to any class of the subject. The canary ALWAYS asserts subjectId and
- * only asserts classId for other (non-bibliography, non-verified-answer)
- * sources.
+ * Class scope (#399): with an explicit class scope every returned source —
+ * bibliography and verified-answer included — must intersect the requested
+ * classIds. buildPineconeFilter no longer opens the bibliography fallback to
+ * the whole subject (only class-less legacy bibliography, classId:''), and
+ * rag-query applies a mismatch-only class post-filter. Sources with no class
+ * info are tolerated only for those two legacy-friendly types; any other type
+ * without class info fails as unverifiable. subjectId is ALWAYS asserted and a
+ * scope containing 'all' is subject-only.
  *
  * Env (never committed — GitHub secrets / workflow env):
  *   RAG_CANARY_ENABLED           'true'|'false' (default false) — master switch
@@ -170,10 +171,14 @@ export function sourceClassSet(source) {
 
 /**
  * Asserts a single source is within the requested scope.
- * subjectId is ALWAYS asserted; classId is asserted only for sources whose
- * type is neither `bibliography` (filter has a class fallback by design) nor
- * `verified-answer` (pre-search filter is subject-only), and a requested scope
- * containing 'all' is subject-only.
+ * subjectId is ALWAYS asserted, and a requested scope containing 'all' is
+ * subject-only. With an explicit class scope, a source carrying class info
+ * must intersect it for EVERY materialType — bibliography and verified-answer
+ * included (#399: the old exemption let another encounter's bibliography slip
+ * through a class-01-scoped query). Sources with NO class info are tolerated
+ * only for `bibliography` and `verified-answer` (legacy material without an
+ * assigned class, which the backend keeps reachable by design); any other type
+ * without class info is unverifiable and fails.
  * @returns {{ok: boolean, reason?: string}}
  */
 export function assertSourceInScope(source, expectedSubjectId, expectedClassIds) {
@@ -183,12 +188,15 @@ export function assertSourceInScope(source, expectedSubjectId, expectedClassIds)
     if (source.subjectId !== expectedSubjectId) {
         return { ok: false, reason: `subjectId=${source.subjectId ?? '(missing)'} (expected ${expectedSubjectId})` };
     }
-    const classExempt = source.materialType === 'bibliography' || source.materialType === 'verified-answer' || expectedClassIds.includes('all');
-    if (classExempt) {
+    if (expectedClassIds.includes('all')) {
         return { ok: true };
     }
     const classes = sourceClassSet(source);
     if (classes.length === 0) {
+        const classlessAllowed = source.materialType === 'bibliography' || source.materialType === 'verified-answer';
+        if (classlessAllowed) {
+            return { ok: true };
+        }
         return { ok: false, reason: 'no classId/classIds in source payload (isolation unverifiable)' };
     }
     if (!classes.some((c) => expectedClassIds.includes(c))) {
