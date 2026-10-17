@@ -36,7 +36,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { withAuth } from '../middleware/with-auth.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { validateFrontDoorId, parseClientPrincipal } from '../services/auth-utils.js';
-import { listAllVectorIds, fetchVectorsByIds, upsertChunks } from '../services/vector-store.js';
+import { listAllVectorIds, fetchVectorsByIds, upsertChunks, getIndexStats } from '../services/vector-store.js';
 import { getMaterialState, getEnrollment } from '../services/state-store.js';
 import { detectVectorConflict, buildQuarantineMetadata, isQuarantined } from '../services/vector-audit.js';
 import { saveJson } from '../services/storage.js';
@@ -117,6 +117,32 @@ export async function collectSubjectVectors(subjectId, deps = {}) {
     }
 
     return { vectors, scanned: ids.length, truncated };
+}
+
+/**
+ * Total de vectores que el propio índice declara tener (#452, UJ-59). Se usa
+ * para distinguir "la unidad no tiene fragmentos indexados" de "el escaneo no
+ * enumeró nada": `/vectors/list` puede devolver vacío mientras el índice sí
+ * tiene vectores, y una lista vacía no debe presentarse como la verdad de la
+ * unidad. Devuelve `null` cuando no se pudo leer el total (no se inventa 0).
+ */
+export async function readIndexTotalVectorCount(deps = {}) {
+    const stats = deps.getIndexStats || getIndexStats;
+    try {
+        const payload = await stats();
+        const total = Number(payload?.totalVectorCount);
+        return Number.isFinite(total) ? total : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * El escaneo no enumeró ningún vector pero el índice declara tener vectores:
+ * la lectura falló y no hay que tratarla como "unidad sin material indexado".
+ */
+export function isBlindScan(scanned, indexTotalVectorCount) {
+    return Number(scanned) === 0 && Number(indexTotalVectorCount) > 0;
 }
 
 function verdictFor(meta, materialState) {
@@ -202,11 +228,24 @@ app.http('vector-index', {
 
         try {
             const { vectors, scanned, truncated } = await collectSubjectVectors(subjectId);
+            const indexTotalVectorCount = await readIndexTotalVectorCount();
+            if (isBlindScan(scanned, indexTotalVectorCount)) {
+                context.warn?.(`[VectorIndex] Escaneo ciego para ${subjectId}: scanned=0 con índice de ${indexTotalVectorCount} vectores.`);
+                return jsonResponse(502, {
+                    error: `No se pudo leer el índice de la unidad: el escaneo no enumeró ningún vector aunque el índice declara tener ${indexTotalVectorCount}. No se presenta una lista vacía como si la unidad no tuviera material indexado.`,
+                    code: 'INDEX_SCAN_INCOMPLETE',
+                    subjectId,
+                    scanned,
+                    indexTotalVectorCount,
+                    correlationId: context?.correlationId || null,
+                });
+            }
             const groups = await classifySubjectVectors(subjectId, vectors);
             return jsonResponse(200, {
                 subjectId,
                 scanned,
                 truncated,
+                indexTotalVectorCount,
                 totalInUnit: vectors.length,
                 counts: summarize(groups),
                 groups,
@@ -274,6 +313,18 @@ app.http('vector-index-quarantine', {
         const startedAt = Date.now();
         try {
             const { vectors, scanned, truncated } = await collectSubjectVectors(subjectId);
+            const indexTotalVectorCount = await readIndexTotalVectorCount();
+            if (isBlindScan(scanned, indexTotalVectorCount)) {
+                context.warn?.(`[VectorIndex] Cuarentena abortada: escaneo ciego para ${subjectId} (scanned=0, índice de ${indexTotalVectorCount} vectores).`);
+                return jsonResponse(502, {
+                    error: `No se pudo purgar: el escaneo del índice no enumeró ningún vector aunque el índice declara tener ${indexTotalVectorCount}. Se aborta en vez de informar los materiales pedidos como "fuera de la unidad".`,
+                    code: 'INDEX_SCAN_INCOMPLETE',
+                    subjectId,
+                    scanned,
+                    indexTotalVectorCount,
+                    correlationId: context?.correlationId || null,
+                });
+            }
             const groups = await classifySubjectVectors(subjectId, vectors);
             const byMaterial = new Map(groups.map((g) => [g.materialId, g]));
 
@@ -337,6 +388,7 @@ app.http('vector-index-quarantine', {
                 notInUnit,
                 verification,
                 scanned,
+                indexTotalVectorCount,
                 truncated,
                 startedAt: new Date(startedAt).toISOString(),
                 finishedAt: new Date().toISOString(),
