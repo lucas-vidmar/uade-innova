@@ -164,12 +164,14 @@ test('persisted gpt-4o-mini model is not silently reverted on save (#318)', asyn
   });
   await page.goto('/#/admin/model-config');
 
-  // #318 removed the disabled gpt-4o-mini prototype radio: only deepseek is
-  // selectable, and it renders unchecked when the persisted model is gpt.
+  // #542 lista los dos motores que el backend acepta: la pantalla ya no oculta
+  // el motor alternativo, y el persistido es el que queda marcado.
   const deepseekRadio = page.locator('input[name="ai-model"][value="deepseek-v4-flash"]');
+  const gptRadio = page.locator('input[name="ai-model"][value="gpt-4o-mini"]');
   await expect(deepseekRadio).toBeVisible();
+  await expect(gptRadio).toBeVisible();
+  await expect(gptRadio).toBeChecked();
   await expect(deepseekRadio).not.toBeChecked();
-  await expect(page.locator('input[name="ai-model"][value="gpt-4o-mini"]')).toHaveCount(0);
 
   // Save must keep gpt-4o-mini (readValues falls back to config.model) instead
   // of silently reverting to the hardcoded deepseek default.
