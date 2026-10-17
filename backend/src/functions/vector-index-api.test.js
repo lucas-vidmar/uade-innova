@@ -45,6 +45,7 @@ const vectorStoreMocks = {
     upsertChunks: mock.fn(async (vectors) => {
         for (const vector of vectors) index.set(vector.id, { values: vector.values, metadata: { ...vector.metadata } });
     }),
+    getIndexStats: mock.fn(async () => ({ totalVectorCount: index.size, indexFullness: 0, namespaces: {} })),
 };
 
 const telemetryMocks = {
@@ -119,6 +120,7 @@ test('vector-index lists the unit material with the verdict of each entry (UJ-59
     assert.strictEqual(body.truncated, false);
     // Sólo los vectores de la unidad: el de dasi-1c2023 no entra en la lista.
     assert.strictEqual(body.totalInUnit, 3);
+    assert.strictEqual(typeof body.indexTotalVectorCount, 'number');
     assert.strictEqual(body.counts.orphan, 1);
     assert.strictEqual(body.counts.ok, 1);
     assert.strictEqual(body.counts.mismatch, 1);
@@ -269,4 +271,66 @@ test('vector-index/quarantine rejects an invalid JSON body', async () => {
     const response = await handlers['vector-index-quarantine'](request, makeContext());
     assert.strictEqual(response.status, 400);
     assert.strictEqual(JSON.parse(response.body).code, 'INVALID_JSON');
+});
+
+// ── #452 / UJ-59: un escaneo ciego no puede presentarse como la verdad ──────
+// En el piloto `POST /vectors/list` devolvió vacío mientras el índice declaraba
+// 478 vectores: la superficie devolvía `scanned: 0` con la lista vacía y sin
+// ninguna señal de fallo, como si la unidad no tuviera material indexado.
+
+test('vector-index declares a blind scan instead of an empty authoritative list (UJ-59)', async () => {
+    resetIndex();
+    vectorStoreMocks.listAllVectorIds.mock.mockImplementationOnce(async () => []);
+    vectorStoreMocks.getIndexStats.mock.mockImplementationOnce(async () => ({ totalVectorCount: 478, indexFullness: 0, namespaces: {} }));
+
+    const response = await handlers['vector-index'](makeRequest({ query: { subjectId: 'arq-software-2026' } }), makeContext());
+
+    assert.strictEqual(response.status, 502);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.code, 'INDEX_SCAN_INCOMPLETE');
+    assert.strictEqual(body.scanned, 0);
+    assert.strictEqual(body.indexTotalVectorCount, 478);
+    assert.strictEqual(body.groups, undefined, 'no devuelve una lista vacía como verdad de la unidad');
+});
+
+test('vector-index does not flag an empty scan when the index is genuinely empty', async () => {
+    resetIndex();
+    vectorStoreMocks.listAllVectorIds.mock.mockImplementationOnce(async () => []);
+    vectorStoreMocks.getIndexStats.mock.mockImplementationOnce(async () => ({ totalVectorCount: 0, indexFullness: 0, namespaces: {} }));
+
+    const response = await handlers['vector-index'](makeRequest({ query: { subjectId: 'arq-software-2026' } }), makeContext());
+
+    assert.strictEqual(response.status, 200);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.scanned, 0);
+    assert.strictEqual(body.indexTotalVectorCount, 0);
+    assert.deepStrictEqual(body.groups, []);
+});
+
+test('vector-index still answers when the index total cannot be read', async () => {
+    resetIndex();
+    vectorStoreMocks.listAllVectorIds.mock.mockImplementationOnce(async () => []);
+    vectorStoreMocks.getIndexStats.mock.mockImplementationOnce(async () => { throw new Error('stats unavailable'); });
+
+    const response = await handlers['vector-index'](makeRequest({ query: { subjectId: 'arq-software-2026' } }), makeContext());
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(JSON.parse(response.body).indexTotalVectorCount, null);
+});
+
+test('vector-index/quarantine aborts on a blind scan instead of reporting materials as notInUnit (UJ-59 pasos 6-7)', async () => {
+    resetIndex();
+    vectorStoreMocks.listAllVectorIds.mock.mockImplementationOnce(async () => []);
+    vectorStoreMocks.getIndexStats.mock.mockImplementationOnce(async () => ({ totalVectorCount: 478, indexFullness: 0, namespaces: {} }));
+
+    const response = await handlers['vector-index-quarantine'](
+        makeRequest({ method: 'POST', body: { subjectId: 'arq-software-2026', materialIds: [cronograma.materialId] } }),
+        makeContext(),
+    );
+
+    assert.strictEqual(response.status, 502);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.code, 'INDEX_SCAN_INCOMPLETE');
+    assert.strictEqual(body.indexTotalVectorCount, 478);
+    assert.strictEqual(vectorStoreMocks.upsertChunks.mock.callCount(), 0, 'no purga a ciegas');
 });
