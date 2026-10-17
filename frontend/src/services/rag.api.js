@@ -8,12 +8,14 @@ const parseRetryAfter = (res, fallback = 60) => {
     return Number.isFinite(seconds) && seconds > 0 ? seconds : fallback;
 };
 
-export async function ragQuery({ question, classIds, subjectId, conversationHistory = [], historyWindowSize = 4, transcriptFocus = null, sandbox = false, simulateStudent = false, botTone, botLength, includeSources }) {
+export async function ragQuery({ question, classIds, subjectId, conversationHistory = [], historyWindowSize = 4, transcriptFocus = null, sandbox = false, simulateStudent = false, botTone, botLength, includeSources, promptVersion = null }) {
     try {
         const res = await apiFetch(`${BASE_URL}/rag-query${sandbox ? '?sandbox=true' : ''}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question, classIds, subjectId, stream: false, conversationHistory, historyWindowSize, transcriptFocus, sandbox, simulateStudent, botTone, botLength, includeSources }),
+            // `promptVersion` sólo viaja en modo banco de pruebas: es la versión
+            // PROPUESTA que se enfrenta contra la vigente sin activarla (UJ-49).
+            body: JSON.stringify({ question, classIds, subjectId, stream: false, conversationHistory, historyWindowSize, transcriptFocus, sandbox, simulateStudent, botTone, botLength, includeSources, ...(sandbox && promptVersion ? { promptVersion } : {}) }),
         });
 
         if (res.status === 429) {
@@ -36,11 +38,13 @@ export async function ragQuery({ question, classIds, subjectId, conversationHist
     }
 }
 
-export async function ragQueryStream({ question, classIds, subjectId, sessionId, conversationHistory = [], historyWindowSize = 4, transcriptFocus = null, sandbox = false, simulateStudent = false, botTone, botLength, includeSources }, onEvent) {
+export async function ragQueryStream({ question, classIds, subjectId, sessionId, conversationHistory = [], historyWindowSize = 4, transcriptFocus = null, sandbox = false, simulateStudent = false, botTone, botLength, includeSources, promptVersion = null }, onEvent) {
     const response = await apiFetch(`${BASE_URL}/rag-query${sandbox ? '?sandbox=true' : ''}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, classIds, subjectId, sessionId, stream: true, conversationHistory, historyWindowSize, transcriptFocus, sandbox, simulateStudent, botTone, botLength, includeSources }),
+        // `promptVersion` sólo viaja en modo banco de pruebas (UJ-49): es la
+        // versión propuesta que se enfrenta contra la vigente sin activarla.
+        body: JSON.stringify({ question, classIds, subjectId, sessionId, stream: true, conversationHistory, historyWindowSize, transcriptFocus, sandbox, simulateStudent, botTone, botLength, includeSources, ...(sandbox && promptVersion ? { promptVersion } : {}) }),
     });
 
     if (response.status === 429) {

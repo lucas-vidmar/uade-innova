@@ -40,6 +40,31 @@ function requireDirector(request, context) {
   return principal;
 }
 
+/**
+ * Docente/Director/Admin: quién enseña necesita poder **enumerar** las versiones
+ * del prompt del asistente para poder enfrentar la vigente contra una propuesta
+ * en el banco de pruebas (UJ-49). Sólo metadatos — el contenido sigue restringido
+ * a Director/Admin como hasta ahora.
+ */
+function requireTeacherOrDirector(request, context) {
+  if (!validateFrontDoorId(request)) return null;
+  const principal = context?.principal || parseClientPrincipal(request);
+  const roles = principal?.userRoles || [];
+  if (!roles.includes('Docente') && !roles.includes('Director') && !roles.includes('Admin')) {
+    return null;
+  }
+  return principal;
+}
+
+function teacherDenied() {
+  return structuredErrorResponse(
+    403,
+    'Forbidden - Se requiere rol Docente, Director o Admin para ver las versiones disponibles del prompt.',
+    ErrorCategory.AUTH,
+    'FORBIDDEN',
+  );
+}
+
 app.http('prompts-list-types', {
   methods: ['GET'],
   authLevel: 'anonymous',
@@ -105,6 +130,37 @@ app.http('prompts-get-active', {
       return jsonResponse(400, { error: err.message });
     }
   }, { roles: ['Director', 'Admin'] })),
+});
+
+app.http('prompts-list-available', {
+  methods: ['GET'],
+  authLevel: 'anonymous',
+  route: 'prompts/{type}/available',
+  handler: withCorrelation(withAuth(async (request, context) => {
+    const principal = requireTeacherOrDirector(request, context);
+    if (!principal) return teacherDenied();
+    const type = request.params.type;
+    try {
+      const versions = await listVersions(type);
+      // Sólo metadatos: quién enseña necesita saber QUÉ versiones puede enfrentar
+      // y cuál rige, no leer su contenido (UJ-49 pasos 2 y 4).
+      const metadata = versions.map((v) => ({
+        versionId: v.versionId,
+        isActive: !!v.isActive,
+        description: v.description || '',
+        createdAt: v.createdAt || null,
+        model: v.model || null,
+      }));
+      const active = metadata.find((v) => v.isActive) || null;
+      return jsonResponse(200, {
+        type,
+        activeVersion: active ? active.versionId : null,
+        versions: metadata,
+      });
+    } catch (err) {
+      return jsonResponse(400, { error: err.message });
+    }
+  }, { roles: ['Docente', 'Director', 'Admin'] })),
 });
 
 app.http('prompts-create', {

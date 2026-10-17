@@ -132,3 +132,44 @@ test('prompts-update registra a quién editó el contenido', async () => {
     assert.strictEqual(passed.updatedBy, 'dir-001');
     authMocks.parseClientPrincipal.mock.mockImplementation(() => null);
 });
+
+// ── UJ-49: quién enseña necesita enumerar las versiones para poder enfrentar la
+// vigente contra una propuesta en el banco de pruebas, sin leer su contenido.
+test('prompts-list-available deja a un Docente enumerar las versiones (sólo metadatos)', async () => {
+    authMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'prof-001', userRoles: ['authenticated', 'Docente'] }));
+    promptStoreMocks.listVersions.mock.mockImplementation(async () => ([
+        { versionId: 'v1-baseline', isActive: true, description: 'baseline', createdAt: '2026-06-29T20:06:15.282Z', model: null, content: 'SECRETO-VIGENTE', systemPrompt: 'SECRETO-SISTEMA' },
+        { versionId: 'v-propuesta', isActive: false, description: 'propuesta', createdAt: '2026-10-17T00:00:00.000Z', model: null, content: 'SECRETO-PROPUESTA' },
+    ]));
+
+    const response = await handlers['prompts-list-available'](
+        { method: 'GET', params: { type: 'rag-master' } },
+        { log: () => {} },
+    );
+
+    assert.strictEqual(response.status, 200);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.activeVersion, 'v1-baseline');
+    assert.strictEqual(body.versions.length, 2);
+    assert.deepStrictEqual(body.versions.map((v) => v.versionId), ['v1-baseline', 'v-propuesta']);
+    // El contenido NUNCA viaja por esta ruta.
+    assert.ok(!/SECRETO/.test(response.body), 'la ruta de disponibilidad no expone contenido');
+    assert.ok(!('content' in body.versions[0]));
+    assert.ok(!('systemPrompt' in body.versions[0]));
+
+    authMocks.parseClientPrincipal.mock.mockImplementation(() => null);
+});
+
+test('prompts-list-available sigue cerrada para un Alumno', async () => {
+    authMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'alu-001', userRoles: ['authenticated', 'Alumno'] }));
+
+    const response = await handlers['prompts-list-available'](
+        { method: 'GET', params: { type: 'rag-master' } },
+        { log: () => {} },
+    );
+
+    assert.strictEqual(response.status, 403);
+    assert.strictEqual(JSON.parse(response.body).code, 'FORBIDDEN');
+
+    authMocks.parseClientPrincipal.mock.mockImplementation(() => null);
+});

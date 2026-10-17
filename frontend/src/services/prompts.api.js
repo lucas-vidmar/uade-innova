@@ -21,6 +21,17 @@ export async function getActivePrompt(type) {
   return res.json();
 }
 
+/**
+ * Versiones del prompt que quién enseña PUEDE enfrentar en el banco de pruebas
+ * (UJ-49). Devuelve sólo metadatos — sin contenido — y quién puede llamarla es
+ * Docente/Director/Admin, no sólo Director/Admin como `getPromptVersions`.
+ */
+export async function getAvailablePromptVersions(type) {
+  const res = await apiFetch(`${BASE_URL}/prompts/${encodeURIComponent(type)}/available`);
+  if (!res.ok) throw await parseApiError(res, `Error ${res.status}: no se pudieron obtener las versiones disponibles`);
+  return res.json();
+}
+
 export async function createPromptVersion({ type, content, systemPrompt, userPromptTemplate, variables, description, model }) {
   const res = await apiFetch(`${BASE_URL}/prompts`, {
     method: 'POST',
