@@ -221,6 +221,20 @@ function vectorClassSet(metadata) {
     return normalizeClassIds(meta.classIds ?? (meta.classId ? [meta.classId] : []));
 }
 
+// #380 / UJ-21 / UJ-27: la etiqueta legible de la evidencia. El vector de una
+// respuesta verificada guarda su etiqueta en `metadata.title` (verify-answer),
+// mientras que los materiales normales la guardan en `metadata.slideTitle`. La
+// vía estándar sólo leía `slideTitle`, así que un fragmento `verified-answer`
+// recuperado como fuente de una respuesta normal caía al `sourceFilename`
+// interno (`correction-<uuid>`) y la persona no podía reconocer el material.
+// Acá se resuelve la misma etiqueta legible en TODAS las vías.
+function resolveSourceSlideTitle(metadata) {
+    const meta = metadata || {};
+    if (meta.slideTitle) return meta.slideTitle;
+    if (meta.materialType === 'verified-answer') return meta.title || 'Respuesta verificada por el docente';
+    return undefined;
+}
+
 function handleErrorResponse(status, message, category, isStream, code = null) {
     if (isStream) {
         const encoder = new TextEncoder();
@@ -490,7 +504,7 @@ app.http('rag-query', {
                 // #380 (UJ-27): la persona tiene que reconocer la evidencia. El
                 // identificador interno (correction-<uuid>) queda sólo para uso
                 // interno; lo que se muestra es esto.
-                slideTitle: verifiedMatch.metadata?.title || 'Respuesta verificada por el docente',
+                slideTitle: resolveSourceSlideTitle(verifiedMatch.metadata),
                 score: Math.round(verifiedMatch.score * 100) / 100,
             }];
             const interactionId = uuidv4();
@@ -868,7 +882,7 @@ ${contextText}
                 classIds: m.metadata?.classIds,
                 chunkIndex: m.metadata?.chunkIndex,
                 sourceFilename: m.metadata?.sourceFilename,
-                slideTitle: m.metadata?.slideTitle,
+                slideTitle: resolveSourceSlideTitle(m.metadata),
                 score: Math.round(m.score * 100) / 100,
                 text: m.metadata?.text || '',
                 materialId: m.metadata?.materialId || '',
@@ -1131,7 +1145,7 @@ ${contextText}
             classIds: m.metadata?.classIds,
             chunkIndex: m.metadata?.chunkIndex,
             sourceFilename: m.metadata?.sourceFilename,
-            slideTitle: m.metadata?.slideTitle,
+            slideTitle: resolveSourceSlideTitle(m.metadata),
             score: Math.round(m.score * 100) / 100,
             text: m.metadata?.text || '',
             materialId: m.metadata?.materialId || '',
