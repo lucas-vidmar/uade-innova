@@ -73,11 +73,35 @@ test('MOCK_DEV — mock auth allowed in Development', () => {
   assert.equal(isMockAuthAllowed(), true);
 });
 
-test('SWA_PRINCIPAL — real x-ms-client-principal header is parsed regardless of env', () => {
-  const principalB64 = Buffer.from(JSON.stringify({ userId: 'swa-user', userRoles: ['Director'] })).toString('base64');
-  const principal = parseClientPrincipal(mockRequest({ 'x-ms-client-principal': principalB64 }));
+test('SWA_PRINCIPAL_PROD_OFF — a forged x-ms-client-principal header is NOT identity in production', () => {
+  // UJ-52: el encabezado no lo puede verificar la app y el Function App es
+  // alcanzable directo, así que honrarlo por defecto es suplantación sin
+  // sesión. Verificado en el piloto: sin token devolvía el perfil de otra
+  // persona, el directorio completo de administración y dejaba a una identidad
+  // deshabilitada seguir leyendo y escribiendo su historia.
+  const principalB64 = Buffer.from(JSON.stringify({ userId: 'swa-user', userRoles: ['authenticated', 'Director'] })).toString('base64');
+  const req = mockRequest({ 'x-ms-client-principal': principalB64 });
+  assert.equal(parseClientPrincipal(req), null);
+  assert.equal(getAuthenticatedUser(req).userId, 'anonymous');
+  assert.equal(getAuthenticatedUser(req).role, 'Anonymous');
+});
+
+test('SWA_PRINCIPAL_TRUSTED — honored only when the deployment declares it trustworthy', () => {
+  const principalB64 = Buffer.from(JSON.stringify({ userId: 'swa-user', userRoles: ['authenticated', 'Director'] })).toString('base64');
+  const req = mockRequest({ 'x-ms-client-principal': principalB64 });
+  assert.equal(parseClientPrincipal(req), null);
+
+  process.env.SWA_PRINCIPAL_TRUSTED = 'true';
+  const principal = parseClientPrincipal(req);
   assert.equal(principal.userId, 'swa-user');
   assert.ok(principal.userRoles.includes('Director'));
+});
+
+test('SWA_PRINCIPAL_DEV — honored in Development (local func start)', () => {
+  process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Development';
+  const principalB64 = Buffer.from(JSON.stringify({ userId: 'swa-user', userRoles: ['authenticated', 'Director'] })).toString('base64');
+  const principal = parseClientPrincipal(mockRequest({ 'x-ms-client-principal': principalB64 }));
+  assert.equal(principal.userId, 'swa-user');
 });
 
 test('STASHED_PRINCIPAL — request principal stashed by withAuth wins over headers (#218)', () => {
@@ -103,6 +127,7 @@ test('STASHED_USER — getAuthenticatedUser prefers user stashed by withAuth (#2
 });
 
 test('ALLOWLIST_UNRESOLVABLE_EMAIL — configured allowlist + authenticated principal without a listed email yields role Denied (fail closed, Story 1.1a/10.25)', () => {
+  process.env.SWA_PRINCIPAL_TRUSTED = 'true';
   process.env.ALLOWED_USERS_JSON = JSON.stringify([
     { email: 'prof@uade.edu.ar', role: 'teacher' },
   ]);
@@ -122,6 +147,7 @@ test('ALLOWLIST_UNRESOLVABLE_EMAIL — configured allowlist + authenticated prin
 });
 
 test('ALLOWLIST_ALLOWED_EMAIL — configured allowlist + listed email resolves the allowlist role (Story 1.1a)', () => {
+  process.env.SWA_PRINCIPAL_TRUSTED = 'true';
   process.env.ALLOWED_USERS_JSON = JSON.stringify([
     { email: 'prof@uade.edu.ar', role: 'teacher', subjects: ['arq-software-2026'] },
   ]);

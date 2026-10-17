@@ -54,6 +54,26 @@ export function isMockAuthAllowed() {
 }
 
 /**
+ * True when the raw `x-ms-client-principal` header may be trusted as identity.
+ *
+ * That header is only authentic when Azure Static Web Apps injects it in front
+ * of the Function App. The app itself cannot verify it, and the pilot's
+ * Function App is reachable directly (issue #90): a forged header — base64
+ * JSON, no session, no password — resolved ANY identity. Verified against the
+ * pilot: with no token it returned another person's profile, the whole
+ * administrative user directory, and let a disabled identity keep reading and
+ * writing its own history after its access had been cut (UJ-52).
+ *
+ * So the branch is OFF by default and only turns on when the deployment
+ * declares the header trustworthy (Development, or SWA_PRINCIPAL_TRUSTED=true
+ * for a deployment whose API is genuinely only reachable through SWA).
+ * @returns {boolean}
+ */
+export function isSwaPrincipalTrusted() {
+  return isDevelopment() || process.env.SWA_PRINCIPAL_TRUSTED === 'true';
+}
+
+/**
  * Lee un encabezado de identidad de desarrollo (`x-edu-uid`, `x-mock-role`).
  *
  * Devuelve `null` salvo que el atajo de mock esté permitido (Development o
@@ -92,9 +112,13 @@ export function parseClientPrincipal(request) {
 
     let principal = null;
 
-    // 1. Try to parse real SWA principal
+    // 1. Try to parse the real SWA principal — ONLY when this deployment
+    //    declares the header trustworthy. The header is not verifiable by the
+    //    app: anyone reaching the Function App directly can forge it, so
+    //    honoring it by default is unauthenticated impersonation (see
+    //    isSwaPrincipalTrusted above / issue #90).
     const clientPrincipalHeader = request?.headers?.get?.('x-ms-client-principal');
-    if (clientPrincipalHeader) {
+    if (clientPrincipalHeader && isSwaPrincipalTrusted()) {
         try {
             const encoded = Buffer.from(clientPrincipalHeader, 'base64').toString('utf-8');
             const parsed = JSON.parse(encoded);
