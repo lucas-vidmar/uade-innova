@@ -8,10 +8,12 @@ import {
   createUser,
   updateUser,
   deleteUser,
+  getUserById,
   setUserPassword,
   generateRandomPassword,
 } from '../services/users-store.js';
 import { deleteSessionsForUser } from '../services/sessions-store.js';
+import { recordIdentityChange, listIdentityChanges } from '../services/identity-audit-store.js';
 import { CONFIG } from '../services/config.js';
 import { structuredErrorResponse, ErrorCategory } from '../services/error-categories.js';
 
@@ -33,6 +35,16 @@ function errorResponse(err) {
   const status = Number(err?.status) || 500;
   const code = err?.code || 'INTERNAL_ERROR';
   return jsonResponse(status, { success: false, error: { code, message: err?.message || 'Error interno' } });
+}
+
+/**
+ * Quién hizo el cambio, para la constancia (UJ-52 paso 9).
+ */
+function actorOf(context) {
+  return {
+    actor: context?.user?.id || context?.user?.userId || null,
+    actorRole: context?.user?.role || null,
+  };
 }
 
 async function loadUserProfiles() {
@@ -145,11 +157,21 @@ app.http('admin-create-user', {
         status,
         mustChangePassword: mustChangePassword !== false,
       });
+      // UJ-52 paso 9: el alta también queda asentada, con quién la hizo.
+      const constancia = await recordIdentityChange({
+        ...actorOf(context),
+        target: created.userId,
+        targetEmail: created.email,
+        action: 'create',
+        reason: body?.reason,
+        after: { role: created.role, status: created.status },
+      });
       context.log(`[AdminAPI] User created: ${created.userId} (${created.email})`);
       return jsonResponse(201, {
         success: true,
         data: created,
         generatedPassword: generatePassword ? finalPassword : undefined,
+        constancia,
       });
     } catch (err) {
       return errorResponse(err);
@@ -174,9 +196,25 @@ app.http('admin-update-user', {
       return jsonResponse(400, { success: false, error: { code: 'INVALID_BODY', message: 'Invalid JSON body' } });
     }
     try {
+      const before = await getUserById(id);
       const updated = await updateUser(id, body || {});
-      context.log(`[AdminAPI] User updated: ${updated.userId}`);
-      return jsonResponse(200, { success: true, data: updated });
+      // UJ-52 paso 9: la constancia dice quién, cuándo, por qué y con qué
+      // alcance (el estado anterior y el nuevo), no sólo que «se actualizó».
+      const action = updated?.status === 'disabled'
+        ? 'disable'
+        : (before?.status === 'disabled' && updated?.status === 'active' ? 'enable' : 'update');
+      const constancia = await recordIdentityChange({
+        ...actorOf(context),
+        target: updated?.userId || id,
+        targetEmail: updated?.email || before?.email,
+        action,
+        reason: body?.reason,
+        before: { role: before?.role, status: before?.status },
+        after: { role: updated?.role, status: updated?.status },
+        scope: action === 'disable' ? { access: 'cerrado' } : null,
+      });
+      context.log(`[AdminAPI] User updated: ${updated.userId} (${action})`);
+      return jsonResponse(200, { success: true, data: updated, constancia });
     } catch (err) {
       return errorResponse(err);
     }
@@ -193,15 +231,34 @@ app.http('admin-delete-user', {
     if (!id) {
       return jsonResponse(400, { success: false, error: { code: 'MISSING_USER_ID', message: 'userId is required' } });
     }
+    // El motivo de la baja es opcional, pero si viene se asienta (UJ-52 paso 9).
+    let body = {};
     try {
+      body = (await request.json()) || {};
+    } catch {
+      body = {};
+    }
+    try {
+      const before = await getUserById(id);
       const deleted = await deleteUser(id);
       if (!deleted) {
         return jsonResponse(404, { success: false, error: { code: 'USER_NOT_FOUND', message: `No existe un usuario con id "${id}".` } });
       }
       // Revoke all sessions so a deleted account cannot keep using tokens.
       await deleteSessionsForUser(id);
+      // UJ-52 paso 9: la baja queda asentada con fecha, quién la hizo y motivo.
+      const constancia = await recordIdentityChange({
+        ...actorOf(context),
+        target: id,
+        targetEmail: before?.email,
+        action: 'delete',
+        reason: body?.reason,
+        before: { role: before?.role, status: before?.status },
+        after: { status: 'deleted' },
+        scope: { access: 'cerrado', sessions: 'revocadas' },
+      });
       context.log(`[AdminAPI] User deleted: ${id}`);
-      return jsonResponse(200, { success: true, data: { deleted: true } });
+      return jsonResponse(200, { success: true, data: { deleted: true }, constancia });
     } catch (err) {
       return errorResponse(err);
     }
@@ -233,14 +290,46 @@ app.http('admin-reset-password', {
       // Reset forces re-auth everywhere except the admin's own session.
       const adminId = context.user?.id;
       await deleteSessionsForUser(id, adminId === id ? request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') : undefined);
+      // UJ-52 paso 9: el reseteo también queda asentado (nunca la contraseña).
+      const constancia = await recordIdentityChange({
+        ...actorOf(context),
+        target: id,
+        action: 'reset-password',
+        reason: body?.reason,
+        after: { mustChangePassword: true },
+        scope: { sessions: adminId === id ? 'la propia se conserva' : 'revocadas' },
+      });
       context.log(`[AdminAPI] Password reset: ${id}`);
       return jsonResponse(200, {
         success: true,
         data: { userId: id, mustChangePassword: true },
         generatedPassword: newPassword,
+        constancia,
       });
     } catch (err) {
       return errorResponse(err);
     }
   }, { roles: ['Admin'] })),
+});
+
+// ── GET /api/dashboard-admin/identity-audit?userId=… (admin/director) ─
+// UJ-52 paso 9: alguien que no participó del corte tiene que poder
+// reconstruir qué se cerró, cuándo y por qué. La constancia es de lectura.
+app.http('admin-identity-audit', {
+  methods: ['GET'],
+  authLevel: 'anonymous',
+  route: 'dashboard-admin/identity-audit',
+  handler: withCorrelation(withAuth(async (request, context) => {
+    const userId = request.query?.get?.('userId');
+    if (!userId) {
+      return jsonResponse(400, { success: false, error: { code: 'MISSING_USER_ID', message: 'userId es requerido' } });
+    }
+    try {
+      const cambios = await listIdentityChanges(userId);
+      return jsonResponse(200, { success: true, data: cambios });
+    } catch (err) {
+      context.error('[AdminAPI] Error reading identity audit:', err);
+      return errorResponse(err);
+    }
+  }, { roles: ['Admin', 'Director'] })),
 });

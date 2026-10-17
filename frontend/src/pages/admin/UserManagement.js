@@ -270,6 +270,7 @@ export async function renderUserManagement(container) {
                                 <button class="btn btn-secondary btn-sm btn-edit-user" title="Editar usuario">Editar</button>
                                 <button class="btn btn-secondary btn-sm btn-manage-subjects" title="Asignar materias">Materias</button>
                                 <button class="btn btn-secondary btn-sm btn-reset-pw" title="Resetear contraseña">Reset PW</button>
+                                <button class="btn btn-secondary btn-sm btn-identity-audit" title="Ver la constancia de los cambios de esta identidad">Constancia</button>
                                 <button class="btn btn-danger btn-sm btn-delete-user" title="Eliminar usuario">Eliminar</button>
                             </td>
                         </tr>
@@ -334,6 +335,16 @@ export async function renderUserManagement(container) {
                 } catch (err) {
                     toast('error', 'Error', err?.message || 'No se pudo resetear la contraseña.');
                 }
+            });
+        });
+
+        tableContainer.querySelectorAll('.btn-identity-audit').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                const row = btn.closest('tr');
+                const userId = row?.getAttribute('data-user-id');
+                const user = users.find((u) => String(u.id) === userId);
+                if (!user) return;
+                openIdentityAuditModal(user);
             });
         });
 
@@ -520,6 +531,88 @@ export async function renderUserManagement(container) {
         }
     }
 
+    const AUDIT_ACTION_LABELS = {
+        create: 'Alta',
+        update: 'Cambio',
+        disable: 'Corte de acceso',
+        enable: 'Rehabilitación',
+        delete: 'Baja',
+        'reset-password': 'Reseteo de contraseña',
+    };
+
+    /**
+     * UJ-52 paso 9: la constancia del corte, legible por alguien que no
+     * participó — qué se cerró, cuándo, quién lo hizo, por qué y con qué alcance.
+     */
+    async function openIdentityAuditModal(user) {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = `
+            <div class="modal-content" style="max-width:680px;width:94%;">
+                <div class="modal-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+                    <h3 class="h4" style="margin:0;">Constancia de ${escapeHtml(user.name || user.id)}</h3>
+                    <button type="button" class="btn btn-ghost btn-sm audit-close" aria-label="Cerrar">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div id="audit-loading" class="loading-state"><div class="animate-pulse">Leyendo la constancia...</div></div>
+                    <p id="audit-error" style="display:none;color:var(--color-error);font-size:0.85rem;margin:0 0 12px;"></p>
+                    <div id="audit-list" style="display:none;max-height:420px;overflow-y:auto;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-ghost audit-close">Cerrar</button>
+                </div>
+            </div>
+        `;
+        const close = () => overlay.remove();
+        overlay.querySelectorAll('.audit-close').forEach((b) => b.addEventListener('click', close));
+        overlay.addEventListener('click', (event) => { if (event.target === overlay) close(); });
+        document.body.appendChild(overlay);
+
+        const loadingEl = overlay.querySelector('#audit-loading');
+        const errorEl = overlay.querySelector('#audit-error');
+        const listEl = overlay.querySelector('#audit-list');
+
+        const formatDate = (iso) => {
+            if (!iso) return 'sin fecha';
+            const d = new Date(iso);
+            return Number.isNaN(d.getTime()) ? String(iso) : d.toLocaleString('es-AR');
+        };
+        const formatScope = (scope) => {
+            if (!scope || typeof scope !== 'object') return null;
+            const parts = Object.entries(scope).map(([k, v]) => `${escapeHtml(k)}: ${escapeHtml(String(v))}`);
+            return parts.join(' · ');
+        };
+
+        try {
+            const trail = await api.getIdentityAudit(user.id);
+            loadingEl.style.display = 'none';
+            if (!trail || trail.length === 0) {
+                listEl.style.display = 'block';
+                listEl.innerHTML = '<div class="empty-state" style="padding:var(--space-6);text-align:center;"><p>Todavía no hay cambios asentados para esta identidad.</p></div>';
+                return;
+            }
+            listEl.style.display = 'block';
+            listEl.innerHTML = trail.map((entry) => `
+                <div style="border-bottom:1px solid var(--color-border);padding:10px 4px;">
+                    <div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline;">
+                        <strong>${escapeHtml(AUDIT_ACTION_LABELS[entry.action] || entry.action)}</strong>
+                        <span class="text-secondary" style="font-size:0.8rem;">${escapeHtml(formatDate(entry.at))}</span>
+                    </div>
+                    <div style="font-size:0.85rem;margin-top:4px;">
+                        ${entry.actor ? `Lo hizo <code>${escapeHtml(entry.actor)}</code>${entry.actorRole ? ` (${escapeHtml(entry.actorRole)})` : ''}.` : 'Autor sin registrar.'}
+                        ${entry.reason ? `<div style="margin-top:4px;"><em>Motivo:</em> ${escapeHtml(entry.reason)}</div>` : '<div style="margin-top:4px;" class="text-secondary"><em>Sin motivo asentado.</em></div>'}
+                        ${(entry.before || entry.after) ? `<div style="margin-top:4px;" class="text-secondary">Estado: ${escapeHtml(entry.before?.status || '—')} → ${escapeHtml(entry.after?.status || '—')}</div>` : ''}
+                        ${formatScope(entry.scope) ? `<div style="margin-top:4px;" class="text-secondary">Alcance: ${formatScope(entry.scope)}</div>` : ''}
+                    </div>
+                </div>
+            `).join('');
+        } catch (err) {
+            loadingEl.style.display = 'none';
+            errorEl.textContent = err?.message || 'No se pudo leer la constancia.';
+            errorEl.style.display = 'block';
+        }
+    }
+
     function openEditUserModal(user, onSaved) {
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
@@ -562,6 +655,10 @@ export async function renderUserManagement(container) {
                                 <option value="disabled" ${user.status === 'disabled' ? 'selected' : ''}>Deshabilitado</option>
                             </select>
                         </div>
+                        <div class="form-group" style="margin:0" id="eu-reason-group">
+                            <label class="form-label" for="eu-reason">Motivo del corte</label>
+                            <textarea id="eu-reason" class="form-input" rows="2" placeholder="Por qué se corta el acceso (queda asentado en la constancia)"></textarea>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -578,6 +675,17 @@ export async function renderUserManagement(container) {
             errorEl.style.display = 'block';
         };
 
+        // UJ-52 paso 9: el motivo del corte se pide cuando se corta y queda
+        // asentado; para un cambio que no corta, el campo no aplica.
+        const statusSelect = overlay.querySelector('#eu-status');
+        const reasonGroup = overlay.querySelector('#eu-reason-group');
+        const syncReasonGroup = () => {
+            const cortando = statusSelect.value === 'disabled';
+            reasonGroup.style.display = cortando ? '' : 'none';
+        };
+        statusSelect?.addEventListener('change', syncReasonGroup);
+        syncReasonGroup();
+
         overlay.querySelector('.edit-user-close')?.addEventListener('click', close);
         overlay.querySelector('.edit-user-cancel')?.addEventListener('click', close);
         overlay.addEventListener('click', (event) => {
@@ -593,13 +701,18 @@ export async function renderUserManagement(container) {
                 role: overlay.querySelector('#eu-role').value,
                 status: overlay.querySelector('#eu-status').value,
             };
+            const reason = String(overlay.querySelector('#eu-reason')?.value || '').trim();
+            if (payload.status === 'disabled' && reason) payload.reason = reason;
             const saveBtn = overlay.querySelector('.edit-user-save');
             saveBtn.disabled = true;
             saveBtn.textContent = 'Guardando...';
             try {
                 await api.updateAdminUser(user.id, payload);
                 close();
-                toast('success', 'Usuario actualizado', 'Los cambios se guardaron correctamente.');
+                toast('success', 'Usuario actualizado',
+                    payload.status === 'disabled'
+                        ? 'Los cambios se guardaron y el corte quedó asentado en la constancia.'
+                        : 'Los cambios se guardaron correctamente.');
                 await onSaved();
             } catch (err) {
                 showError(err?.message || 'No se pudo guardar los cambios.');

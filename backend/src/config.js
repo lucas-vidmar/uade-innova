@@ -30,6 +30,7 @@ export const CONFIG = {
     adminSettings: process.env.AZURE_TABLE_ADMIN_SETTINGS || 'AdminSettings',
     users: process.env.AZURE_TABLE_USERS || 'Users',
     sessions: process.env.AZURE_TABLE_SESSIONS || 'Sessions',
+    identityAudit: process.env.AZURE_TABLE_IDENTITY_AUDIT || 'IdentityAudit',
   },
 
   containers: {
