@@ -322,6 +322,8 @@ export async function renderTeacherAnalytics(container) {
 
     ${renderThematicGaps(gaps, data.topQuestions)}
 
+    ${renderEncounterReading(data.byClass, classes, classViews, enrollments, escapeHtml)}
+
     <!-- Queries over time (simple bar chart) -->
     <div class="card">
       <div class="card-header">
@@ -378,6 +380,64 @@ export async function renderTeacherAnalytics(container) {
       </div>
     `;
   }
+}
+
+/**
+ * Lectura por encuentro (#420, UJ-50): cada encuentro con su participación
+ * (alumnos inscriptos que lo abrieron) y las consultas que se le atribuyen por
+ * el alcance de la consulta (`byClass` del backend). Sin promedio de la unidad:
+ * cada encuentro se lee por separado.
+ */
+function renderEncounterReading(byClass, classes, classViews, enrollments, escapeHtml) {
+  const enrolled = new Set(
+    (enrollments || [])
+      .filter((e) => e.role === 'student' && e.status === 'active')
+      .map((e) => e.userId)
+      .filter((sid) => sid && String(sid).toLowerCase() !== 'anonymous')
+  );
+
+  const viewedByClass = {};
+  for (const v of classViews || []) {
+    if (!enrolled.has(v.studentId)) continue;
+    if (!viewedByClass[v.classId]) viewedByClass[v.classId] = new Set();
+    viewedByClass[v.classId].add(v.studentId);
+  }
+
+  const byClassId = new Map((byClass || []).map((c) => [c.classId, c]));
+  const ordered = [...(classes || [])].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+
+  const rows = ordered.map((c) => {
+    const viewed = viewedByClass[c.id] ? viewedByClass[c.id].size : 0;
+    const pct = enrolled.size > 0 ? Math.round((viewed / enrolled.size) * 100) : 0;
+    const q = byClassId.get(c.id);
+    const questions = q && q.topQuestions && q.topQuestions.length
+      ? `<ul style="margin:6px 0 0;padding-left:18px;font-size:var(--font-size-xs);color:var(--color-text-secondary)">${q.topQuestions
+          .map((t) => `<li>${escapeHtml(t.text)} <span class="badge badge-info">${t.count}</span></li>`)
+          .join('')}</ul>`
+      : '<div style="font-size:var(--font-size-xs);color:var(--color-text-muted);margin-top:6px">Sin consultas atribuidas a este encuentro.</div>';
+    return `
+      <div class="encounter-item" data-class-id="${escapeHtml(c.id)}" style="border-bottom:1px solid var(--color-border);padding:var(--space-3) 0">
+        <div style="display:flex;align-items:baseline;gap:var(--space-3);flex-wrap:wrap">
+          <span style="font-size:var(--font-size-sm);font-weight:600;flex:1;min-width:180px">${escapeHtml(c.title || c.name || c.id)}</span>
+          <span class="badge ${pct >= 60 ? 'badge-success' : pct > 0 ? 'badge-warning' : 'badge-error'}">${viewed}/${enrolled.size} participaron (${pct}%)</span>
+          <span class="badge badge-info">${q ? q.questionCount : 0} consultas</span>
+        </div>
+        ${questions}
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="card" id="teacher-encounter-reading" style="margin-bottom:var(--space-8)">
+      <div class="card-header">
+        <span class="card-title">🧭 Lectura por encuentro</span>
+        <span class="badge badge-info">${ordered.length} encuentros · ${enrolled.size} inscriptos</span>
+      </div>
+      <p style="margin:0 0 var(--space-2);color:var(--color-text-secondary);font-size:var(--font-size-xs)">
+        Participación (inscriptos que abrieron el encuentro) y consultas atribuidas a cada encuentro por el alcance de la consulta.
+      </p>
+      ${rows || '<div class="empty-state" style="padding:20px">No hay encuentros para leer.</div>'}
+    </div>
+  `;
 }
 
 function renderStudentProgress(classes, classViews, enrollments, users, escapeHtml) {
