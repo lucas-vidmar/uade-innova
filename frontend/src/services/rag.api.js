@@ -124,7 +124,26 @@ export async function ragQueryStream({ question, classIds, subjectId, sessionId,
         buffer = '';
     } catch (err) {
         console.error('[API] Stream interrupted:', err);
-        throw err;
+        // #378/UJ-29: el corte a mitad de la respuesta no siempre llega como
+        // cierre del stream sin evento terminal; cuando la conexión se pierde
+        // de verdad (red intermitente), `reader.read()` rechaza con un error de
+        // transporte (p. ej. `TypeError: Failed to fetch`) sin `code` ni
+        // `errorCategory`. Ese caso caía en el camino de error genérico del
+        // chat: descartaba lo ya recibido y no ofrecía reintentar, obligando a
+        // reescribir la pregunta. Se clasifica igual que el truncamiento para
+        // conservar el tramo recibido y ofrecer el reintento.
+        // Se dejan pasar los errores ya tipados (API/AUTH/…) y las
+        // cancelaciones explícitas (AbortError), que no son un corte de red.
+        const yaTipado = Boolean(err?.code || err?.errorCategory);
+        const esCancelacion = err?.name === 'AbortError' || err?.code === 'ABORT_ERR';
+        if (yaTipado || esCancelacion) throw err;
+        const interruptedError = new Error('La respuesta se interrumpió antes de completarse.');
+        interruptedError.name = 'StreamInterruptedError';
+        interruptedError.code = 'STREAM_INTERRUPTED';
+        interruptedError.errorCategory = 'STREAM_INTERRUPTED';
+        interruptedError.retryable = true;
+        interruptedError.cause = err;
+        throw interruptedError;
     }
 
     if (!sawTerminalEvent) {
