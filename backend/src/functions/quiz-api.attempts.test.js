@@ -197,3 +197,22 @@ test('get-quiz-attempts no mezcla el historial de otra persona', async () => {
 
     assert.deepStrictEqual(parse(res).attempts, []);
 });
+
+test('el segundo conjunto reutiliza las etiquetas de tema del primero (misma vara)', async () => {
+    const primero = await emitir();
+    await cerrar(primero, [0]);
+
+    await emitir();
+
+    const prompt = promptsVistos[1];
+    assert.match(prompt, /cada pregunta debe declarar su campo "topic"/, 'tiene que exigir etiquetas de tema estables');
+    assert.ok(prompt.includes('Tema A'), 'el prompt tiene que listar las etiquetas del intento previo');
+    assert.ok(prompt.includes('Tema B'), 'el prompt tiene que listar las etiquetas del intento previo');
+    assert.match(prompt, /sin crear etiquetas nuevas/, 'tiene que prohibir etiquetas nuevas');
+});
+
+test('la primera práctica no impone etiquetas de tema', async () => {
+    await emitir();
+
+    assert.ok(!/cada pregunta debe declarar su campo "topic"/.test(promptsVistos[0]), 'sin intento previo no hay vara que sostener');
+});
