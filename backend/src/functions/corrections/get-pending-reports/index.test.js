@@ -132,6 +132,33 @@ test('get-pending-reports groups coincident reports first and counts them (UJ-40
   assert.strictEqual(body.data[2].coincidences, 1);
 });
 
+test('get-pending-reports fallback groups by the question, not by a shared answer (UJ-40)', async () => {
+  // Reports stored before the key was persisted have no groupKey. The common
+  // point of two marks is the material point that was asked about, so the
+  // fallback must not fuse two different questions that only happen to share a
+  // boilerplate/abstention answer into one inflated group.
+  mockStateStore.listPendingCorrections.mock.mockImplementation(async () => [
+    { correctionId: 'f-a', subjectId: 'arq-software-2026', studentId: 'alu-004', question: '¿Qué diferencia hay entre SAGA y CQRS?', originalAnswer: 'No encontre informacion sobre eso en los materiales seleccionados.', issueDetail: 'x', classId: 'class-04', status: 'pending', createdAt: '2026-10-17T19:14:47.496Z' },
+    { correctionId: 'f-b', subjectId: 'arq-software-2026', studentId: 'alu-005', question: '¿Qué dice el material sobre la norma ISO 99999?', originalAnswer: 'No encontre informacion sobre eso en los materiales seleccionados.', issueDetail: 'y', classId: 'class-04', status: 'pending', createdAt: '2026-10-17T17:43:08.995Z' },
+    { correctionId: 'f-c', subjectId: 'arq-software-2026', studentId: 'alu-001', question: '¿Qué diferencia hay entre SAGA y CQRS?', originalAnswer: 'Una redaccion distinta.', issueDetail: 'z', classId: 'class-04', status: 'pending', createdAt: '2026-10-17T19:15:04.091Z' },
+  ]);
+
+  const response = await capturedHandler(
+    { query: new URLSearchParams({ subjectId: 'arq-software-2026' }) },
+    { invocationId: 'test-uj40-fallback' }
+  );
+
+  assert.strictEqual(response.status, 200);
+  const body = JSON.parse(response.body);
+  const byId = Object.fromEntries(body.data.map((c) => [c.correctionId, c]));
+  // Same question (even with different answer wording) converges, oldest first.
+  assert.strictEqual(byId['f-a'].coincidences, 2);
+  assert.strictEqual(byId['f-c'].coincidences, 2);
+  assert.strictEqual(body.data[0].correctionId, 'f-a');
+  // A different question that only shares the boilerplate answer stays alone.
+  assert.strictEqual(byId['f-b'].coincidences, 1);
+});
+
 test('get-pending-reports should honor correctionId for non-pending states (#350)', async () => {
   mockStateStore.getCorrection.mock.mockImplementation(async (subjectId, correctionId) => {
     if (correctionId === 'verified-1') {

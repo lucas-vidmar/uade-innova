@@ -176,13 +176,16 @@ app.http('get-pending-reports', {
       }
 
       // Convergence (UJ-40): reports about the same material fragment must be
-      // seen together. Derive a stable group key per report (persisted at
-      // report time; fall back to encounter + normalized answer head) and count
-      // how many reports share it. Order: state, then most-coincident group,
-      // then the oldest case first so the biggest/oldest problem is on top.
+      // seen together. Use the key persisted at report time; only records
+      // stored before that key existed fall back to a derived one. The fallback
+      // keys on the normalized question — the material point that was asked
+      // about — because keying on the answer text fused unrelated reports that
+      // shared a boilerplate/abstention answer into one inflated group.
+      // Order: state, then most-coincident group, then the oldest case first so
+      // the biggest/oldest problem is on top.
       const groupKeyOf = (c) => {
         if (c.groupKey) return c.groupKey;
-        const head = String(c.originalAnswer || c.question || '').toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 120);
+        const head = String(c.question || c.originalAnswer || '').toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 120);
         return `${c.classId || 'unknown'}|${head}`;
       };
       const coincidence = new Map();

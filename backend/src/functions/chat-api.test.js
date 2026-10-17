@@ -194,6 +194,41 @@ test('chat-report-issue persists a convergence groupKey from the cited fragment 
     assert.strictEqual(correctionArg.groupKey, 'class-04|mat-9#3');
 });
 
+test('chat-report-issue keys the convergence fallback on the question when no fragment was cited (UJ-40)', async () => {
+    resetState();
+    storageState.chatLogs.set('student_1/arq-software-2026/msg-666.json', {
+        id: 'msg-666',
+        question: '¿Qué diferencia hay entre SAGA y CQRS?',
+        answer: 'No encontre informacion sobre eso en los materiales seleccionados.',
+        sources: [],
+    });
+    stateStoreMocks.upsertCorrection.mock.resetCalls();
+
+    principalMock = { userRoles: ['Alumno'], oid: 'student-1' };
+
+    const response = await handlers['chat-report-issue'](
+        {
+            json: async () => ({
+                messageId: 'msg-666',
+                subjectId: 'arq-software-2026',
+                issueDetail: 'La respuesta se abstiene sin citar material.',
+                classId: 'class-04',
+            }),
+        },
+        { log: () => {}, error: () => {}, warn: () => {} }
+    );
+
+    assert.strictEqual(response.status, 200);
+    // No cited fragment → the group key must fall back to the material point
+    // that was asked about, never to the (boilerplate) answer text.
+    const expected = 'class-04|¿qué diferencia hay entre saga y cqrs?';
+    const alert = storageState.alerts.get('arq-software-2026/ai-issue-msg-666.json');
+    assert.strictEqual(alert.groupKey, expected);
+
+    const correctionArg = stateStoreMocks.upsertCorrection.mock.calls.at(-1)?.arguments?.[0];
+    assert.strictEqual(correctionArg.groupKey, expected);
+});
+
 test('teacher-ai-feedback-alerts should require teacher or director role', async () => {
     resetState();
     principalMock = { userRoles: ['Alumno'], oid: 'student-2' };
