@@ -30,12 +30,24 @@ export async function renderAdminDashboard(container) {
   const powerBiSummary = powerBiMetrics?.summary || {};
   const costPerActiveStudent = data.costPerActiveStudent || 0;
 
-  const safePercentUsed = Number.isFinite(budget.percentUsed) ? budget.percentUsed : 0;
-  // Default 10000 matches backend CONFIG.budget.monthlyUsd / DIRECTOR_BUDGET_MONTHLY_USD
-  // (infra/modules/functions.bicep). Avoids showing $0.00 limit when /director/stats
-  // is unreachable (403/404) and budget={}.
-  const safeMonthlyLimit = Number.isFinite(budget.monthlyLimit) ? budget.monthlyLimit : 10000;
-  const safeProjected = Number.isFinite(budget.projectedEndOfMonth) ? budget.projectedEndOfMonth : 0;
+  // UJ-54 (paso 7): la superficie tiene que distinguir "la fuente no respondió" de
+  // "no hubo consumo". getDirectorStats() devuelve null si la lectura falla y
+  // getDirectorPowerBiMetrics() devuelve un objeto con source.mode='fallback' y
+  // updatedAt=null. El backend además declara sourceState.readable.
+  const statsReadFailed = rawData === null;
+  const metricsReadFailed = !powerBiMetrics
+    || powerBiMetrics?.source?.mode === 'fallback'
+    || powerBiMetrics?.updatedAt == null;
+  const sourceReadable = !statsReadFailed && !metricsReadFailed && data?.sourceState?.readable !== false;
+  // Antes que rellenar el hueco con una cifra sin respaldo ($0.0000 o un límite por
+  // defecto de 10000), lo que no se pudo medir se muestra como "—".
+  const usd = (value, digits = 4) => (sourceReadable && Number.isFinite(value) ? `$${Number(value).toFixed(digits)}` : '—');
+
+  const safePercentUsed = sourceReadable && Number.isFinite(budget.percentUsed) ? budget.percentUsed : 0;
+  // Ya no se inventa un límite mensual: si /director/stats no respondió, el límite
+  // no se pudo leer y se declara como tal en vez de mostrar 10000 por defecto.
+  const safeMonthlyLimit = Number.isFinite(budget.monthlyLimit) ? budget.monthlyLimit : null;
+  const safeProjected = sourceReadable && Number.isFinite(budget.projectedEndOfMonth) ? budget.projectedEndOfMonth : null;
 
   // Index fullness is a 0-1 fraction; keep the historical minimal format
   // (e.g. "8%") for normal values, but show 4 decimals when the value is
@@ -61,28 +73,31 @@ export async function renderAdminDashboard(container) {
       <div class="grid-4" style="margin-bottom:var(--space-4)">
         <div class="kpi-card">
           <div class="kpi-label">Costo total (USD)</div>
-          <div class="kpi-value">$${Number(powerBiSummary.totalCostUsd || 0).toFixed(4)}</div>
+          <div class="kpi-value">${usd(powerBiSummary.totalCostUsd, 4)}</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-label">Costo por interacción</div>
-          <div class="kpi-value">$${Number(powerBiSummary.avgCostPerInteractionUsd || 0).toFixed(6)}</div>
+          <div class="kpi-value">${usd(powerBiSummary.avgCostPerInteractionUsd, 6)}</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-label">Costo promedio por alumno</div>
-          <div class="kpi-value">$${costPerActiveStudent.toFixed(4)}</div>
+          <div class="kpi-value">${usd(costPerActiveStudent, 4)}</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-label">Proyectado fin de mes</div>
-          <div class="kpi-value" style="color:${budget.warningLevel === 'critical' ? 'var(--color-error)' : 'var(--color-text-primary)'}">$${Number(budget.projectedEndOfMonth || 0).toFixed(2)}</div>
+          <div class="kpi-value" style="color:${sourceReadable && budget.warningLevel === 'critical' ? 'var(--color-error)' : 'var(--color-text-primary)'}">${usd(budget.projectedEndOfMonth, 2)}</div>
         </div>
       </div>
       <div style="position:relative">
         <canvas id="cost-line-chart" style="width:100%;height:300px;display:block"></canvas>
-        ${costBySubject.length === 0 ? '<div class="empty-state" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 24px">Sin actividad RAG con tokens en los últimos 30 días (SessionMetrics vacío). Los costos aparecen tras las primeras consultas.</div>' : ''}
+        ${costBySubject.length === 0 ? (sourceReadable
+          ? '<div class="empty-state" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 24px">Sin actividad RAG con tokens en los últimos 30 días (SessionMetrics vacío). Los costos aparecen tras las primeras consultas.</div>'
+          : '<div class="empty-state" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 24px">No se pudo leer la fuente de consumo (SessionMetrics). El consumo del período <strong>no se pudo medir</strong>: no se completa con una cifra sin respaldo.</div>') : ''}
       </div>
       <small style="display:block;margin-top:var(--space-3);color:var(--color-text-secondary)">
         Fuente: ${data.costSource?.method === 'azure-cost-api' ? 'Azure Cost Management API' : 'SessionMetrics (token-based)'}
         · Última actualización: ${powerBiMetrics?.updatedAt || 'n/a'}
+        ${sourceReadable ? '' : ' · <strong style="color:var(--color-warning)">fuente no disponible — no se pudo medir el consumo del período</strong>'}
       </small>
     </div>
 
@@ -138,22 +153,22 @@ export async function renderAdminDashboard(container) {
       <div class="grid-4" style="margin-bottom:var(--space-2)">
         <div class="kpi-card">
           <div class="kpi-label">Límite mensual</div>
-          <div class="kpi-value">$${safeMonthlyLimit.toFixed(2)}</div>
+          <div class="kpi-value">${safeMonthlyLimit != null ? `$${safeMonthlyLimit.toFixed(2)}` : '—'}</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-label">Gasto actual</div>
-          <div class="kpi-value">$${Number(budget.currentSpend || 0).toFixed(2)}</div>
+          <div class="kpi-value">${usd(budget.currentSpend, 2)}</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-label">Usado</div>
-          <div class="kpi-value">${safePercentUsed.toFixed(1)}%</div>
+          <div class="kpi-value">${sourceReadable ? `${safePercentUsed.toFixed(1)}%` : '—'}</div>
           <div class="progress-bar" style="margin-top:var(--space-2)">
             <div class="progress-fill ${safePercentUsed > 80 ? 'progress-fill--warning' : ''}" style="--progress-value:${safePercentUsed}%"></div>
           </div>
         </div>
         <div class="kpi-card">
           <div class="kpi-label">Proyectado</div>
-          <div class="kpi-value" style="color:${budget.warningLevel === 'critical' ? 'var(--color-error)' : budget.warningLevel === 'warning' ? 'var(--color-warning)' : 'var(--color-text-primary)'}">$${safeProjected.toFixed(2)}</div>
+          <div class="kpi-value" style="color:${sourceReadable && budget.warningLevel === 'critical' ? 'var(--color-error)' : sourceReadable && budget.warningLevel === 'warning' ? 'var(--color-warning)' : 'var(--color-text-primary)'}">${safeProjected != null ? `$${safeProjected.toFixed(2)}` : '—'}</div>
         </div>
       </div>
     </div>

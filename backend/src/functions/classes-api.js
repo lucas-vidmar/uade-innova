@@ -193,17 +193,23 @@ async function loadSessionMetricsRows(context, windowDays) {
             cutoff.setUTCHours(0, 0, 0, 0);
             cutoff.setUTCDate(cutoff.getUTCDate() - windowDays + 1);
             const cutoffTs = cutoff.getTime();
-            return rows.filter(r => {
-                const val = r.timestamp || r.Timestamp;
-                if (!val) return false;
-                const ts = typeof val === 'string' ? new Date(val).getTime() : new Date(val).getTime();
-                return !isNaN(ts) && ts >= cutoffTs;
-            });
+            return {
+                rows: rows.filter(r => {
+                    const val = r.timestamp || r.Timestamp;
+                    if (!val) return false;
+                    const ts = typeof val === 'string' ? new Date(val).getTime() : new Date(val).getTime();
+                    return !isNaN(ts) && ts >= cutoffTs;
+                }),
+                readError: null,
+            };
         }
-        return rows;
+        return { rows, readError: null };
     } catch (err) {
         logWarn(context, `[PowerBI] Could not read ${SESSION_METRICS_TABLE}: ${err.message}`);
-        return [];
+        // UJ-54: una lectura que falla NO es "no hubo consumo". Se devuelve el error
+        // para que el endpoint pueda declarar que la fuente no respondió, en vez de
+        // entregar un conjunto vacío que el panel lee como "sin actividad".
+        return { rows: [], readError: err?.message || 'SessionMetrics read failed' };
     }
 }
 
@@ -279,7 +285,7 @@ export async function loadEarlyAlertSummary(context) {
 
 export async function computeDirectorMetrics(context, requestedDays = POWERBI_DEFAULT_DAYS) {
     const days = Math.min(Math.max(Number(requestedDays) || POWERBI_DEFAULT_DAYS, 1), 90);
-    const rows = await loadSessionMetricsRows(context, days);
+    const { rows, readError } = await loadSessionMetricsRows(context, days);
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
 
@@ -426,6 +432,9 @@ export async function computeDirectorMetrics(context, requestedDays = POWERBI_DE
 
     return {
         _rawRows: rows,
+        // UJ-54: estado de la fuente de consumo. `null` = se leyó; un texto = la
+        // lectura falló y el panel debe declararlo en vez de mostrar cero consumo.
+        readError: readError || null,
         updatedAt: new Date().toISOString(),
         windowDays: days,
         daily,
@@ -2062,6 +2071,13 @@ app.http('get-director-stats', {
                     windowDays: metrics.windowDays,
                     updatedAt: metrics.updatedAt,
                 },
+                // UJ-54: la superficie tiene que poder declarar de dónde lee el consumo
+                // y en qué estado está esa fuente (si respondió o no).
+                sourceState: {
+                    table: SESSION_METRICS_TABLE,
+                    readable: !metrics.readError,
+                    error: metrics.readError || null,
+                },
                 costBySubject: metrics.costBySubject,
                 wausBySubject: metrics.wausBySubject,
                 materialUploads: metrics.materialUploads,
@@ -2155,6 +2171,12 @@ app.http('get-director-powerbi-metrics', {
                 },
                 updatedAt: metrics.updatedAt,
                 windowDays: metrics.windowDays,
+                // UJ-54: estado de la fuente de consumo (respondió o no).
+                sourceState: {
+                    table: SESSION_METRICS_TABLE,
+                    readable: !metrics.readError,
+                    error: metrics.readError || null,
+                },
                 daily: metrics.daily,
                 costBySubject: metrics.costBySubject,
                 costByClass,
