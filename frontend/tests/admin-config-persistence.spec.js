@@ -173,10 +173,13 @@ test('persisted gpt-4o-mini model is not silently reverted on save (#318)', asyn
   await expect(gptRadio).toBeChecked();
   await expect(deepseekRadio).not.toBeChecked();
 
-  // Save must keep gpt-4o-mini (readValues falls back to config.model) instead
-  // of silently reverting to the hardcoded deepseek default.
+  // Guardar conserva gpt-4o-mini (readValues cae a config.model) en vez de
+  // revertirlo en silencio al deepseek por defecto. El aviso ya no promete un
+  // efecto sobre las respuestas (UJ-55): dice que la selección quedó registrada.
+  // Se afirma sobre el título del aviso, no sobre el texto de la pantalla, que
+  // también contiene «Selección guardada».
   await page.click('#btn-model-save');
-  await expect(page.locator('text=Configuración guardada').first()).toBeVisible();
+  await expect(page.locator('.toast .toast-title')).toContainText('Selección guardada');
   expect(store.model.model).toBe('gpt-4o-mini');
 });
 
