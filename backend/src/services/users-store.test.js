@@ -218,6 +218,48 @@ test('UPDATE_ROLE_EMAIL — edit role + status; domain re-validated', async () =
   );
 });
 
+test('EVIDENCE_ON_UPDATE — el acto que cambia el rol queda asentado con dueño, motivo y fecha (UJ-53)', async () => {
+  tableData.Users = [];
+  await seedUser({ grantedBy: 'adm-001', grantReason: 'matrícula 2026-1' });
+  const antes = await getUserById('alu-001');
+  assert.equal(antes.grantedBy, 'adm-001');
+
+  const updated = await updateUser('alu-001', { role: 'teacher', actor: 'adm-001', reason: 'pasa a dictar la comisión de los jueves' });
+  assert.equal(updated.role, 'teacher');
+  assert.equal(updated.grantedBy, 'adm-001');
+  assert.equal(updated.grantReason, 'pasa a dictar la comisión de los jueves');
+  assert.ok(updated.grantedAt, 'el acto tiene que llevar su fecha');
+  assert.ok(new Date(updated.grantedAt) >= new Date(antes.grantedAt), 'la fecha es la del acto nuevo');
+
+  // Lo que se persiste es lo que se lee: la evidencia no vive sólo en memoria.
+  const releido = await getUserById('alu-001');
+  assert.equal(releido.grantReason, 'pasa a dictar la comisión de los jueves');
+});
+
+test('EVIDENCE_NOT_INHERITED — cambiar el rol sin declarar motivo deja el permiso sin acto, no con el anterior (UJ-53)', async () => {
+  tableData.Users = [];
+  await seedUser({ grantedBy: 'adm-001', grantReason: 'matrícula 2026-1' });
+  const updated = await updateUser('alu-001', { role: 'director', actor: 'adm-001' });
+  assert.equal(updated.grantReason, null, 'el motivo anterior respaldaba otro permiso');
+  assert.equal(updated.grantedBy, 'adm-001');
+});
+
+test('EVIDENCE_ON_STATUS — el acto que deshabilita una identidad queda asentado aparte del rol (UJ-53)', async () => {
+  tableData.Users = [];
+  await seedUser({ grantedBy: 'adm-001', grantReason: 'matrícula 2026-1' });
+  const updated = await updateUser('alu-001', { status: 'disabled', actor: 'adm-001', reason: 'permiso huérfano retirado en la revisión' });
+  assert.equal(updated.status, 'disabled');
+  assert.equal(updated.statusChangedBy, 'adm-001');
+  assert.equal(updated.statusChangeReason, 'permiso huérfano retirado en la revisión');
+  // El permiso (rol) no se tocó: la evidencia del rol sigue siendo la del alta.
+  assert.equal(updated.grantReason, 'matrícula 2026-1');
+
+  // Reenviar el mismo estado no reescribe el acto: sin cambio no hay acto nuevo.
+  const mismo = await updateUser('alu-001', { status: 'disabled', actor: 'dir-001', reason: 'otra cosa' });
+  assert.equal(mismo.statusChangedBy, 'adm-001');
+  assert.equal(mismo.statusChangeReason, 'permiso huérfano retirado en la revisión');
+});
+
 test('DELETE_USER — removes the entity', async () => {
   tableData.Users = [];
   await seedUser();

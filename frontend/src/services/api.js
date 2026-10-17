@@ -62,7 +62,8 @@ import {
     getAdminConfig, saveAdminConfig, resetAdminConfig,
     createAdminUser, updateAdminUser, deleteAdminUser, resetAdminUserPassword,
     getIdentityAudit,
-    getVectorIndex, quarantineVectorIndex
+    getVectorIndex, quarantineVectorIndex,
+    getAccessReview, getAccessReviewCsv, decideAccessReview, openAccessReview, signAccessReview
 } from './admin.api.js';
 import {
     login as authLogin, logout as authLogout,
@@ -140,6 +141,7 @@ export const api = {
     getAdminConfig, saveAdminConfig, resetAdminConfig,
     createAdminUser, updateAdminUser, deleteAdminUser, resetAdminUserPassword,
     getIdentityAudit,
+    getAccessReview, getAccessReviewCsv, decideAccessReview, openAccessReview, signAccessReview,
 
     login: authLogin,
     logout: authLogout,

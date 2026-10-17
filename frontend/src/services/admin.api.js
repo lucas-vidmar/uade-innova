@@ -131,6 +131,64 @@ export async function resetAdminUserPassword(userId, password) {
     return res.json();
 }
 
+/**
+ * UJ-53: inventario de identidades con su rol, sus permisos vigentes y el acto
+ * con que cada permiso se otorgó. Un permiso sin acto llega marcado `huerfano`
+ * con el dato que le falta — la pantalla no puede darlo por bueno.
+ */
+export async function getAccessReview() {
+    const res = await apiFetch(`${BASE_URL}/dashboard-admin/access-review`);
+    if (!res.ok) throw await parseApiError(res, 'No se pudo leer la revisión de permisos.');
+    const body = await res.json();
+    return body?.data || null;
+}
+
+/** El acta de la ronda en CSV, para que la pueda leer un tercero. */
+export async function getAccessReviewCsv() {
+    const res = await apiFetch(`${BASE_URL}/dashboard-admin/access-review?format=csv`);
+    if (!res.ok) throw await parseApiError(res, 'No se pudo exportar el acta de revisión.');
+    return res.text();
+}
+
+/** Aplica sostener / reducir / retirar sobre un permiso. El motivo es obligatorio. */
+export async function decideAccessReview(userId, decision, reason) {
+    const res = await apiFetch(`${BASE_URL}/dashboard-admin/access-review/decisions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, decision, reason }),
+    });
+    if (!res.ok) throw await parseApiError(res, 'No se pudo aplicar la decisión sobre el permiso.');
+    const body = await res.json();
+    return body?.data || null;
+}
+
+/** Abre la ronda siguiente (la revisión periódica que vuelve a empezar). */
+export async function openAccessReview() {
+    const res = await apiFetch(`${BASE_URL}/dashboard-admin/access-review/open`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+    });
+    if (!res.ok) throw await parseApiError(res, 'No se pudo abrir la ronda siguiente.');
+    const body = await res.json();
+    return body?.data || null;
+}
+
+/**
+ * Firma el acta. Sólo firma si el digest declarado coincide con lo aplicado: si
+ * el conjunto cambió después de la comprobación, el backend devuelve 409.
+ */
+export async function signAccessReview(digest, note) {
+    const res = await apiFetch(`${BASE_URL}/dashboard-admin/access-review/sign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ digest, note }),
+    });
+    if (!res.ok) throw await parseApiError(res, 'No se pudo firmar el acta de revisión.');
+    const body = await res.json();
+    return body?.data || null;
+}
+
 export async function getVectorHealth() {
     try {
         const res = await fetchWithTimeout(`${BASE_URL}/vector-health`, { timeout: 3500 });
