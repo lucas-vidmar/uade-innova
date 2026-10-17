@@ -684,6 +684,69 @@ test('rag-query should not break when slideTitle is missing in metadata', async 
     assert.strictEqual(body.sources[0].slideTitle, undefined);
 });
 
+test('rag-query should give a readable label to a verified-answer source retrieved in the standard path (#380)', async (t) => {
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+    // #380: la pre-búsqueda de respuestas verificadas consume la primera llamada
+    // al vector store; el turno cae al camino normal y ahí recupera el fragmento
+    // verified-answer, que guarda su etiqueta en `metadata.title` (no en
+    // `slideTitle`). Antes la fuente quedaba sin etiqueta y la UI mostraba el
+    // `sourceFilename` interno (`correction-<uuid>`).
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter) => {
+        if (filter?.materialType?.$eq === 'verified-answer') return [];
+        return [
+            {
+                id: 'corr-chunk-1',
+                score: 0.62,
+                metadata: {
+                    sourceFilename: 'correction-bdc47f550d9e4dac945eaa07504fbe7c',
+                    text: 'Respuesta verificada sobre puertos y adaptadores',
+                    materialType: 'verified-answer',
+                    materialPriority: 'primary',
+                    classIds: ['class1'],
+                    chunkIndex: 0,
+                },
+            },
+            {
+                id: 'corr-chunk-2',
+                score: 0.58,
+                metadata: {
+                    sourceFilename: 'correction-00000000000000000000000000000000',
+                    text: 'Respuesta verificada con etiqueta propia',
+                    materialType: 'verified-answer',
+                    materialPriority: 'primary',
+                    title: 'Respuesta verificada por el docente — Clase 3',
+                    classIds: ['class1'],
+                    chunkIndex: 0,
+                },
+            },
+        ];
+    });
+
+    t.after(() => {
+        vectorStoreMocks.querySimilar.mock.mockImplementation(defaultQuerySimilarImpl);
+    });
+
+    const mockContext = {
+        log: mock.fn(),
+        error: mock.fn(),
+    };
+
+    const mockRequest = {
+        json: async () => ({
+            question: 'Que se dijo sobre puertos?',
+            subjectId: 'materia1',
+            classIds: ['class1'],
+        }),
+        user: { id: 'test-user' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.sources[0].slideTitle, 'Respuesta verificada por el docente');
+    assert.ok(!String(body.sources[0].slideTitle).includes('correction-'), 'la etiqueta visible no expone el id interno');
+    assert.strictEqual(body.sources[1].slideTitle, 'Respuesta verificada por el docente — Clase 3');
+});
+
 test('rag-query should expose subjectId and classId in blocking sources (Story 3.7)', async (t) => {
     vectorStoreMocks.querySimilar.mock.resetCalls();
     vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter, topK) => {
