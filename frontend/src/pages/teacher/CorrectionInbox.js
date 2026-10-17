@@ -21,6 +21,22 @@ function statusLabel(status) {
 
 const STATUS_ORDER = { pending: 0, reviewed: 1, resolved: 2, verified: 3 };
 
+// UJ-40 (paso 3): la bandeja conserva el orden de convergencia que ya calcula
+// `GET /api/corrections-pending` — estado, luego el grupo con más coincidencias
+// y, dentro del grupo, el caso más viejo primero — para que quien enseña vea
+// primero el problema más marcado y más antiguo. Antes la pantalla reordenaba
+// por estado y fecha descendente y descartaba ese orden: el grupo más marcado y
+// más viejo no quedaba arriba si había marcas sueltas más nuevas.
+function compareCorrections(a, b) {
+  const aOrder = STATUS_ORDER[a.status] ?? 99;
+  const bOrder = STATUS_ORDER[b.status] ?? 99;
+  if (aOrder !== bOrder) return aOrder - bOrder;
+  const aCount = a.coincidences || 1;
+  const bCount = b.coincidences || 1;
+  if (aCount !== bCount) return bCount - aCount;
+  return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
+}
+
 export async function renderCorrectionInbox(container) {
   renderHeader('Bandeja de Correcciones');
   container.innerHTML = '<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando correcciones...</div>';
@@ -64,12 +80,7 @@ export async function renderCorrectionInbox(container) {
     }
   }
 
-  corrections.sort((a, b) => {
-    const aOrder = STATUS_ORDER[a.status] ?? 99;
-    const bOrder = STATUS_ORDER[b.status] ?? 99;
-    if (aOrder !== bOrder) return aOrder - bOrder;
-    return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
-  });
+  corrections.sort(compareCorrections);
 
   const classMap = {};
   for (const c of classes) {
@@ -94,12 +105,7 @@ export async function renderCorrectionInbox(container) {
         if (idx !== -1) {
           corrections[idx].status = newStatus;
         }
-        corrections.sort((a, b) => {
-          const aOrder = STATUS_ORDER[a.status] ?? 99;
-          const bOrder = STATUS_ORDER[b.status] ?? 99;
-          if (aOrder !== bOrder) return aOrder - bOrder;
-          return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
-        });
+        corrections.sort(compareCorrections);
         const msg = newStatus === 'reviewed' ? 'marcada como revisada' : 'marcada como resuelta';
         toast('success', 'Estado actualizado', `La corrección fue ${msg}.`);
         render();
