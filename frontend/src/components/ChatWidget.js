@@ -258,9 +258,9 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
           <div class="chat-msg-footer mt-3 flex justify-between items-end gap-4">
             ${msg.sources?.length > 0 ? `
               <div class="chat-sources chat-sources-circles">
-                ${deduplicateSources(msg.sources).map((s, i) => `
-                  <button class="source-circle-item" data-source-index="${i + 1}" title="${s.slideTitle ? `${escapeHtml(s.slideTitle)} (${escapeHtml(s.sourceFilename)})` : escapeHtml(s.sourceFilename)}">
-                    <span class="source-circle-num">${i + 1}</span>
+                ${deduplicateSources(msg.sources).map((s) => `
+                  <button class="source-circle-item" data-source-index="${s.sourceIndex}" title="${s.slideTitle ? `${escapeHtml(s.slideTitle)} (${escapeHtml(s.sourceFilename)})` : escapeHtml(s.sourceFilename)}">
+                    <span class="source-circle-num">${s.sourceIndex}</span>
                     <span class="truncate">${escapeHtml(s.slideTitle || s.sourceFilename)}</span>
                     ${s.materialPriority ? `<span class="source-priority source-priority-${escapeHtml(s.materialPriority)}">${s.materialPriority === 'primary' ? 'Primario' : 'Secundario'}</span>` : ''}
                   </button>
@@ -364,7 +364,7 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         if (!msg || !msg.sources || msg.sources.length === 0) return;
 
         const sources = deduplicateSources(msg.sources);
-        const source = sources[sourceIndex - 1];
+        const source = sources.find(s => s.sourceIndex === sourceIndex) || msg.sources[sourceIndex - 1];
         if (!source) return;
 
         showCitationModal(source);
@@ -494,9 +494,9 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
             footerEl.innerHTML = `
               ${assistantMsg.sources.length > 0 ? `
               <div class="chat-sources chat-sources-circles">
-                ${deduplicateSources(assistantMsg.sources).map((s, i) => `
-                  <button class="source-circle-item" data-source-index="${i + 1}" title="${s.slideTitle ? `${escapeHtml(s.slideTitle)} (${escapeHtml(s.sourceFilename)})` : escapeHtml(s.sourceFilename)}">
-                    <span class="source-circle-num">${i + 1}</span>
+                ${deduplicateSources(assistantMsg.sources).map((s) => `
+                  <button class="source-circle-item" data-source-index="${s.sourceIndex}" title="${s.slideTitle ? `${escapeHtml(s.slideTitle)} (${escapeHtml(s.sourceFilename)})` : escapeHtml(s.sourceFilename)}">
+                    <span class="source-circle-num">${s.sourceIndex}</span>
                     <span class="truncate">${escapeHtml(s.slideTitle || s.sourceFilename)}</span>
                     ${s.materialPriority ? `<span class="source-priority source-priority-${escapeHtml(s.materialPriority)}">${s.materialPriority === 'primary' ? 'Primario' : 'Secundario'}</span>` : ''}
                   </button>
@@ -1129,15 +1129,21 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
     return icon(map[type] || 'document');
   };
 
+  // #495/UJ-21: el backend numera los fragmentos recuperados 1..N (`<chunk indice="n">` en
+  // rag-query.js) y el modelo cita ese número en el texto (`[n]`). La lista que se muestra
+  // deduplica por material, así que la posición en la lista visible NO es el número citado:
+  // hay que conservar el índice original para que la cita abra el fragmento que el modelo citó.
   const deduplicateSources = (sources) => {
     if (!Array.isArray(sources)) return [];
     const seen = new Set();
-    return sources.filter(s => {
-      const key = s.materialId || `${s.sourceFilename || ''}|${s.chunkIndex ?? ''}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+    return sources
+      .map((s, i) => ({ ...s, sourceIndex: i + 1 }))
+      .filter(s => {
+        const key = s.materialId || `${s.sourceFilename || ''}|${s.chunkIndex ?? ''}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
   };
 
   const icon = (name) => {
