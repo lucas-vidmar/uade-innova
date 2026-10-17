@@ -173,7 +173,7 @@ test('teacher publish triggers immediate notification dispatch and student sees 
   // #428: publicar es un pedido explícito de estado y el aviso lo dispara el
   // servidor como consecuencia de ese estado, no el cliente.
   let publicationRequest = null;
-  await page.route('**/api/class-summary/class-03/publication', async (route) => {
+  await page.route('**/api/class-summary/class-03/publication*', async (route) => {
     publicationRequest = route.request().postDataJSON();
     await route.fulfill({
       status: 200,
