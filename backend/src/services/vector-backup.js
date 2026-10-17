@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { listAllVectorIds, fetchVectorsByIds, deleteVectorsByFilter } from './vector-store.js';
+import { listAllVectorIds, fetchVectorsByIds, deleteVectorsByFilter, getIndexStats } from './vector-store.js';
 import { saveJson, listBlobs } from './storage.js';
 import { trackVectorBackupRun } from './telemetry.js';
 import { CategorizedError, ErrorCategory, normalizeCategorizedError } from './error-categories.js';
@@ -32,6 +32,24 @@ export async function runVectorBackup({ mode = 'backup-only', subjectScope = nul
 
     try {
         const allIds = await listAllVectorIds();
+
+        // UJ-57: `/vectors/list` puede no enumerar nada mientras el índice sí
+        // declara vectores (el mismo hueco que UJ-59 midió en `vector-index`).
+        // Sin este control el resguardo sale vacío y se registra como exitoso, y
+        // `success: true` habilita el borrado de la ventana siguiente
+        // (backup+cleanup): se borraría el acervo sin respaldo. Se falla fuerte.
+        const indexTotalVectorCount = await readIndexTotalVectorCountSafely();
+        if (allIds.length === 0 && indexTotalVectorCount > 0) {
+            throw new CategorizedError(
+                `El resguardo no enumeró ningún vector aunque el índice declara tener ${indexTotalVectorCount}. No se guarda un resguardo vacío como si estuviera completo.`,
+                {
+                    errorCategory: ErrorCategory.RETRIEVAL_FAILURE,
+                    code: 'BACKUP_SCAN_INCOMPLETE',
+                    status: 502,
+                }
+            );
+        }
+
         const allVectors = await fetchAllVectorsInBatches(allIds);
 
         let vectors;
@@ -47,6 +65,9 @@ export async function runVectorBackup({ mode = 'backup-only', subjectScope = nul
             mode,
             subjectScope: subjectScope || 'all',
             vectorCount: vectors.length,
+            // Alcance declarado del resguardo: cuántos vectores declara el índice.
+            // Sirve para leer de vuelta si el paquete cubre el acervo o no.
+            indexTotalVectorCount,
             vectors: vectors.map(v => ({
                 id: v.id,
                 values: v.values,
@@ -78,6 +99,7 @@ export async function runVectorBackup({ mode = 'backup-only', subjectScope = nul
             subjectScope: subjectScope || 'all',
             durationMs,
             vectorCount: vectors.length,
+            indexTotalVectorCount,
             backupBlob: blobName,
             status: 'completed',
         };
@@ -99,9 +121,30 @@ export async function runVectorBackup({ mode = 'backup-only', subjectScope = nul
         throw new CategorizedError(`Vector backup failed: ${err.message}`, {
             errorCategory: categorized.errorCategory,
             code: categorized.code || 'VECTOR_BACKUP_FAILED',
-            status: 500,
+            // Un fallo medido (p.ej. BACKUP_SCAN_INCOMPLETE, 502) conserva su
+            // status en vez de aplanarse a 500: quien opera necesita distinguir
+            // "no se pudo enumerar" de "se rompió el resguardo".
+            status: Number.isInteger(categorized.status) ? categorized.status : 500,
             cause: err,
         });
+    }
+}
+
+/**
+ * Lee el total de vectores que el propio índice declara tener. Devuelve `0`
+ * cuando no se pudo leer: un fallo de la lectura auxiliar no debe bloquear el
+ * resguardo, y `0` desactiva el control de enumeración vacía en vez de
+ * inventar un total.
+ * @returns {Promise<number>}
+ */
+async function readIndexTotalVectorCountSafely() {
+    try {
+        const stats = await getIndexStats();
+        const total = Number(stats?.totalVectorCount);
+        return Number.isFinite(total) && total > 0 ? total : 0;
+    } catch (err) {
+        console.warn(`[VectorBackup] No se pudo leer el total del índice: ${err?.message || err}`);
+        return 0;
     }
 }
 
