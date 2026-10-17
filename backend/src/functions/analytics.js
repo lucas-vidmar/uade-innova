@@ -70,6 +70,10 @@ app.http('get-teacher-analytics', {
             
             const questionMap = new Map();
             const frictionMap = new Map();
+            // Lectura por encuentro (#420, UJ-50): agrupa las consultas por los
+            // encuentros de su alcance (`classIds`) para poder leer qué se preguntó
+            // en cada uno, no sólo el agregado de la unidad.
+            const classMap = new Map();
 
             for (const blobName of recentBlobs) {
                 const log = await loadJson(CONTAINER_CHAT, blobName);
@@ -84,6 +88,20 @@ app.http('get-teacher-analytics', {
                 const questionEntry = questionMap.get(key) || { text: display, count: 0 };
                 questionEntry.count++;
                 questionMap.set(key, questionEntry);
+
+                // Cada consulta se atribuye a los encuentros de su alcance. `all`
+                // no es un encuentro: es "toda la unidad", así que no entra acá.
+                const logClasses = (Array.isArray(log.classIds) ? log.classIds : (log.classId ? [log.classId] : []))
+                    .map((c) => String(c || '').trim())
+                    .filter((c) => c && c !== 'all');
+                for (const classId of logClasses) {
+                    const classEntry = classMap.get(classId) || { classId, questionCount: 0, questions: new Map() };
+                    classEntry.questionCount++;
+                    const classQuestion = classEntry.questions.get(key) || { text: display, count: 0 };
+                    classQuestion.count++;
+                    classEntry.questions.set(key, classQuestion);
+                    classMap.set(classId, classEntry);
+                }
 
                 // Friction Topics: la pregunta completa con feedback es el tópico.
                 if (log.feedback === 'negative' || log.feedback === 'positive') {
@@ -104,6 +122,17 @@ app.http('get-teacher-analytics', {
                 .sort((a, b) => b.unresolved - a.unresolved)
                 .slice(0, 4);
 
+            // Lectura por encuentro (#420, UJ-50): cada encuentro con sus consultas.
+            const byClass = Array.from(classMap.values())
+                .sort((a, b) => String(a.classId).localeCompare(String(b.classId)))
+                .map((entry) => ({
+                    classId: entry.classId,
+                    questionCount: entry.questionCount,
+                    topQuestions: Array.from(entry.questions.values())
+                        .sort((a, b) => b.count - a.count)
+                        .slice(0, 5),
+                }));
+
             // Fallback si no hay datos
             if (topQuestions.length === 0) {
                 topQuestions.push({ text: 'Sin datos aún', count: 1 });
@@ -114,7 +143,8 @@ app.http('get-teacher-analytics', {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     topQuestions,
-                    frictionTopics
+                    frictionTopics,
+                    byClass
                 })
             };
 
