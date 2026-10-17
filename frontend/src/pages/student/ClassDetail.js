@@ -121,11 +121,13 @@ export async function renderClassDetail(container) {
 
         let subjectId = requestedAccessible ? requestedSubjectId : activeSubjectId;
         let classInfo = null;
+        let classList = [];
         for (const unit of candidateUnits) {
             try {
                 const list = await api.getClasses(unit);
                 if (Array.isArray(list) && list.some(c => c.id === classId)) {
                     subjectId = unit;
+                    classList = list;
                     classInfo = list.find(c => c.id === classId);
                     break;
                 }
@@ -162,11 +164,12 @@ export async function renderClassDetail(container) {
             auth.setActiveSubjectId(subjectId);
         }
 
-        const [summaryData, mapData, timelineData, audioScriptData] = await Promise.all([
+        const [summaryData, mapData, timelineData, audioScriptData, deadlines] = await Promise.all([
             api.getClassSummary(classId, subjectId),
             api.getClassMap(classId, subjectId),
             api.getClassTimeline(classId, subjectId),
             api.getClassAudioScript(classId, subjectId),
+            api.getDeadlines(subjectId),
         ]);
 
         // Track class view (fire-and-forget)
@@ -192,6 +195,36 @@ export async function renderClassDetail(container) {
         }
 
         const sec = classInfo.sectionsEnabled || { summary: true, map: true, podcast: true };
+
+        // #423 (UJ-37): el cierre del encuentro debe mostrar "lo que viene" —
+        // entregas con fecha comprometida y el próximo encuentro —, no sólo el
+        // contenido del encuentro ya pasado.
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
+        const upcomingDeadlines = (Array.isArray(deadlines) ? deadlines : [])
+            .filter(d => d && d.dueDate && new Date(d.dueDate) >= startOfToday)
+            .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+        const currentClassTime = classInfo.date ? new Date(classInfo.date).getTime() : null;
+        const nextClass = (Array.isArray(classList) ? classList : [])
+            .filter(c => c && c.id !== classId && c.date)
+            .filter(c => currentClassTime === null || new Date(c.date).getTime() > currentClassTime)
+            .sort((a, b) => new Date(a.date) - new Date(b.date))[0] || null;
+        const fmtDay = (value) => new Date(value).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' });
+        const upcomingHtml = `
+            ${SECTION_TITLE('📅', 'Lo que viene')}
+            <div class="card" data-testid="lo-que-viene" style="margin-bottom:var(--space-6);">
+                <div style="padding:var(--space-4);">
+                    <h3 class="h4" style="margin:0 0 var(--space-2) 0;font-size:var(--text-base);">Entregas con fecha comprometida</h3>
+                    ${upcomingDeadlines.length > 0
+                        ? `<ul style="margin:0;padding-left:18px;">${upcomingDeadlines.map(d => `<li style="margin-bottom:6px;"><strong>${escapeHtml(d.title || 'Entrega')}</strong> — vence el ${fmtDay(d.dueDate)}${d.classId ? ` <a href="#/student/class/${encodeURIComponent(d.classId)}" style="font-size:12px;">ver clase</a>` : ''}</li>`).join('')}</ul>`
+                        : '<p style="margin:0;color:var(--color-text-secondary);font-size:14px;">No tenés entregas con fecha comprometida pendientes.</p>'}
+                    <h3 class="h4" style="margin:var(--space-4) 0 var(--space-2) 0;font-size:var(--text-base);">Próximo encuentro</h3>
+                    ${nextClass
+                        ? `<p style="margin:0;font-size:14px;"><a href="#/student/class/${encodeURIComponent(nextClass.id)}">${escapeHtml(nextClass.title || 'Encuentro')}</a>${nextClass.date ? ` — ${fmtDay(nextClass.date)}` : ''}</p>`
+                        : '<p style="margin:0;color:var(--color-text-secondary);font-size:14px;">No hay un próximo encuentro anunciado.</p>'}
+                </div>
+            </div>
+        `;
 
         const rawSummary = summaryData?.summary?.content || summaryData?.summary || '';
         const hasValidSummary = rawSummary && !isPlaceholderSummary(rawSummary) && sec.summary !== false;
@@ -226,6 +259,8 @@ export async function renderClassDetail(container) {
         `;
 
         html += `<div id="class-tab-panel-content" data-class-panel="content">`;
+
+        html += upcomingHtml;
 
         if (hasValidSummary) {
             html += `
