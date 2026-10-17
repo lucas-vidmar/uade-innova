@@ -200,7 +200,26 @@ function topicsSummaryOf(attempt) {
     return topics;
 }
 
-async function buildQuizPrompt(subjectName, className, contextText, questionCount, previousQuestions = []) {
+const MAX_STABLE_TOPICS = 30;
+
+/**
+ * Etiquetas de tema ya usadas en los intentos previos de esa persona en esa clase.
+ * La comparación tema por tema (UJ-31, paso 7) sólo se apoya en la misma vara si
+ * el conjunto nuevo declara los mismos temas que el anterior; por eso se le pasan
+ * al modelo para que las reutilice tal cual en vez de inventar etiquetas nuevas.
+ */
+function previousTopicsOf(attempts) {
+    const seen = [];
+    for (const attempt of attempts) {
+        for (const topic of Object.keys(topicsSummaryOf(attempt))) {
+            if (topic && topic !== 'Sin tema' && !seen.includes(topic)) seen.push(topic);
+            if (seen.length >= MAX_STABLE_TOPICS) return seen;
+        }
+    }
+    return seen;
+}
+
+async function buildQuizPrompt(subjectName, className, contextText, questionCount, previousQuestions = [], previousTopics = []) {
     const promptConfig = await getActivePrompt('quiz').catch(() => null);
     const systemContent = promptConfig?.systemPrompt || `Sos un docente experto en crear cuestionarios de autoevaluación para estudiantes universitarios.
 Generás exactamente ${questionCount} preguntas de opción múltiple (4 opciones cada una) sobre el material de clase provisto.
@@ -223,6 +242,15 @@ Requerimientos del JSON de salida:
         userContent += `\n\nLa persona ya respondió una práctica de esta clase. NO repitas ninguna de estas preguntas, ni las reformules para evaluar el mismo punto:\n`
             + previousQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')
             + `\nCubrí los mismos temas de la clase, pero con preguntas nuevas sobre otros puntos del material, de dificultad equivalente.`;
+    }
+    // UJ-31, paso 7: la comparación tema por tema sólo se apoya en la misma vara si
+    // el conjunto nuevo declara los mismos temas que el anterior. Sin esta consigna
+    // el modelo inventa etiquetas nuevas en cada intento y todos los veredictos
+    // quedan en «tema nuevo» / «no se evaluó».
+    if (previousTopics.length) {
+        userContent += `\n\nPara que el resultado se pueda comparar tema por tema con la práctica anterior, cada pregunta debe declarar su campo "topic" usando EXACTAMENTE una de estas etiquetas, tal cual está escrita (sin variantes, sin sinónimos y sin crear etiquetas nuevas):\n`
+            + previousTopics.map((t, i) => `${i + 1}. ${t}`).join('\n')
+            + `\nRepartí las ${questionCount} preguntas entre esos temas, priorizando los que mejor representan el material de la clase.`;
     }
     return { systemContent, userContent };
 }
@@ -278,10 +306,11 @@ app.http('generate-quiz', {
             // repite lo ya visto (UJ-31) y la pantalla puede anunciar el número.
             const previousAttempts = await listQuizAttempts(subjectId, userId, classId).catch(() => []);
             const previousQuestions = previousQuestionsOf(previousAttempts);
+            const previousTopics = previousTopicsOf(previousAttempts);
             const attemptNumber = previousAttempts.length + 1;
 
             const className = body.className || classId;
-            const { systemContent, userContent } = await buildQuizPrompt(subjectName, className, contextText, count, previousQuestions);
+            const { systemContent, userContent } = await buildQuizPrompt(subjectName, className, contextText, count, previousQuestions, previousTopics);
 
             const quizModel = await resolveModelForTask('quiz');
             const result = await chatCompletion(
