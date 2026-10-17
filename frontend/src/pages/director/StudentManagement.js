@@ -45,12 +45,10 @@ export async function renderDirectorStudentManagement(container) {
     subjects = safeArray(subjectList);
 
     const entries = await Promise.all(subjects.map(async (subject) => {
-      try {
-        const enrollments = safeArray(await api.getEnrollmentsBySubject(subject.id));
-        return [subject.id, enrollments];
-      } catch {
-        return [subject.id, []];
-      }
+      // fix #500: strict read. A failed read of the enrollments must be declared,
+      // never drawn as "0 INSCRIPTOS" for a unit that does have students.
+      const enrollments = safeArray(await api.getEnrollmentsBySubject(subject.id, { strict: true }));
+      return [subject.id, enrollments];
     }));
     subjectEnrollmentMap = Object.fromEntries(entries);
   };
@@ -222,6 +220,14 @@ export async function renderDirectorStudentManagement(container) {
     render();
   } catch (err) {
     console.error(err);
-    container.innerHTML = `<div class="empty-state">Ocurrio un error cargando la gestión de alumnos.</div>`;
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">⚠️</div>
+        <h3>No se pudieron leer las matrículas</h3>
+        <p>La lectura de las inscripciones de las materias falló. No se muestran conteos para no afirmar que no hay alumnos inscriptos.</p>
+        <button id="btn-retry-students" class="btn btn-primary" style="margin-top:12px;">Reintentar</button>
+      </div>
+    `;
+    container.querySelector('#btn-retry-students')?.addEventListener('click', () => renderDirectorStudentManagement(container));
   }
 }

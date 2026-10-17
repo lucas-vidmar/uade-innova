@@ -201,15 +201,22 @@ export async function checkEnrollment(userId, subjectId) {
     }
 }
 
-export async function getEnrollmentsBySubject(subjectId) {
+export async function getEnrollmentsBySubject(subjectId, options = {}) {
     if (!subjectId) return [];
     try {
         const res = await fetchWithTimeout(`${BASE_URL}/enrollments?subjectId=${encodeURIComponent(subjectId)}`, { timeout: 4000 });
-        if (!res.ok) return [];
+        if (!res.ok) {
+            // fix #352/#500: strict callers must not receive an empty list as if
+            // the subject simply had no enrollments (the participants screen
+            // would assert "0 INSCRIPTOS" for a unit that does have students).
+            if (options.strict) throw await parseApiError(res, `No se pudieron leer las matrículas (HTTP ${res.status}).`);
+            return [];
+        }
         const data = await res.json();
         if (data?.success && Array.isArray(data.data)) return data.data;
         return Array.isArray(data) ? data : [];
     } catch (err) {
+        if (options.strict) throw err;
         console.error('[API] getEnrollmentsBySubject failed:', err);
         return [];
     }
