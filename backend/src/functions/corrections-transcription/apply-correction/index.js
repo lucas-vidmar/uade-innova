@@ -14,6 +14,72 @@ import { CONFIG } from '../../../services/config.js';
 const CORRECTIONS_TABLE = CONFIG.tables.transcriptionCorrections;
 const CONTAINER_PROCESSED = 'processed';
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Reescribe y re-indexa el texto de UN material aplicando TODOS los fragmentos
+ * que hay que corregir en una sola pasada: leer, reemplazar, escribir una vez.
+ *
+ * UJ-17: aplicar varias enmiendas del mismo material en paralelo hacía que cada
+ * request leyera el blob `processed/{id}.json`, lo reescribiera y lo guardara sin
+ * control de concurrencia; el último en escribir pisaba a los demás y el texto
+ * indexado quedaba con la forma vieja aunque la enmienda figurara aplicada. Por
+ * eso el reemplazo se hace acá, agrupado por material y en una única escritura.
+ */
+async function reindexMaterial({ subjectId, materialId, entities, context }) {
+  if (!materialId) return false;
+  try {
+    const processed = await loadJson(CONTAINER_PROCESSED, `${materialId}.json`);
+    const text = processed?.extractedText || processed?.text || '';
+    if (!text) return false;
+
+    let corrected = text;
+    for (const entity of entities) {
+      if (entity.fragment && entity.suggestedFix) {
+        corrected = corrected.replace(new RegExp(escapeRegExp(entity.fragment), 'gi'), entity.suggestedFix);
+      }
+    }
+    if (corrected === text) return false;
+
+    await deleteVectorsByFilter({ materialId: { '$eq': materialId } });
+    const chunks = chunkText(corrected);
+    const chunkTexts = chunks.map(c => c.text || c);
+    const { embeddings } = await generateEmbeddingsBatch(chunkTexts);
+    const classId = entities.find(e => e.classId)?.classId || processed.classId || processed.classIds?.[0] || '';
+    const vectors = embeddings.map((embedding, i) => ({
+      id: `${materialId}-chunk-${i}`,
+      values: embedding,
+      metadata: {
+        subjectId,
+        classId,
+        classIds: JSON.stringify(processed.classIds || []),
+        materialId,
+        materialType: processed.materialType || processed.type || 'transcript',
+        chunkIndex: i,
+        sourceFilename: processed.sourceFilename || processed.filename || '',
+        lectureDate: processed.lectureDate || '',
+        text: chunkTexts[i]?.substring(0, 1000) || '',
+        quarantined: false,
+      },
+    }));
+    await upsertChunks(vectors);
+
+    processed.extractedText = corrected;
+    processed.text = corrected;
+    processed.chunks = chunks;
+    processed.chunkCount = chunks.length;
+    processed.processedAt = new Date().toISOString();
+    await saveJson(CONTAINER_PROCESSED, `${materialId}.json`, processed);
+    context.log(`[apply-transcription-correction] Re-indexed ${materialId} with ${chunks.length} corrected chunks (${entities.length} enmiendas en una sola pasada)`);
+    return true;
+  } catch (reErr) {
+    context.error(`[apply-transcription-correction] Re-index failed for material ${materialId} (non-blocking):`, reErr.message);
+    return false;
+  }
+}
+
 app.http('apply-transcription-correction', {
   methods: ['POST'],
   authLevel: 'anonymous',
@@ -39,82 +105,85 @@ app.http('apply-transcription-correction', {
       return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: false, error: { code: 'INVALID_INPUT', message: 'El cuerpo debe ser JSON válido.' } }) };
     }
 
-    const { suggestionId, subjectId } = body || {};
-    if (!suggestionId || !subjectId) {
-      return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: false, error: { code: 'INVALID_INPUT', message: 'suggestionId y subjectId son requeridos.' } }) };
+    const { subjectId } = body || {};
+    // Acepta una enmienda (suggestionId) o muchas (suggestionIds). El camino de
+    // muchas es el que usa "Aplicar todas": una sola pasada por material.
+    const rawIds = Array.isArray(body?.suggestionIds)
+      ? body.suggestionIds
+      : (body?.suggestionId ? [body.suggestionId] : []);
+    const suggestionIds = Array.from(new Set(rawIds.map((s) => String(s || '').trim()).filter(Boolean)));
+    if (suggestionIds.length === 0 || !subjectId) {
+      return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: false, error: { code: 'INVALID_INPUT', message: 'suggestionId(s) y subjectId son requeridos.' } }) };
     }
 
     try {
       const client = getTableClient(CORRECTIONS_TABLE);
-      const entity = await client.getEntity(subjectId, suggestionId);
+      const teacherId = principal?.userId || principal?.oid || '';
 
-      if (entity.status === 'applied' || entity.status === 'rejected') {
-        return { status: 409, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: false, error: { code: 'ALREADY_RESOLVED', message: 'Esta sugerencia ya fue resuelta.' } }) };
-      }
-
-      // 1. Rewrite the transcript text and re-embed so the correction takes effect in RAG
-      let reindexed = false;
-      if (entity.materialId && entity.fragment && entity.suggestedFix) {
+      const entities = [];
+      const failed = [];
+      for (const id of suggestionIds) {
         try {
-          const processed = await loadJson(CONTAINER_PROCESSED, `${entity.materialId}.json`);
-          const text = processed?.extractedText || processed?.text || '';
-          if (text) {
-            // Replace all occurrences of the fragment with the suggested fix
-            const escaped = entity.fragment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const corrected = text.replace(new RegExp(escaped, 'gi'), entity.suggestedFix);
-
-            if (corrected !== text) {
-              await deleteVectorsByFilter({ materialId: { '$eq': entity.materialId } });
-              const chunks = chunkText(corrected);
-              const chunkTexts = chunks.map(c => c.text || c);
-              const { embeddings } = await generateEmbeddingsBatch(chunkTexts);
-              const vectors = embeddings.map((embedding, i) => ({
-                id: `${entity.materialId}-chunk-${i}`,
-                values: embedding,
-                metadata: {
-                  subjectId,
-                  classId: entity.classId || processed.classId || processed.classIds?.[0] || '',
-                  classIds: JSON.stringify(processed.classIds || []),
-                  materialId: entity.materialId,
-                  materialType: processed.materialType || processed.type || 'transcript',
-                  chunkIndex: i,
-                  sourceFilename: processed.sourceFilename || processed.filename || '',
-                  lectureDate: processed.lectureDate || '',
-                  text: chunkTexts[i]?.substring(0, 1000) || '',
-                  quarantined: false,
-                },
-              }));
-              await upsertChunks(vectors);
-
-              processed.extractedText = corrected;
-              processed.text = corrected;
-              processed.chunks = chunks;
-              processed.chunkCount = chunks.length;
-              processed.processedAt = new Date().toISOString();
-              await saveJson(CONTAINER_PROCESSED, `${entity.materialId}.json`, processed);
-              reindexed = true;
-              context.log(`[apply-transcription-correction] Re-indexed ${entity.materialId} with ${chunks.length} corrected chunks`);
-            }
-          }
-        } catch (reErr) {
-          context.error(`[apply-transcription-correction] Re-index failed for material ${entity.materialId} (non-blocking):`, reErr.message);
+          entities.push(await client.getEntity(subjectId, id));
+        } catch (err) {
+          if (err.statusCode === 404) failed.push({ suggestionId: id, error: 'NOT_FOUND' });
+          else throw err;
         }
       }
 
+      // Camino de una sola enmienda: conserva el contrato de siempre (404/409).
+      if (suggestionIds.length === 1) {
+        if (failed.length) {
+          return { status: 404, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: false, error: { code: 'NOT_FOUND', message: 'Sugerencia no encontrada.' } }) };
+        }
+        const entity = entities[0];
+        if (entity.status === 'applied' || entity.status === 'rejected') {
+          return { status: 409, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: false, error: { code: 'ALREADY_RESOLVED', message: 'Esta sugerencia ya fue resuelta.' } }) };
+        }
+      }
+
+      const pending = entities.filter((e) => e.status !== 'applied' && e.status !== 'rejected');
+
+      // Agrupar por material: una lectura y una escritura por material, así las
+      // enmiendas del mismo material no se pisan entre sí.
+      const byMaterial = new Map();
+      for (const entity of pending) {
+        const key = entity.materialId || '';
+        if (!byMaterial.has(key)) byMaterial.set(key, []);
+        byMaterial.get(key).push(entity);
+      }
+
+      const applied = [];
       const now = new Date().toISOString();
-      entity.status = 'applied';
-      entity.resolvedAt = now;
-      entity.teacherId = principal?.userId || principal?.oid || '';
-      entity.reindexed = reindexed;
+      for (const [materialId, ents] of byMaterial) {
+        const reindexed = await reindexMaterial({ subjectId, materialId, entities: ents, context });
+        for (const entity of ents) {
+          entity.status = 'applied';
+          entity.resolvedAt = now;
+          entity.teacherId = teacherId;
+          entity.reindexed = reindexed;
+          await client.upsertEntity(entity, 'Replace');
+          applied.push({ suggestionId: entity.rowKey, status: 'applied', reindexed });
+        }
+      }
 
-      await client.upsertEntity(entity, 'Replace');
+      context.log(`[apply-transcription-correction] Applied ${applied.length}/${suggestionIds.length} suggestion(s) for subjectId=${subjectId}`);
 
-      context.log(`[apply-transcription-correction] Applied suggestion ${suggestionId} for subjectId=${subjectId} reindexed=${reindexed}`);
-
+      const single = suggestionIds.length === 1 ? applied[0] : null;
       return {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ success: true, data: { suggestionId, status: 'applied', reindexed } }),
+        body: JSON.stringify({
+          success: true,
+          data: {
+            suggestionId: single ? single.suggestionId : undefined,
+            status: 'applied',
+            reindexed: single ? single.reindexed : applied.some(a => a.reindexed),
+            applied,
+            appliedCount: applied.length,
+            failed,
+          },
+        }),
       };
     } catch (err) {
       if (err.statusCode === 404) {

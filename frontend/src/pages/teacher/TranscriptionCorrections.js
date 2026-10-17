@@ -74,18 +74,20 @@ export async function renderTranscriptionCorrections(container) {
 
       const btn = container.querySelector('#btn-apply-all');
       if (btn) { btn.disabled = true; btn.textContent = 'Aplicando...'; }
-      const results = await Promise.allSettled(
-        pending.map(s => api.applyTranscriptionCorrection(s.rowKey || s.id, subjectId))
+      // UJ-17: una sola petición para todas las enmiendas. El servidor las agrupa
+      // por material y reescribe el texto una vez por material; si se disparaban en
+      // paralelo, cada request pisaba el blob del otro y se perdían correcciones.
+      const result = await api.applyTranscriptionCorrections(
+        pending.map(s => s.rowKey || s.id), subjectId
       );
-      const applied = results.filter(r => r.status === 'fulfilled').length;
-      const failed = results.filter(r => r.status === 'rejected').length;
+      const applied = result?.data?.appliedCount ?? (result?.data?.applied?.length || 0);
+      const failed = result?.data?.failed?.length || 0;
       const { toast } = await import('../../components/Toast.js');
       if (applied > 0) {
         toast('success', `Aplicadas ${applied} ${applied === 1 ? 'enmienda' : 'enmiendas'}`, failed > 0 ? `${failed} no se pudieron aplicar.` : '');
       }
       if (failed > 0 && applied === 0) {
-        const first = results.find(r => r.status === 'rejected');
-        toast('error', 'No se pudieron aplicar', `${failed} ${failed === 1 ? 'enmienda' : 'enmiendas'} sin aplicar. ${first?.reason?.message || ''}`.trim());
+        toast('error', 'No se pudieron aplicar', `${failed} ${failed === 1 ? 'enmienda' : 'enmiendas'} sin aplicar.`);
       }
       loadSuggestions(currentStatus);
     } catch (err) {
