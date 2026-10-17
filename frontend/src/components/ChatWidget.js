@@ -208,16 +208,21 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
 
   const isLowConfidence = (content) => {
     if (!content) return false;
+    // #358/UJ-22: red de seguridad para conversaciones recargadas (el flag
+    // `abstained` del backend sólo viaja en vivo). Se compara sin tildes para
+    // no depender de cómo el modelo acentúa ("no encontre" vs "no encontré").
+    const norm = (s) => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
     const signals = [
-      'no encontré información suficiente',
-      'no tengo información',
-      'no encontré',
+      'no encontre informacion suficiente',
+      'no tengo informacion',
+      'no encontre',
       'no se encontraron materiales',
-      'no hay información disponible',
+      'no hay informacion disponible',
       'no pude encontrar',
-      'no está disponible en los materiales',
+      'no esta disponible en los materiales',
     ];
-    return signals.some(s => content.toLowerCase().includes(s));
+    const n = norm(content);
+    return signals.some(s => n.includes(s));
   };
 
   const renderMessage = (msg) => {
@@ -278,7 +283,7 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
               <button class="report-missing-keyword-btn ${msg.missingKeywordReported ? 'active' : ''}" data-message-id="${msg.id || ''}" title="Usalo si esperabas encontrar un tema que no aparece en los materiales" aria-label="Reportar concepto faltante" ${(msg.missingKeywordReported || isStreaming) ? 'disabled' : ''}>
                 ${msg.missingKeywordReported ? '✅ Concepto reportado' : `${ICON_REPORT_MISSING_KEYWORD}<span>Falta un concepto</span>`}
               </button>
-              ${isLowConfidence(msg.content) && !msg.missingInfoReported ? `
+              ${(msg.abstained || isLowConfidence(msg.content)) && !msg.missingInfoReported ? `
               <button class="report-missing-info-btn" data-message-id="${msg.id || ''}" title="Reportar información faltante">
                 Reportar información faltante
               </button>
@@ -481,6 +486,9 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
           assistantMsg.verified = data.verified || false;
           assistantMsg.model = data.model || '';
           assistantMsg.glossary = data.glossary || null;
+          // #358/UJ-22: la abstención la decide el backend; se guarda para que
+          // la constancia se muestre por el motivo real y de forma consistente.
+          if (typeof data.abstained === 'boolean') assistantMsg.abstained = data.abstained;
           const footerEl = msgEl.querySelector('.chat-msg-footer');
           if (footerEl) {
             footerEl.innerHTML = `
@@ -570,6 +578,8 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
   else if (type === 'done') {
           assistantMsg.content = data.answer;
           assistantMsg.streaming = false;
+          // #358/UJ-22: el backend marca la abstención en el evento final.
+          if (typeof data.abstained === 'boolean') assistantMsg.abstained = data.abstained;
           const msgEl = getMsgEl();
           if (msgEl) {
             msgEl.classList.remove('streaming');

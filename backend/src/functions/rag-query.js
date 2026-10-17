@@ -98,6 +98,37 @@ function jsonResponse(status, payload) {
 const GLOSSARY_NOT_FOUND_MSG = 'No encontré ese término en el glosario de la materia. ¿Querés preguntarle al docente que lo agregue?';
 
 /**
+ * #358/UJ-22: la abstención ("el material no alcanza") es una decisión del
+ * backend, no una coincidencia literal en el texto del modelo. Se expone como
+ * bandera explícita `abstained` en los eventos SSE (`metadata`/`done`) y en el
+ * payload JSON para que la UI deje constancia de la pregunta sin respuesta de
+ * forma consistente, sin re-derivarla por substring del texto del modelo.
+ *
+ * Cubre los motivos reales de abstención: sin contexto (`no_context`), rechazo
+ * redactado por el modelo (`refusal_answer`), respuesta vacía (`empty_answer`) y
+ * término ausente del glosario.
+ */
+const ABSTENTION_SIGNALS = [
+    'no encontre informacion',
+    'no encuentro informacion',
+    'no tengo informacion',
+    'no pude encontrar',
+    'no se encontraron materiales',
+    'no hay informacion disponible',
+    'no esta disponible en los materiales',
+    'no encontre ese termino',
+];
+
+export function isAbstentionAnswer(answer) {
+    const trimmed = String(answer || '').trim();
+    if (!trimmed) return true; // empty_answer
+    // Insensible a tildes: el rechazo canónico del backend no las lleva, pero el
+    // modelo puede redactar "No encontré información…".
+    const lower = trimmed.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    return ABSTENTION_SIGNALS.some((s) => lower.includes(s));
+}
+
+/**
  * Construye la respuesta del fast-path de glosario (Story 11.1.6).
  * Determinística: devuelve la definición del término (o el mensaje de
  * "no encontrado" del AC) sin embedding ni LLM, marcando el badge
@@ -105,14 +136,17 @@ const GLOSSARY_NOT_FOUND_MSG = 'No encontré ese término en el glosario de la m
  * "📖 Glosario".
  */
 function buildGlossaryResponse({ answer, glossaryMeta, stream }) {
+    // #358/UJ-22: el término ausente del glosario también es una abstención; la
+    // definición encontrada, no.
+    const abstained = answer === GLOSSARY_NOT_FOUND_MSG;
     if (stream) {
         const encoder = new TextEncoder();
         const interactionId = uuidv4();
         const responseStream = new ReadableStream({
             start(controller) {
-                controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ interactionId, sources: [], glossary: glossaryMeta, model: getChatModelName() })}\n\n`));
+                controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ interactionId, sources: [], glossary: glossaryMeta, abstained, model: getChatModelName() })}\n\n`));
                 controller.enqueue(encoder.encode(`event: delta\ndata: ${JSON.stringify({ content: answer })}\n\n`));
-                controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ answer })}\n\n`));
+                controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ answer, abstained })}\n\n`));
                 controller.close();
             }
         });
@@ -126,7 +160,7 @@ function buildGlossaryResponse({ answer, glossaryMeta, stream }) {
             body: responseStream,
         };
     }
-    return jsonResponse(200, { id: uuidv4(), answer, sources: [], glossary: glossaryMeta });
+    return jsonResponse(200, { id: uuidv4(), answer, sources: [], glossary: glossaryMeta, abstained });
 }
 
 /**
@@ -668,15 +702,18 @@ app.http('rag-query', {
                 const responseStream = new ReadableStream({
                     start(controller) {
                         const encoder = new TextEncoder();
-                        // 1. Enviar metadatos vacíos para inicializar el footer
-                        controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ sources: [], model: getChatModelName(), ...(noMatchGlossaryMeta ? { glossary: noMatchGlossaryMeta } : {}) })}\n\n`));
+                        // 1. Enviar metadatos vacíos para inicializar el footer.
+                        // #358/UJ-22: se marca `abstained: true` para que la UI
+                        // deje constancia de la pregunta sin respuesta por el
+                        // motivo real (sin contexto), no por coincidencia textual.
+                        controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ sources: [], abstained: true, model: getChatModelName(), ...(noMatchGlossaryMeta ? { glossary: noMatchGlossaryMeta } : {}) })}\n\n`));
 
                         // 2. Enviar el mensaje como un delta para que la UI lo anime/muestre progresivamente si quiere, 
                         // o al menos use el path más probado del frontend.
                         controller.enqueue(encoder.encode(`event: delta\ndata: ${JSON.stringify({ content: noMatchAnswer })}\n\n`));
 
                         // 3. Enviar evento final
-                        controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ answer: noMatchAnswer })}\n\n`));
+                        controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ answer: noMatchAnswer, abstained: true })}\n\n`));
                         controller.close();
                     }
                 });
@@ -689,6 +726,7 @@ app.http('rag-query', {
                 return jsonResponse(200, {
                     answer: noMatchAnswer,
                     sources: [],
+                    abstained: true,
                     ...(noMatchGlossaryMeta ? { glossary: noMatchGlossaryMeta } : {}),
                 });
             }
@@ -983,8 +1021,11 @@ ${contextText}
                             }).catch(e => context.error('Error guardando Table Metrics (stream):', e));
                         }
 
-                        // Enviar evento de finalización
-                        controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ usage: finalUsage, answer: fullAnswer })}\n\n`));
+                        // Enviar evento de finalización.
+                        // #358/UJ-22: `abstained` marca el rechazo redactado por
+                        // el modelo (o la respuesta vacía) para que la UI deje
+                        // constancia sin depender de coincidencia textual.
+                        controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ usage: finalUsage, answer: fullAnswer, abstained: isAbstentionAnswer(fullAnswer) })}\n\n`));
                         controller.close();
                     } catch (err) {
                         if (err?.name === 'AbortError' || err?.code === 'ABORT_ERR') {
@@ -1179,6 +1220,6 @@ ${contextText}
             }
         }
 
-        return jsonResponse(200, { id: interactionId, answer, sources });
+        return jsonResponse(200, { id: interactionId, answer, sources, abstained: isRefusalLike });
     }), 'chat')),
 });
