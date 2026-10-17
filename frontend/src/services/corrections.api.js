@@ -241,6 +241,28 @@ export async function applyTranscriptionCorrection(suggestionId, subjectId) {
     return res.json();
 }
 
+// UJ-17: "Aplicar todas" manda las N enmiendas en UNA sola petición. El servidor
+// las agrupa por material y reescribe el texto una vez por material; dispararlas
+// en paralelo hacía que cada request pisara el blob del otro y se perdieran
+// correcciones (quedaban aplicadas pero el texto indexado conservaba la forma
+// vieja).
+export async function applyTranscriptionCorrections(suggestionIds, subjectId) {
+    if (!Array.isArray(suggestionIds) || suggestionIds.length === 0 || !subjectId) {
+        throw new Error('suggestionIds and subjectId are required');
+    }
+    const res = await apiFetch(`${BASE_URL}/corrections-transcription/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ suggestionIds, subjectId }),
+    });
+    if (!res.ok) {
+        let message = 'Error al aplicar las correcciones';
+        try { const err = await res.json(); if (err?.error?.message) message = err.error.message; } catch {}
+        throw new Error(message);
+    }
+    return res.json();
+}
+
 export async function rejectTranscriptionSuggestion(suggestionId, subjectId, reason) {
     if (!suggestionId || !subjectId) throw new Error('suggestionId and subjectId are required');
     const res = await apiFetch(`${BASE_URL}/corrections-transcription/reject`, {

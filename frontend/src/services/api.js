@@ -72,7 +72,7 @@ import {
     verifyAnswer, updateCorrectionStatus, reviewCorrection, getCorrection,
     getCorrectionChatContext,
     getGlossary, getGlossaryTerm, updateGlossary,
-    getTranscriptionSuggestions, applyTranscriptionCorrection,
+    getTranscriptionSuggestions, applyTranscriptionCorrection, applyTranscriptionCorrections,
     rejectTranscriptionSuggestion,
     getStudentReports,
     submitGradeDispute,
@@ -148,7 +148,7 @@ export const api = {
     verifyAnswer, updateCorrectionStatus, reviewCorrection, getCorrection,
     getCorrectionChatContext,
     getGlossary, getGlossaryTerm, updateGlossary,
-    getTranscriptionSuggestions, applyTranscriptionCorrection,
+    getTranscriptionSuggestions, applyTranscriptionCorrection, applyTranscriptionCorrections,
     rejectTranscriptionSuggestion,
     getStudentReports, submitGradeDispute, getGradeDisputes, resolveGradeDispute,
 
