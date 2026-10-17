@@ -111,7 +111,8 @@ mock.module('@azure/functions', {
     }
 });
 
-await import('./rag-query.js');
+const ragQueryModule = await import('./rag-query.js');
+const { isAbstentionAnswer } = ragQueryModule;
 
 test('rag-query should stream SSE when stream=true', async (t) => {
     telemetryMocks.trackRAGInteraction.mock.resetCalls();
@@ -395,3 +396,104 @@ test('rag-query should omit preferences block when no bot prefs are sent', async
     assert.ok(!capturedSystemContent.includes('<preferencias_asistente>'), 'Should NOT include preferences block when absent');
     assert.ok(capturedOptions?.max_tokens > 400, 'Should keep default max_tokens when not concise');
 });
+
+test('#358/UJ-22: isAbstentionAnswer detecta el rechazo canónico, los rechazos del modelo y la respuesta vacía', () => {
+    assert.strictEqual(isAbstentionAnswer('No encontre informacion sobre eso en los materiales seleccionados.'), true, 'rechazo canónico sin tildes');
+    assert.strictEqual(isAbstentionAnswer('No encontré información sobre eso en el material.'), true, 'rechazo del modelo con tildes');
+    assert.strictEqual(isAbstentionAnswer('No tengo información al respecto.'), true);
+    assert.strictEqual(isAbstentionAnswer(''), true, 'respuesta vacía');
+    assert.strictEqual(isAbstentionAnswer('   '), true, 'respuesta en blanco');
+    assert.strictEqual(isAbstentionAnswer('La arquitectura hexagonal usa puertos y adaptadores.'), false, 'respuesta con contenido no es abstención');
+});
+
+test('#358/UJ-22: la abstención sin contexto expone abstained=true en la metadata y el done del SSE', async () => {
+    // Sin contexto: querySimilar no devuelve ningún match.
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter) => {
+        if (filter?.materialType?.$eq === 'verified-answer') return [];
+        return [];
+    });
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = {
+        json: async () => ({
+            question: 'que dice el material sobre la preparacion de milanesas a caballo?',
+            subjectId: 'materia1',
+            classIds: ['class1'],
+            stream: true,
+        }),
+        user: { id: 'test-user' },
+        headers: { get: () => 'test-header' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let allText = '';
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        allText += decoder.decode(value);
+    }
+
+    assert.ok(allText.includes('"abstained":true'), 'el SSE debe exponer abstained=true');
+    assert.ok(allText.includes('No encontre informacion sobre eso en los materiales seleccionados.'), 'debe enviar el rechazo canónico');
+
+    // Restaurar el mock por defecto para los tests que sigan.
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter) => {
+        if (filter?.materialType?.$eq === 'verified-answer') return [];
+        return [
+            {
+                score: 0.9,
+                metadata: {
+                    sourceFilename: 'clase1.pdf',
+                    text: 'Context text',
+                    materialType: 'pdf',
+                    classIds: ['class1'],
+                    chunkIndex: 0,
+                },
+            },
+        ];
+    });
+});
+
+test('#358/UJ-22: el rechazo redactado por el modelo expone abstained=true en el done del SSE', async () => {
+    openaiMocks.generateEmbedding.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.mockImplementation(async (messages, stream) => {
+        if (!stream) return { content: 'sync', usage: { total_tokens: 10 } };
+        return (async function* () {
+            yield { choices: [{ delta: { content: 'No encontré información ' } }] };
+            yield { choices: [{ delta: { content: 'sobre eso en los materiales seleccionados.' } }] };
+            yield { usage: { prompt_tokens: 5, completion_tokens: 5, total_tokens: 10 } };
+        })();
+    });
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = {
+        json: async () => ({
+            question: 'que es el patron SAGA en detalle?',
+            subjectId: 'materia1',
+            classIds: ['class1'],
+            stream: true,
+        }),
+        user: { id: 'test-user' },
+        headers: { get: () => 'test-header' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let allText = '';
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        allText += decoder.decode(value);
+    }
+
+    assert.ok(allText.includes('"abstained":true'), 'el done debe exponer abstained=true para un rechazo del modelo');
+});
+
