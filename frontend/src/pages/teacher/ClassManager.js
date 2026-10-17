@@ -84,7 +84,10 @@ export async function renderClassManager(container) {
         return;
     }
     try {
-        let classes = await api.getClasses(subjectId);
+        // fix #500: strict read. A failed read of the encounter sequence must be
+        // declared, never drawn as "No hay clases creadas" (nor as the stale
+        // local cache from a previous read).
+        let classes = await api.getClasses(subjectId, { strict: true });
         let pendingCellHighlight = null;
         let students = [];
         let subjectStudents = [];
@@ -677,6 +680,14 @@ export async function renderClassManager(container) {
         render();
     } catch (e) {
         console.error(e);
-        container.innerHTML = `<div class="empty-state">Ocurrió un error cargando las clases.</div>`;
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">⚠️</div>
+                <h3>No se pudieron leer los encuentros</h3>
+                <p>La lectura de los encuentros de esta unidad falló. No se muestran datos para no afirmar una secuencia de encuentros que no se pudo leer.</p>
+                <button id="btn-retry-classes" class="btn btn-primary" style="margin-top:12px;">Reintentar</button>
+            </div>
+        `;
+        container.querySelector('#btn-retry-classes')?.addEventListener('click', () => renderClassManager(container));
     }
 }
