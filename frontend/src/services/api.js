@@ -80,7 +80,7 @@ import {
     resolveGradeDispute,
 } from './corrections.api.js';
 import {
-    getPromptTypes, getPromptVersions, getActivePrompt,
+    getPromptTypes, getPromptVersions, getActivePrompt, getAvailablePromptVersions,
     createPromptVersion, updatePromptVersion,
     activatePromptVersion, deletePromptVersion
 } from './prompts.api.js';
@@ -152,7 +152,7 @@ export const api = {
     rejectTranscriptionSuggestion,
     getStudentReports, submitGradeDispute, getGradeDisputes, resolveGradeDispute,
 
-    getPromptTypes, getPromptVersions, getActivePrompt,
+    getPromptTypes, getPromptVersions, getActivePrompt, getAvailablePromptVersions,
     createPromptVersion, updatePromptVersion,
     activatePromptVersion, deletePromptVersion,
 
