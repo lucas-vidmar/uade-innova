@@ -88,6 +88,7 @@ const {
   saveConversation,
   upsertEnrollment,
   getEnrollment,
+  deactivateEnrollmentsForUser,
 } = await import('./state-store.js');
 
 test('state-store writes and queries material entities', async () => {
@@ -224,6 +225,34 @@ test('state-store lists all conversations and enrollments across partitions', as
   await upsertEnrollment({ subjectId: 's2', userId: 'u2', role: 'student' });
   assert.strictEqual((await listAllEnrollments()).length, 2);
   assert.ok((await getEnrollment('s1', 'u1')).role === 'student');
+});
+
+test('deactivateEnrollmentsForUser retira sólo las matrículas activas de esa persona (UJ-52 paso 4)', async () => {
+  tableData.Enrollments = [];
+
+  await upsertEnrollment({ subjectId: 'sub-a', userId: 'alu-x', role: 'student', status: 'active' });
+  await upsertEnrollment({ subjectId: 'sub-b', userId: 'alu-x', role: 'teacher', status: 'active' });
+  await upsertEnrollment({ subjectId: 'sub-c', userId: 'alu-x', role: 'student', status: 'disabled' });
+  await upsertEnrollment({ subjectId: 'sub-a', userId: 'alu-y', role: 'student', status: 'active' });
+
+  const retired = await deactivateEnrollmentsForUser('alu-x');
+  assert.strictEqual(retired.count, 2);
+  assert.deepStrictEqual(retired.subjects.slice().sort(), ['sub-a', 'sub-b']);
+
+  // Se retiran sin borrarse: la fila conserva dueño, rol y fecha de alta.
+  const subA = await getEnrollment('sub-a', 'alu-x');
+  assert.strictEqual(subA.status, 'disabled');
+  assert.strictEqual(subA.role, 'student');
+  assert.ok(subA.enrolledAt);
+  assert.strictEqual((await getEnrollment('sub-b', 'alu-x')).status, 'disabled');
+  // La que ya estaba retirada no se cuenta dos veces.
+  assert.strictEqual((await getEnrollment('sub-c', 'alu-x')).status, 'disabled');
+  // Y no toca los permisos de otra persona.
+  assert.strictEqual((await getEnrollment('sub-a', 'alu-y')).status, 'active');
+
+  // Idempotente: una segunda pasada no retira nada más.
+  assert.strictEqual((await deactivateEnrollmentsForUser('alu-x')).count, 0);
+  assert.deepStrictEqual(await deactivateEnrollmentsForUser(''), { count: 0, subjects: [] });
 });
 
 test('state-store lists and deletes user profiles by rowKey', async () => {

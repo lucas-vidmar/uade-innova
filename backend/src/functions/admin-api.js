@@ -14,6 +14,7 @@ import {
 } from '../services/users-store.js';
 import { deleteSessionsForUser } from '../services/sessions-store.js';
 import { recordIdentityChange, listIdentityChanges } from '../services/identity-audit-store.js';
+import { deactivateEnrollmentsForUser } from '../services/state-store.js';
 import { CONFIG } from '../services/config.js';
 import { structuredErrorResponse, ErrorCategory } from '../services/error-categories.js';
 
@@ -198,6 +199,13 @@ app.http('admin-update-user', {
     try {
       const before = await getUserById(id);
       const updated = await updateUser(id, body || {});
+      // UJ-52 paso 4: deshabilitar la identidad tiene que retirar también sus
+      // permisos, no sólo su credencial. Una matrícula que sigue `active`
+      // deja a la persona que ya no entra figurando como tenedora del permiso.
+      let revokedEnrollments = null;
+      if (updated?.status === 'disabled') {
+        revokedEnrollments = await deactivateEnrollmentsForUser(id);
+      }
       // UJ-52 paso 9: la constancia dice quién, cuándo, por qué y con qué
       // alcance (el estado anterior y el nuevo), no sólo que «se actualizó».
       const action = updated?.status === 'disabled'
@@ -213,8 +221,8 @@ app.http('admin-update-user', {
         after: { role: updated?.role, status: updated?.status },
         scope: action === 'disable' ? { access: 'cerrado' } : null,
       });
-      context.log(`[AdminAPI] User updated: ${updated.userId} (${action})`);
-      return jsonResponse(200, { success: true, data: updated, constancia });
+      context.log(`[AdminAPI] User updated: ${updated.userId} (${action}); permisos retirados: ${revokedEnrollments?.count ?? 0}`);
+      return jsonResponse(200, { success: true, data: updated, constancia, revokedEnrollments });
     } catch (err) {
       return errorResponse(err);
     }
@@ -246,6 +254,8 @@ app.http('admin-delete-user', {
       }
       // Revoke all sessions so a deleted account cannot keep using tokens.
       await deleteSessionsForUser(id);
+      // UJ-52 paso 4: borrar la identidad también retira sus permisos.
+      const revokedEnrollments = await deactivateEnrollmentsForUser(id);
       // UJ-52 paso 9: la baja queda asentada con fecha, quién la hizo y motivo.
       const constancia = await recordIdentityChange({
         ...actorOf(context),
@@ -257,8 +267,8 @@ app.http('admin-delete-user', {
         after: { status: 'deleted' },
         scope: { access: 'cerrado', sessions: 'revocadas' },
       });
-      context.log(`[AdminAPI] User deleted: ${id}`);
-      return jsonResponse(200, { success: true, data: { deleted: true }, constancia });
+      context.log(`[AdminAPI] User deleted: ${id}; permisos retirados: ${revokedEnrollments.count}`);
+      return jsonResponse(200, { success: true, data: { deleted: true }, constancia, revokedEnrollments });
     } catch (err) {
       return errorResponse(err);
     }

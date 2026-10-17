@@ -43,6 +43,16 @@ function escapeHtml(value = '') {
         .replace(/'/g, '&#39;');
 }
 
+/**
+ * Permisos vigentes de la fila (UJ-52 pasos 2 y 3): las materias en las que la
+ * persona figura con matrícula activa. Es lo que el corte va a dejar sin dueño.
+ */
+function activePermissionsFor(user) {
+    return (user?.enrollments || [])
+        .filter((e) => e && e.status === 'active')
+        .map((e) => e.subjectId);
+}
+
 function openCreateUserModal() {
     return new Promise((resolve) => {
         const overlay = document.createElement('div');
@@ -356,15 +366,23 @@ export async function renderUserManagement(container) {
                 if (!user) return;
                 const confirmed = await showConfirmDialog({
                     title: 'Eliminar usuario',
-                    message: `¿Seguro que querés eliminar a "${user.name || user.id}"? Se revocarán sus sesiones y no podrá volver a ingresar.`,
+                    message: `¿Seguro que querés eliminar a "${user.name || user.id}"? Se revocarán sus sesiones y no podrá volver a ingresar.${
+                        activePermissionsFor(user).length > 0
+                            ? ` También se retiran sus permisos activos (${activePermissionsFor(user).length}): ${activePermissionsFor(user).join(', ')}.`
+                            : ''
+                    }`,
                     confirmText: 'Eliminar',
                     cancelText: 'Cancelar',
                     danger: true,
                 });
                 if (!confirmed) return;
                 try {
-                    await api.deleteAdminUser(user.id);
-                    toast('success', 'Usuario eliminado', 'El usuario fue eliminado y sus sesiones revocadas.');
+                    const result = await api.deleteAdminUser(user.id);
+                    const retired = result?.revokedEnrollments?.count || 0;
+                    toast('success', 'Usuario eliminado',
+                        retired > 0
+                            ? `El usuario fue eliminado, sus sesiones revocadas y ${retired} permiso${retired === 1 ? '' : 's'} retirado${retired === 1 ? '' : 's'}.`
+                            : 'El usuario fue eliminado y sus sesiones revocadas.');
                     await refresh();
                 } catch (err) {
                     toast('error', 'Error', err?.message || 'No se pudo eliminar el usuario.');
@@ -654,6 +672,7 @@ export async function renderUserManagement(container) {
                                 <option value="active" ${user.status !== 'disabled' ? 'selected' : ''}>Activo</option>
                                 <option value="disabled" ${user.status === 'disabled' ? 'selected' : ''}>Deshabilitado</option>
                             </select>
+                            <p id="eu-permissions-hint" class="text-secondary" style="font-size:0.8rem;margin:6px 0 0;display:none;"></p>
                         </div>
                         <div class="form-group" style="margin:0" id="eu-reason-group">
                             <label class="form-label" for="eu-reason">Motivo del corte</label>
@@ -679,12 +698,26 @@ export async function renderUserManagement(container) {
         // asentado; para un cambio que no corta, el campo no aplica.
         const statusSelect = overlay.querySelector('#eu-status');
         const reasonGroup = overlay.querySelector('#eu-reason-group');
+        // UJ-52 paso 2/3: antes de cortar, quien opera tiene que ver qué
+        // permisos activos van a quedar sin dueño con el corte. La lista sale de
+        // las matrículas ya cargadas para la fila, no de una suposición.
+        const permissionsHint = overlay.querySelector('#eu-permissions-hint');
+        const activePermissions = activePermissionsFor(user);
         const syncReasonGroup = () => {
             const cortando = statusSelect.value === 'disabled';
             reasonGroup.style.display = cortando ? '' : 'none';
         };
-        statusSelect?.addEventListener('change', syncReasonGroup);
+        const syncPermissionsHint = () => {
+            if (statusSelect.value !== 'disabled' || activePermissions.length === 0) {
+                permissionsHint.style.display = 'none';
+                return;
+            }
+            permissionsHint.textContent = `Al deshabilitar, se retiran sus permisos activos (${activePermissions.length}): ${activePermissions.join(', ')}. Reasigná lo que no pueda quedar sin responsable.`;
+            permissionsHint.style.display = 'block';
+        };
+        statusSelect?.addEventListener('change', () => { syncReasonGroup(); syncPermissionsHint(); });
         syncReasonGroup();
+        syncPermissionsHint();
 
         overlay.querySelector('.edit-user-close')?.addEventListener('click', close);
         overlay.querySelector('.edit-user-cancel')?.addEventListener('click', close);
@@ -707,12 +740,15 @@ export async function renderUserManagement(container) {
             saveBtn.disabled = true;
             saveBtn.textContent = 'Guardando...';
             try {
-                await api.updateAdminUser(user.id, payload);
+                const result = await api.updateAdminUser(user.id, payload);
                 close();
+                const retired = result?.revokedEnrollments?.count || 0;
                 toast('success', 'Usuario actualizado',
-                    payload.status === 'disabled'
-                        ? 'Los cambios se guardaron y el corte quedó asentado en la constancia.'
-                        : 'Los cambios se guardaron correctamente.');
+                    retired > 0
+                        ? `Los cambios se guardaron y se retiraron ${retired} permiso${retired === 1 ? '' : 's'} activo${retired === 1 ? '' : 's'}.`
+                        : (payload.status === 'disabled'
+                            ? 'Los cambios se guardaron y el corte quedó asentado en la constancia.'
+                            : 'Los cambios se guardaron correctamente.'));
                 await onSaved();
             } catch (err) {
                 showError(err?.message || 'No se pudo guardar los cambios.');

@@ -62,6 +62,10 @@ const identityAuditMocks = {
   listIdentityChanges: mock.fn(async () => []),
 };
 mock.module('../services/identity-audit-store.js', { namedExports: identityAuditMocks });
+const stateStoreMocks = {
+  deactivateEnrollmentsForUser: mock.fn(async () => ({ count: 0, subjects: [] })),
+};
+mock.module('../services/state-store.js', { namedExports: stateStoreMocks });
 
 await import('./admin-api.js');
 
@@ -96,6 +100,8 @@ beforeEach(() => {
   identityAuditMocks.listIdentityChanges.mock.mockImplementation(async () => []);
   usersStoreMocks.getUserById.mock.resetCalls();
   usersStoreMocks.getUserById.mock.mockImplementation(async () => null);
+  stateStoreMocks.deactivateEnrollmentsForUser.mock.resetCalls();
+  stateStoreMocks.deactivateEnrollmentsForUser.mock.mockImplementation(async () => ({ count: 0, subjects: [] }));
 });
 
 test('ADMIN_LIST_USERS — returns users with lowercase roles from the Users table', async () => {
@@ -321,6 +327,51 @@ test('ADMIN_IDENTITY_AUDIT_SIN_USER — sin userId => 400', async () => {
   req.query = { get: () => null };
   const res = await handlers['admin-identity-audit'](req, makeContext());
   assert.equal(res.status, 400);
+});
+
+test('ADMIN_DISABLE_USER_RETIRES_PERMISSIONS — UJ-52: deshabilitar retira las matrículas activas', async () => {
+  usersStoreMocks.updateUser.mock.mockImplementation(async (id, updates) => ({
+    userId: id, name: 'Alumno', surname: 'Uno', email: 'alu001@uade.edu.ar',
+    role: 'student', status: updates.status || 'active',
+  }));
+  stateStoreMocks.deactivateEnrollmentsForUser.mock.mockImplementation(async () => ({ count: 2, subjects: ['arq-software-2026', 'dasi-1c2023'] }));
+
+  const res = await handlers['admin-update-user'](
+    makeRequest({ body: { status: 'disabled' }, params: { id: 'alu-001' } }), makeContext()
+  );
+  assert.equal(res.status, 200);
+  const body = JSON.parse(res.body);
+  assert.equal(body.revokedEnrollments.count, 2);
+  assert.deepEqual(body.revokedEnrollments.subjects, ['arq-software-2026', 'dasi-1c2023']);
+  assert.equal(stateStoreMocks.deactivateEnrollmentsForUser.mock.callCount(), 1);
+  assert.equal(stateStoreMocks.deactivateEnrollmentsForUser.mock.calls[0].arguments[0], 'alu-001');
+});
+
+test('ADMIN_UPDATE_ACTIVE_USER_KEEPS_PERMISSIONS — sólo el corte retira permisos', async () => {
+  usersStoreMocks.updateUser.mock.mockImplementation(async (id, updates) => ({
+    userId: id, name: 'Alumno', surname: 'Uno', email: 'alu001@uade.edu.ar',
+    role: 'student', status: updates.status || 'active',
+  }));
+  const res = await handlers['admin-update-user'](
+    makeRequest({ body: { name: 'Otro Nombre' }, params: { id: 'alu-001' } }), makeContext()
+  );
+  assert.equal(res.status, 200);
+  const body = JSON.parse(res.body);
+  assert.equal(body.revokedEnrollments, null);
+  assert.equal(stateStoreMocks.deactivateEnrollmentsForUser.mock.callCount(), 0);
+});
+
+test('ADMIN_DELETE_USER_RETIRES_PERMISSIONS — UJ-52: borrar la identidad retira sus matrículas', async () => {
+  usersStoreMocks.deleteUser.mock.mockImplementation(async () => true);
+  stateStoreMocks.deactivateEnrollmentsForUser.mock.mockImplementation(async () => ({ count: 1, subjects: ['arq-software-2026'] }));
+
+  const res = await handlers['admin-delete-user'](makeRequest({ params: { id: 'alu-001' } }), makeContext());
+  assert.equal(res.status, 200);
+  const body = JSON.parse(res.body);
+  assert.equal(body.data.deleted, true);
+  assert.equal(body.revokedEnrollments.count, 1);
+  assert.equal(stateStoreMocks.deactivateEnrollmentsForUser.mock.callCount(), 1);
+  assert.equal(stateStoreMocks.deactivateEnrollmentsForUser.mock.calls[0].arguments[0], 'alu-001');
 });
 
 test('ADMIN_RESET_PASSWORD — resets password, sets mustChangePassword, revokes target sessions', async () => {
