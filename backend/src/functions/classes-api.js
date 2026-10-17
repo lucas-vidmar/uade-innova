@@ -1405,7 +1405,19 @@ app.http('get-class-summary', {
         try {
             const summaryData = await loadSubjectScopedAsset(CONTAINER_SUMMARIES, subjectId, classId);
             // Retornamos 200 con { summary: null } en lugar de 404 para evitar que el frontend rompa
-            if (!summaryData) return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, subjectId, summary: null, publicationState: 'borrador' }) };
+            // #507 (residual): un derivado AUSENTE tampoco puede contradecir a su clase. Antes esta
+            // rama devolvía `publicationState: 'borrador'` fijo, sin mirar la clase: una clase
+            // `publicado` sin resumen generado (fila legada con `summaryReady: true` y sin activo)
+            // mostraba «✅ Publicado» junto a «resumen 📝 Borrador» en el editor del docente. El
+            // contrato de `class-publication.js` es que el derivado comparte el estado de su clase,
+            // así que sin activo propio se informa el de la clase (el contenido sigue en null).
+            if (!summaryData) {
+                const publicationState = await resolveDerivedPublicationState(subjectId, classId, null);
+                if (!isTeachingPrincipal(parseClientPrincipal(request)) && !isPublished(publicationState)) {
+                    return scopedAssetResponse(200, { classId, subjectId, summary: null, publicationState, hidden: true });
+                }
+                return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, subjectId, summary: null, publicationState }) };
+            }
             const publicationState = await resolveDerivedPublicationState(subjectId, classId, summaryData);
             // #428: mientras la clase no esté publicada el alumnado no ve el
             // contenido. El docente sí, para poder revisarlo.
@@ -1438,7 +1450,15 @@ app.http('get-class-map', {
         const CONTAINER_MAPS = 'class-maps';
         try {
             const mapData = await loadSubjectScopedAsset(CONTAINER_MAPS, subjectId, classId);
-            if (!mapData) return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, subjectId, mapCode: null, publicationState: 'borrador' }) };
+            // #507 (residual): sin activo propio, el mapa informa el estado de su clase (ver el
+            // comentario del mismo caso en `get-class-summary`).
+            if (!mapData) {
+                const publicationState = await resolveDerivedPublicationState(subjectId, classId, null);
+                if (!isTeachingPrincipal(parseClientPrincipal(request)) && !isPublished(publicationState)) {
+                    return scopedAssetResponse(200, { classId, subjectId, mapCode: null, publicationState, hidden: true });
+                }
+                return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, subjectId, mapCode: null, publicationState }) };
+            }
             const publicationState = await resolveDerivedPublicationState(subjectId, classId, mapData);
             // #428: el mapa comparte el estado de la clase; sin publicar no llega al alumnado.
             if (!isTeachingPrincipal(parseClientPrincipal(request)) && !isPublished(publicationState)) {
@@ -1516,7 +1536,15 @@ app.http('get-class-audio-script', {
         if (denied) return denied;
         try {
             const scriptData = await loadSubjectScopedAsset('class-audio-scripts', subjectId, classId);
-            if (!scriptData) return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, subjectId, script: null, publicationState: 'borrador' }) };
+            // #507 (residual): sin guión propio, el podcast informa el estado de su clase (ver el
+            // comentario del mismo caso en `get-class-summary`).
+            if (!scriptData) {
+                const publicationState = await resolveDerivedPublicationState(subjectId, classId, null);
+                if (!isTeachingPrincipal(parseClientPrincipal(request)) && !isPublished(publicationState)) {
+                    return scopedAssetResponse(200, { classId, subjectId, script: null, validated: false, publicationState, hidden: true });
+                }
+                return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, subjectId, script: null, publicationState }) };
+            }
             const publicationState = await resolveDerivedPublicationState(subjectId, classId, scriptData);
             // #428: el guión de podcast comparte el estado de publicación de la clase,
             // así que sin publicar no llega al alumnado (el docente sí lo revisa).
