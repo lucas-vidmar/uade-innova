@@ -231,6 +231,34 @@ test('fetchVectorsByIds reports missingIds for IDs absent from Pinecone', async 
     assert.deepStrictEqual(result.missingIds, ['vec-2', 'vec-3']);
 });
 
+test('fetchVectorsByIds pide por lotes y ninguna URL se pasa de largo (#547)', async () => {
+    fetchMock.mock.resetCalls();
+    // Identificadores del tamaño real de la unidad (478 chunks en el piloto).
+    const ids = Array.from({ length: 120 }, (_, i) => `material-00000000-1111-2222-3333-444444444444-chunk-${i}`);
+    fetchMock.mock.mockImplementation(async (url) => {
+        const pedidos = new URL(String(url)).searchParams.getAll('ids');
+        return {
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify({
+                vectors: Object.fromEntries(pedidos.map((id) => [id, { id, values: [0.1], metadata: { subjectId: 'subj-1' } }])),
+            }),
+        };
+    });
+
+    const result = await fetchVectorsByIds(ids);
+
+    // Un lote por cada 50 identificadores, y ninguna URL cerca del limite que
+    // hizo responder 414 al indice del piloto.
+    assert.strictEqual(fetchMock.mock.callCount(), 3);
+    for (const [url] of fetchMock.mock.calls.map((c) => c.arguments)) {
+        assert.strictEqual(String(url).length < 4096, true, `URL de ${String(url).length} caracteres`);
+        assert.strictEqual(new URL(String(url)).searchParams.getAll('ids').length <= 50, true);
+    }
+    assert.strictEqual(result.vectors.length, 120);
+    assert.deepStrictEqual(result.missingIds, []);
+});
+
 test('fetchVectorsByIds returns empty vectors and missingIds for empty/no ids', async () => {
     fetchMock.mock.resetCalls();
 

@@ -517,22 +517,42 @@ export async function fetchVectorsByIds(ids, options = {}, deps = {}) {
     }
 
     const namespace = options.namespace || getNamespace();
-    const queryParams = { ids: validIds.map(String) };
-    if (namespace) queryParams.namespace = namespace;
 
-    console.log(`[VectorStore] Fetching ${validIds.length} vectors by ID...`);
+    // #547/UJ-56: `fetch` de Pinecone es GET y sus ids viajan en el query string.
+    // Con la unidad completa (478 chunks de ~45 caracteres) la URL pasaba los
+    // ~24 KB y el indice contestaba 414 URI Too Long, asi que la superficie de
+    // inspeccion respondia 500 y nadie podia comprobar que un borrado hubiera
+    // alcanzado el indice. Se pide por lotes para que ninguna URL se acerque al
+    // limite; el resultado se une y los ausentes se calculan sobre el total.
+    const LOTE = 50;
+    const lotes = [];
+    for (let i = 0; i < validIds.length; i += LOTE) {
+        lotes.push(validIds.slice(i, i + LOTE));
+    }
+
+    console.log(`[VectorStore] Fetching ${validIds.length} vectors by ID (${lotes.length} lote/s)...`);
 
     return withVectorTelemetry(deps, 'vector.fetch', 'RETRIEVAL_FETCH_FAILED', async () => {
-        const response = await rawPineconeRequest('/vectors/fetch', { method: 'GET', queryParams });
+        const vectors = [];
+        const foundIds = new Set();
 
-        const vectorsObj = response?.vectors || {};
-        const vectors = Object.entries(vectorsObj).map(([id, data]) => ({
-            id: id || data?.id,
-            values: data?.values || [],
-            metadata: normalizeMetadata(data?.metadata),
-        }));
+        for (const lote of lotes) {
+            const queryParams = { ids: lote.map(String) };
+            if (namespace) queryParams.namespace = namespace;
 
-        const foundIds = new Set(Object.keys(vectorsObj).map(id => String(id)));
+            const response = await rawPineconeRequest('/vectors/fetch', { method: 'GET', queryParams });
+
+            const vectorsObj = response?.vectors || {};
+            for (const [id, data] of Object.entries(vectorsObj)) {
+                foundIds.add(String(id));
+                vectors.push({
+                    id: id || data?.id,
+                    values: data?.values || [],
+                    metadata: normalizeMetadata(data?.metadata),
+                });
+            }
+        }
+
         const missingIds = validIds.map(String).filter(id => !foundIds.has(id));
 
         return { vectors, missingIds };
