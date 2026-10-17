@@ -53,6 +53,21 @@ function scopedAssetResponse(status, payload) {
     return { status, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) };
 }
 
+// ── #498: estado de publicación de un derivado ───────────────────────
+// Un derivado (resumen, mapa, guión) comparte el estado de su clase: el docente
+// decide una vez y el alumnado ve exactamente eso (`class-publication.js`). Las
+// filas anteriores a #428 pueden tener el derivado sin `publicationState`
+// explícito mientras la clase ya está publicada; ahí el derivado caía a
+// `borrador` y la alumna abría una clase publicada sin su resumen. Cuando el
+// derivado no trae estado propio, manda el de la clase; si trae uno explícito
+// (borrador de una regeneración, por ejemplo), se respeta.
+async function resolveDerivedPublicationState(subjectId, classId, asset) {
+    const assetState = resolveAssetPublicationState(asset);
+    if (isPublicationState(asset?.publicationState)) return assetState;
+    const classData = await loadClassData(subjectId, classId).catch(() => null);
+    return classData ? resolveClassPublicationState(classData) : assetState;
+}
+
 async function requireAssetSubjectAccess(request, context, subjectId) {
     const principal = parseClientPrincipal(request);
     const roles = principal?.userRoles || [];
@@ -1363,7 +1378,7 @@ app.http('get-class-summary', {
             const summaryData = await loadSubjectScopedAsset(CONTAINER_SUMMARIES, subjectId, classId);
             // Retornamos 200 con { summary: null } en lugar de 404 para evitar que el frontend rompa
             if (!summaryData) return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, subjectId, summary: null, publicationState: 'borrador' }) };
-            const publicationState = resolveAssetPublicationState(summaryData);
+            const publicationState = await resolveDerivedPublicationState(subjectId, classId, summaryData);
             // #428: mientras la clase no esté publicada el alumnado no ve el
             // contenido. El docente sí, para poder revisarlo.
             if (!isTeachingPrincipal(parseClientPrincipal(request)) && !isPublished(publicationState)) {
@@ -1396,7 +1411,7 @@ app.http('get-class-map', {
         try {
             const mapData = await loadSubjectScopedAsset(CONTAINER_MAPS, subjectId, classId);
             if (!mapData) return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, subjectId, mapCode: null, publicationState: 'borrador' }) };
-            const publicationState = resolveAssetPublicationState(mapData);
+            const publicationState = await resolveDerivedPublicationState(subjectId, classId, mapData);
             // #428: el mapa comparte el estado de la clase; sin publicar no llega al alumnado.
             if (!isTeachingPrincipal(parseClientPrincipal(request)) && !isPublished(publicationState)) {
                 return scopedAssetResponse(200, { classId, subjectId, mapCode: null, publicationState, hidden: true });
@@ -1474,7 +1489,7 @@ app.http('get-class-audio-script', {
         try {
             const scriptData = await loadSubjectScopedAsset('class-audio-scripts', subjectId, classId);
             if (!scriptData) return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, subjectId, script: null, publicationState: 'borrador' }) };
-            const publicationState = resolveAssetPublicationState(scriptData);
+            const publicationState = await resolveDerivedPublicationState(subjectId, classId, scriptData);
             // #428: el guión de podcast comparte el estado de publicación de la clase,
             // así que sin publicar no llega al alumnado (el docente sí lo revisa).
             if (!isTeachingPrincipal(parseClientPrincipal(request)) && !isPublished(publicationState)) {
