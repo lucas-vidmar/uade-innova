@@ -1449,6 +1449,118 @@ test('#498: un derivado con estado explícito en borrador se respeta aunque la c
     }
 });
 
+// #498 (residual): una fila de derivado VACÍA (placeholder legado: contenido en
+// null, sin generación ni autor) no es un borrador deliberado — no hay contenido
+// que proteger — y su `publicationState: "borrador"` dejaba a la clase publicada
+// contradicha para siempre (el docente veía «✅ Publicado» y «resumen 📝 Borrador»
+// en la misma pantalla). El estado de la clase manda.
+test('#498 residual: un derivado vacío no contradice a su clase publicada (resumen)', async () => {
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+    const restoreLoadJson = storageMocks.loadJson.mock.mockImplementation;
+    const restoreEnrollment = stateStoreMocks.getEnrollment.mock.mockImplementation;
+    storageMocks.loadJson.mock.mockImplementation(async (container, blob) => {
+        if (container === 'class-summaries' && blob === 'arq-software-2026/class-02.json') {
+            // Placeholder legado: sin contenido y con estado explícito en borrador.
+            return { classId: 'class-02', subjectId: 'arq-software-2026', summary: null, publicationState: 'borrador' };
+        }
+        if (container === 'classes-config' && blob === 'arq-software-2026.json') {
+            return [{ id: 'class-02', title: 'Clase 2', publicationState: 'publicado', summaryReady: true }];
+        }
+        return null;
+    });
+    stateStoreMocks.getEnrollment.mock.mockImplementation(async () => ({ status: 'active', role: 'student' }));
+    const request = {
+        params: { classId: 'class-02' },
+        query: { get: (key) => (key === 'subjectId' ? 'arq-software-2026' : null) },
+    };
+
+    try {
+        authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Estudiante'], userId: 'alu-005' }));
+        const asStudent = await handlers['get-class-summary'](request, { log: makeMockLog(), error: mock.fn() });
+        const studentBody = JSON.parse(asStudent.body);
+        assert.strictEqual(asStudent.status, 200);
+        assert.strictEqual(studentBody.publicationState, 'publicado', 'el derivado vacío hereda el estado de su clase');
+        assert.notStrictEqual(studentBody.hidden, true, 'una clase publicada no oculta a su derivado vacío');
+        assert.strictEqual(studentBody.summary, null, 'no se inventa contenido: sigue sin haber resumen');
+    } finally {
+        storageMocks.loadJson.mock.mockImplementation(restoreLoadJson);
+        stateStoreMocks.getEnrollment.mock.mockImplementation(restoreEnrollment);
+        process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+        authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: [] }));
+    }
+});
+
+test('#498 residual: un derivado vacío no contradice a su clase publicada (mapa)', async () => {
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+    const restoreLoadJson = storageMocks.loadJson.mock.mockImplementation;
+    const restoreEnrollment = stateStoreMocks.getEnrollment.mock.mockImplementation;
+    storageMocks.loadJson.mock.mockImplementation(async (container, blob) => {
+        if (container === 'class-maps' && blob === 'arq-software-2026/class-02.json') {
+            return { classId: 'class-02', subjectId: 'arq-software-2026', mapCode: null, publicationState: 'borrador' };
+        }
+        if (container === 'classes-config' && blob === 'arq-software-2026.json') {
+            return [{ id: 'class-02', title: 'Clase 2', publicationState: 'publicado', summaryReady: true }];
+        }
+        return null;
+    });
+    stateStoreMocks.getEnrollment.mock.mockImplementation(async () => ({ status: 'active', role: 'student' }));
+    const request = {
+        params: { classId: 'class-02' },
+        query: { get: (key) => (key === 'subjectId' ? 'arq-software-2026' : null) },
+    };
+
+    try {
+        authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Estudiante'], userId: 'alu-005' }));
+        const asStudent = await handlers['get-class-map'](request, { log: makeMockLog(), error: mock.fn() });
+        const studentBody = JSON.parse(asStudent.body);
+        assert.strictEqual(asStudent.status, 200);
+        assert.strictEqual(studentBody.publicationState, 'publicado', 'el mapa vacío hereda el estado de su clase');
+        assert.notStrictEqual(studentBody.hidden, true, 'una clase publicada no oculta su mapa vacío');
+    } finally {
+        storageMocks.loadJson.mock.mockImplementation(restoreLoadJson);
+        stateStoreMocks.getEnrollment.mock.mockImplementation(restoreEnrollment);
+        process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+        authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: [] }));
+    }
+});
+
+test('#498 residual: un derivado CON contenido y estado explícito en borrador sigue respetándose', async () => {
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+    const restoreLoadJson = storageMocks.loadJson.mock.mockImplementation;
+    const restoreEnrollment = stateStoreMocks.getEnrollment.mock.mockImplementation;
+    storageMocks.loadJson.mock.mockImplementation(async (container, blob) => {
+        if (container === 'class-summaries' && blob === 'arq-software-2026/class-02.json') {
+            return { classId: 'class-02', subjectId: 'arq-software-2026', summary: '# Borrador en curso', publicationState: 'borrador', validated: false };
+        }
+        if (container === 'classes-config' && blob === 'arq-software-2026.json') {
+            return [{ id: 'class-02', title: 'Clase 2', publicationState: 'publicado', summaryReady: true }];
+        }
+        return null;
+    });
+    stateStoreMocks.getEnrollment.mock.mockImplementation(async () => ({ status: 'active', role: 'student' }));
+    const request = {
+        params: { classId: 'class-02' },
+        query: { get: (key) => (key === 'subjectId' ? 'arq-software-2026' : null) },
+    };
+
+    try {
+        authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Estudiante'], userId: 'alu-005' }));
+        const asStudent = await handlers['get-class-summary'](request, { log: makeMockLog(), error: mock.fn() });
+        const studentBody = JSON.parse(asStudent.body);
+        assert.strictEqual(asStudent.status, 200);
+        assert.strictEqual(studentBody.publicationState, 'borrador', 'el borrador explícito con contenido manda');
+        assert.strictEqual(studentBody.summary, null, 'el borrador explícito con contenido sigue oculto para el alumnado');
+    } finally {
+        storageMocks.loadJson.mock.mockImplementation(restoreLoadJson);
+        stateStoreMocks.getEnrollment.mock.mockImplementation(restoreEnrollment);
+        process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+        authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: [] }));
+    }
+});
+
 test('#428: guardar la lista de clases no puede publicar ni retirar por su cuenta', async () => {
     authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'], userId: 'prof-001', userDetails: 'prof01@uade.edu.ar' }));
     const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
