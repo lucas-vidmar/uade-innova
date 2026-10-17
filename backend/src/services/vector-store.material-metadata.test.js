@@ -21,9 +21,10 @@ function jsonResponse(body) {
 
 before(() => {
     global.fetch = mock.fn(async (url, init) => {
-        const path = new URL(url).pathname;
+        const parsedUrl = new URL(url);
+        const path = parsedUrl.pathname;
         const payload = init?.body ? JSON.parse(init.body) : null;
-        calls.push({ path, payload });
+        calls.push({ path, payload, method: init?.method || 'GET', query: parsedUrl.searchParams });
 
         if (path === '/vectors/list') {
             return jsonResponse({ vectors: [{ id: 'mat-9-chunk-0' }, { id: 'mat-9-chunk-1' }], pagination: {} });
@@ -62,7 +63,8 @@ test('reescribe classId y classIds de todos los vectores del material conservand
     }
 
     const list = calls.find(c => c.path === '/vectors/list');
-    assert.strictEqual(list.payload.prefix, 'mat-9-chunk-');
+    assert.strictEqual(list.method, 'GET');
+    assert.strictEqual(list.query.get('prefix'), 'mat-9-chunk-');
 });
 
 test('no toca el índice si no hay metadatos que reescribir', async () => {

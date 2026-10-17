@@ -94,11 +94,60 @@ test('listVectorIds returns vector IDs from Pinecone /vectors/list', async () =>
     assert.strictEqual(fetchMock.mock.callCount(), 1);
     const [url, request] = fetchMock.mock.calls[0].arguments;
     assert.strictEqual(url.includes('/vectors/list'), true);
-    const body = JSON.parse(request.body);
-    assert.strictEqual(body.limit, 100);
+    assert.strictEqual(request.method, 'GET');
+    assert.strictEqual(request.body, undefined);
+    const parsed = new URL(url);
+    assert.strictEqual(parsed.searchParams.get('limit'), '100');
 });
 
-test('listVectorIds passes prefix and paginationToken to payload', async () => {
+// #452/UJ-56: la operación `list` de Pinecone es GET con query params; enviarla
+// como POST con body devolvía una página vacía en el índice real del piloto
+// (scanned=0 con 478 vectores declarados), y toda superficie encima leía "la
+// unidad no tiene nada indexado". Este test fija el contrato HTTP.
+test('listVectorIds issues GET /vectors/list with query params and no JSON body (regression #452)', async () => {
+    fetchMock.mock.resetCalls();
+    fetchMock.mock.mockImplementationOnce(async () => ({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ vectors: [{ id: 'a' }], pagination: {} }),
+    }));
+
+    await listVectorIds({ limit: 10, prefix: 'mat-', paginationToken: 'tok' });
+
+    const [url, request] = fetchMock.mock.calls[0].arguments;
+    assert.strictEqual(request.method, 'GET');
+    assert.strictEqual(request.body, undefined, 'la lista no viaja en el cuerpo');
+    const parsed = new URL(url);
+    assert.strictEqual(parsed.pathname.endsWith('/vectors/list'), true);
+    assert.strictEqual(parsed.searchParams.get('limit'), '10');
+    assert.strictEqual(parsed.searchParams.get('prefix'), 'mat-');
+    assert.strictEqual(parsed.searchParams.get('paginationToken'), 'tok');
+});
+
+test('listAllVectorIds follows pagination using GET query params (regression #452)', async () => {
+    fetchMock.mock.resetCalls();
+    fetchMock.mock.mockImplementation(async (url) => {
+        const token = new URL(url).searchParams.get('paginationToken');
+        const body = token === 'page-2'
+            ? { vectors: [{ id: 'v3' }], pagination: {} }
+            : { vectors: [{ id: 'v1' }, { id: 'v2' }], pagination: { next: 'page-2' } };
+        return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+    });
+
+    const ids = await listAllVectorIds({ prefix: 'mat-' });
+
+    assert.deepStrictEqual(ids, ['v1', 'v2', 'v3']);
+    assert.strictEqual(fetchMock.mock.callCount(), 2);
+    const [, second] = fetchMock.mock.calls[1].arguments;
+    assert.strictEqual(second.method, 'GET');
+    const parsedSecond = new URL(fetchMock.mock.calls[1].arguments[0]);
+    assert.strictEqual(parsedSecond.searchParams.get('paginationToken'), 'page-2');
+
+    // Restaurar la implementación por defecto del archivo.
+    fetchMock.mock.mockImplementation(async () => ({ ok: true, status: 200, text: async () => JSON.stringify({}) }));
+});
+
+test('listVectorIds passes prefix and paginationToken as query params', async () => {
     fetchMock.mock.resetCalls();
     fetchMock.mock.mockImplementationOnce(async () => ({
         ok: true,
@@ -108,11 +157,11 @@ test('listVectorIds passes prefix and paginationToken to payload', async () => {
 
     await listVectorIds({ limit: 50, prefix: 'mat-', paginationToken: 'tok-abc' });
 
-    const [, request] = fetchMock.mock.calls[0].arguments;
-    const body = JSON.parse(request.body);
-    assert.strictEqual(body.limit, 50);
-    assert.strictEqual(body.prefix, 'mat-');
-    assert.strictEqual(body.paginationToken, 'tok-abc');
+    const [url] = fetchMock.mock.calls[0].arguments;
+    const parsed = new URL(url);
+    assert.strictEqual(parsed.searchParams.get('limit'), '50');
+    assert.strictEqual(parsed.searchParams.get('prefix'), 'mat-');
+    assert.strictEqual(parsed.searchParams.get('paginationToken'), 'tok-abc');
 });
 
 test('listVectorIds includes namespace when set', async () => {
@@ -127,9 +176,9 @@ test('listVectorIds includes namespace when set', async () => {
     await listVectorIds({ limit: 100 });
     delete process.env.PINECONE_NAMESPACE;
 
-    const [, request] = fetchMock.mock.calls[0].arguments;
-    const body = JSON.parse(request.body);
-    assert.strictEqual(body.namespace, 'test-ns');
+    const [url] = fetchMock.mock.calls[0].arguments;
+    const parsed = new URL(url);
+    assert.strictEqual(parsed.searchParams.get('namespace'), 'test-ns');
 });
 
 test('fetchVectorsByIds returns vector data and empty missingIds from Pinecone /vectors/fetch', async () => {
