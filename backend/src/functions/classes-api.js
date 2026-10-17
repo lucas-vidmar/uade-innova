@@ -59,11 +59,39 @@ function scopedAssetResponse(status, payload) {
 // filas anteriores a #428 pueden tener el derivado sin `publicationState`
 // explícito mientras la clase ya está publicada; ahí el derivado caía a
 // `borrador` y la alumna abría una clase publicada sin su resumen. Cuando el
-// derivado no trae estado propio, manda el de la clase; si trae uno explícito
-// (borrador de una regeneración, por ejemplo), se respeta.
+// derivado no trae estado propio, manda el de la clase.
+//
+// #498 (residual): la excepción —«si trae uno explícito, se respeta»— existe
+// para no publicar por accidente contenido que está en borrador. Una fila de
+// derivado SIN CONTENIDO (placeholder legado: `summary`/`mapCode`/`script` en
+// null, sin `generatedAt` ni `lastModifiedBy`) no es un borrador deliberado: no
+// hay contenido que proteger y su `publicationState: "borrador"` contradice a su
+// clase para siempre. Ningún escritor actual produce esa combinación (regenerar
+// y guardar espejan el estado de la clase y `applyClassPublicationChange` escribe
+// en todos los derivados), así que esas filas sólo pueden venir de datos
+// anteriores al arreglo y no había forma de reconciliarlas desde el producto
+// (volver a publicar es un no-op cuando la clase ya resuelve `publicado`). Por
+// eso el estado explícito se respeta únicamente cuando el derivado tiene
+// contenido.
+const DERIVED_CONTENT_KEYS = ['summary', 'mapCode', 'script', 'content'];
+
+function derivedHasContent(asset) {
+    const safe = asset || {};
+    return DERIVED_CONTENT_KEYS.some((key) => {
+        const value = safe[key];
+        if (typeof value === 'string') return value.trim().length > 0;
+        if (value && typeof value === 'object') {
+            const inner = value.content;
+            if (typeof inner === 'string') return inner.trim().length > 0;
+            return Object.keys(value).length > 0;
+        }
+        return value !== null && value !== undefined;
+    });
+}
+
 async function resolveDerivedPublicationState(subjectId, classId, asset) {
     const assetState = resolveAssetPublicationState(asset);
-    if (isPublicationState(asset?.publicationState)) return assetState;
+    if (isPublicationState(asset?.publicationState) && derivedHasContent(asset)) return assetState;
     const classData = await loadClassData(subjectId, classId).catch(() => null);
     return classData ? resolveClassPublicationState(classData) : assetState;
 }
