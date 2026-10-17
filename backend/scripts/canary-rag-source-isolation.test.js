@@ -125,14 +125,30 @@ test('queryScope: other non-200 response fails with status and body', async () =
     assert.match(res.detail, /500/);
 });
 
-test('queryScope: bibliography source is exempt from class match but subjectId still enforced', async () => {
+test('queryScope: bibliography outside the class scope fails, in-scope and class-less pass (#399)', async () => {
     const cfg = baseCfg();
-    const passing = stubFetch(async () => jsonResponse(200, { sources: [
-        { subjectId: SUBJECT, materialType: 'bibliography', classIds: ['class-99'], sourceFilename: 'biblio.pdf' },
-    ] }));
-    const okRes = await queryScope(cfg, 'student', passing);
-    assert.strictEqual(okRes.ok, true);
 
+    // En alcance → pasa.
+    const inScope = stubFetch(async () => jsonResponse(200, { sources: [
+        { subjectId: SUBJECT, materialType: 'bibliography', classIds: ['class-01'], sourceFilename: 'biblio-ok.pdf' },
+    ] }));
+    assert.strictEqual((await queryScope(cfg, 'student', inScope)).ok, true);
+
+    // Bibliografía de OTRO encuentro → ahora es la fuga de #399: falla.
+    const foreign = stubFetch(async () => jsonResponse(200, { sources: [
+        { subjectId: SUBJECT, materialType: 'bibliography', classIds: ['class-99'], sourceFilename: 'biblio-otra-clase.pdf' },
+    ] }));
+    const foreignRes = await queryScope(cfg, 'student', foreign);
+    assert.strictEqual(foreignRes.ok, false);
+    assert.match(foreignRes.detail, /does not intersect/);
+
+    // Bibliografía sin clase asignada (legado) → sigue tolerada.
+    const classless = stubFetch(async () => jsonResponse(200, { sources: [
+        { subjectId: SUBJECT, materialType: 'bibliography', sourceFilename: 'biblio-legacy.pdf' },
+    ] }));
+    assert.strictEqual((await queryScope(cfg, 'student', classless)).ok, true);
+
+    // subjectId de otra materia sigue fallando siempre.
     const leaking = stubFetch(async () => jsonResponse(200, { sources: [
         { subjectId: 'otra-materia', materialType: 'bibliography', classIds: ['class-99'], sourceFilename: 'biblio-leak.pdf' },
     ] }));
@@ -141,13 +157,27 @@ test('queryScope: bibliography source is exempt from class match but subjectId s
     assert.match(leakRes.detail, /subjectId=otra-materia/);
 });
 
-test('queryScope: verified-answer source is exempt from class match (subject-only pre-search) but subjectId enforced', async () => {
+test('queryScope: verified-answer source outside the class scope fails, in-scope and class-less pass (#399)', async () => {
     const cfg = baseCfg();
-    const passing = stubFetch(async () => jsonResponse(200, { sources: [
-        { subjectId: SUBJECT, materialType: 'verified-answer', classId: 'class-99', sourceFilename: 'verified.txt' },
+
+    const inScope = stubFetch(async () => jsonResponse(200, { sources: [
+        { subjectId: SUBJECT, materialType: 'verified-answer', classId: 'class-01', sourceFilename: 'verified-ok.txt' },
     ] }));
-    const okRes = await queryScope(cfg, 'student', passing);
-    assert.strictEqual(okRes.ok, true);
+    assert.strictEqual((await queryScope(cfg, 'student', inScope)).ok, true);
+
+    // Respuesta verificada de OTRA clase → ya no se sirve con alcance acotado.
+    const foreign = stubFetch(async () => jsonResponse(200, { sources: [
+        { subjectId: SUBJECT, materialType: 'verified-answer', classId: 'class-99', sourceFilename: 'verified-otra-clase.txt' },
+    ] }));
+    const foreignRes = await queryScope(cfg, 'student', foreign);
+    assert.strictEqual(foreignRes.ok, false);
+    assert.match(foreignRes.detail, /does not intersect/);
+
+    // Corrección sin clase explícita (legado) → sigue tolerada.
+    const classless = stubFetch(async () => jsonResponse(200, { sources: [
+        { subjectId: SUBJECT, materialType: 'verified-answer', sourceFilename: 'verified-legacy.txt' },
+    ] }));
+    assert.strictEqual((await queryScope(cfg, 'student', classless)).ok, true);
 
     const leaking = stubFetch(async () => jsonResponse(200, { sources: [
         { subjectId: 'otra-materia', materialType: 'verified-answer', classId: 'class-99', sourceFilename: 'verified-leak.txt' },
@@ -305,6 +335,41 @@ test('assertSourceInScope: subjectId is always required even for bibliography an
     assert.strictEqual(assertSourceInScope({ materialType: 'bibliography' }, SUBJECT, ['class-01']).ok, false);
     assert.strictEqual(assertSourceInScope({ subjectId: SUBJECT, materialType: 'verified-answer' }, SUBJECT, ['class-01']).ok, true);
     assert.strictEqual(assertSourceInScope({ materialType: 'verified-answer' }, SUBJECT, ['class-01']).ok, false);
+});
+
+test('assertSourceInScope: con clase explícita, bibliografía y verified-answer fuera de alcance ya NO pasan (#399)', () => {
+    // La exención vieja dejaba pasar la bibliografía de otro encuentro con
+    // alcance acotado — esa es exactamente la fuga del issue.
+    assert.strictEqual(
+        assertSourceInScope({ subjectId: SUBJECT, materialType: 'bibliography', classIds: ['class-99'] }, SUBJECT, ['class-01']).ok,
+        false,
+        'bibliografía de otra clase con alcance acotado debe fallar',
+    );
+    assert.strictEqual(
+        assertSourceInScope({ subjectId: SUBJECT, materialType: 'verified-answer', classId: 'class-99' }, SUBJECT, ['class-01']).ok,
+        false,
+        'respuesta verificada de otra clase con alcance acotado debe fallar',
+    );
+    // En alcance → pasa; sin clase asignada (legado) → pasa.
+    assert.strictEqual(
+        assertSourceInScope({ subjectId: SUBJECT, materialType: 'bibliography', classIds: ['class-01'] }, SUBJECT, ['class-01']).ok,
+        true,
+    );
+    assert.strictEqual(
+        assertSourceInScope({ subjectId: SUBJECT, materialType: 'bibliography', classIds: ['class-01', 'class-05'] }, SUBJECT, ['class-01']).ok,
+        true,
+        'material multi-clase que sí incluye la clase del alcance pasa',
+    );
+    assert.strictEqual(
+        assertSourceInScope({ subjectId: SUBJECT, materialType: 'bibliography' }, SUBJECT, ['class-01']).ok,
+        true,
+        'bibliografía legado sin clase asignada sigue tolerada',
+    );
+    // Alcance 'all' → sólo subjectId.
+    assert.strictEqual(
+        assertSourceInScope({ subjectId: SUBJECT, materialType: 'bibliography', classIds: ['class-99'] }, SUBJECT, ['all']).ok,
+        true,
+    );
 });
 
 test('assertSourceInScope: scope "all" is subject-only', () => {

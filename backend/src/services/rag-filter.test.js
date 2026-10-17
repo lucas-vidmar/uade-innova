@@ -22,6 +22,17 @@ const openaiMocks = {
 const vectorStoreMocks = {
     querySimilar: mock.fn(async (embedding, filter, topK) => {
         if (filter?.materialType?.$eq === 'verified-answer') return [];
+        // #399: el mock devuelve metadata coherente con el alcance pedido (el
+        // post-filter de clase descarta lo que no intersecta el alcance, como
+        // haría Pinecone con el filtro real). Sin $or → alcance de materia.
+        const scope = Array.isArray(filter?.$or)
+            ? filter.$or.flatMap((clause) => {
+                if (clause.classId?.$eq !== undefined) return [String(clause.classId.$eq)];
+                if (Array.isArray(clause.classIds?.$in)) return clause.classIds.$in.map(String);
+                return [];
+            })
+            : [];
+        const requestedClasses = scope.length > 0 ? [...new Set(scope)] : ['class1'];
         return [
             {
                 score: 0.9,
@@ -31,7 +42,7 @@ const vectorStoreMocks = {
                     text: 'Contenido',
                     materialType: 'notes',
                     materialPriority: 'primary',
-                    classIds: ['class1'],
+                    classIds: requestedClasses,
                     chunkIndex: 0
                 }
             }
@@ -164,9 +175,13 @@ test('RAG Filter: should include $or with classIds.$in and bibliography when mul
 
     const filter = vectorStoreMocks.querySimilar.mock.calls[1].arguments[1];
     assert.ok(filter.$or);
+    // #399: el fallback de bibliografía ya no es una cláusula abierta que deja
+    // pasar la bibliografía de cualquier clase: sólo cubre bibliografía sin
+    // clase asignada (classId vacío). La de las clases del alcance entra por
+    // las cláusulas de clase; la de otro encuentro no entra.
     assert.deepStrictEqual(filter.$or, [
         { classIds: { $in: classIds } },
-        { materialType: { $eq: 'bibliography' } }
+        { materialType: { $eq: 'bibliography' }, classId: { $eq: '' } }
     ]);
 });
 
@@ -185,10 +200,12 @@ test('RAG Filter: con un solo encuentro en el alcance mira classId y la lista cl
     );
 
     const filter = vectorStoreMocks.querySimilar.mock.calls[1].arguments[1];
+    // #399: el tercer elemento es el fallback de bibliografía acotado (sin clase
+    // asignada); la bibliografía de la Clase 1 ya entra por las cláusulas de clase.
     assert.deepStrictEqual(filter.$or, [
         { classId: { $eq: 'class1' } },
         { classIds: { $in: ['class1'] } },
-        { materialType: { $eq: 'bibliography' } }
+        { materialType: { $eq: 'bibliography' }, classId: { $eq: '' } }
     ]);
 });
 
@@ -290,8 +307,9 @@ test('Exact classId: multi-class uses classIds.$in in filter (backward-compat)',
     const classFilter = filter.$or.find(f => f.classIds !== undefined);
     assert.ok(classFilter, 'should have classIds filter for multi-class');
     assert.deepStrictEqual(classFilter.classIds, { $in: classIds });
-    // Confirm classId.$eq is NOT present for multi-class
-    const exactFilter = filter.$or.find(f => f.classId !== undefined);
+    // Confirm classId.$eq is NOT present for multi-class (la cláusula de
+    // bibliografía #399 también trae classId — la ignoramos: no es de clase)
+    const exactFilter = filter.$or.find(f => f.classId !== undefined && f.materialType === undefined);
     assert.strictEqual(exactFilter, undefined);
 });
 
@@ -534,4 +552,37 @@ test('RAG Filter: verified-answer fast path discards a quarantined verifiedMatch
     const body = JSON.parse(response.body);
     assert.notStrictEqual(body.answer, 'RESPUESTA VERIFICADA SECRETA', 'el fast path no debe devolver una respuesta cuarentenada');
     assert.strictEqual(body.answer, 'Respuesta simulada.');
+});
+
+// ============================================================================
+// #399 — El fallback de bibliografía NO puede ser una cláusula abierta con
+// alcance acotado (era la vía de fuga: con classIds:['class-01'] entraba la
+// bibliografía de la Clase 5). Sólo cubre bibliografía SIN clase asignada.
+// ============================================================================
+
+test('RAG Filter (#399): la bibliografía no entra por una cláusula abierta con alcance acotado', async () => {
+    for (const classIds of [['class-05'], ['class-05', 'class-06']]) {
+        vectorStoreMocks.querySimilar.mock.resetCalls();
+        await capturedHandler(
+            mockRequest({ question: 'test', subjectId: 'math-101', classIds }),
+            mockContext()
+        );
+
+        const filters = vectorStoreMocks.querySimilar.mock.calls.map(c => c.arguments[1]);
+        const standard = filters.find(f => f && f.$or);
+        assert.ok(standard, 'el filtro estándar debe tener $or');
+
+        const openBibClause = standard.$or.find(f => f.materialType?.$eq === 'bibliography' && f.classId === undefined);
+        assert.strictEqual(
+            openBibClause,
+            undefined,
+            `la cláusula de bibliografía no puede ser abierta con alcance ${JSON.stringify(classIds)} (#399)`
+        );
+
+        const classlessBibClause = standard.$or.find(f => f.materialType?.$eq === 'bibliography' && f.classId?.$eq === '');
+        assert.ok(
+            classlessBibClause,
+            'el fallback de bibliografía sin clase asignada (legado) sigue presente'
+        );
+    }
 });
