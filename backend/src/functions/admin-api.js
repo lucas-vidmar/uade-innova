@@ -12,6 +12,7 @@ import {
   generateRandomPassword,
 } from '../services/users-store.js';
 import { deleteSessionsForUser } from '../services/sessions-store.js';
+import { deactivateEnrollmentsForUser } from '../services/state-store.js';
 import { CONFIG } from '../services/config.js';
 import { structuredErrorResponse, ErrorCategory } from '../services/error-categories.js';
 
@@ -175,8 +176,16 @@ app.http('admin-update-user', {
     }
     try {
       const updated = await updateUser(id, body || {});
+      // UJ-52 paso 4: deshabilitar la identidad tiene que retirar también sus
+      // permisos, no sólo su credencial. Una matrícula que sigue `active`
+      // deja a la persona que ya no entra figurando como tenedora del permiso.
+      let revokedEnrollments = null;
+      if (updated?.status === 'disabled') {
+        revokedEnrollments = await deactivateEnrollmentsForUser(id);
+        context.log(`[AdminAPI] User disabled: ${updated.userId}; permisos retirados: ${revokedEnrollments.count}`);
+      }
       context.log(`[AdminAPI] User updated: ${updated.userId}`);
-      return jsonResponse(200, { success: true, data: updated });
+      return jsonResponse(200, { success: true, data: updated, revokedEnrollments });
     } catch (err) {
       return errorResponse(err);
     }
@@ -200,8 +209,10 @@ app.http('admin-delete-user', {
       }
       // Revoke all sessions so a deleted account cannot keep using tokens.
       await deleteSessionsForUser(id);
-      context.log(`[AdminAPI] User deleted: ${id}`);
-      return jsonResponse(200, { success: true, data: { deleted: true } });
+      // UJ-52 paso 4: borrar la identidad también retira sus permisos.
+      const revokedEnrollments = await deactivateEnrollmentsForUser(id);
+      context.log(`[AdminAPI] User deleted: ${id}; permisos retirados: ${revokedEnrollments.count}`);
+      return jsonResponse(200, { success: true, data: { deleted: true }, revokedEnrollments });
     } catch (err) {
       return errorResponse(err);
     }

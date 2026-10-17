@@ -531,6 +531,40 @@ export async function deleteEnrollment(subjectId, userId) {
   }
 }
 
+/**
+ * Retires every ACTIVE enrollment of a user (UJ-52 paso 4).
+ *
+ * Una matrícula es un permiso: mientras siga `active`, el inventario y la
+ * nómina de la materia siguen mostrando a una persona que ya no puede entrar
+ * como tenedora de ese permiso, y la revisión periódica (UJ-53) no puede
+ * distinguir un permiso huérfano de uno vivo. Se pasa a `disabled` —no se
+ * borra— para no perder la historia ni la atribución: la fila queda con su
+ * dueño, su rol y su fecha de alta.
+ *
+ * @param {string} userId
+ * @returns {Promise<{count: number, subjects: string[]}>} permisos retirados
+ */
+export async function deactivateEnrollmentsForUser(userId) {
+  if (!userId) return { count: 0, subjects: [] };
+  let enrollments = [];
+  try {
+    enrollments = await getEnrollmentsByUser(userId);
+  } catch {
+    return { count: 0, subjects: [] };
+  }
+  const subjects = [];
+  for (const enrollment of enrollments) {
+    if (!enrollment || enrollment.status !== 'active') continue;
+    try {
+      await upsertEnrollment({ ...enrollment, status: 'disabled' });
+      subjects.push(enrollment.subjectId);
+    } catch {
+      // best-effort por matrícula: una que falle no impide retirar el resto
+    }
+  }
+  return { count: subjects.length, subjects };
+}
+
 // ─── User Profiles Operations (Story 10.23 — cleanup de perfiles de test) ─
 
 export async function listAllUserProfiles() {
