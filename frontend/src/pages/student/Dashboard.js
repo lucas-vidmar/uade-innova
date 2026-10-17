@@ -535,12 +535,29 @@ export async function renderStudentDashboard(container) {
     updateHistorySidebar(history);
   };
 
-  const handleNewChat = async () => {
+  /**
+   * Fix #402 (UJ-23, UJ-24): el hilo de chat abierto queda identificado en la URL
+   * (`#/student/dashboard?sessionId=<sid>`), de modo que un refresco (F5) a mitad
+   * de la conversación vuelve a montar el mismo hilo en vez de dejarlo fuera de
+   * la vista. `replaceState` no dispara `hashchange`, así que no re-renderiza.
+   * @param {string|null} sessionId
+   */
+  const syncChatHash = (sessionId) => {
+    const base = '#/student/dashboard';
+    const next = sessionId ? `${base}?sessionId=${encodeURIComponent(sessionId)}` : base;
+    if (window.location.hash !== next) window.history.replaceState(null, '', next);
+  };
+
+  const handleNewChat = async ({ newSessionId } = {}) => {
+    // Fix #402 (UJ-23, UJ-24): el hilo abierto queda identificado en la URL para
+    // que un refresco (F5) a mitad de la conversación lo reencuentre en la vista.
+    syncChatHash(newSessionId || null);
     const history = await api.getChatHistory(activeSubjectId);
     updateHistorySidebar(history);
   };
 
-  const handleMessageSent = async () => {
+  const handleMessageSent = async ({ sessionId } = {}) => {
+    if (sessionId) syncChatHash(sessionId);
     const history = await api.getChatHistory(activeSubjectId);
     updateHistorySidebar(history);
   };
@@ -751,8 +768,11 @@ export async function renderStudentDashboard(container) {
     chatMount.appendChild(chatWidget);
     requestAnimationFrame(startOnboardingIfNeeded);
     updateHistorySidebar(history);
-    if (selectedSessionId || chatPreset) {
-      window.history.replaceState(null, '', '#/student/dashboard');
+    // Fix #402 (UJ-23, UJ-24): el `sessionId` del hilo abierto NO se descarta de
+    // la URL — es lo que permite que un F5 vuelva a montar la misma conversación.
+    // Sólo se consume el `preset`, que ya se aplicó al crear el widget.
+    if (chatPreset) {
+      syncChatHash(seedSessionId || null);
     }
   });
 
