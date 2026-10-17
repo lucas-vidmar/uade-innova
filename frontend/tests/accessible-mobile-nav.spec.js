@@ -121,6 +121,12 @@ test('con la guía de inicio abierta la navegación inferior sigue alcanzable (#
   const tooltip = page.locator('.onboarding-tooltip');
   await expect(tooltip).toBeVisible({ timeout: 10000 });
 
+  // La tarjeta entra con una transición de 200 ms (`translateY(20px)` → 0). Medir
+  // durante la animación devuelve un borde inferior hasta 20 px más abajo y volvía
+  // la aserción dependiente del tiempo de carga (pasaba o fallaba según el día,
+  // #474). Esperamos el estado asentado antes de medir.
+  await expect(tooltip).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
+
   const t = await tooltip.boundingBox();
   const n = await nav.boundingBox();
   expect(t).not.toBeNull();
