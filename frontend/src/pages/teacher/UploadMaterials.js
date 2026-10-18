@@ -7,6 +7,7 @@ import { createFileUpload } from '../../components/FileUpload.js';
 import { renderHeader } from '../../components/Header.js';
 import { toast } from '../../components/Toast.js';
 import { processingNotifications } from '../../services/processing-notifications.js';
+import { uploadDrafts } from '../../services/upload-drafts.js';
 
 const MATERIAL_TABS = [
   { type: 'transcript', icon: '📝', label: 'Transcripción' },
@@ -191,6 +192,21 @@ export async function renderTeacherUpload(container) {
 
         <div id="upload-zone-wrapper"></div>
 
+        ${uploadDrafts.interrupted({ subjectId: activeSubjectIdSafe, type: activeTab }).length > 0 ? `
+        <div class="upload-interrupted card" id="upload-interrumpida" role="alert" style="margin-top:var(--space-4);padding:var(--space-4);border:1px solid var(--color-warning,#b45309);border-radius:8px;background:var(--color-warning-bg,#fff7ed)">
+          <strong>⚠️ Carga interrumpida</strong>
+          <p style="margin:var(--space-2) 0 0;color:var(--color-text-secondary);font-size:var(--font-size-sm)">
+            La carga de
+            <strong>${uploadDrafts.interrupted({ subjectId: activeSubjectIdSafe, type: activeTab }).map(p => escapeHtml(p.filename)).join(', ')}</strong>
+            <strong>no llegó al servidor</strong> y el material no se creó: puede haber sido un refresco a mitad de camino o un fallo de la subida. Volvé a elegir el archivo para reintentar.
+          </p>
+          <div style="display:flex;gap:var(--space-3);margin-top:var(--space-3)">
+            <button class="btn btn-secondary btn-sm" id="reintentar-interrumpida" type="button">Elegir el archivo de nuevo</button>
+            <button class="btn btn-ghost btn-sm" id="descartar-interrumpida" type="button">Descartar aviso</button>
+          </div>
+        </div>
+        ` : ''}
+
         ${piezasDelLote.length > 0 ? `
         <div class="lote-reparto card" id="lote-reparto" style="margin-top:var(--space-5);padding:var(--space-4);border:1px solid var(--color-border);border-radius:8px">
           <h3 class="h5" style="margin-bottom:var(--space-2)">📦 Reparto del lote por encuentro</h3>
@@ -335,6 +351,16 @@ export async function renderTeacherUpload(container) {
       });
     });
 
+    // #392: aviso de carga interrumpida (refresco a mitad de camino). Se puede
+    // reintentar eligiendo el archivo otra vez, o descartar el aviso.
+    container.querySelector('#descartar-interrumpida')?.addEventListener('click', () => {
+      uploadDrafts.discardAll({ subjectId: activeSubjectIdSafe, type: activeTab });
+      render();
+    });
+    container.querySelector('#reintentar-interrumpida')?.addEventListener('click', () => {
+      container.querySelector(`#file-input-${activeTab}`)?.click();
+    });
+
     document.getElementById('btn-refresh-classes')?.addEventListener('click', async () => {
       const btn = document.getElementById('btn-refresh-classes');
       btn.classList.add('animate-spin');
@@ -454,6 +480,10 @@ export async function renderTeacherUpload(container) {
     const uploader = createFileUpload({
       type: activeTab,
       existingFiles,
+      // #392: el borrador persistido y el aviso de duplicado necesitan saber a
+      // qué materia y a qué encuentro(s) va la pieza.
+      uploadContext: { subjectId: activeSubjectIdSafe, classIds: [...selectedClassIds] },
+      destinoLabel: clasesDelDestino.map(c => c.title).join(', '),
       // Con más de un encuentro destino la pieza no se sube al elegirla: espera en el
       // reparto del lote hasta que se le asigne su encuentro y se confirme (#390).
       stageFile: selectedClassIds.length > 1
@@ -497,6 +527,9 @@ export async function renderTeacherUpload(container) {
               const existingIdx = cls.materials.findIndex(m => m.id === response.materialId);
               const materialData = {
                 ...fileObj,
+                // #392: el espejo local del material no puede quedar "subiendo":
+                // el POST ya volvió y lo que sigue es el procesamiento del servidor.
+                _uploading: false,
                 status: response?.status || 'processing',
                 id: response.materialId || `m-new-${Date.now()}`,
                 classIds: [...selectedClassIds],
