@@ -151,3 +151,67 @@ test('teacher can toggle Simular alumno and send a sandbox query with simulateSt
   expect(capturedRequests.length).toBe(1);
   expect(capturedRequests[0].simulateStudent).toBe(true);
 });
+
+test.describe('RAG sandbox — hora del historial (#553)', () => {
+  // El historial debe mostrar la hora sin ambigüedad (a. m./p. m. o 24 h). Con el
+  // formateo anterior (`toLocaleTimeString('es-AR')`) el motor del navegador devuelve
+  // 12 h SIN indicador: 00:00:04 se leía «12:00:04», igual que el mediodía.
+  test.use({ timezoneId: 'America/Argentina/Buenos_Aires' });
+
+  test('muestra la hora de cada consulta con a. m./p. m. (no 12 h sin indicador)', async ({ page }) => {
+    // Reloj fijo: 2026-10-18T03:00:04Z == 2026-10-18 00:00:04 en Buenos Aires (UTC-3).
+    // En 12 h sin indicador ese instante sale «12:00:04», indistinguible del mediodía.
+    await page.clock.setFixedTime(new Date('2026-10-18T03:00:04.000Z'));
+
+    await page.addInitScript(() => {
+      localStorage.setItem('uade_use_mock', 'false');
+      localStorage.setItem('onboarding-teacher-completed', 'true');
+      sessionStorage.setItem('edu_role', 'teacher');
+      sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
+      sessionStorage.setItem('edu_consent_accepted', 'true');
+      sessionStorage.setItem('edu_logged_in', 'true');
+    });
+
+    await page.route('**/api/classes?**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: 'class-01',
+            subjectId: 'arq-software-2026',
+            title: 'Clase 1 — Arquitectura',
+            date: '2026-03-05',
+            topics: [],
+            materials: [],
+            summaryReady: true,
+          },
+        ]),
+      });
+    });
+
+    await page.route('**/api/rag-query?**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: [
+          'event: metadata\ndata: {"interactionId":"sandbox-hora","sources":[],"model":"deepseek-v4-flash"}\n\n',
+          'event: delta\ndata: {"content":"Respuesta de prueba."}\n\n',
+          'event: done\ndata: {"answer":"Respuesta de prueba."}\n\n',
+        ].join(''),
+      });
+    });
+
+    await page.goto('/#/teacher/rag-sandbox');
+
+    await page.locator('#sandbox-chips .source-pill').first().click();
+    await page.locator('#sandbox-input').fill('¿Qué es una arquitectura hexagonal?');
+    await page.locator('#sandbox-send').click();
+
+    const entry = page.locator('#sandbox-history-list .history-entry').first();
+    await expect(entry).toHaveCount(1, { timeout: 10000 });
+
+    // 00:00:04 hora local, sin ambigüedad. El defecto (#553) renderizaba «12:00:04».
+    await expect(entry.locator('div').first()).toHaveText('18 oct, 12:00 a. m.');
+  });
+});
