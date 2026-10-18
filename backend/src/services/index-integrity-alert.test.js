@@ -136,6 +136,28 @@ test('pasada la ventana de enfriamiento el aviso se actualiza', async () => {
     assert.match(notifications[0].message, /2 material\/es/);
 });
 
+test('un aviso guardado sin el tipo correcto se reescribe aunque la ventana siga abierta', async () => {
+    enrollments = [{ subjectId: 'arq-software-2026', userId: 'prof-001', role: 'teacher', status: 'active' }];
+    // Registro previo degradado a 'material': asi quedaba guardado el aviso de
+    // integridad antes de que el tipo existiera en la lista blanca del almacen.
+    notifications = [{
+        id: indexIntegrityNotificationId('arq-software-2026'),
+        subjectId: 'arq-software-2026',
+        type: 'material',
+        origin: 'rag-registry-filter',
+        createdAt: '2026-10-18T12:00:00.000Z',
+    }];
+
+    const result = await alertIndexIntegrity({
+        subjectId: 'arq-software-2026',
+        droppedMaterialIds: ['huerfano-1'],
+        now: '2026-10-18T12:05:00.000Z',
+    });
+
+    assert.strictEqual(result.notified, true, 'un registro que no sirve se repara aunque la ventana siga abierta');
+    assert.strictEqual(notifications[0].type, 'integrity');
+});
+
 test('sin nada descartado no escribe ni consulta destinatarios', async () => {
     users = [{ userId: 'dir-001', role: 'director', status: 'active' }];
 

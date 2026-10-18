@@ -21,6 +21,8 @@ import {
 } from './notification-store.js';
 
 export const INDEX_INTEGRITY_COOLDOWN_MS = 30 * 60 * 1000;
+export const INDEX_INTEGRITY_TYPE = 'integrity';
+export const INDEX_INTEGRITY_ORIGIN = 'rag-registry-filter';
 
 export function indexIntegrityNotificationId(subjectId) {
   return `integridad-indice-${String(subjectId)}`;
@@ -75,7 +77,14 @@ export async function alertIndexIntegrity({ subjectId, droppedMaterialIds = [], 
     const actuales = await listNotificationsBySubject(subjectId);
     const previo = actuales.find((n) => n.id === id);
 
-    if (previo?.createdAt) {
+    // El enfriamiento evita escribir en cada consulta, pero no puede dejar
+    // clavado un registro que no sirve: si el aviso guardado no tiene el tipo o
+    // el origen que corresponde (por ejemplo, uno escrito antes de que existiera
+    // el tipo `integrity`), se reescribe aunque la ventana siga abierta.
+    const registroDesactualizado = Boolean(previo)
+      && (previo.type !== INDEX_INTEGRITY_TYPE || previo.origin !== INDEX_INTEGRITY_ORIGIN);
+
+    if (!registroDesactualizado && previo?.createdAt) {
       const edad = Date.parse(now) - Date.parse(previo.createdAt);
       if (Number.isFinite(edad) && edad >= 0 && edad < INDEX_INTEGRITY_COOLDOWN_MS) {
         return { notified: false, reason: 'enfriamiento' };
@@ -97,7 +106,7 @@ export async function alertIndexIntegrity({ subjectId, droppedMaterialIds = [], 
 
     await upsertNotificationForSubject(subjectId, {
       id,
-      type: 'integrity',
+      type: INDEX_INTEGRITY_TYPE,
       title: 'El índice de la unidad tiene material que no le pertenece',
       message: `Se descartaron fragmentos al responder: ${detalle.join(' y ')}. No se citan en las respuestas hasta regularizarlos.`,
       createdAt: now,
@@ -105,7 +114,7 @@ export async function alertIndexIntegrity({ subjectId, droppedMaterialIds = [], 
       targetHash: '#/teacher/dashboard',
       subjectId,
       recipientUserIds: recipients,
-      origin: 'rag-registry-filter',
+      origin: INDEX_INTEGRITY_ORIGIN,
     });
 
     context?.log?.(`[IndexIntegrity] aviso dejado para ${recipients.length} destinatario/s (subjectId=${subjectId}, materiales=${droppedMaterialIds.length}, clases=${droppedClassIds.length})`);
