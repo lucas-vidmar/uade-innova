@@ -49,7 +49,12 @@ export async function renderAdminModelConfig(container) {
   await loadConfig();
 
   const motorEfectivo = meta.effective?.model || null;
-  const seleccionGobierna = !!motorEfectivo && motorEfectivo === config.model;
+  // #542: `model` es el nombre de catalogo y `deployment` el id que se guarda en
+  // la configuracion. Comparar el nombre contra el id nunca coincide, asi que el
+  // distintivo «Vigente» no aparecia nunca y el aviso de «la seleccion no
+  // gobierna» saltaba incluso cuando la seleccion era justo la que responde.
+  const deploymentEfectivo = meta.effective?.deployment || null;
+  const seleccionGobierna = !!deploymentEfectivo && deploymentEfectivo === config.model;
 
   function registroTexto() {
     if (!meta.disponible) return 'No se pudo leer el registro del cambio.';
@@ -95,7 +100,7 @@ export async function renderAdminModelConfig(container) {
             <strong>${ETIQUETA_MOTOR[valor] || valor}</strong>
             <p class="text-xs text-text-muted" style="margin:2px 0 0">${valor === 'deepseek-v4-flash' ? 'Rápido y eficiente. Ideal para respuestas cotidianas. Consumido desde Azure AI Foundry.' : 'Motor candidato alternativo. Consumido desde Azure OpenAI.'}</p>
           </div>
-          ${motorEfectivo === valor ? '<span class="badge badge-success" style="margin-left:auto">Vigente</span>' : ''}
+          ${deploymentEfectivo === valor ? '<span class="badge badge-success" style="margin-left:auto">Vigente</span>' : ''}
           ${config.model === valor ? '<span class="badge" style="margin-left:auto;background:var(--color-surface-3);color:var(--color-text-muted)">Seleccionado</span>' : ''}
         </label>`).join('');
   }

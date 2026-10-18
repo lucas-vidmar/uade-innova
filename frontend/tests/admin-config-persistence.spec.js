@@ -74,14 +74,17 @@ async function setupApiMock(page, state = {}) {
     }
 
     if (url.includes('config/model')) {
+      // El servicio informa el motor que responde con dos campos: `model` es el
+      // nombre de catalogo y `deployment` el id que se guarda en la seleccion.
+      const efectivo = { deployment: 'deepseek-v4-flash', model: 'DeepSeek-V4.1-Flash', source: 'default', promptVersion: 'v1-baseline' };
       if (method === 'GET') {
-        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: store.model || DEFAULT_MODEL, defaults: !store.model, updatedAt: store.model ? '2026-01-01T00:00:00.000Z' : null }) });
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: store.model || DEFAULT_MODEL, defaults: !store.model, updatedAt: store.model ? '2026-01-01T00:00:00.000Z' : null, effective: efectivo }) });
       } else if (method === 'PUT') {
         store.model = { ...DEFAULT_MODEL, ...route.request().postDataJSON() };
-        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: store.model, defaults: false, updatedAt: '2026-01-01T00:00:00.000Z' }) });
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: store.model, defaults: false, updatedAt: '2026-01-01T00:00:00.000Z', effective: efectivo }) });
       } else if (method === 'DELETE') {
         store.model = null;
-        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: DEFAULT_MODEL, defaults: true, updatedAt: null }) });
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: DEFAULT_MODEL, defaults: true, updatedAt: null, effective: efectivo }) });
       } else {
         await route.fulfill({ status: 405, contentType: 'application/json', body: '{}' });
       }
@@ -260,4 +263,28 @@ test('settings page shows effective BASE_URL, not window.location.origin (AC #4)
   expect(apiUrl).toBeTruthy();
   expect(apiUrl).not.toContain(origin);
   expect(apiUrl).toContain('api');
+});
+
+test('el distintivo «Vigente» sigue al motor que responde, no al nombre de catalogo (#542)', async ({ page }) => {
+  await bootMock(page);
+  await setupApiMock(page);
+  await page.goto('/#/admin/model-config');
+
+  // El servicio informa `model` (nombre de catalogo) y `deployment` (el id que se
+  // guarda en la seleccion). Comparar el nombre contra el id hacia que el
+  // distintivo «Vigente» no apareciera nunca y que el aviso saltara aunque la
+  // seleccion fuera justo la que responde.
+  const tarjetaDeepseek = page.locator('#model-deepseek-v4-flash');
+  const aviso = page.getByText('La selección guardada no gobierna las respuestas.');
+
+  await expect(tarjetaDeepseek.getByText('Vigente')).toBeVisible();
+  await expect(aviso).toHaveCount(0);
+
+  // Con la seleccion en el otro motor, el aviso aparece y el distintivo no se mueve.
+  await page.locator('input[name="ai-model"][value="gpt-4o-mini"]').check();
+  await page.click('#btn-model-save');
+  await page.reload();
+
+  await expect(tarjetaDeepseek.getByText('Vigente')).toBeVisible();
+  await expect(aviso).toBeVisible();
 });
