@@ -1855,6 +1855,23 @@
   flex-shrink: 0;
 }
 
+/* UJ-35: la fecha que quien aprende decidió vigilar. */
+.cal-watched-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-success, #10b981);
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.18);
+  flex-shrink: 0;
+}
+
+.cal-reminder-summary {
+  margin-top: var(--space-4);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
 .calendar-legend {
   display: flex;
   gap: var(--space-5);

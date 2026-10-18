@@ -163,6 +163,9 @@ export const CONFIG = {
 
   validCadences: ['48h', '24h', 'both'],
 
+  // Franja horaria del aviso anticipado (UJ-35 paso 3). 'any' = sin franja.
+  validTimeWindows: ['any', 'morning', 'afternoon', 'evening'],
+
   sat: {
     minRatedThreshold: Number(process.env.SAT_MIN_RATED_THRESHOLD) || 10,
   },

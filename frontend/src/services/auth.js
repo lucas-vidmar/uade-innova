@@ -274,6 +274,12 @@ export const auth = {
     setReminderPreferences(prefs) {
             if (prefs.enabled !== undefined) sessionStorage.setItem('edu_reminder_enabled', String(prefs.enabled));
             if (prefs.cadence) sessionStorage.setItem('edu_reminder_cadence', prefs.cadence);
+            // UJ-35: la franja horaria y la decisión por fecha también son de la
+            // persona; se cachean para que la UI no las pierda entre vistas.
+            if (prefs.timeWindow) sessionStorage.setItem('edu_reminder_time_window', prefs.timeWindow);
+            if (prefs.datePrefs && typeof prefs.datePrefs === 'object') {
+                sessionStorage.setItem('edu_reminder_date_prefs', JSON.stringify(prefs.datePrefs));
+            }
             window.dispatchEvent(new CustomEvent('auth:reminderPrefsChanged', { detail: prefs }));
         },
 

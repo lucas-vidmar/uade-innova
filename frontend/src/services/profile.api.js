@@ -70,6 +70,10 @@ export async function saveConsent(accepted = true) {
     }
 }
 
+// Defaults for a caller that tolerates a failed read (the calendar). A caller
+// that must not present a default as the account state passes `strict`.
+export const REMINDER_PREFERENCES_DEFAULTS = { enabled: true, cadence: 'both', timeWindow: 'any', datePrefs: {} };
+
 export async function getReminderPreferences(options = {}) {
     try {
         const res = await apiFetch(`${BASE_URL}/reminder-preferences`);
@@ -77,13 +81,15 @@ export async function getReminderPreferences(options = {}) {
         // the read failed — that is a claim about the account, not a default.
         if (!res.ok) {
             if (options.strict) throw await parseApiError(res, `No se pudieron leer tus preferencias (HTTP ${res.status}).`);
-            return { enabled: true, cadence: 'both' };
+            return { ...REMINDER_PREFERENCES_DEFAULTS };
         }
-        return await res.json();
+        const data = await res.json();
+        // UJ-35: antelación por fecha y franja horaria viajan en la misma fila.
+        return { ...REMINDER_PREFERENCES_DEFAULTS, ...(data || {}) };
     } catch (err) {
         if (options.strict) throw err;
         console.error('[API] getReminderPreferences failed:', err);
-        return { enabled: true, cadence: 'both' };
+        return { ...REMINDER_PREFERENCES_DEFAULTS };
     }
 }
 
