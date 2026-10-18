@@ -9,6 +9,7 @@ import { createChatWidget } from '../../components/ChatWidget.js';
 import { toast } from '../../components/Toast.js';
 import { OnboardingEngine, shouldAutoStartOnboarding } from '../../services/onboarding.js';
 import { STUDENT_ONBOARDING_STEPS } from './OnboardingSteps.js';
+import { formatLocalDate, parseLocalDate, daysUntilLocalDate } from '../../services/dates.js';
 
 function renderSearchResult(result, classesById) {
   const materialIcon = {
@@ -589,7 +590,7 @@ export async function renderStudentDashboard(container) {
     const merged = [...subjectTasks, ...pendingDeadlines];
     const pendingItems = merged
       .filter(t => t.status === 'pending')
-      .sort((a, b) => (new Date(a.dueDate) - new Date(b.dueDate)))
+      .sort((a, b) => ((parseLocalDate(a.dueDate)?.getTime() || 0) - (parseLocalDate(b.dueDate)?.getTime() || 0)))
       .slice(0, 3);
     
     const completedTasks = subjectTasks.filter(t => t.status === 'completed');
@@ -609,10 +610,10 @@ export async function renderStudentDashboard(container) {
       <div class="p-0">
         <ul class="sidebar-list">
           ${pendingItems.length > 0 ? pendingItems.map(t => {
-            const dateStr = new Date(t.dueDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'numeric' });
-            const daysUntil = Math.ceil((new Date(t.dueDate) - new Date()) / 86400000);
-            const isOverdue = new Date(t.dueDate) < new Date();
-            const pillLabel = isOverdue ? 'Vencido' : daysUntil <= 3 ? 'Próximo' : daysUntil <= 7 ? 'Esta semana' : 'Pendiente';
+            const dateStr = formatLocalDate(t.dueDate, { day: 'numeric', month: 'numeric' });
+            const daysUntil = daysUntilLocalDate(t.dueDate);
+            const isOverdue = daysUntil !== null && daysUntil < 0;
+            const pillLabel = daysUntil === null ? 'Pendiente' : isOverdue ? 'Vencido' : daysUntil <= 3 ? 'Próximo' : daysUntil <= 7 ? 'Esta semana' : 'Pendiente';
             const pillColor = isOverdue ? '#ef4444' : '#3b82f6';
             const pillBg = isOverdue ? 'rgba(239,68,68,0.1)' : 'rgba(59,130,246,0.1)';
             const pillBorder = isOverdue ? 'rgba(239,68,68,0.25)' : 'rgba(59,130,246,0.25)';
@@ -670,7 +671,7 @@ export async function renderStudentDashboard(container) {
     }
     const localViews = api.getLocalClassViews();
     return visibleItems.map(c => {
-      const dateStr = c.date ? new Date(c.date).toLocaleDateString('es-AR', { day: 'numeric', month: 'numeric' }) : null;
+      const dateStr = c.date ? formatLocalDate(c.date, { day: 'numeric', month: 'numeric' }) : null;
       const hasViewed = localViews[c.id] || c.studentViewedAt;
       let badgeHtml = '';
       // #428: el estado explícito manda; `summaryReady` sólo lo espeja.
@@ -697,7 +698,7 @@ export async function renderStudentDashboard(container) {
     if (!sectionClasses) return;
     classesCache = (classes || [])
       .filter(c => c.date || c.title)
-      .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+      .sort((a, b) => ((parseLocalDate(b.date)?.getTime() || 0) - (parseLocalDate(a.date)?.getTime() || 0)));
     classesPage = 0;
 
     sectionClasses.innerHTML = `

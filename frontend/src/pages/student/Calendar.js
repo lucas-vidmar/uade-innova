@@ -2,6 +2,7 @@ import { api } from '../../services/api.js';
 import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
 import { toast } from '../../components/Toast.js';
+import { formatLocalDate } from '../../services/dates.js';
 
 const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const DAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
@@ -67,7 +68,7 @@ export async function renderStudentCalendar(container) {
             <div class="class-list-item" style="padding:var(--space-3) var(--space-4)">
               <div class="class-list-info">
                 <div class="class-list-title">${d.title}</div>
-                <div class="class-list-files">Vence ${new Date(d.dueDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}</div>
+                <div class="class-list-files">Vence ${formatLocalDate(d.dueDate, { day: 'numeric', month: 'short' })}</div>
               </div>
               <span class="badge badge-warning">${d.notifyOnDayBefore ? 'Aviso previo' : 'Aviso el día'}</span>
             </div>

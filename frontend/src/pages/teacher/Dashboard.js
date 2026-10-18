@@ -9,6 +9,7 @@ import { showPromptDialog, showConfirmDialog } from '../../components/Dialog.js'
 import { OnboardingEngine, shouldAutoStartOnboarding } from '../../services/onboarding.js';
 import { TEACHER_ONBOARDING_STEPS } from './OnboardingSteps.js';
 import { renderSubjectWeights } from './SubjectWeights.js';
+import { formatLocalDate } from '../../services/dates.js';
 
 export async function renderTeacherDashboard(container) {
   renderHeader('Mis Cátedras');
@@ -965,16 +966,10 @@ function escapeHtml(value = '') {
 
 /**
  * Formats a deadline dueDate without the UTC off-by-one (#335).
- * Date-only values ("2026-12-15") parsed with `new Date()` land on midnight
- * UTC and render the previous day in es-AR (UTC-3); parsing them as local
- * noon keeps the calendar day the teacher picked. Full ISO datetimes pass
- * through unchanged.
+ * Delegates to the shared date helper so teacher and student views agree:
+ * a date-only value is parsed as local noon (its calendar day), a full ISO
+ * datetime is respected as-is.
  */
 export function formatDueDate(dueDate) {
-  if (!dueDate) return '—';
-  const raw = String(dueDate);
-  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(raw);
-  const parsed = new Date(dateOnly ? `${raw}T12:00:00` : raw);
-  if (isNaN(parsed.getTime())) return '—';
-  return parsed.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' });
+  return formatLocalDate(dueDate, { day: 'numeric', month: 'short' }) || '—';
 }

@@ -5,6 +5,7 @@ import { renderAutoevaluacion } from '../../components/Autoevaluacion.js';
 import { renderAudioPlayer } from '../../components/AudioPlayer.js';
 import { marked } from 'marked';
 import { extractMermaidCode } from '@shared/extract-mermaid.js';
+import { formatLocalDate, parseLocalDate, startOfLocalDay } from '../../services/dates.js';
 
 function escapeHtml(value = '') {
     return String(value)
@@ -199,17 +200,16 @@ export async function renderClassDetail(container) {
         // #423 (UJ-37): el cierre del encuentro debe mostrar "lo que viene" —
         // entregas con fecha comprometida y el próximo encuentro —, no sólo el
         // contenido del encuentro ya pasado.
-        const startOfToday = new Date();
-        startOfToday.setHours(0, 0, 0, 0);
+        const startOfToday = startOfLocalDay();
         const upcomingDeadlines = (Array.isArray(deadlines) ? deadlines : [])
-            .filter(d => d && d.dueDate && new Date(d.dueDate) >= startOfToday)
-            .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
-        const currentClassTime = classInfo.date ? new Date(classInfo.date).getTime() : null;
+            .filter(d => d && d.dueDate && parseLocalDate(d.dueDate) && parseLocalDate(d.dueDate) >= startOfToday)
+            .sort((a, b) => parseLocalDate(a.dueDate) - parseLocalDate(b.dueDate));
+        const currentClassTime = classInfo.date ? parseLocalDate(classInfo.date)?.getTime() ?? null : null;
         const nextClass = (Array.isArray(classList) ? classList : [])
             .filter(c => c && c.id !== classId && c.date)
-            .filter(c => currentClassTime === null || new Date(c.date).getTime() > currentClassTime)
-            .sort((a, b) => new Date(a.date) - new Date(b.date))[0] || null;
-        const fmtDay = (value) => new Date(value).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' });
+            .filter(c => currentClassTime === null || (parseLocalDate(c.date)?.getTime() ?? 0) > currentClassTime)
+            .sort((a, b) => parseLocalDate(a.date) - parseLocalDate(b.date))[0] || null;
+        const fmtDay = (value) => formatLocalDate(value, { day: 'numeric', month: 'short' });
         const upcomingHtml = `
             ${SECTION_TITLE('📅', 'Lo que viene')}
             <div class="card" data-testid="lo-que-viene" style="margin-bottom:var(--space-6);">
@@ -247,7 +247,7 @@ export async function renderClassDetail(container) {
             <div class="class-detail-hero" style="margin-bottom:var(--space-6)">
                 <h1 class="h2" style="margin-bottom:var(--space-2)">${classInfo.title}</h1>
                 <div class="class-meta" style="display:flex;gap:var(--space-3)">
-                    <span class="badge badge-primary">${classInfo.date ? new Date(classInfo.date).toLocaleDateString('es-AR', { day: 'numeric', month: 'long' }) : 'Sin fecha'}</span>
+                    <span class="badge badge-primary">${classInfo.date ? formatLocalDate(classInfo.date, { day: 'numeric', month: 'long' }) : 'Sin fecha'}</span>
                     <span class="badge badge-neutral">${classInfo.materials?.length || 0} materiales</span>
                 </div>
             </div>

@@ -4,6 +4,7 @@
 import { api } from '../../services/api.js';
 import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
+import { formatLocalDate, parseLocalDate, daysUntilLocalDate } from '../../services/dates.js';
 
 function escapeHtml(str) {
     if (!str) return '';
@@ -66,7 +67,7 @@ export async function renderStudentTasks(container) {
 
     const completed = tasks
         .filter(t => t.status === 'completed')
-        .sort((a, b) => new Date(b.dueDate) - new Date(a.dueDate));
+        .sort((a, b) => ((parseLocalDate(b.dueDate)?.getTime() || 0) - (parseLocalDate(a.dueDate)?.getTime() || 0)));
     const totalWeight = completed.reduce((a, t) => a + t.weight, 0);
     const weightedAvg = completed.length > 0
         ? completed.reduce((a, t) => a + (t.grade || 0) * t.weight, 0) / totalWeight
@@ -173,13 +174,14 @@ function renderLoadError(container, err, onRetry) {
 // su vencimiento: `proximidad = 10 / (días que faltan + 1)` + `peso / 5`. Una
 // entrega sin fecha de vencimiento válida no puede aportar cercanía, así que se
 // ordena sólo por peso; cuando eso pasa, la pantalla lo declara.
-const MS_PER_DAY = 86400000;
+// #335: la cercanía se mide en días calendario locales (ver services/dates.js),
+// no en la diferencia de instantes, para no correr un día el vencimiento.
 
 function describePriority(t) {
   const weight = Number.isFinite(Number(t?.weight)) ? Number(t.weight) : 0;
-  const due = t?.dueDate ? new Date(t.dueDate) : null;
+  const due = parseLocalDate(t?.dueDate);
   const hasDueDate = !!due && !Number.isNaN(due.getTime());
-  const daysUntil = hasDueDate ? Math.ceil((due - new Date()) / MS_PER_DAY) : null;
+  const daysUntil = hasDueDate ? daysUntilLocalDate(t.dueDate) : null;
   const proximity = hasDueDate ? 10 / (Math.max(0, daysUntil) + 1) : 0;
   return {
     score: proximity + weight / 5,
@@ -233,7 +235,7 @@ function buildPendingRow(t, classes) {
   const weightLabel = t.weight >= 20 ? 'badge-primary' : 'badge-neutral';
   const relatedHtml = buildRelatedClassesHtml(t, classes);
   const dueLabel = priority.hasDueDate
-    ? new Date(t.dueDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })
+    ? formatLocalDate(t.dueDate, { day: 'numeric', month: 'short' })
     : 'Sin fecha';
   const detailBtn = (t.classIds || []).length > 0
     ? '<button class="btn btn-ghost btn-sm task-detail-btn" data-task-id="' + escapeHtml(t.id) + '" title="Ver detalle y materiales relacionados" style="font-size:11px;color:var(--color-primary-light);margin-top:4px;padding:2px 8px;">Ver detalle</button>'
@@ -380,7 +382,7 @@ function showTaskDetailModal(task, classes) {
     ? (task.grade !== null ? '✅ Aprobado · ' + task.grade.toFixed(1) : '✅ Completada')
     : '⏳ Pendiente';
   const dueLabel = task.dueDate
-    ? new Date(task.dueDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'long' })
+    ? formatLocalDate(task.dueDate, { day: 'numeric', month: 'long' })
     : '—';
 
   const overlay = document.createElement('div');
