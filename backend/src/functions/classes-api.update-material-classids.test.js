@@ -107,6 +107,28 @@ test('update-material reindexa los vectores cuando cambian los encuentros (#389)
     assert.deepStrictEqual(stateStoreMocks.upsertMaterialState.mock.calls[0].arguments[0].classIds, ['class-06']);
 });
 
+test('#328: update-material rechaza clases que no pertenecen a la unidad', async () => {
+    vectorStoreMocks.updateMaterialVectorsMetadata.mock.resetCalls();
+    stateStoreMocks.getMaterialState.mock.mockImplementationOnce(async () => ({ ...MATERIAL }));
+    stateStoreMocks.upsertMaterialState.mock.resetCalls();
+    stateStoreMocks.listClassesBySubject.mock.mockImplementationOnce(async () => [
+        { id: 'class-05' }, { id: 'class-06' },
+    ]);
+
+    const response = await handlers['update-material'](
+        patchRequest({ subjectId: 'arq-software-2026', classIds: ['class-05', 'class-09'] }),
+        ctx()
+    );
+
+    assert.strictEqual(response.status, 400);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.code, 'UNKNOWN_CLASS_IDS');
+    assert.deepStrictEqual(body.knownClasses, ['class-05', 'class-06']);
+    // Ni el índice ni el estado del material se tocan.
+    assert.strictEqual(vectorStoreMocks.updateMaterialVectorsMetadata.mock.callCount(), 0);
+    assert.strictEqual(stateStoreMocks.upsertMaterialState.mock.callCount(), 0);
+});
+
 test('update-material no reindexa si los encuentros no cambian', async () => {
     vectorStoreMocks.updateMaterialVectorsMetadata.mock.resetCalls();
     stateStoreMocks.getMaterialState.mock.mockImplementationOnce(async () => ({ ...MATERIAL }));

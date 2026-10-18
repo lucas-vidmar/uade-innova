@@ -644,7 +644,37 @@ app.http('rag-query', {
         let priorityMap = {};
         try {
             const allMaterials = await listMaterialsBySubject(subjectId);
-            
+
+            // #328: un vector cuyo material no está registrado en la materia no
+            // puede alimentar una respuesta. Son vectores que quedaron en el
+            // índice con el `subjectId` equivocado (el propio índice los clasifica
+            // `orphan`: «no hay registro autoritativo — material de otra materia»)
+            // y su contenido es de otra unidad. Medido contra el entorno: una
+            // consulta de alumno acotada a `arq-software-2026/class-02` citaba el
+            // cronograma de otra asignatura (FACE/DEARH, LAUDON) porque ese vector
+            // llevaba `subjectId` de esta materia con clases de la otra.
+            //
+            // El filtro de revisión de abajo NO los cubría: se saltea cuando la
+            // materia no tiene ningún material revisado —que es el estado real del
+            // entorno— «para no bloquear el chat», y por esa puerta entraban. Este
+            // filtro no se saltea: si el registro cargó, el registro manda.
+            const knownMaterialIds = new Set(
+                allMaterials.map(m => String(m.materialId || m.id || '')).filter(Boolean)
+            );
+            // Con el registro vacío no se puede distinguir «la materia no tiene
+            // materiales» de «la lectura vino parcial», así que se conserva el
+            // comportamiento anterior —igual que el filtro de revisión— en vez de
+            // descartar todo. Residual declarado: una materia sin materiales
+            // registrados y con vectores huérfanos sigue expuesta.
+            if (knownMaterialIds.size > 0) {
+                const beforeOrphans = matches.length;
+                matches = matches.filter(m => knownMaterialIds.has(String(m.metadata?.materialId || '')));
+                if (beforeOrphans !== matches.length) {
+                    const dropped = beforeOrphans - matches.length;
+                    context.log(`[RAG] Filtro de registro autoritativo: se descartaron ${dropped} matches sin material en la materia (subjectId=${subjectId}, registrados=${knownMaterialIds.size}, correlationId=${correlationId})`);
+                }
+            }
+
             // Construir mapa de prioridades (overrides)
             allMaterials.forEach(m => {
                 if (m.priority) {

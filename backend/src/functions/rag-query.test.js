@@ -1752,6 +1752,55 @@ test('#328: rag-query drops matches with a mismatched subjectId (DASI leak)', as
     assert.ok(body.sources.every((s) => s.subjectId === 'materia1'), 'no debe llegar ningún source de otra materia');
     assert.ok(!body.sources.some((s) => s.sourceFilename === 'DASI Cronograma.docx'));
 });
+
+test('#328: rag-query no cita un vector cuyo material no está registrado en la materia', async (t) => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    for (let i = 0; i < 3; i++) { try { await openaiMocks.chatCompletion('drain'); } catch {} }
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.mockImplementation(async () => ({
+        content: 'Respuesta con el material propio de la unidad.',
+        usage: { prompt_tokens: 30, completion_tokens: 20, total_tokens: 50 },
+    }));
+
+    // La materia tiene un material registrado y NINGUNO revisado: es el estado
+    // real del entorno, y es la puerta por la que entraba el huérfano (el filtro
+    // de revisión se saltea cuando no hay ninguno revisado).
+    stateStoreMocks.listMaterialsBySubject.mock.mockImplementation(async () => [
+        { id: 'mat-registrado', materialId: 'mat-registrado', reviewed: false },
+    ]);
+
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter, topK) => {
+        if (filter?.materialType?.$eq === 'verified-answer') return [];
+        return [
+            // Huérfano medido en el entorno: su metadata dice que es de esta
+            // materia (así que el post-filtro de subjectId no lo ve) pero su
+            // material no está en el registro y su contenido es de otra unidad.
+            { score: 0.95, metadata: { materialType: 'notes', materialId: 'huerfano-b619', subjectId: 'materia1', text: 'Datos de la asignatura: Facultad FACE. Diseño y Auditoría', classIds: ['class1'], chunkIndex: 0, sourceFilename: 'DASI Cronograma.docx' } },
+            { score: 0.9, metadata: { materialType: 'notes', materialId: 'mat-registrado', subjectId: 'materia1', text: 'Contenido propio de la unidad', classIds: ['class1'], chunkIndex: 0, sourceFilename: 'propio.pdf' } },
+        ];
+    });
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = {
+        json: async () => ({ question: '¿Qué bibliografía se recomienda en la clase 1?', subjectId: 'materia1', classIds: ['class1'] }),
+        headers: new Map(),
+        user: { id: 'test-user' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+    const body = JSON.parse(response.body);
+    assert.ok(
+        !body.sources.some((s) => s.materialId === 'huerfano-b619'),
+        'un material sin registro autoritativo en la materia no debe alimentar la respuesta',
+    );
+    assert.ok(body.sources.every((s) => s.materialId === 'mat-registrado'));
+
+    t.after(() => {
+        stateStoreMocks.listMaterialsBySubject.mock.mockImplementation(async () => []);
+        vectorStoreMocks.querySimilar.mock.mockImplementation(defaultQuerySimilarImpl);
+    });
+});
 // ── #327/#338 regression: consent gate shape + SSE error code ──────
 test('rag-query consent gate returns machine-readable CONSENT_REQUIRED (#327/#338)', async () => {
     stateStoreMocks.getConsentStatus.mock.mockImplementationOnce(async () => false);

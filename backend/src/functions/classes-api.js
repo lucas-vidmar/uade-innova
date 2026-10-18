@@ -2451,7 +2451,35 @@ app.http('update-material', {
 
             const updates = {};
             if (body.type) updates.type = body.type;
-            if (body.classIds) updates.classIds = body.classIds;
+            if (body.classIds) {
+                // #328: las clases que se le asignan a un material tienen que
+                // existir en la materia. Aceptarlas a ciegas es lo que dejó en el
+                // índice vectores con el `subjectId` de esta unidad y clases de
+                // otra (el índice los clasifica `orphan`), y una consulta acotada a
+                // esta materia terminaba citando el contenido de la otra.
+                const pedidas = (Array.isArray(body.classIds) ? body.classIds : [])
+                    .map(c => String(c).trim()).filter(Boolean);
+                if (pedidas.length > 0) {
+                    const clases = await listClassesBySubject(subjectId);
+                    const validas = new Set(clases.map(c => String(c.id || c.classId || '')));
+                    // Si la materia no devolvió clases no hay contra qué validar
+                    // (lectura vacía o materia recién creada): se conserva el
+                    // comportamiento anterior en vez de rechazar todo.
+                    const desconocidas = validas.size > 0 ? pedidas.filter(c => !validas.has(c)) : [];
+                    if (desconocidas.length > 0) {
+                        return {
+                            status: 400,
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                error: `Estas clases no pertenecen a la unidad: ${desconocidas.join(', ')}`,
+                                code: 'UNKNOWN_CLASS_IDS',
+                                knownClasses: [...validas],
+                            }),
+                        };
+                    }
+                }
+                updates.classIds = body.classIds;
+            }
             if (body.filename) updates.filename = body.filename;
             if (typeof body.reviewed === 'boolean') updates.reviewed = body.reviewed;
             if (body.priority === 'primary' || body.priority === 'secondary') updates.priority = body.priority;
