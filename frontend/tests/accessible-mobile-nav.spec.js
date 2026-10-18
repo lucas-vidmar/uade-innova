@@ -70,6 +70,35 @@ async function loadMobileNav(page, role) {
   return nav;
 }
 
+// Mide la caja de un elemento recién cuando dejó de moverse: se exige que dos
+// lecturas consecutivas, en frames distintos, coincidan. Medir un elemento en
+// medio de una animación de entrada devuelve una geometría intermedia —no la del
+// producto— y es lo que volvía intermitente la comprobación de #474/#518.
+async function settledBox(locator) {
+  let previous = null;
+  await expect
+    .poll(
+      async () => {
+        const box = await locator.boundingBox();
+        if (!box) {
+          previous = null;
+          return false;
+        }
+        const still =
+          previous !== null &&
+          Math.abs(box.x - previous.x) < 0.5 &&
+          Math.abs(box.y - previous.y) < 0.5 &&
+          Math.abs(box.width - previous.width) < 0.5 &&
+          Math.abs(box.height - previous.height) < 0.5;
+        previous = box;
+        return still;
+      },
+      { message: 'la geometría del elemento no se asienta', timeout: 5000 },
+    )
+    .toBe(true);
+  return previous;
+}
+
 for (const [role, labels] of Object.entries(NAV_LABELS)) {
   test(`${role} mobile bottom nav links carry accessible names (QA-010)`, async ({ page }) => {
     const nav = await loadMobileNav(page, role);
@@ -121,14 +150,21 @@ test('con la guía de inicio abierta la navegación inferior sigue alcanzable (#
   const tooltip = page.locator('.onboarding-tooltip');
   await expect(tooltip).toBeVisible({ timeout: 10000 });
 
-  // La tarjeta entra con una transición de 200 ms (`translateY(20px)` → 0). Medir
-  // durante la animación devuelve un borde inferior hasta 20 px más abajo y volvía
-  // la aserción dependiente del tiempo de carga (pasaba o fallaba según el día,
-  // #474). Esperamos el estado asentado antes de medir.
+  // La tarjeta entra con una transición de 200 ms (`translateY(20px)` → 0) que
+  // arranca en el `requestAnimationFrame` de `OnboardingOverlay.renderStep`. El
+  // `toBeVisible()` de arriba NO espera esa transición (opacidad 0 sigue contando
+  // como visible para Playwright), así que medir apenas se hace visible devolvía
+  // un borde inferior hasta 20 px más abajo y la aserción pasaba o fallaba según
+  // el tiempo de carga, sin que cambiara nada del producto (#474, #518). Antes de
+  // medir hay que esperar el estado asentado: la transformación vuelve a la
+  // identidad, que es la geometría final que exige el requisito (QA-008).
   await expect(tooltip).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
 
-  const t = await tooltip.boundingBox();
-  const n = await nav.boundingBox();
+  // Y "asentado" es "quieto": la caja se lee recién cuando dos lecturas
+  // consecutivas coinciden, de modo que tampoco cae en medio de un movimiento
+  // posterior (un re-render de paso, un reflow).
+  const t = await settledBox(tooltip);
+  const n = await settledBox(nav);
   expect(t).not.toBeNull();
   expect(n).not.toBeNull();
 
