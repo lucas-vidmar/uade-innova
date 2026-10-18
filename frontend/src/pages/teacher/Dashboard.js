@@ -56,13 +56,16 @@ export async function renderTeacherDashboard(container) {
 
   const activeSubjectName = user.subjects?.find(s => s.id === activeSubjectId)?.name || 'Materia';
 
-  let classes = [], deadlines = [], corrections = [], disputes = [], closedDisputes = [];
+  let classes = [], deadlines = [], corrections = [], disputes = [], closedDisputes = [], integrityAlerts = [];
   try {
-    [classes = [], deadlines = [], corrections = [], disputes = []] = await Promise.all([
+    [classes = [], deadlines = [], corrections = [], disputes = [], integrityAlerts = []] = await Promise.all([
       api.getClasses(activeSubjectId),
       api.getDeadlines(activeSubjectId),
       api.getCorrectionsPending(activeSubjectId, undefined, 'all').catch(() => []),
       api.getGradeDisputes(activeSubjectId).catch(() => []),
+      // #328: avisos de integridad del índice de la unidad (material que no le
+      // pertenece y dejó de citarse). Si el canal falla, el tablero no se rompe.
+      api.getNotifications({ userId: user.id, subjectId: activeSubjectId, type: 'integrity', limit: 5 }).catch(() => []),
     ]);
     // Full history (open + closed) so a settled dispute stays traceable: who
     // resolved it and with what written rationale (UJ-41).
@@ -103,7 +106,25 @@ export async function renderTeacherDashboard(container) {
     </div>
   `;
 
+  const integrityBanner = (integrityAlerts || []).length === 0 ? '' : `
+    <div class="card" style="border-left:4px solid var(--color-warning);margin-bottom:var(--space-6);padding:var(--space-4)">
+      <div class="class-list-title" style="display:flex;align-items:center;gap:var(--space-2)">
+        ${icon('alert')} Índice de conocimiento — ${escapeHtml(activeSubjectName)}
+      </div>
+      ${(integrityAlerts || []).map(n => `
+        <div style="margin-top:var(--space-3)">
+          <div class="class-list-topics">${escapeHtml(n.message || n.title || '')}</div>
+          <div class="class-list-files">${escapeHtml(formatNotificationDate(n.createdAt))}</div>
+        </div>
+      `).join('')}
+      <div class="class-list-files" style="margin-top:var(--space-3)">
+        Revisá los materiales de la unidad: los fragmentos cuya metadata no cierra contra el registro no se citan en las respuestas del chat hasta regularizarlos.
+      </div>
+    </div>
+  `;
+
   container.innerHTML = `
+    ${integrityBanner}
     <!-- KPIs -->
     <div class="grid-3" style="margin-bottom:var(--space-8)">
       <div class="kpi-card">
@@ -921,6 +942,13 @@ function icon(name) {
   };
 
   return `<span class="ui-icon" aria-hidden="true">${icons[name] || icons.clock}</span>`;
+}
+
+function formatNotificationDate(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
 }
 
 function escapeHtml(value = '') {

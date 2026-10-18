@@ -126,6 +126,11 @@ const stateStoreMocks = {
     getConsentStatus: mock.fn(async () => true),
     listMaterialsBySubject: mock.fn(async () => []),
     listReviewedCorrections: mock.fn(async () => []),
+    listClassesBySubject: mock.fn(async () => []),
+    // El aviso de integridad del índice (index-integrity-alert) llega a
+    // state-store a través de notification-store: la simulación tiene que
+    // cubrir la superficie real del módulo o el grafo no instancia.
+    getEnrollmentsBySubject: mock.fn(async () => []),
 };
 
 const subjectWeightsMocks = {
@@ -150,6 +155,15 @@ mock.module('../services/prompts.js', { namedExports: promptsMocks });
 mock.module('../services/auth-utils.js', { namedExports: authUtilsMocks });
 mock.module('../services/telemetry.js', { namedExports: telemetryMocks });
 mock.module('../services/state-store.js', { namedExports: stateStoreMocks });
+
+// #328: el aviso de integridad se simula (no queremos que la prueba toque
+// almacenamiento real) y se registra con qué datos se levantó.
+const avisosDeIntegridad = [];
+mock.module('../services/index-integrity-alert.js', {
+    namedExports: {
+        alertIndexIntegrity: async (params) => { avisosDeIntegridad.push(params); return { notified: true, recipients: 1 }; },
+    },
+});
 mock.module('../services/subject-weights.js', { namedExports: subjectWeightsMocks });
 mock.module('../services/glossary-store.js', { namedExports: glossaryStoreMocks });
 
@@ -1754,6 +1768,7 @@ test('#328: rag-query drops matches with a mismatched subjectId (DASI leak)', as
 });
 
 test('#328: rag-query no cita un vector cuyo material no está registrado en la materia', async (t) => {
+    avisosDeIntegridad.length = 0;
     openaiMocks.chatCompletion.mock.resetCalls();
     for (let i = 0; i < 3; i++) { try { await openaiMocks.chatCompletion('drain'); } catch {} }
     openaiMocks.chatCompletion.mock.resetCalls();
@@ -1768,6 +1783,12 @@ test('#328: rag-query no cita un vector cuyo material no está registrado en la 
     stateStoreMocks.listMaterialsBySubject.mock.mockImplementation(async () => [
         { id: 'mat-registrado', materialId: 'mat-registrado', reviewed: false },
     ]);
+    // La limpieza se registra ANTES de las aserciones: si una falla, la
+    // simulación igual queda restaurada y no contamina las pruebas siguientes.
+    t.after(() => {
+        stateStoreMocks.listMaterialsBySubject.mock.mockImplementation(async () => []);
+        vectorStoreMocks.querySimilar.mock.mockImplementation(defaultQuerySimilarImpl);
+    });
 
     vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter, topK) => {
         if (filter?.materialType?.$eq === 'verified-answer') return [];
@@ -1795,11 +1816,65 @@ test('#328: rag-query no cita un vector cuyo material no está registrado en la 
         'un material sin registro autoritativo en la materia no debe alimentar la respuesta',
     );
     assert.ok(body.sources.every((s) => s.materialId === 'mat-registrado'));
+    // Y el descarte levanta el aviso a docentes y dirección con el material ajeno.
+    assert.strictEqual(avisosDeIntegridad.length, 1, 'el descarte tiene que avisar');
+    assert.strictEqual(avisosDeIntegridad[0].subjectId, 'materia1');
+    assert.deepStrictEqual(avisosDeIntegridad[0].droppedMaterialIds, ['huerfano-b619']);
+});
 
+test('#328: con el registro de materiales vacío, la unidad se juzga por sus clases', async (t) => {
+    avisosDeIntegridad.length = 0;
+    openaiMocks.chatCompletion.mock.resetCalls();
+    for (let i = 0; i < 3; i++) { try { await openaiMocks.chatCompletion('drain'); } catch {} }
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.mockImplementation(async () => ({
+        content: 'Respuesta con el material propio de la unidad.',
+        usage: { prompt_tokens: 30, completion_tokens: 20, total_tokens: 50 },
+    }));
+
+    // El registro de materiales resolvió vacío: no alcanza para juzgar por
+    // material, así que la unidad se juzga por las clases que sí tiene.
+    stateStoreMocks.listMaterialsBySubject.mock.mockImplementation(async () => []);
+    stateStoreMocks.listClassesBySubject.mock.mockImplementation(async () => [
+        { id: 'class-01' }, { id: 'class-02' },
+    ]);
     t.after(() => {
-        stateStoreMocks.listMaterialsBySubject.mock.mockImplementation(async () => []);
+        stateStoreMocks.listClassesBySubject.mock.mockImplementation(async () => []);
         vectorStoreMocks.querySimilar.mock.mockImplementation(defaultQuerySimilarImpl);
     });
+
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter) => {
+        if (filter?.materialType?.$eq === 'verified-answer') return [];
+        return [
+            // Dice ser de esta unidad, pero declara una clase que en ella no
+            // existe: es el vector ajeno que se midió en el entorno.
+            { score: 0.95, metadata: { materialType: 'notes', materialId: 'ajeno', subjectId: 'materia1', text: 'Cronograma de otra asignatura', classIds: ['class-09'], chunkIndex: 0, sourceFilename: 'DASI Cronograma.docx' } },
+            { score: 0.9, metadata: { materialType: 'notes', materialId: 'propio', subjectId: 'materia1', text: 'Contenido de la clase 2', classIds: ['class-02'], chunkIndex: 0, sourceFilename: 'propio.pdf' } },
+        ];
+    });
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = {
+        // El alcance pide las dos clases: así el filtro de alcance (que ya
+        // existía) no es el que descarta el fragmento ajeno y queda aislada la
+        // señal que se está probando —que la clase declarada no existe en la
+        // unidad—.
+        json: async () => ({ question: '¿Qué se ve en la clase 2?', subjectId: 'materia1', classIds: ['class-02', 'class-09'] }),
+        headers: new Map(),
+        user: { id: 'test-user' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+    const body = JSON.parse(response.body);
+    assert.ok(
+        !body.sources.some((s) => s.materialId === 'ajeno'),
+        'un fragmento que declara una clase inexistente en la unidad no debe citarse',
+    );
+    assert.ok(body.sources.some((s) => s.materialId === 'propio'));
+    // El aviso nombra la señal que lo disparó: la clase inexistente.
+    assert.strictEqual(avisosDeIntegridad.length, 1, 'el descarte tiene que avisar');
+    assert.deepStrictEqual(avisosDeIntegridad[0].droppedClassIds, ['class-09']);
 });
 // ── #327/#338 regression: consent gate shape + SSE error code ──────
 test('rag-query consent gate returns machine-readable CONSENT_REQUIRED (#327/#338)', async () => {

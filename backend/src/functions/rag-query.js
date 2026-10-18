@@ -15,8 +15,9 @@ import { withRateLimit } from '../middleware/with-rate-limit.js';
 import { withAuth } from '../middleware/with-auth.js';
 import { createStructuredLogger } from '../services/structured-logger.js';
 import { v4 as uuidv4 } from 'uuid';
-import { listMaterialsBySubject, listReviewedCorrections } from '../services/state-store.js';
+import { listMaterialsBySubject, listReviewedCorrections, listClassesBySubject } from '../services/state-store.js';
 import { getEnrollment, getConsentStatus } from '../services/state-store.js';
+import { alertIndexIntegrity } from '../services/index-integrity-alert.js';
 import { getGlossary } from '../services/glossary-store.js';
 import { getSubjectWeights } from '../services/subject-weights.js';
 import { CONFIG } from '../services/config.js';
@@ -658,20 +659,64 @@ app.http('rag-query', {
             // materia no tiene ningún material revisado —que es el estado real del
             // entorno— «para no bloquear el chat», y por esa puerta entraban. Este
             // filtro no se saltea: si el registro cargó, el registro manda.
-            const knownMaterialIds = new Set(
+            // ── Registro autoritativo de la unidad (#328) ─────────────
+            // Un vector cuya metadata no cierra contra el registro de la unidad
+            // no puede alimentar una respuesta: son vectores que quedaron en el
+            // índice con el `subjectId` equivocado (el propio índice los clasifica
+            // `orphan`/`mismatch`) y su contenido es de otra unidad. Medido contra
+            // el entorno: una consulta de alumno acotada a
+            // `arq-software-2026/class-02` citaba el cronograma de otra asignatura
+            // (FACE/DEARH, LAUDON) como bibliografía de la Clase 2.
+            //
+            // Tres estados que antes se confundían en uno:
+            //   1. la lectura del registro falló → no se puede juzgar: se deja
+            //      pasar y se registra el error (lo cubre el catch de abajo);
+            //   2. el registro resolvió vacío → no alcanza para juzgar por
+            //      material, así que se juzga por las clases de la unidad;
+            //   3. el registro resolvió con contenido → manda el registro.
+            // En los casos 2 y 3, si algo se descarta, se levanta el aviso a
+            // docentes y dirección: el índice quedó sucio y hay que regularizarlo.
+            const registrados = new Set(
                 allMaterials.map(m => String(m.materialId || m.id || '')).filter(Boolean)
             );
-            // Con el registro vacío no se puede distinguir «la materia no tiene
-            // materiales» de «la lectura vino parcial», así que se conserva el
-            // comportamiento anterior —igual que el filtro de revisión— en vez de
-            // descartar todo. Residual declarado: una materia sin materiales
-            // registrados y con vectores huérfanos sigue expuesta.
-            if (knownMaterialIds.size > 0) {
-                const beforeOrphans = matches.length;
-                matches = matches.filter(m => knownMaterialIds.has(String(m.metadata?.materialId || '')));
-                if (beforeOrphans !== matches.length) {
-                    const dropped = beforeOrphans - matches.length;
-                    context.log(`[RAG] Filtro de registro autoritativo: se descartaron ${dropped} matches sin material en la materia (subjectId=${subjectId}, registrados=${knownMaterialIds.size}, correlationId=${correlationId})`);
+            let clasesDeLaUnidad = new Set();
+            if (registrados.size === 0) {
+                try {
+                    const clases = await listClassesBySubject(subjectId);
+                    clasesDeLaUnidad = new Set(
+                        clases.map(c => String(c.id || c.classId || '')).filter(Boolean)
+                    );
+                } catch (err) {
+                    context.error?.('[RAG] No se pudieron leer las clases de la unidad para validar el índice:', err);
+                }
+            }
+            if (registrados.size > 0 || clasesDeLaUnidad.size > 0) {
+                const antesDelFiltro = matches.length;
+                const materialesAjenos = new Set();
+                const clasesAjenas = new Set();
+                matches = matches.filter((m) => {
+                    const materialId = String(m.metadata?.materialId || '');
+                    const clasesDelVector = (Array.isArray(m.metadata?.classIds) ? m.metadata.classIds : [])
+                        .map(c => String(c)).filter(Boolean);
+                    const materialFuera = registrados.size > 0 && Boolean(materialId) && !registrados.has(materialId);
+                    const claseFuera = clasesDeLaUnidad.size > 0
+                        && clasesDelVector.some(c => !clasesDeLaUnidad.has(c));
+                    if (!materialFuera && !claseFuera) return true;
+                    if (materialFuera) materialesAjenos.add(materialId);
+                    if (claseFuera) clasesDelVector.forEach(c => { if (!clasesDeLaUnidad.has(c)) clasesAjenas.add(c); });
+                    return false;
+                });
+                if (materialesAjenos.size > 0 || clasesAjenas.size > 0) {
+                    context.log(`[RAG] Filtro de registro autoritativo: se descartaron ${antesDelFiltro - matches.length} fragmentos (materiales fuera de la unidad: ${materialesAjenos.size}, clases inexistentes: ${clasesAjenas.size}; subjectId=${subjectId}, registrados=${registrados.size}, correlationId=${correlationId})`);
+                    // Docentes y dirección tienen que enterarse: el índice quedó
+                    // con material ajeno y hay que regularizarlo. Best-effort: no
+                    // bloquea ni demora la respuesta.
+                    alertIndexIntegrity({
+                        subjectId,
+                        droppedMaterialIds: [...materialesAjenos],
+                        droppedClassIds: [...clasesAjenas],
+                        context,
+                    }).catch((e) => context.error?.('[RAG] Error al dejar el aviso de integridad:', e));
                 }
             }
 

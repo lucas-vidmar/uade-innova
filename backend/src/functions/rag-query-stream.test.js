@@ -90,6 +90,11 @@ const stateStoreMocks = {
     getConsentStatus: mock.fn(async () => true),
     listMaterialsBySubject: mock.fn(async () => []),
     listReviewedCorrections: mock.fn(async () => []),
+    listClassesBySubject: mock.fn(async () => []),
+    // El aviso de integridad del índice (index-integrity-alert) llega a
+    // state-store a través de notification-store: la simulación tiene que
+    // cubrir la superficie real del módulo o el grafo no instancia.
+    getEnrollmentsBySubject: mock.fn(async () => []),
 };
 
 mock.module('../services/ai.js', { namedExports: openaiMocks });
