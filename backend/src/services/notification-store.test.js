@@ -268,3 +268,26 @@ test('#328: un tipo desconocido sigue cayendo a material (el fallback no se pier
   const [, , payload] = storageMocks.saveJson.mock.calls.at(-1).arguments;
   assert.strictEqual(payload[0].type, 'material');
 });
+
+// UJ-35: el aviso anticipado conserva la franja horaria con la que salió, para
+// que quede constancia de que no salió a cualquier hora.
+test('upsertNotificationForSubject conserva la franja horaria del aviso (UJ-35)', async () => {
+  storageMocks.loadJson.mock.mockImplementation(async () => []);
+  storageMocks.saveJson.mock.mockImplementation(async () => true);
+
+  await store.upsertNotificationForSubject('arq-software-2026', {
+    id: 'notif-deadline-arq-software-2026-d-24h-evening',
+    type: 'deadline',
+    title: 'Deadline en 24 horas',
+    message: 'TP vence pronto.',
+    subjectId: 'arq-software-2026',
+    recipientUserIds: ['alu-004'],
+    origin: 'deadline-proximity-timer',
+    deliveryWindow: 'evening',
+  });
+
+  const [, , payload] = storageMocks.saveJson.mock.calls.at(-1).arguments;
+  const saved = payload.find((n) => n.id === 'notif-deadline-arq-software-2026-d-24h-evening');
+  assert.ok(saved, 'la notificación debe persistirse');
+  assert.strictEqual(saved.deliveryWindow, 'evening');
+});

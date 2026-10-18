@@ -72,6 +72,9 @@ function normalizeNotification(item = {}, idx = 0) {
     recipientUserIds: normalizeRecipientUserIds(item.recipientUserIds),
     readByUserIds: normalizeReadByUserIds(item.readByUserIds),
     origin: item.origin || 'manual',
+    // UJ-35: con qué franja horaria salió el aviso anticipado, para que quede
+    // constancia de que no salió a cualquier hora.
+    deliveryWindow: item.deliveryWindow || 'any',
   };
 }
 
