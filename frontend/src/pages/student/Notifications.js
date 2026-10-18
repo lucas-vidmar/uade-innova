@@ -10,6 +10,8 @@ const FILTER_TABS = [
   { id: 'deadline', label: 'Deadline' },
   { id: 'material', label: 'Material' },
   { id: 'teacher-reminder', label: 'Recordatorio' },
+  // #328: aviso de integridad del indice de la unidad.
+  { id: 'integrity', label: 'Integridad' },
 ];
 
 const PAGE_SIZE = 25;
@@ -158,8 +160,8 @@ export async function renderStudentNotifications(container) {
     }
 
     return displayedNotifications.map((item) => {
-      const icon = item.type === 'grade' ? '📝' : item.type === 'summary' ? '📘' : item.type === 'deadline' ? '⏰' : item.type === 'teacher-reminder' ? '👨‍🏫' : '📂';
-      const typeLabel = item.type === 'grade' ? 'Nota' : item.type === 'summary' ? 'Resumen' : item.type === 'deadline' ? 'Deadline' : item.type === 'teacher-reminder' ? 'Recordatorio' : 'Material';
+      const icon = item.type === 'integrity' ? '🛡️' : item.type === 'grade' ? '📝' : item.type === 'summary' ? '📘' : item.type === 'deadline' ? '⏰' : item.type === 'teacher-reminder' ? '👨‍🏫' : '📂';
+      const typeLabel = item.type === 'integrity' ? 'Integridad' : item.type === 'grade' ? 'Nota' : item.type === 'summary' ? 'Resumen' : item.type === 'deadline' ? 'Deadline' : item.type === 'teacher-reminder' ? 'Recordatorio' : 'Material';
       return `
         <div class="notif-item ${item.unread ? 'unread' : ''}" data-notification-id="${item.id}" data-target-hash="${item.targetHash || '#/student/dashboard'}">
           <div class="notif-item-icon">${icon}</div>

@@ -229,3 +229,42 @@ test('retractClassSummaryNotification should skip when classData is missing id',
   assert.strictEqual(result.dispatched, 0);
   assert.strictEqual(storageMocks.saveJson.mock.callCount(), saveBefore);
 });
+
+test('#328: un aviso de tipo integrity se guarda como integrity y no se degrada', async () => {
+  storageMocks.loadJson.mock.mockImplementation(async () => []);
+  storageMocks.saveJson.mock.mockImplementation(async () => true);
+
+  await store.upsertNotificationForSubject('arq-software-2026', {
+    id: 'integridad-indice-arq-software-2026',
+    type: 'integrity',
+    title: 'El índice de la unidad tiene material que no le pertenece',
+    message: 'Se descartaron fragmentos al responder.',
+    subjectId: 'arq-software-2026',
+    recipientUserIds: ['prof-001', 'dir-001'],
+    origin: 'rag-registry-filter',
+  });
+
+  const [, , payload] = storageMocks.saveJson.mock.calls.at(-1).arguments;
+  assert.strictEqual(payload.length, 1);
+  assert.strictEqual(
+    payload[0].type,
+    'integrity',
+    'el tipo se degradaba a material y el aviso quedaba invisible para quien lo filtra por su tipo',
+  );
+  assert.deepStrictEqual(payload[0].recipientUserIds, ['prof-001', 'dir-001']);
+});
+
+test('#328: un tipo desconocido sigue cayendo a material (el fallback no se pierde)', async () => {
+  storageMocks.loadJson.mock.mockImplementation(async () => []);
+  storageMocks.saveJson.mock.mockImplementation(async () => true);
+
+  await store.upsertNotificationForSubject('arq-software-2026', {
+    id: 'notif-tipo-inexistente',
+    type: 'tipo-que-no-existe',
+    title: 'x',
+    subjectId: 'arq-software-2026',
+  });
+
+  const [, , payload] = storageMocks.saveJson.mock.calls.at(-1).arguments;
+  assert.strictEqual(payload[0].type, 'material');
+});
