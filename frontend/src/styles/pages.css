@@ -3037,6 +3037,22 @@
     color: var(--color-text-muted);
 }
 
+/* #392: plazo visible del procesamiento y desambiguación de copias homónimas. */
+.file-item-hint {
+    margin-top: 2px;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+}
+
+.file-item-tag {
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    color: var(--color-text-muted);
+    background: var(--color-surface-3);
+    border-radius: var(--radius-full);
+    padding: 1px 6px;
+}
+
 .file-remove {
     color: var(--color-text-muted);
     font-size: 14px;

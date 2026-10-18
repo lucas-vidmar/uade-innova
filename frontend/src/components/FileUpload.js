@@ -4,6 +4,7 @@
 import { toast } from './Toast.js';
 import { api } from '../services/api.js';
 import { showConfirmDialog } from './Dialog.js';
+import { uploadDrafts } from '../services/upload-drafts.js';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -20,9 +21,9 @@ const TYPE_CONFIG = {
 
 const STATUS_CONFIG = {
   pending: { label: 'Pendiente', badge: 'badge-neutral', icon: '⏳' },
-  processing: { 
-    label: 'Procesando', 
-    badge: 'badge-warning', 
+  processing: {
+    label: 'Procesando',
+    badge: 'badge-warning',
     icon: '⚙️',
     tip: 'Extrayendo texto y vectorizando para el chat...'
   },
@@ -30,14 +31,73 @@ const STATUS_CONFIG = {
   error: { label: 'Error', badge: 'badge-error', icon: '❌' },
 };
 
-export function createFileUpload({ type = 'transcript', onUpload, existingFiles = [], stageFile = null }) {
+// #392: el alta tarda minutos (el caso reportado tardó 119 s). Sin un plazo
+// visible el docente no distingue "está procesando" de "se colgó".
+export const PROCESSING_HINT = 'puede tardar unos minutos';
+
+function formatElapsed(ms) {
+  const totalSeconds = Math.max(0, Math.round((Number(ms) || 0) / 1000));
+  if (totalSeconds < 60) return `${totalSeconds} s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return seconds ? `${minutes} min ${seconds} s` : `${minutes} min`;
+}
+
+function normalizeName(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+export function createFileUpload({
+  type = 'transcript',
+  onUpload,
+  existingFiles = [],
+  stageFile = null,
+  uploadContext = null,
+  destinoLabel = '',
+}) {
   const cfg = TYPE_CONFIG[type];
   const container = document.createElement('div');
   container.className = 'file-upload-container';
 
   let files = [...existingFiles];
+  let elapsedTimer = null;
+  // Piezas elegidas en ESTA carga (no las que ya venían del servidor). El flag
+  // `_new` viaja también en los materiales espejados del servidor, así que no
+  // alcanza para distinguir "elegido ahora" de "ya existía".
+  const piezasNuevas = new Set();
+
+  const hasPendingWork = () => files.some((f) => f.status === 'processing');
+
+  // #392: el avance del procesamiento es real (lo sondea processingNotifications);
+  // lo único que hace falta es refrescar el tiempo transcurrido para que el
+  // "Procesando" no sea un cartel mudo.
+  const startElapsedTimer = () => {
+    if (elapsedTimer) return;
+    elapsedTimer = setInterval(() => {
+      if (!container.isConnected) {
+        clearInterval(elapsedTimer);
+        elapsedTimer = null;
+        return;
+      }
+      if (!hasPendingWork()) {
+        clearInterval(elapsedTimer);
+        elapsedTimer = null;
+        return;
+      }
+      render();
+    }, 1000);
+  };
 
   const render = () => {
+    const repeatedNames = new Set();
+    const seenNames = new Set();
+    files.forEach((f) => {
+      const key = normalizeName(f.filename || f.name);
+      if (!key) return;
+      if (seenNames.has(key)) repeatedNames.add(key);
+      seenNames.add(key);
+    });
+
     container.innerHTML = `
       <div class="file-drop-zone" id="drop-zone-${type}" tabindex="0" role="button" aria-label="Zona de carga de ${cfg.label}">
         <input type="file" id="file-input-${type}" accept="${cfg.accept}" multiple class="file-input-hidden" />
@@ -49,27 +109,47 @@ export function createFileUpload({ type = 'transcript', onUpload, existingFiles 
 
       ${files.length > 0 ? `
         <div class="file-list" id="file-list-${type}">
-          ${files.map((f, i) => renderFileItem(f, i)).join('')}
+          ${files.map((f, i) => renderFileItem(f, i, repeatedNames)).join('')}
         </div>
       ` : ''}
     `;
     bindEvents();
+    if (hasPendingWork()) startElapsedTimer();
   };
 
-  const renderFileItem = (f, i) => {
+  const renderFileItem = (f, i, repeatedNames) => {
     const statusCfg = STATUS_CONFIG[f.status] || STATUS_CONFIG.pending;
-    const isNew = f._new;
+    const name = f.filename || f.name;
+    // #392: con varias copias del mismo nombre la lista obligaba a adivinar
+    // cuál era cuál; cada repetida lleva su índice visible.
+    const repeated = repeatedNames.has(normalizeName(name));
+    // `_uploading`: el POST todavía está en vuelo (el servidor aún no confirmó el
+    // alta). No cambia el badge —eso lo cubre el sondeo de processingNotifications—
+    // pero sí la sub-línea, que pasa de un "subiendo" honesto a un plazo real.
+    const subiendo = f._uploading === true;
+    const isProcessing = f.status === 'processing';
+
+    let hint = '';
+    if (subiendo) {
+      hint = `<div class="file-item-hint">Subiendo al servidor…</div>`;
+    } else if (isProcessing) {
+      const since = f._startedAt || (f.uploadedAt ? new Date(f.uploadedAt).getTime() : null);
+      const elapsed = since ? ` hace ${formatElapsed(Date.now() - since)}` : '';
+      hint = `<div class="file-item-hint">Procesando${elapsed} · ${PROCESSING_HINT}</div>`;
+    }
+
     return `
       <div class="file-item" data-index="${i}">
         <div class="file-item-icon">${cfg.icon}</div>
         <div class="file-item-info">
-          <div class="file-item-name">${f.filename || f.name}</div>
+          <div class="file-item-name">${name}${repeated ? ` <span class="file-item-tag">#${i + 1}</span>` : ''}</div>
           <div class="file-item-meta">${f.mimeType || f.type || ''}</div>
-          ${isNew && f.status === 'processing' ? `
+          ${subiendo ? `
             <div class="progress-bar" style="margin-top:6px">
-              <div class="progress-fill" style="--progress-value:${f._progress || 0}%"></div>
+              <div class="progress-fill animate-pulse" style="--progress-value:100%"></div>
             </div>
           ` : ''}
+          ${hint}
         </div>
         <span class="badge ${statusCfg.badge}">
           ${statusCfg.icon} ${statusCfg.label}
@@ -103,6 +183,7 @@ export function createFileUpload({ type = 'transcript', onUpload, existingFiles 
         const fileObj = files[idx];
 
         if (fileObj._new) {
+          piezasNuevas.delete(fileObj);
           files.splice(idx, 1);
           render();
         } else {
@@ -128,11 +209,47 @@ export function createFileUpload({ type = 'transcript', onUpload, existingFiles 
     });
   };
 
+  // #392: la misma pieza ya cargada (en el servidor o elegida en esta misma
+  // carga) dejaba de ser invisible y se subía dos veces sin aviso.
+  const findDuplicate = (rawFile) => {
+    const name = normalizeName(rawFile.name);
+    const size = rawFile.size;
+    const matches = (candidate) => {
+      if (!candidate) return false;
+      if (normalizeName(candidate.filename || candidate.name) !== name) return false;
+      const candidateSize = candidate.size ?? candidate.fileSize ?? null;
+      return candidateSize == null || size == null || candidateSize === size;
+    };
+    return {
+      enServidor: existingFiles.some(matches),
+      enEstaCarga: files.some((f) => piezasNuevas.has(f) && matches(f)),
+    };
+  };
+
+  const confirmDuplicate = async (rawFile, dup) => {
+    const donde = dup.enEstaCarga
+      ? `Ya elegiste "${rawFile.name}" en esta misma carga.`
+      : `Ya hay un material con el nombre "${rawFile.name}"${destinoLabel ? ` en ${destinoLabel}` : ''}.`;
+    return showConfirmDialog({
+      title: 'Material duplicado',
+      message: `${donde} Si lo cargás otra vez vas a tener dos copias del mismo material, indistinguibles en la lista.`,
+      confirmText: 'Cargar igual',
+      cancelText: 'Cancelar',
+      danger: false,
+    });
+  };
+
   const handleFiles = async (rawFiles) => {
     for (const file of rawFiles) {
       if (file.size > MAX_FILE_SIZE) {
         toast('error', 'Archivo demasiado grande', `"${file.name}" supera el límite de 10MB.`);
         continue;
+      }
+
+      const dup = findDuplicate(file);
+      if (dup.enServidor || dup.enEstaCarga) {
+        const seguir = await confirmDuplicate(file, dup);
+        if (!seguir) continue;
       }
 
       const fileObj = {
@@ -142,6 +259,7 @@ export function createFileUpload({ type = 'transcript', onUpload, existingFiles 
         status: 'processing',
         type,
         _progress: 0,
+        _startedAt: Date.now(),
         _file: file,
       };
 
@@ -152,6 +270,7 @@ export function createFileUpload({ type = 'transcript', onUpload, existingFiles 
       if (typeof stageFile === 'function') {
         fileObj.status = 'pending';
         files.push(fileObj);
+        piezasNuevas.add(fileObj);
         render();
         try {
           await stageFile(fileObj, file);
@@ -164,19 +283,20 @@ export function createFileUpload({ type = 'transcript', onUpload, existingFiles 
         continue;
       }
 
-      files.push(fileObj);
-      render();
+      const pieza = {
+        subjectId: uploadContext?.subjectId || null,
+        type,
+        filename: file.name,
+        size: file.size,
+      };
 
-      // Animate progress to show it's working
-      let progress = 0;
-      const interval = setInterval(() => {
-        progress += Math.random() * 15;
-        if (progress >= 90) progress = 90;
-        const idx = files.indexOf(fileObj);
-        fileObj._progress = progress;
-        const progressFill = container.querySelector(`.file-item[data-index="${idx}"] .progress-fill`);
-        if (progressFill) progressFill.style.setProperty('--progress-value', `${progress}%`);
-      }, 300);
+      fileObj._uploading = true;
+      files.push(fileObj);
+      piezasNuevas.add(fileObj);
+      // #392: el borrador persistido es lo que permite avisar de una carga
+      // interrumpida (refresco a mitad de camino) y frenar el cierre accidental.
+      uploadDrafts.begin(pieza);
+      render();
 
       try {
         const formData = new FormData();
@@ -186,18 +306,22 @@ export function createFileUpload({ type = 'transcript', onUpload, existingFiles 
         // Wait, it's better to delegate the actual upload to the caller `onUploadFile` so FileUpload remains reusable.
 
         await onUpload?.(fileObj, file, (progressValue) => {
-          clearInterval(interval);
           fileObj._progress = progressValue;
           render();
         });
 
-        clearInterval(interval);
+        fileObj._uploading = false;
         fileObj.status = 'processing';
         fileObj._progress = 100;
+        fileObj._startedAt = Date.now();
+        // El servidor confirmó el alta: recién ahora el borrador deja de ser
+        // necesario. Si falla (o si la página se va a mitad de camino), el
+        // borrador queda y el próximo arranque avisa que la carga no llegó.
+        uploadDrafts.clear(pieza);
         render();
         toast('info', 'Procesando archivo', `"${file.name}" se subió y está siendo analizado por la IA en segundo plano.`);
       } catch (error) {
-        clearInterval(interval);
+        fileObj._uploading = false;
         fileObj.status = 'error';
         fileObj._progress = 0;
         render();

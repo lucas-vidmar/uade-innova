@@ -57,7 +57,12 @@ test('teacher sees global toast when processing finishes after navigation', asyn
               id: 'material-001',
               classId: 'class-14',
               type: 'transcript',
-              filename: 'clase14.txt',
+              // #392: la clase ya tiene un material, pero con OTRO nombre. Si el
+              // fixture repitiera el nombre de la pieza que se sube, el aviso de
+              // duplicado (nuevo) frenaría la carga y este test dejaría de probar
+              // lo suyo (toast global + sondeo). El estado se resuelve por
+              // materialId, así que el nombre es indistinto para lo que se verifica.
+              filename: 'clase14-previo.txt',
               mimeType: 'text/plain',
               status,
               uploadedAt: '2026-04-10T10:00:00Z',
