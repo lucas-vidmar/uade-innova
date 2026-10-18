@@ -5,7 +5,10 @@ import { validateFrontDoorId } from '../../../services/auth-utils.js';
 import { getEnrollment, getCorrection, updateCorrectionStatus } from '../../../services/state-store.js';
 import { logWarn } from '../../../services/log.js';
 
-const VALID_STATUSES = ['pending', 'resolved'];
+// #552: el front ofrece tres acciones (Pendiente / Revisado / Resuelto) y el
+// filtro de lectura ya aceptaba 'reviewed', pero la validación de escritura no:
+// marcar «Revisado» devolvía 400 INVALID_STATUS y el reporte quedaba pendiente.
+const VALID_STATUSES = ['pending', 'reviewed', 'resolved'];
 
 app.http('update-correction-status', {
   methods: ['PATCH'],
@@ -115,8 +118,12 @@ app.http('update-correction-status', {
         };
       }
 
-      // Saga: Pendiente -> (nota) Verificado -> (cierre) Resuelto (#350).
-      // Verified is an intermediate state; only Resuelto closes it.
+      // Saga: Pendiente -> (marcado) Revisado -> (cierre) Resuelto, y
+      // Pendiente -> (nota) Verificado -> (cierre) Resuelto (#350).
+      // Revisado y Verificado son intermedios; solo Resuelto cierra. #552: sin
+      // 'reviewed' acá, un reporte marcado como revisado quedaba sin poder
+      // cerrarse —el front ofrece el botón Resuelto para él— y el 400 decía que
+      // solo se podían resolver los pendientes.
       if (correction.status === 'verified') {
         if (status !== 'resolved') {
           return {
@@ -128,13 +135,13 @@ app.http('update-correction-status', {
             }),
           };
         }
-      } else if (correction.status !== 'pending') {
+      } else if (correction.status !== 'pending' && correction.status !== 'reviewed') {
         return {
           status: 400,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             success: false,
-            error: { code: 'INVALID_TRANSITION', message: 'Solo se pueden resolver correcciones pendientes o verificadas.' },
+            error: { code: 'INVALID_TRANSITION', message: 'Solo se pueden resolver correcciones pendientes, revisadas o verificadas.' },
           }),
         };
       }

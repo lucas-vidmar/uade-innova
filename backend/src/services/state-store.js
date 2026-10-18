@@ -734,7 +734,9 @@ export async function updateCorrectionStatus(subjectId, correctionId, newStatus,
     throw new Error('Corrección no encontrada.');
   }
 
-  const validStatuses = ['pending', 'resolved', 'verified'];
+  // #552: la lista tiene que coincidir con la que acepta la ruta de escritura, si
+  // no un estado válido para la API revienta acá y la respuesta es un 500.
+  const validStatuses = ['pending', 'reviewed', 'resolved', 'verified'];
   if (!validStatuses.includes(newStatus)) {
     throw new Error(`Estado inválido: ${newStatus}`);
   }

@@ -78,7 +78,10 @@ export async function renderTeacherDashboard(container) {
 
   const pendingCorrections = corrections.filter(c => c.status === 'pending');
   pendingCorrections.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-  const resolvedCorrections = corrections.filter(c => c.status === 'resolved');
+  // #552: 'reviewed' y 'verified' son estados intermedios reales del reporte. Si
+  // no cuentan como cerrados, la fila desaparece de las dos listas del tablero y
+  // el reporte queda sin rastro acá (la bandeja sí lo sigue mostrando).
+  const resolvedCorrections = corrections.filter(c => ['resolved', 'reviewed', 'verified'].includes(c.status));
   resolvedCorrections.sort((a, b) => new Date(b.resolvedAt || b.createdAt || 0) - new Date(a.resolvedAt || a.createdAt || 0));
   const topAlerts = [...pendingCorrections, ...resolvedCorrections].slice(0, 5);
 
