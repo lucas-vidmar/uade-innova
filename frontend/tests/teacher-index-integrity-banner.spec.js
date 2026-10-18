@@ -62,13 +62,14 @@ async function prepararTableroDocente(page, notificaciones) {
 test('el tablero del docente muestra el aviso de integridad del índice', async ({ page }) => {
   await prepararTableroDocente(page, [AVISO]);
 
-  const aviso = page.getByText('Índice de conocimiento — Arquitectura de Software 2026');
-  await expect(aviso).toBeVisible();
+  const banner = page.locator('.card').filter({ hasText: 'Índice de conocimiento' });
+  await expect(banner).toBeVisible();
 
   // El aviso dice qué se descartó y por qué señal, para que se pueda accionar.
-  await expect(page.getByText('no figuran en la unidad', { exact: false })).toBeVisible();
-  await expect(page.getByText('class-07, class-08', { exact: false })).toBeVisible();
-  await expect(page.getByText('no se citan en las respuestas', { exact: false })).toBeVisible();
+  await expect(banner).toContainText('Índice de conocimiento — Arquitectura de Software 2026');
+  await expect(banner).toContainText('1 material/es que no figuran en la unidad (b619ef64)');
+  await expect(banner).toContainText('2 clase/s que no existen en la unidad (class-07, class-08)');
+  await expect(banner).toContainText('no se citan en las respuestas del chat');
 });
 
 test('sin avisos de integridad el tablero no muestra el bloque', async ({ page }) => {
