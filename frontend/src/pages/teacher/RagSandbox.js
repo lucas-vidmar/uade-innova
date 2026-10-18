@@ -50,6 +50,25 @@ function deduplicateSources(sources) {
   });
 }
 
+/**
+ * Formato de fecha y hora alineado con el resto de la app (ver `#/teacher/corrections`,
+ * `#/teacher/dashboard`): día + mes abreviado + hora con sufijo a. m./p. m.
+ *
+ * `toLocaleTimeString('es-AR')` a secas (lo que usaba el historial) devuelve 12 horas
+ * SIN indicador en el motor del navegador: `00:00:04` y `12:00:04` salían ambos como
+ * «12:00:04» y no había forma de distinguir medianoche de mediodía (#553).
+ */
+function formatDateTimeEsAr(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('es-AR', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 function getHistoryKey(subjectId) {
   return `${HISTORY_KEY_PREFIX}${subjectId}`;
 }
@@ -262,7 +281,7 @@ export async function renderTeacherRagSandbox(container) {
     listEl.innerHTML = history
       .map((entry, index) => `
         <div class="history-entry" style="padding:var(--space-2) 0;border-bottom:1px solid var(--color-border);cursor:pointer" data-history-index="${index}">
-          <div style="font-size:var(--font-size-xs);color:var(--color-text-muted)">${new Date(entry.timestamp).toLocaleTimeString('es-AR')}</div>
+          <div style="font-size:var(--font-size-xs);color:var(--color-text-muted)">${formatDateTimeEsAr(entry.timestamp)}</div>
           <div style="font-size:var(--font-size-sm);font-weight:600">${escapeHtml(entry.question)}</div>
           <div style="font-size:var(--font-size-xs);color:var(--color-text-secondary)">${escapeHtml(entry.answer || '').slice(0, 120)}${(entry.answer || '').length > 120 ? '…' : ''}</div>
         </div>
@@ -296,7 +315,7 @@ export async function renderTeacherRagSandbox(container) {
     listEl.innerHTML = comparison.map((c, index) => `
       <div class="card mb-3" style="border:1px solid var(--color-border)" data-comparison-index="${index}">
         <div class="p-3" style="border-bottom:1px solid var(--color-border)">
-          <div style="font-size:var(--font-size-xs);color:var(--color-text-muted)">${new Date(c.timestamp).toLocaleString('es-AR')} · caso ${index + 1}</div>
+          <div style="font-size:var(--font-size-xs);color:var(--color-text-muted)">${formatDateTimeEsAr(c.timestamp)} · caso ${index + 1}</div>
           <div style="font-weight:600">${escapeHtml(c.question)}</div>
         </div>
         <div class="dashboard-layout-grid" style="padding:var(--space-3);gap:var(--space-3)">
