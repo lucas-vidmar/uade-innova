@@ -29,6 +29,9 @@ export async function renderStudentSettings(container) {
   const state = {
     enabled: prefs?.enabled !== false,
     cadence: prefs?.cadence || 'both',
+    // UJ-35: la franja horaria y la decisión por fecha son de la persona.
+    timeWindow: prefs?.timeWindow || 'any',
+    datePrefs: prefs?.datePrefs && typeof prefs.datePrefs === 'object' ? prefs.datePrefs : {},
     reminderPrefsError,
     saving: false,
     savingBot: false,
@@ -149,6 +152,26 @@ export async function renderStudentSettings(container) {
             </div>
           </div>
 
+          <div id="time-window-section" style="margin-top:var(--space-6);${state.enabled ? '' : 'opacity:0.5;pointer-events:none'}">
+            <div style="font-weight:600;margin-bottom:var(--space-3)">Franja horaria de los avisos</div>
+            <p style="font-size:var(--fs-sm);color:var(--color-text-secondary);margin-bottom:var(--space-3)">
+              Los avisos anticipados llegan dentro de esta franja horaria, no a cualquier hora.
+            </p>
+            <select class="form-input" id="reminder-time-window" ${state.saving || state.reminderPrefsError ? 'disabled' : ''}>
+              <option value="any" ${state.timeWindow === 'any' ? 'selected' : ''}>A cualquier hora</option>
+              <option value="morning" ${state.timeWindow === 'morning' ? 'selected' : ''}>Por la mañana (06:00 a 12:00)</option>
+              <option value="afternoon" ${state.timeWindow === 'afternoon' ? 'selected' : ''}>Por la tarde (12:00 a 19:00)</option>
+              <option value="evening" ${state.timeWindow === 'evening' ? 'selected' : ''}>Por la noche (19:00 a 23:00)</option>
+            </select>
+          </div>
+
+          <div style="margin-top:var(--space-6);padding:var(--space-3);border-radius:var(--radius);background:var(--color-surface-2);font-size:var(--fs-sm);color:var(--color-text-secondary)">
+            Antelación por fecha: elegí en el
+            <a href="#/student/calendar">calendario</a> qué fechas querés vigilar y con cuánta antelación.
+            Tenés ${Object.values(state.datePrefs).filter(p => p && p.watch === true).length} fecha(s) vigilada(s)
+            y ${Object.values(state.datePrefs).filter(p => p && p.watch === false).length} sin aviso.
+          </div>
+
           <button class="btn btn-primary" id="save-settings-btn" style="margin-top:var(--space-6);width:100%" ${state.saving || state.reminderPrefsError ? 'disabled' : ''}>
             ${state.saving ? 'Guardando...' : 'Guardar preferencias'}
           </button>
@@ -228,6 +251,10 @@ export async function renderStudentSettings(container) {
       });
     });
 
+    container.querySelector('#reminder-time-window')?.addEventListener('change', (e) => {
+      state.timeWindow = e.target.value;
+    });
+
     container.querySelector('#save-settings-btn')?.addEventListener('click', async () => {
       // Fix #346: never leave the form locked in "Guardando..." — the old
       // toast.success()/toast.error() calls don't exist (toast is a plain
@@ -238,9 +265,11 @@ export async function renderStudentSettings(container) {
       try {
         // fix #352: saveReminderPreferences() returns null when the POST fails,
         // so the old code toasted "guardadas" even when nothing was saved.
-        const saved = await api.saveReminderPreferences({ enabled: state.enabled, cadence: state.cadence });
+        // UJ-35: la franja viaja con el guardado; la decisión por fecha del
+        // calendario la preserva el backend (no se manda acá).
+        const saved = await api.saveReminderPreferences({ enabled: state.enabled, cadence: state.cadence, timeWindow: state.timeWindow });
         if (!saved) throw new Error('El servicio no confirmó el guardado.');
-        auth.setReminderPreferences({ enabled: state.enabled, cadence: state.cadence });
+        auth.setReminderPreferences({ enabled: state.enabled, cadence: state.cadence, timeWindow: state.timeWindow, datePrefs: state.datePrefs });
         toast('success', 'Preferencias guardadas', 'Preferencias guardadas correctamente.');
       } catch (err) {
         toast('error', 'Error al guardar', 'Error al guardar preferencias.');

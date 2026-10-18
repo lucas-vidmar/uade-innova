@@ -59,6 +59,25 @@ export async function renderStudentCalendar(container) {
     deadlineMap[key].push(d);
   });
 
+  // UJ-35: la antelación y la franja horaria son de quien aprende. Un fallo de
+  // lectura no debe dibujarse como "sin preferencias" (#352): se reporta y los
+  // controles quedan deshabilitados en vez de mostrar un default como estado.
+  let reminderPrefs = { enabled: true, cadence: 'both', timeWindow: 'any', datePrefs: {} };
+  let reminderPrefsError = null;
+  try {
+    reminderPrefs = await api.getReminderPreferences({ strict: true });
+  } catch (err) {
+    reminderPrefsError = err;
+  }
+  let datePrefs = (reminderPrefs.datePrefs && typeof reminderPrefs.datePrefs === 'object') ? { ...reminderPrefs.datePrefs } : {};
+  const timeWindow = reminderPrefs.timeWindow || 'any';
+  const TIME_WINDOW_LABELS = { any: 'a cualquier hora', morning: 'por la mañana (06:00 a 12:00)', afternoon: 'por la tarde (12:00 a 19:00)', evening: 'por la noche (19:00 a 23:00)' };
+  const LEAD_OPTIONS = [2, 6, 12, 24, 48, 72];
+  const isWatched = (dateStr) => datePrefs[dateStr]?.watch === true;
+  const watchedCount = () => Object.values(datePrefs).filter(p => p && p.watch === true).length;
+  const mutedCount = () => Object.values(datePrefs).filter(p => p && p.watch === false).length;
+  const leadLabel = (hours) => (hours % 24 === 0 ? `${hours / 24} día(s)` : `${hours} horas`);
+
   const today = new Date();
   let currentDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   let viewMode = 'month';
@@ -82,6 +101,72 @@ export async function renderStudentCalendar(container) {
     deadlinesForDay(cls.date).forEach(d => byId.set(d.id, d));
     deadlines.filter(d => d.classId === cls.id).forEach(d => byId.set(d.id, d));
     return [...byId.values()];
+  };
+
+  // UJ-35: declarar, por fecha, si genera aviso y con cuánta antelación.
+  const saveDatePref = async (dateStr, watch, leadHours) => {
+    const next = { ...datePrefs };
+    if (watch) {
+      next[dateStr] = { watch: true };
+      if (Number.isInteger(leadHours)) next[dateStr].leadHours = leadHours;
+    } else {
+      next[dateStr] = { watch: false };
+    }
+    const saved = await api.saveReminderPreferences({ datePrefs: next });
+    if (!saved) return null;
+    datePrefs = next;
+    auth.setReminderPreferences({ timeWindow, datePrefs: next });
+    return saved;
+  };
+
+  const renderDateReminderControls = (dateStr) => {
+    const pref = datePrefs[dateStr] || null;
+    const watch = pref ? pref.watch === true : false;
+    const lead = pref && Number.isInteger(pref.leadHours) ? pref.leadHours : 24;
+    const disabled = reminderPrefsError ? 'disabled' : '';
+    return `
+      <div class="section-title" style="margin-top:var(--space-8)"><h2>Aviso anticipado</h2><div class="line"></div></div>
+      ${reminderPrefsError ? `<div style="margin-bottom:var(--space-3);padding:var(--space-3);border-radius:var(--radius);background:rgba(239,68,68,0.12);color:var(--color-error);font-size:var(--fs-sm)">No pudimos leer tus preferencias de aviso, así que no sabemos qué fechas vigilás. Recargá la página para intentar de nuevo.</div>` : ''}
+      <div style="display:flex;flex-direction:column;gap:var(--space-3)">
+        <label style="display:flex;align-items:center;gap:var(--space-3);cursor:pointer">
+          <input type="checkbox" id="watch-date-toggle" ${watch ? 'checked' : ''} ${disabled}>
+          <span style="font-size:var(--fs-sm)">Vigilar esta fecha (generar aviso anticipado)</span>
+        </label>
+        <div style="display:flex;align-items:center;gap:var(--space-3)">
+          <span style="font-size:var(--fs-sm);color:var(--color-text-secondary)">Antelación del aviso</span>
+          <select class="form-input" id="lead-hours-select" style="max-width:220px" ${watch && !reminderPrefsError ? '' : 'disabled'}>
+            ${LEAD_OPTIONS.map(h => `<option value="${h}" ${lead === h ? 'selected' : ''}>${leadLabel(h)} antes</option>`).join('')}
+          </select>
+        </div>
+        <div style="font-size:var(--fs-sm);color:var(--color-text-secondary)">
+          Franja horaria: <b>${TIME_WINDOW_LABELS[timeWindow] || TIME_WINDOW_LABELS.any}</b> — el aviso anticipado de esta fecha sale dentro de esa franja, no a cualquier hora.
+        </div>
+        <div style="font-size:var(--fs-sm);color:var(--color-text-secondary)">
+          ${pref ? (watch ? `Esta fecha genera aviso (${leadLabel(lead)} antes).` : 'Esta fecha no genera aviso.') : 'Esta fecha todavía no está declarada.'}
+        </div>
+        <button class="btn btn-primary btn-sm" id="save-date-pref" style="align-self:flex-start" ${disabled}>Guardar aviso de esta fecha</button>
+      </div>
+    `;
+  };
+
+  const bindDateReminderControls = (overlay, dateStr) => {
+    const toggle = overlay.querySelector('#watch-date-toggle');
+    const select = overlay.querySelector('#lead-hours-select');
+    toggle?.addEventListener('change', () => { if (select) select.disabled = !toggle.checked; });
+    overlay.querySelector('#save-date-pref')?.addEventListener('click', async () => {
+      const watch = toggle?.checked === true;
+      const leadHours = Number(select?.value);
+      const saved = await saveDatePref(dateStr, watch, leadHours);
+      if (saved) {
+        toast('success', 'Aviso guardado', watch
+          ? 'Vas a recibir el aviso anticipado de esta fecha.'
+          : 'Esta fecha no va a generar aviso.');
+        overlay.remove();
+        render();
+      } else {
+        toast('error', 'No se pudo guardar', 'El servicio no confirmó el guardado del aviso de esta fecha.');
+      }
+    });
   };
 
   const showClassDetail = (cls) => {
@@ -132,6 +217,7 @@ export async function renderStudentCalendar(container) {
         <div style="display:flex;flex-direction:column;gap:var(--space-3)">
           ${deadlinesForClass(cls).map(renderDeadlineItem).join('')}
         </div>
+        ${renderDateReminderControls(cls.date)}
       ` : ''}
     `;
 
@@ -140,6 +226,7 @@ export async function renderStudentCalendar(container) {
 
     document.getElementById('close-panel')?.addEventListener('click', () => overlay.remove());
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    bindDateReminderControls(overlay, cls.date);
   };
 
   const showDayPanel = (dateStr) => {
@@ -163,7 +250,8 @@ export async function renderStudentCalendar(container) {
         <button class="btn btn-icon btn-ghost" id="close-panel">✕</button>
       </div>
       ${dayDeadlines.length > 0
-        ? `<div style="display:flex;flex-direction:column;gap:var(--space-3)">${dayDeadlines.map(renderDeadlineItem).join('')}</div>`
+        ? `<div style="display:flex;flex-direction:column;gap:var(--space-3)">${dayDeadlines.map(renderDeadlineItem).join('')}</div>
+           ${renderDateReminderControls(dateStr)}`
         : `<p style="color:var(--color-text-muted);font-size:var(--font-size-sm)">No hay actividades registradas para esta fecha.</p>`}
     `;
 
@@ -172,6 +260,7 @@ export async function renderStudentCalendar(container) {
 
     document.getElementById('close-panel')?.addEventListener('click', () => overlay.remove());
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    bindDateReminderControls(overlay, dateStr);
   };
 
   const formatDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -189,6 +278,7 @@ export async function renderStudentCalendar(container) {
     return `
       ${cls ? `<span class="cal-class-dot" title="${cls.title}"></span>` : ''}
       ${dayDeadlines.length > 0 ? `<span class="cal-deadline-dot" title="${dayDeadlines.map(d => d.title).join(' · ')}"></span>` : ''}
+      ${isWatched(dateStr) ? `<span class="cal-watched-dot" title="Fecha vigilada: recibís aviso anticipado"></span>` : ''}
       ${!hasContent ? `<span class="cal-empty-dot"></span>` : ''}
     `;
   };
@@ -331,7 +421,14 @@ export async function renderStudentCalendar(container) {
           <div class="calendar-legend">
             <span class="cal-legend-item"><span class="cal-class-dot"></span> Clase</span>
             <span class="cal-legend-item"><span class="cal-deadline-dot"></span> Deadline</span>
+            <span class="cal-legend-item"><span class="cal-watched-dot"></span> Vigilada</span>
             <span class="cal-legend-item today-legend">Hoy</span>
+          </div>
+
+          <div class="cal-reminder-summary">
+            Aviso anticipado: franja horaria ${TIME_WINDOW_LABELS[timeWindow] || TIME_WINDOW_LABELS.any} ·
+            ${watchedCount()} fecha(s) vigilada(s) · ${mutedCount()} sin aviso.
+            Abrí un día con fecha comprometida para elegir la antelación de esa fecha.
           </div>
         </div>
       </div>

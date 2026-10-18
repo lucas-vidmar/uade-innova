@@ -11,6 +11,21 @@ const CONTAINER_DEADLINES = CONFIG.containers.deadlines;
 const DEFAULT_TIMEZONE = CONFIG.timezone;
 const NOTIFICATION_PREFS_TABLE = CONFIG.tables.notificationPreferences;
 const VALID_CADENCES = CONFIG.validCadences;
+const VALID_TIME_WINDOWS = CONFIG.validTimeWindows;
+
+// Franja horaria (UJ-35 paso 3): rangos [desde, hasta) en hora local del
+// vencimiento. 'any' no restringe.
+const FRANJA_HOURS = {
+  morning: [6, 12],
+  afternoon: [12, 19],
+  evening: [19, 23],
+};
+
+// Con franja declarada, el aviso se entrega en el primer tick dentro de la
+// franja una vez alcanzado el umbral (no en la hora exacta del umbral). El
+// margen acota esa espera y, junto con la regla de "umbral más ajustado",
+// evita que dos umbrales disparen en el mismo tick.
+const FRANJA_CATCHUP_HOURS = 23;
 
 function resolveTimezone(deadline) {
   const tz = deadline?.timezone || DEFAULT_TIMEZONE;
@@ -48,30 +63,101 @@ function isWithinThresholdWindow({ dueAt, now, thresholdHours, windowHours }) {
   return diffMs <= thresholdMs && diffMs > (thresholdMs - windowMs);
 }
 
+function normalizeDatePrefs(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out = {};
+  for (const [date, value] of Object.entries(raw)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    if (!value || typeof value !== 'object' || typeof value.watch !== 'boolean') continue;
+    const entry = { watch: value.watch };
+    const lead = Number(value.leadHours);
+    if (Number.isInteger(lead) && lead >= 1 && lead <= 336) entry.leadHours = lead;
+    out[date] = entry;
+  }
+  return out;
+}
+
 async function loadUserPreferences(userId) {
   try {
     const client = getTableClient(NOTIFICATION_PREFS_TABLE);
     const entity = await client.getEntity(userId, 'deadline-reminders');
     const enabled = entity.enabled === true || entity.enabled === 'true';
     const cadence = VALID_CADENCES.includes(entity.cadence) ? entity.cadence : 'both';
-    return { enabled, cadence };
+    const timeWindow = VALID_TIME_WINDOWS.includes(entity.timeWindow) ? entity.timeWindow : 'any';
+    let datePrefs = {};
+    if (typeof entity.datePrefsJson === 'string' && entity.datePrefsJson.length > 0) {
+      try {
+        datePrefs = normalizeDatePrefs(JSON.parse(entity.datePrefsJson));
+      } catch {
+        datePrefs = {};
+      }
+    }
+    return { enabled, cadence, timeWindow, datePrefs };
   } catch {
-    return { enabled: true, cadence: 'both' };
+    return { enabled: true, cadence: 'both', timeWindow: 'any', datePrefs: {} };
   }
 }
 
-function shouldNotifyForThreshold(prefs, thresholdHours) {
-  if (!prefs.enabled) return false;
-  if (prefs.cadence === 'both') return true;
-  if (prefs.cadence === '48h' && thresholdHours === 48) return true;
-  if (prefs.cadence === '24h' && thresholdHours === 24) return true;
-  return false;
+function dateKeyOf(dueDate) {
+  return String(dueDate || '').slice(0, 10);
 }
 
-function buildReminderNotification({ subjectId, deadline, thresholdHours, dueAt, now, timezone }) {
+function defaultThresholds(cadence, highPriority, pending) {
+  const base = cadence === '48h' ? [48] : cadence === '24h' ? [24] : [48, 24];
+  if (highPriority && pending && cadence === 'both') base.push(2);
+  return base;
+}
+
+/**
+ * Umbrales (horas antes del vencimiento) que generan aviso para esta persona en
+ * esta fecha. La decisión por fecha (UJ-35 pasos 1, 2 y 9) manda: `watch:false`
+ * deja constancia de que esa fecha NO genera aviso; `leadHours` fija la
+ * antelación. Sin decisión por fecha se conserva la cadencia global.
+ */
+function thresholdsForUser(prefs, dateKey, { highPriority, pending } = {}) {
+  if (!prefs.enabled) return [];
+  const declared = prefs.datePrefs && prefs.datePrefs[dateKey];
+  if (declared && declared.watch === false) return [];
+  if (declared && Number.isInteger(declared.leadHours)) return [declared.leadHours];
+  return defaultThresholds(prefs.cadence, highPriority, pending);
+}
+
+function franjaKey(timeWindow) {
+  return FRANJA_HOURS[timeWindow] ? timeWindow : 'any';
+}
+
+function isWithinFranja(timeWindow, now, timezone) {
+  const range = FRANJA_HOURS[timeWindow];
+  if (!range) return true;
+  const hour = moment(now).tz(timezone || DEFAULT_TIMEZONE).hour();
+  return hour >= range[0] && hour < range[1];
+}
+
+/**
+ * ¿Qué umbrales le corresponden a esta persona ahora?
+ * Sin franja: la ventana ajustada de siempre (comportamiento previo intacto).
+ * Con franja declarada (UJ-35 paso 3): sólo el umbral más ajustado ya alcanzado,
+ * entregado en el primer tick dentro de la franja.
+ */
+function dueThresholdsForPlan({ plan, dueAt, now, windowHours }) {
+  const diffMs = dueAt.getTime() - now.getTime();
+  if (diffMs <= 0) return [];
+  if (FRANJA_HOURS[plan.timeWindow]) {
+    const tightest = [...plan.thresholds].sort((a, b) => a - b).find((t) => diffMs <= t * 60 * 60 * 1000);
+    if (tightest === undefined) return [];
+    return diffMs > tightest * 60 * 60 * 1000 - FRANJA_CATCHUP_HOURS * 60 * 60 * 1000 ? [tightest] : [];
+  }
+  return plan.thresholds.filter((t) => isWithinThresholdWindow({ dueAt, now, thresholdHours: t, windowHours }));
+}
+
+function buildReminderNotification({ subjectId, deadline, thresholdHours, dueAt, now, timezone, deliveryWindow }) {
   const deadlineId = String(deadline?.id || `${deadline?.classId || 'class'}-${deadline?.title || 'deadline'}`).replace(/\s+/g, '-').toLowerCase();
-  const id = `notif-deadline-${subjectId}-${deadlineId}-${thresholdHours}h`;
-  const title = thresholdHours === 48 ? 'Deadline en 48 horas' : thresholdHours === 2 ? '⚠️ Deadline urgente — 2 horas restantes' : 'Deadline en 24 horas';
+  const windowSuffix = deliveryWindow && deliveryWindow !== 'any' ? `-${deliveryWindow}` : '';
+  const id = `notif-deadline-${subjectId}-${deadlineId}-${thresholdHours}h${windowSuffix}`;
+  const title = thresholdHours === 48 ? 'Deadline en 48 horas'
+    : thresholdHours === 2 ? '⚠️ Deadline urgente — 2 horas restantes'
+    : thresholdHours === 24 ? 'Deadline en 24 horas'
+    : `Aviso anticipado — ${thresholdHours} horas antes`;
   const classLabel = deadline?.classId ? ` · ${deadline.classId}` : '';
   const dueDateLabel = dueAt.toISOString().slice(0, 10);
   const message = `${deadline?.title || 'Entrega pendiente'} vence el ${dueDateLabel}${classLabel}.`;
@@ -88,6 +174,7 @@ function buildReminderNotification({ subjectId, deadline, thresholdHours, dueAt,
     recipientUserIds: [],
     origin: 'deadline-proximity-timer',
     dueDateTimezone: timezone,
+    deliveryWindow: deliveryWindow || 'any',
   };
 }
 
@@ -136,36 +223,51 @@ const weightThreshold = Number(process.env.DEADLINE_HIGH_PRIORITY_WEIGHT_THRESHO
 
         const isHighPriority = (deadline?.weight || 0) >= weightThreshold;
         const isPending = (deadline?.status || 'pending') !== 'completed';
+        const dateKey = dateKeyOf(deadline?.dueDate);
 
-        const thresholdHoursList = [48, 24];
-        if (isHighPriority && isPending) {
-          thresholdHoursList.push(2);
+        // Plan por persona (UJ-35): qué umbrales le corresponden a cada una en
+        // esta fecha y en qué franja quiere recibirlos.
+        const plans = [];
+        for (const userId of enrolledUserIds) {
+          const prefs = await getPrefs(userId);
+          const thresholds = thresholdsForUser(prefs, dateKey, { highPriority: isHighPriority, pending: isPending });
+          if (thresholds.length === 0) continue;
+          plans.push({ userId, thresholds, timeWindow: prefs.timeWindow || 'any' });
         }
 
-        for (const thresholdHours of thresholdHoursList) {
-          const withinWindow = isWithinThresholdWindow({ dueAt, now, thresholdHours, windowHours });
-          if (!withinWindow) continue;
-
-          const recipientUserIds = [];
-          for (const userId of enrolledUserIds) {
-            const prefs = await getPrefs(userId);
-            if (shouldNotifyForThreshold(prefs, thresholdHours)) {
-              recipientUserIds.push(userId);
-            }
+        // Umbral → franja → destinatarios. Cada franja emite su propio aviso
+        // para que una persona con franja no bloquee (ni sea bloqueada por) el
+        // aviso sin franja.
+        const recipientsByThreshold = new Map();
+        for (const plan of plans) {
+          if (!isWithinFranja(plan.timeWindow, now, timezone)) continue;
+          for (const thresholdHours of dueThresholdsForPlan({ plan, dueAt, now, windowHours })) {
+            if (!recipientsByThreshold.has(thresholdHours)) recipientsByThreshold.set(thresholdHours, new Map());
+            const byFranja = recipientsByThreshold.get(thresholdHours);
+            const key = franjaKey(plan.timeWindow);
+            if (!byFranja.has(key)) byFranja.set(key, []);
+            byFranja.get(key).push(plan.userId);
           }
+        }
 
-          if (recipientUserIds.length === 0) continue;
+        const thresholdHoursList = [...recipientsByThreshold.keys()].sort((a, b) => b - a);
 
-          const notification = buildReminderNotification({ subjectId, deadline, thresholdHours, dueAt, now, timezone });
-          notification.recipientUserIds = recipientUserIds;
+        for (const thresholdHours of thresholdHoursList) {
+          const recipientsByFranja = recipientsByThreshold.get(thresholdHours);
+          for (const [deliveryWindow, recipientUserIds] of recipientsByFranja) {
+            if (recipientUserIds.length === 0) continue;
 
-          if (existingIds.has(notification.id)) continue;
+            const notification = buildReminderNotification({ subjectId, deadline, thresholdHours, dueAt, now, timezone, deliveryWindow });
+            notification.recipientUserIds = recipientUserIds;
 
-          const { retryAttempts: retries, deadLetterWrites: dlWrites } = await upsertNotificationForSubject(subjectId, notification);
-          retryAttempts += retries;
-          deadLetterWrites += dlWrites;
-          existingIds.add(notification.id);
-          dispatched += 1;
+            if (existingIds.has(notification.id)) continue;
+
+            const { retryAttempts: retries, deadLetterWrites: dlWrites } = await upsertNotificationForSubject(subjectId, notification);
+            retryAttempts += retries;
+            deadLetterWrites += dlWrites;
+            existingIds.add(notification.id);
+            dispatched += 1;
+          }
         }
       } catch (err) {
         errors += 1;

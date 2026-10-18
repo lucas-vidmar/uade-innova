@@ -474,3 +474,121 @@ test('deadline-proximity-dispatcher should use UTC timezone when specified', asy
   assert.strictEqual(payload.title, 'Deadline en 48 horas');
   assert.strictEqual(payload.dueDateTimezone, 'UTC');
 });
+
+// ── UJ-35: decisión por fecha (vigilar / antelación) y franja horaria ──
+test('UJ-35: una fecha declarada como no vigilada no genera aviso', async () => {
+  storageMocks.listBlobs.mock.mockImplementation(async () => ['arq-software-2026.json']);
+  storageMocks.loadJson.mock.mockImplementation(async () => ([
+    {
+      id: 'deadline-nowatch',
+      title: 'TP no vigilado',
+      subjectId: 'arq-software-2026',
+      classId: 'class-20',
+      dueDate: '2026-04-12T12:00:00.000Z',
+    },
+  ]));
+  notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => []);
+  stateStoreMocks.getEnrollmentsBySubject.mock.mockImplementation(async () => ([
+    { userId: 'user-nowatch', status: 'active' },
+  ]));
+
+  mockTableClient.getEntity = mock.fn(async () => ({
+    enabled: 'true', cadence: 'both', timeWindow: 'any',
+    datePrefsJson: JSON.stringify({ '2026-04-12': { watch: false } }),
+  }));
+
+  const before = notificationStoreMocks.upsertNotificationForSubject.mock.callCount();
+  const now = new Date('2026-04-11T12:00:00.000Z');
+  const result = await dispatcher.runDeadlineProximityDispatcher({ log: () => {}, error: () => {} }, now);
+  const after = notificationStoreMocks.upsertNotificationForSubject.mock.callCount();
+
+  assert.strictEqual(result.dispatched, 0, 'una fecha con watch:false no debe generar aviso');
+  assert.strictEqual(after, before);
+});
+
+test('UJ-35: la antelación declarada por fecha fija el umbral del aviso', async () => {
+  storageMocks.listBlobs.mock.mockImplementation(async () => ['arq-software-2026.json']);
+  storageMocks.loadJson.mock.mockImplementation(async () => ([
+    {
+      id: 'deadline-lead12',
+      title: 'TP antelación 12h',
+      subjectId: 'arq-software-2026',
+      classId: 'class-21',
+      dueDate: '2026-04-12T12:00:00.000Z',
+    },
+  ]));
+  notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => []);
+  stateStoreMocks.getEnrollmentsBySubject.mock.mockImplementation(async () => ([
+    { userId: 'user-lead12', status: 'active' },
+  ]));
+
+  mockTableClient.getEntity = mock.fn(async () => ({
+    enabled: 'true', cadence: 'both', timeWindow: 'any',
+    datePrefsJson: JSON.stringify({ '2026-04-12': { watch: true, leadHours: 12 } }),
+  }));
+
+  const now = new Date('2026-04-12T00:00:00.000Z');
+  const result = await dispatcher.runDeadlineProximityDispatcher({ log: () => {}, error: () => {} }, now);
+
+  assert.strictEqual(result.dispatched, 1);
+  const [, payload] = notificationStoreMocks.upsertNotificationForSubject.mock.calls.at(-1).arguments;
+  assert.strictEqual(payload.title, 'Aviso anticipado — 12 horas antes');
+  assert.ok(payload.id.endsWith('-12h'), `id=${payload.id}`);
+});
+
+test('UJ-35: con franja declarada el aviso no sale fuera de la franja', async () => {
+  storageMocks.listBlobs.mock.mockImplementation(async () => ['arq-software-2026.json']);
+  storageMocks.loadJson.mock.mockImplementation(async () => ([
+    {
+      id: 'deadline-franja-out',
+      title: 'TP franja fuera',
+      subjectId: 'arq-software-2026',
+      classId: 'class-22',
+      dueDate: '2026-04-12T12:00:00.000Z',
+    },
+  ]));
+  notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => []);
+  stateStoreMocks.getEnrollmentsBySubject.mock.mockImplementation(async () => ([
+    { userId: 'user-evening', status: 'active' },
+  ]));
+
+  mockTableClient.getEntity = mock.fn(async () => ({ enabled: 'true', cadence: 'both', timeWindow: 'evening' }));
+
+  // 12:00Z = 09:00 en Buenos Aires → mañana, fuera de la franja "evening".
+  const before = notificationStoreMocks.upsertNotificationForSubject.mock.callCount();
+  const now = new Date('2026-04-11T12:00:00.000Z');
+  const result = await dispatcher.runDeadlineProximityDispatcher({ log: () => {}, error: () => {} }, now);
+  const after = notificationStoreMocks.upsertNotificationForSubject.mock.callCount();
+
+  assert.strictEqual(result.dispatched, 0, 'fuera de la franja no debe salir el aviso');
+  assert.strictEqual(after, before);
+});
+
+test('UJ-35: con franja declarada el aviso sale dentro de la franja', async () => {
+  storageMocks.listBlobs.mock.mockImplementation(async () => ['arq-software-2026.json']);
+  storageMocks.loadJson.mock.mockImplementation(async () => ([
+    {
+      id: 'deadline-franja-in',
+      title: 'TP franja dentro',
+      subjectId: 'arq-software-2026',
+      classId: 'class-23',
+      dueDate: '2026-04-12T12:00:00.000Z',
+    },
+  ]));
+  notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => []);
+  stateStoreMocks.getEnrollmentsBySubject.mock.mockImplementation(async () => ([
+    { userId: 'user-evening', status: 'active' },
+  ]));
+
+  mockTableClient.getEntity = mock.fn(async () => ({ enabled: 'true', cadence: 'both', timeWindow: 'evening' }));
+
+  // 23:00Z = 20:00 en Buenos Aires → dentro de la franja "evening"; faltan 13h.
+  const now = new Date('2026-04-11T23:00:00.000Z');
+  const result = await dispatcher.runDeadlineProximityDispatcher({ log: () => {}, error: () => {} }, now);
+
+  assert.strictEqual(result.dispatched, 1);
+  const [, payload] = notificationStoreMocks.upsertNotificationForSubject.mock.calls.at(-1).arguments;
+  assert.strictEqual(payload.deliveryWindow, 'evening');
+  assert.ok(payload.id.endsWith('-24h-evening'), `id=${payload.id}`);
+  assert.ok(payload.recipientUserIds.includes('user-evening'));
+});
