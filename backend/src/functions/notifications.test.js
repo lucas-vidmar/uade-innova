@@ -79,6 +79,38 @@ test('get-notifications should filter by subject and honor limit', async () => {
     assert.ok(new Date(body[0].createdAt) >= new Date(body[1].createdAt));
 });
 
+test('#328: la lectura no degrada el tipo integrity a material', async () => {
+    notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => ([
+        {
+            id: 'integridad-indice-arq-software-2026',
+            type: 'integrity',
+            title: 'El índice de la unidad tiene material que no le pertenece',
+            message: 'Se descartaron fragmentos al responder: 3 material/es que no figuran en la unidad.',
+            createdAt: '2026-10-18T19:12:17.453Z',
+            unread: true,
+            targetHash: '#/teacher/dashboard',
+            subjectId: 'arq-software-2026',
+            recipientUserIds: ['alu-001', 'dir-001'],
+            origin: 'rag-registry-filter',
+        },
+    ]));
+
+    const response = await handlers['get-notifications'](
+        { query: new URLSearchParams({ subjectId: 'arq-software-2026', type: 'integrity', limit: '10' }) },
+        { log: () => {} }
+    );
+
+    assert.strictEqual(response.status, 200);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.length, 1, 'el filtro por tipo tiene que encontrar el aviso de integridad');
+    assert.strictEqual(
+        body[0].type,
+        'integrity',
+        'la lectura degradaba el tipo a material y el aviso quedaba invisible en la bandeja',
+    );
+    assert.strictEqual(body[0].origin, 'rag-registry-filter');
+});
+
 test('get-notifications should merge persisted notifications and filter by userId', async () => {
     notificationStoreMocks.listNotificationsBySubject.mock.mockImplementation(async () => ([
         {

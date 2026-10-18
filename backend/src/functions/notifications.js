@@ -5,6 +5,7 @@ import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-util
 import { getEnrollment } from '../services/state-store.js';
 import * as notificationStore from '../services/notification-store.js';
 import { loadJson } from '../services/storage.js';
+import { normalizeNotificationType } from '../services/notification-types.js';
 import { CONFIG } from '../services/config.js';
 import { trackNotificationInteraction } from '../services/telemetry.js';
 import { structuredErrorResponse, ErrorCategory } from '../services/error-categories.js';
@@ -29,7 +30,9 @@ function normalizeSkip(value) {
 }
 
 function normalizeNotification(item = {}, idx = 0) {
-  const type = ['grade', 'summary', 'material', 'deadline', 'teacher-reminder'].includes(item.type) ? item.type : 'material';
+  // La lista de tipos sale del modulo compartido: tener una copia aca hacia que
+  // un tipo agregado en el almacen se degradara igual al leerlo (#328).
+  const type = normalizeNotificationType(item.type);
   return {
     id: item.id || `notif-${Date.now()}-${idx}`,
     type,

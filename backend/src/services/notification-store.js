@@ -1,4 +1,5 @@
 import { loadJson, saveJson } from './storage.js';
+import { normalizeNotificationType } from './notification-types.js';
 import { getEnrollmentsBySubject } from './state-store.js';
 import { CONFIG } from '../config.js';
 
@@ -57,15 +58,8 @@ function normalizeReadByUserIds(value) {
   return Array.from(new Set(value.filter(Boolean).map((item) => String(item).trim()).filter(Boolean)));
 }
 
-// Los tipos fuera de esta lista se degradan a 'material' en silencio, y con eso
-// un aviso de otro tipo queda invisible para quien lo filtra por su tipo: asi se
-// perdio el aviso de integridad del indice (#328), que se guardaba como
-// 'material'. Al agregar un tipo nuevo, sumarlo aca y a los filtros de la
-// interfaz que lo muestran.
-const NOTIFICATION_TYPES = ['grade', 'summary', 'material', 'deadline', 'teacher-reminder', 'integrity'];
-
 function normalizeNotification(item = {}, idx = 0) {
-  const type = NOTIFICATION_TYPES.includes(item.type) ? item.type : 'material';
+  const type = normalizeNotificationType(item.type);
   return {
     id: String(item.id || `notif-${Date.now()}-${idx}`),
     type,
