@@ -1,6 +1,7 @@
 import { app } from '@azure/functions';
 import { withAuth } from '../middleware/with-auth.js';
-import { uploadFile, downloadFile, listBlobs, loadJson } from '../services/storage.js';
+import { uploadFile, downloadFile, listBlobs } from '../services/storage.js';
+import { loadSubjectScopedAsset } from '../services/class-publication.js';
 import { generateClassAudio } from '../services/ai.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
 import { getEnrollment } from '../services/state-store.js';
@@ -63,11 +64,19 @@ app.http('get-class-audio', {
         context.log(`[Trace] Correlation-ID: ${correlationId}`);
 
         const CONTAINER_SCRIPTS = 'class-audio-scripts';
-        const blobName = `${classId}.mp3`;
+        // #328/#337: el audio y el guión se guardan con alcance de materia
+        // (`class-audio/{subjectId}/{classId}.mp3` y
+        // `class-audio-scripts/{subjectId}/{classId}.json`). El nombre suelto es
+        // el heredado y sólo se usa cuando la petición no declara la materia: si
+        // el lector busca siempre ahí, encuentra un documento que nadie escribe y
+        // el audio de la clase no llega nunca a quien lo escucha.
+        const scopedBlobName = subjectId ? `${subjectId}/${classId}.mp3` : null;
 
         try {
             // 1. Intentar descargar del storage si ya existe (caché)
-            const cachedAudio = await downloadFile(CONTAINER_AUDIO, blobName).catch(() => null);
+            const cachedAudio = (scopedBlobName
+                ? await downloadFile(CONTAINER_AUDIO, scopedBlobName).catch(() => null)
+                : null) || await downloadFile(CONTAINER_AUDIO, `${classId}.mp3`).catch(() => null);
             if (cachedAudio) {
                 return {
                     status: 200,
@@ -76,8 +85,9 @@ app.http('get-class-audio', {
                 };
             }
 
-            // 2. Buscar guión de podcast validado
-            const scriptData = await loadJson(CONTAINER_SCRIPTS, `${classId}.json`);
+            // 2. Buscar guión de podcast validado (alcance de materia, con el
+            // heredado como respaldo)
+            const scriptData = await loadSubjectScopedAsset(CONTAINER_SCRIPTS, subjectId, classId);
             if (!scriptData || !scriptData.script || !scriptData.validated) {
                 return {
                     status: 404,
@@ -91,7 +101,7 @@ app.http('get-class-audio', {
             const audioBuffer = await generateClassAudio(scriptData.script, 'nova', { headers: dependencyHeaders });
 
             // 4. Guardar en Blob Storage para futuras consultas (caché)
-            await uploadFile(CONTAINER_AUDIO, blobName, audioBuffer, 'audio/mpeg');
+            await uploadFile(CONTAINER_AUDIO, scopedBlobName || `${classId}.mp3`, audioBuffer, 'audio/mpeg');
 
             return {
                 status: 200,
