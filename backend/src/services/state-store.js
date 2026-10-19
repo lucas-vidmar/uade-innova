@@ -2,6 +2,7 @@ import { getTableClient } from './storage.js';
 import { CONFIG } from '../config.js';
 import { isPublished, normalizePublicationState, resolveClassPublicationState } from './publication-state.js';
 import { parseRetirementHistory } from './material-retirement.js';
+import { normalizeClassIds } from './class-ids.js';
 
 const MATERIALS_TABLE = CONFIG.tables.materials;
 const CLASSES_TABLE = CONFIG.tables.classes;
@@ -73,7 +74,9 @@ async function ensureTable(tableName) {
 }
 
 function toMaterialEntity(material) {
-  const classIds = normalizeStringArray(material.classIds || material.classId);
+  // #578: la fila autoritativa guarda los ids planos; un valor anidado como
+  // texto (`'["class-01"]'`) deja el material fuera de su clase.
+  const classIds = normalizeClassIds(material.classIds ?? material.classId);
   return compactObject({
     partitionKey: material.subjectId,
     rowKey: material.materialId,

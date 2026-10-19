@@ -13,7 +13,7 @@ beforeEach(() => {
     contextMock.log.warn.mock.resetCalls();
 });
 
-const { validateFileType, acceptedFormatsLabel } = await import('./ingest-material.js');
+const { validateFileType, acceptedFormatsLabel, mergeClassIdsField } = await import('./ingest-material.js');
 
 function makeBuffer(...bytes) {
     return Buffer.from(bytes);
@@ -229,4 +229,23 @@ describe('validateFileType — formatos anunciados por la zona de carga (#385)',
         }
     });
 
+});
+
+// #578: un campo `classIds` enviado como arreglo JSON (`["class-01"]`) se
+// separaba por comas y quedaba como un único id con corchetes. El material se
+// guardaba con `["[\"class-01\"]"]` y después no matcheaba ninguna clase.
+describe('mergeClassIdsField — classIds del multipart (#578)', () => {
+    it('aplana un campo enviado como arreglo JSON', () => {
+        assert.deepStrictEqual(mergeClassIdsField(undefined, '["class-01"]'), ['class-01']);
+    });
+
+    it('acepta lista separada por comas', () => {
+        assert.deepStrictEqual(mergeClassIdsField(undefined, 'class-01, class-02'), ['class-01', 'class-02']);
+    });
+
+    it('acumula campos repetidos sin anidar ni duplicar', () => {
+        const primero = mergeClassIdsField(undefined, '["class-01"]');
+        assert.deepStrictEqual(mergeClassIdsField(primero, 'class-02'), ['class-01', 'class-02']);
+        assert.deepStrictEqual(mergeClassIdsField(primero, '["class-01"]'), ['class-01']);
+    });
 });

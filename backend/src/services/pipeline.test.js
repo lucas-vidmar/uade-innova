@@ -549,3 +549,50 @@ test('runPipeline sigue persistiendo el estado de error de un material que exist
     assert.strictEqual(errorWrites.length, 1, 'un material que sigue en el inventario debe quedar marcado error');
     parserMocks.parseFile.mock.mockImplementation(async () => 'mocked text');
 });
+
+// #578: un `classIds` que llega anidado como texto (`['["class-01"]']`) se
+// persistía tal cual en la fila del material, así que ninguna comparación
+// contra una clase real matcheaba y el material quedaba invisible para las
+// consultas acotadas. La verificación es sobre la fila resultante, no sobre el
+// payload de entrada.
+test('runPipeline persiste classIds planos cuando llegan anidados como texto (#578)', async () => {
+    vectorStoreMocks.upsertChunks.mock.resetCalls();
+    stateStoreMocks.upsertMaterialState.mock.resetCalls();
+    storageMocks.saveJson.mock.resetCalls();
+    parserMocks.parseFile.mock.mockImplementation(async () => 'mocked text');
+    parserMocks.chunkText.mock.mockImplementation(() => ['chunk 1', 'chunk 2']);
+    stateStoreMocks.materialStateExists.mock.mockImplementation(async () => true);
+
+    const mockContext = { log: mock.fn(), warn: mock.fn(), error: mock.fn() };
+
+    await runPipeline({
+        fileBuffer: Buffer.from('test'),
+        fileContentType: 'text/plain',
+        fileName: 'anidado.txt',
+        classIds: ['["class-01"]'],
+        subjectId: 'arq-software-2026',
+        materialType: 'notes',
+        materialId: 'mat-anidado',
+        blobUrl: 'http://test',
+    }, mockContext);
+
+    const readyWrites = stateStoreMocks.upsertMaterialState.mock.calls
+        .filter((call) => call.arguments?.[0]?.materialId === 'mat-anidado' && call.arguments?.[0]?.status === 'ready');
+    assert.strictEqual(readyWrites.length, 1, 'debe persistir la fila ready del material');
+    assert.deepStrictEqual(readyWrites[0].arguments[0].classIds, ['class-01'],
+        'la fila del material debe guardar ids planos');
+
+    const processedWrites = storageMocks.saveJson.mock.calls
+        .filter((call) => call.arguments?.[1] === 'mat-anidado.json');
+    assert.strictEqual(processedWrites.length, 1, 'debe guardar el JSON procesado');
+    assert.deepStrictEqual(processedWrites[0].arguments[2].classIds, ['class-01'],
+        'el JSON procesado debe guardar ids planos');
+
+    const vectors = vectorStoreMocks.upsertChunks.mock.calls[0].arguments[0];
+    assert.deepStrictEqual(vectors[0].metadata.classIds, ['class-01'],
+        'la metadata del vector debe guardar ids planos');
+    assert.strictEqual(vectors[0].metadata.classId, 'class-01',
+        'el classId principal del vector debe ser un id real');
+
+    assert.strictEqual(mockContext.error.mock.calls.length, 0, 'la normalización no debe loguear errores');
+});

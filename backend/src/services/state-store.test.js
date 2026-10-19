@@ -297,3 +297,29 @@ test('state-store lists and deletes user profiles by rowKey', async () => {
 
   assert.strictEqual(await deleteUserProfile('no-existe'), false);
 });
+
+// #578: la fila autoritativa no debe guardar ids anidados como texto; si los
+// guarda, el material queda fuera del inventario de su clase.
+test('state-store guarda classIds planos aunque lleguen anidados como texto (#578)', async () => {
+  tableData.materials = [];
+
+  await upsertMaterialState({
+    subjectId: 'sub-anidado',
+    materialId: 'mat-anidado',
+    classIds: ['["class-01"]'],
+    type: 'notes',
+    filename: 'anidado.txt',
+    status: 'ready',
+    blobUrl: 'https://example/blob',
+    uploadedAt: '2026-03-01T10:00:00.000Z',
+  }, 'Replace');
+
+  const crudo = tableData.materials.find((row) => row.rowKey === 'mat-anidado');
+  assert.deepStrictEqual(JSON.parse(crudo.classIds), ['class-01']);
+  assert.deepStrictEqual(crudo.classIds, '["class-01"]');
+
+  const byClass = await listMaterialsByClass('sub-anidado', 'class-01');
+  assert.strictEqual(byClass.length, 1, 'el material debe quedar ligado a su clase');
+  assert.strictEqual(byClass[0].materialId, 'mat-anidado');
+  assert.deepStrictEqual(byClass[0].classIds, ['class-01']);
+});
