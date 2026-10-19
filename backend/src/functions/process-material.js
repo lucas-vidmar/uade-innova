@@ -7,7 +7,7 @@ import { withCorrelationTimer } from '../middleware/with-correlation.js';
 import { BlobServiceClient, StorageSharedKeyCredential } from '@azure/storage-blob';
 import { runPipeline } from '../services/pipeline.js';
 import { saveJson } from '../services/storage.js';
-import { upsertMaterialState } from '../services/state-store.js';
+import { upsertMaterialState, materialStateExists } from '../services/state-store.js';
 import { generateCorrelationId, resolveTraceContext } from '../services/correlation.js';
 import { CONFIG } from '../services/config.js';
 
@@ -81,7 +81,20 @@ async function persistProcessingError(params, context, message) {
 
     try {
         if (params.subjectId && params.materialId) {
-            await upsertMaterialState(errorState);
+            // #564: si el material se borró mientras el trigger corría, escribir
+            // el estado de error lo devolvería al inventario de la clase.
+            let stillTracked = true;
+            try {
+                stillTracked = await materialStateExists(params.subjectId, params.materialId);
+            } catch (checkErr) {
+                context.log(`[BlobTrigger] No se pudo verificar si ${params.materialId} sigue en el inventario (se asume que sí): ${checkErr.message}`);
+            }
+            if (stillTracked) {
+                await upsertMaterialState(errorState);
+            } else {
+                context.log(`[BlobTrigger] Material ${params.materialId} borrado durante el procesamiento: no se persiste el estado de error.`);
+                return;
+            }
         }
     } catch (stateErr) {
         context.error('[BlobTrigger] No se pudo persistir estado error en tabla:', stateErr);

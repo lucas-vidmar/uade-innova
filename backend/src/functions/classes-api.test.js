@@ -1992,3 +1992,66 @@ test('classes-api get-director-stats declares sourceState.readable=true when Ses
         authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: [] }));
     }
 });
+
+// #564: el inventario de la clase sale de la tabla de materiales. Si el
+// borrado del estado falla, el material sigue listado: la respuesta no puede
+// decir success:true.
+test('classes-api delete-material falla si el estado sigue en el inventario (#564)', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+
+    const material = {
+        materialId: 'mat-fantasma',
+        subjectId: 'arq-software-2026',
+        filename: '392-prueba.txt',
+        blobUrl: 'https://stacc.blob.core.windows.net/class-materials/arq-software-2026/mat-fantasma.txt',
+        classIds: ['class-01'],
+        chunkCount: 0,
+    };
+    stateStoreMocks.getMaterialStateById.mock.mockImplementation(async () => material);
+    stateStoreMocks.deleteMaterialStateById.mock.mockImplementation(async () => false);
+
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
+    const mockRequest = { params: { materialId: 'mat-fantasma' } };
+
+    const response = await handlers['delete-material'](mockRequest, mockContext);
+
+    assert.strictEqual(response.status, 500, 'no puede responder 200 si el material sigue en la clase');
+    const body = JSON.parse(response.body);
+    assert.notStrictEqual(body.success, true, 'la respuesta no debe afirmar éxito');
+    assert.strictEqual(body.code, 'MATERIAL_STATE_DELETE_FAILED');
+
+    stateStoreMocks.getMaterialStateById.mock.mockImplementation(async () => null);
+    stateStoreMocks.deleteMaterialStateById.mock.mockImplementation(async () => true);
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+});
+
+test('classes-api delete-material es idempotente cuando la fila ya no estaba (#564)', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Docente'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+
+    // Primer lookup (atribución/cuota) encuentra el estado; el segundo, después
+    // del borrado, confirma que ya no está aunque deleteMaterialStateById diga false.
+    stateStoreMocks.getMaterialStateById.mock.mockImplementationOnce(async () => ({
+        materialId: 'mat-ya-borrado',
+        subjectId: 'arq-software-2026',
+        filename: 'clase.pdf',
+        chunkCount: 1,
+    }));
+    stateStoreMocks.getMaterialStateById.mock.mockImplementationOnce(async () => null);
+    stateStoreMocks.deleteMaterialStateById.mock.mockImplementation(async () => false);
+
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
+    const mockRequest = { params: { materialId: 'mat-ya-borrado' } };
+
+    const response = await handlers['delete-material'](mockRequest, mockContext);
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(JSON.parse(response.body).success, true);
+
+    stateStoreMocks.getMaterialStateById.mock.mockImplementation(async () => null);
+    stateStoreMocks.deleteMaterialStateById.mock.mockImplementation(async () => true);
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+});

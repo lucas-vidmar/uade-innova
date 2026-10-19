@@ -4,9 +4,9 @@
  */
 import { parseFile, chunkText, cleanText, extractTranscriptTimeline, extractPptxSlideTitles } from './parser.js';
 import { generateEmbeddingsBatch, generateClassSummary, generateClassMap, generatePodcastScript } from './ai.js';
-import { upsertChunks, getIndexStats } from './vector-store.js';
+import { upsertChunks, getIndexStats, deleteVectorsByFilter } from './vector-store.js';
 import { saveJson, loadJson } from './storage.js';
-import { upsertMaterialState } from './state-store.js';
+import { upsertMaterialState, materialStateExists } from './state-store.js';
 import { trackIngestionInteraction } from './telemetry.js';
 import { buildDependencyHeaders } from './correlation.js';
 import { getMaterialPriority } from './material-classification.js';
@@ -229,6 +229,20 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
             }
         }
 
+        // 5b. #564: si el docente borró el material mientras se procesaba, acá
+        // termina todo. Reescribir la fila de estado lo devolvería al
+        // inventario de la clase con su blob ya movido a `deleted/`, y el JSON
+        // procesado volvería a aparecer en el fallback legacy.
+        if (!(await isMaterialStillTracked(subjectId, materialId, context))) {
+            context.log(`[Pipeline] Material ${materialId} borrado durante el procesamiento: se descarta el estado ready y el JSON procesado.`);
+            try {
+                await deleteVectorsByFilter({ materialId: { "$eq": materialId } });
+            } catch (cleanupErr) {
+                context.error(`[Pipeline] No se pudieron limpiar los vectores de ${materialId} tras el borrado:`, cleanupErr);
+            }
+            return;
+        }
+
         // 6. Guardar estado final: ready
         const materialState = {
             materialId,
@@ -351,17 +365,46 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
         }).catch(e => context.error('[Telemetry] Error logging IngestionInteraction failure:', e));
 
         try {
-            await upsertMaterialState(errorState);
+            if (await isMaterialStillTracked(subjectId, materialId, context)) {
+                await upsertMaterialState(errorState);
+            } else {
+                context.log(`[Pipeline] Material ${materialId} borrado durante el procesamiento: no se persiste el estado de error.`);
+            }
         } catch (stateErr) {
             context.error(`[StateStore] No se pudo persistir estado error para ${materialId}:`, stateErr);
         }
 
         try {
-            await saveJson(CONTAINER_PROCESSED, `${materialId}.json`, errorState);
-            context.log(`[Pipeline] Estado de error persistido para ${materialId}`);
+            if (await isMaterialStillTracked(subjectId, materialId, context)) {
+                await saveJson(CONTAINER_PROCESSED, `${materialId}.json`, errorState);
+                context.log(`[Pipeline] Estado de error persistido para ${materialId}`);
+            }
         } catch (saveErr) {
             context.error('[Pipeline] No se pudo guardar el estado de error:', saveErr);
         }
+    }
+}
+
+/**
+ * #564: ¿el material sigue en el inventario de la clase?
+ *
+ * El pipeline corre asincrónico contra el blob; el docente puede borrar el
+ * material mientras procesa. En ese caso el estado ya no existe y volver a
+ * escribirlo reviviría un material cuyo archivo ya está en `deleted/`.
+ * Un error de storage NO se interpreta como borrado: se mantiene el
+ * comportamiento previo para no perder el resultado del procesamiento.
+ *
+ * @param {string} subjectId
+ * @param {string} materialId
+ * @param {object} context
+ * @returns {Promise<boolean>}
+ */
+async function isMaterialStillTracked(subjectId, materialId, context) {
+    try {
+        return await materialStateExists(subjectId, materialId);
+    } catch (err) {
+        context?.log?.(`[WARN][Pipeline] No se pudo verificar si ${materialId} sigue en el inventario (se asume que sí): ${err.message}`);
+        return true;
     }
 }
 

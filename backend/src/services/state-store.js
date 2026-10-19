@@ -266,12 +266,51 @@ export async function deleteMaterialStateById(materialId) {
   const client = getTableClient(MATERIALS_TABLE);
 
   const filter = `RowKey eq '${escapeODataValue(materialId)}'`;
+  // #564: se recolectan todas las coincidencias antes de borrar. Antes se
+  // borraba solo la primera y se salía, así que una fila duplicada (mismo
+  // materialId en otra partición) dejaba el material listado en la clase.
+  const keys = [];
   for await (const entity of client.listEntities({ queryOptions: { filter } })) {
-    await client.deleteEntity(entity.partitionKey, entity.rowKey);
-    return true;
+    keys.push({ partitionKey: entity.partitionKey, rowKey: entity.rowKey });
   }
 
-  return false;
+  let deleted = 0;
+  for (const key of keys) {
+    await client.deleteEntity(key.partitionKey, key.rowKey);
+    deleted += 1;
+  }
+
+  return deleted > 0;
+}
+
+/**
+ * Indica si el estado del material sigue existiendo en la tabla.
+ *
+ * #564: el pipeline necesita distinguir "el material se borró" (no volver a
+ * escribir su estado) de "el storage no respondió" (no descartar el trabajo
+ * ya hecho). `getMaterialState()` devuelve null en ambos casos, así que acá
+ * solo se trata como ausencia el 404 real; cualquier otro error se propaga.
+ *
+ * @param {string} subjectId
+ * @param {string} materialId
+ * @returns {Promise<boolean>}
+ */
+export async function materialStateExists(subjectId, materialId) {
+  if (!subjectId || !materialId) return false;
+
+  await ensureTable(MATERIALS_TABLE);
+  const client = getTableClient(MATERIALS_TABLE);
+
+  try {
+    await client.getEntity(subjectId, materialId);
+    return true;
+  } catch (err) {
+    const notFound = err?.statusCode === 404
+      || err?.code === 'ResourceNotFound'
+      || err?.details?.errorCode === 'ResourceNotFound';
+    if (notFound) return false;
+    throw err;
+  }
 }
 
 /**
