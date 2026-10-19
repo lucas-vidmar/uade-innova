@@ -29,6 +29,11 @@ const ERROR_MESSAGES = {
   // #378 (UJ-29): el stream cerró sin evento terminal — la respuesta quedó a
   // medias y hay que decirlo con claridad, nunca mostrarla como si estuviera completa.
   STREAM_INTERRUPTED: 'La respuesta se interrumpió antes de completarse. Reintentá la misma pregunta.',
+  // #406: el asistente dejó de responder (tope de demora) — la pantalla tiene que
+  // decirlo y ofrecer reintentar en vez de quedarse esperando para siempre.
+  TIMEOUT: 'El asistente está tardando más de lo esperado. Reintentá la misma pregunta en unos instantes.',
+  // #406: la persona canceló la consulta desde la pantalla.
+  CANCELLED: 'Cancelaste la consulta. Podés reintentarla cuando quieras.',
   UNKNOWN: 'Ocurrió un error inesperado. Por favor, intentá nuevamente.',
 };
 
@@ -95,6 +100,17 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
   let cooldownUntil = 0;
   let cooldownInterval = null;
   let transcriptFocus = initialTranscriptFocus;
+  // #406: una consulta en curso tiene que poder cancelarse y su demora tiene que
+  // ser visible. Sin esto, un asistente que no responde deja el compositor
+  // deshabilitado para siempre y la única salida es recargar la página.
+  const DELAY_NOTICE_MS = (() => {
+    const override = Number(window?.__uadeChatStreamTimeouts?.delayNoticeMs);
+    return Number.isFinite(override) && override > 0 ? override : 15000;
+  })();
+  let activeController = null;
+  let delayNotice = false;
+  let delayNoticeTimer = null;
+  let cancelRequested = false;
 
   const TYPING_PLACEHOLDER_HTML = '<span class="chat-typing-dots"><span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></span>';
 
@@ -106,6 +122,9 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
     const hasPartial = received.length > 0 && received !== TYPING_PLACEHOLDER_HTML;
     msg.streaming = false;
     msg.interrupted = true;
+    // #406: una respuesta interrumpida es un fallo, no una respuesta: se reintenta,
+    // no se califica.
+    msg.isError = true;
     msg.content = hasPartial
       ? `${received}\n\n⚠️ La respuesta se interrumpió antes de completarse.`
       : (fallbackCopy || ERROR_MESSAGES.STREAM_INTERRUPTED);
@@ -189,6 +208,12 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
               ${isLoading ? '<span class="spinner"></span>' : (cooldownActive ? `Esperá ${cooldownRemaining}s` : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" stroke-linecap="round" stroke-linejoin="round"/></svg>`)}
             </button>
           </div>
+          ${isLoading ? `
+          <div class="chat-stream-status" id="chat-delay-notice" role="status" aria-live="polite">
+            <span>${delayNotice ? 'El asistente está tardando más de lo esperado.' : 'El asistente está escribiendo…'}</span>
+            <button type="button" class="chat-cancel-btn" id="chat-cancel" title="Cancelar la consulta en curso">Cancelar</button>
+          </div>
+          ` : ''}
           ${!hasEnrollment ? '<p class="chat-footer-hint text-error">No estás matriculado en esta materia. Contactá a administración.</p>' : '<p class="chat-footer-hint">La IA puede cometer errores, recordá que serás evaluado de acuerdo a la bibliografía que figura en el programa analítico.</p>'}
         </div>
       `;
@@ -274,6 +299,10 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
       `;
     }
     const isStreaming = msg.streaming === true;
+    // #406: un mensaje que es un error —o una respuesta que quedó a medias— no se
+    // ofrece para calificar ni para reportar como si fuera una respuesta: no hay
+    // nada que juzgar. Lo que sí ofrece es reintentar la misma pregunta.
+    const esFallo = msg.isError === true || msg.interrupted === true;
     const contentHtml = renderMarkdown(msg.content);
     const streamingClass = isStreaming ? 'streaming' : '';
     return `
@@ -311,6 +340,7 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
             ` : '<span></span>'}
 
             <div class="chat-msg-actions">
+              ${esFallo ? '' : `
               <div class="chat-feedback-btns" data-message-id="${msg.id || ''}">
                 <button class="feedback-btn ${msg.feedback === 'positive' ? 'active' : ''}" data-type="positive" title="Útil" ${isStreaming ? 'disabled' : ''}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.53l-1.6 7A2 2 0 0 1 18.23 21H7a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h4l.5-1c.9-1.8 1.8-3 3.5-3 1.1 0 2 1.1 2 2.5 0 1-.3 1.5-1 2.38Z"/></svg>
@@ -325,13 +355,14 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
               <button class="report-missing-keyword-btn ${msg.missingKeywordReported ? 'active' : ''}" data-message-id="${msg.id || ''}" title="Usalo si esperabas encontrar un tema que no aparece en los materiales" aria-label="Reportar concepto faltante" ${(msg.missingKeywordReported || isStreaming) ? 'disabled' : ''}>
                 ${msg.missingKeywordReported ? '✅ Concepto reportado' : `${ICON_REPORT_MISSING_KEYWORD}<span>Falta un concepto</span>`}
               </button>
-              ${(msg.abstained || isLowConfidence(msg.content)) && !msg.missingInfoReported ? `
+              `}
+              ${!esFallo && (msg.abstained || isLowConfidence(msg.content)) && !msg.missingInfoReported ? `
               <button class="report-missing-info-btn" data-message-id="${msg.id || ''}" title="Reportar información faltante">
                 Reportar información faltante
               </button>
               ` : ''}
               ${msg.missingInfoReported ? '<span class="text-xs text-text-muted" style="margin-top:4px;display:block;">✅ Información faltante reportada</span>' : ''}
-              ${msg.interrupted ? `
+              ${msg.interrupted || msg.isError ? `
               <button class="chat-retry-btn" data-retry-message-id="${msg.id || ''}" title="Volver a hacer la misma pregunta">
                 ↻ Reintentar
               </button>
@@ -431,6 +462,10 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
       });
     });
 
+    // #406: cancelar la consulta en curso. Es la salida inmediata cuando el
+    // asistente no responde, sin esperar el tope de demora.
+    container.querySelector('#chat-cancel')?.addEventListener('click', () => cancelStream());
+
     // Send
     const sendBtn = container.querySelector('#chat-send');
     const input = container.querySelector('#chat-input');
@@ -439,6 +474,14 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
     input?.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
     });
+  };
+
+  // #406: la persona corta la consulta en curso. El stream abortado vuelve por el
+  // `catch` de `sendMessage` como cancelación declarada, con reintento disponible.
+  const cancelStream = () => {
+    if (!activeController) return;
+    cancelRequested = true;
+    activeController.abort();
   };
 
   const startCooldown = (retryAfterSec) => {
@@ -497,6 +540,8 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
     const turnClassIds = [...selectedClassIds];
     messages.push({ role: 'user', content: question, classIds: turnClassIds });
     isLoading = true;
+    cancelRequested = false;
+    delayNotice = false;
     render();
 
     // Placeholder para la respuesta de la IA
@@ -513,6 +558,17 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
     messages.push(assistantMsg);
     render();
 
+    // #406: la consulta queda cancelable desde la pantalla y su demora se declara
+    // pasado un rato: el compositor deshabilitado deja de ser un callejón sin salida.
+    const controller = new AbortController();
+    activeController = controller;
+    if (delayNoticeTimer) clearTimeout(delayNoticeTimer);
+    delayNoticeTimer = setTimeout(() => {
+      if (!isLoading || activeController !== controller) return;
+      delayNotice = true;
+      render();
+    }, DELAY_NOTICE_MS);
+
     const getMsgEl = () => container.querySelector(`#msg-${assistantMsg.id}`);
 
     try {
@@ -527,6 +583,8 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         botTone: botPrefs?.tone,
         botLength: botPrefs?.length,
         includeSources: botPrefs?.includeSources,
+        // #406: señal propia del turno, para poder cancelar y para cortar la demora.
+        signal: controller.signal,
       }, (type, data) => {
         const msgEl = getMsgEl();
         if (!msgEl) return;
@@ -608,6 +666,9 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
           } else {
             assistantMsg.content = resolved;
             assistantMsg.streaming = false;
+            // #406: un error no es una respuesta — no se ofrece para calificar y
+            // sí para reintentar la misma pregunta.
+            assistantMsg.isError = true;
           }
           const bubbleEl = msgEl.querySelector('.chat-bubble-assistant');
           if (bubbleEl) bubbleEl.textContent = assistantMsg.content;
@@ -691,22 +752,33 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         }
       });
     } catch (err) {
-      // Use unified resolver — covers ENROLLMENT, CONSENT, VALIDATION, AUTH, network, etc.
-      // Keep early ENROLLMENT guard for exact legacy string but prefer resolver.
-      if (err?.message?.includes('ENROLLMENT_REQUIRED') || (err?.code === 'ENROLLMENT_REQUIRED')) {
+      // #406: la persona cortó la consulta desde la pantalla. No es un fallo del
+      // servicio: se declara el corte y se ofrece reintentar la misma pregunta.
+      const cancelado = cancelRequested && (err?.name === 'AbortError' || err?.code === 'ABORT_ERR');
+      if (cancelado) {
+        assistantMsg.content = ERROR_MESSAGES.CANCELLED;
+        assistantMsg.streaming = false;
+        assistantMsg.isError = true;
+      } else if (err?.message?.includes('ENROLLMENT_REQUIRED') || (err?.code === 'ENROLLMENT_REQUIRED')) {
+        // Use unified resolver — covers ENROLLMENT, CONSENT, VALIDATION, AUTH, network, etc.
+        // Keep early ENROLLMENT guard for exact legacy string but prefer resolver.
         assistantMsg.content = ERROR_MESSAGES.AUTH;
         assistantMsg.streaming = false;
+        assistantMsg.isError = true;
         render();
         if (onMessageSent) onMessageSent({ sessionId: currentSessionId });
         return;
-      }
-      const interrupted = err?.code === 'STREAM_INTERRUPTED' || err?.errorCategory === 'STREAM_INTERRUPTED';
-      if (interrupted) {
-        // #378: se conserva lo recibido y se marca la respuesta como incompleta.
-        markInterrupted(assistantMsg, resolveChatErrorMessage(err));
       } else {
-        assistantMsg.content = resolveChatErrorMessage(err);
-        assistantMsg.streaming = false;
+        const interrupted = err?.code === 'STREAM_INTERRUPTED' || err?.errorCategory === 'STREAM_INTERRUPTED';
+        if (interrupted) {
+          // #378: se conserva lo recibido y se marca la respuesta como incompleta.
+          markInterrupted(assistantMsg, resolveChatErrorMessage(err));
+        } else {
+          assistantMsg.content = resolveChatErrorMessage(err);
+          assistantMsg.streaming = false;
+          // #406: un error no es una respuesta — se reintenta, no se califica.
+          assistantMsg.isError = true;
+        }
       }
       // #338: consent denial gets the terms CTA, not just copy.
       if (isConsentError(err)) openConsentCTA();
@@ -718,6 +790,10 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
       if (onMessageSent) onMessageSent({ sessionId: currentSessionId });
     } finally {
       isLoading = false;
+      if (delayNoticeTimer) { clearTimeout(delayNoticeTimer); delayNoticeTimer = null; }
+      delayNotice = false;
+      cancelRequested = false;
+      if (activeController === controller) activeController = null;
       render();
     }
   };

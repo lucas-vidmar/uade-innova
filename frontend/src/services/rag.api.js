@@ -38,16 +38,90 @@ export async function ragQuery({ question, classIds, subjectId, conversationHist
     }
 }
 
-export async function ragQueryStream({ question, classIds, subjectId, sessionId, conversationHistory = [], historyWindowSize = 4, transcriptFocus = null, sandbox = false, simulateStudent = false, botTone, botLength, includeSources, promptVersion = null }, onEvent) {
-    const response = await apiFetch(`${BASE_URL}/rag-query${sandbox ? '?sandbox=true' : ''}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        // `promptVersion` sólo viaja en modo banco de pruebas (UJ-49): es la
-        // versión propuesta que se enfrenta contra la vigente sin activarla.
-        body: JSON.stringify({ question, classIds, subjectId, sessionId, stream: true, conversationHistory, historyWindowSize, transcriptFocus, sandbox, simulateStudent, botTone, botLength, includeSources, ...(sandbox && promptVersion ? { promptVersion } : {}) }),
-    });
+// #406: un asistente que no responde (red colgada, stream que deja de fluir) no
+// puede dejar la pantalla sin salida. Estos topes son deliberadamente generosos:
+// no cortan una respuesta lenta legítima, sólo declaran el caso en el que ya no
+// está llegando nada. `window.__uadeChatStreamTimeouts` permite acortarlos en las
+// pruebas (guiones del arnés y specs e2e); en producción valen los valores por
+// defecto.
+const DEFAULT_FIRST_EVENT_TIMEOUT_MS = 60000;
+const DEFAULT_IDLE_TIMEOUT_MS = 30000;
+
+function streamTimeouts() {
+    let override = {};
+    try {
+        override = (typeof window !== 'undefined' && window.__uadeChatStreamTimeouts) || {};
+    } catch { /* sin window */ }
+    const pick = (value, fallback) => {
+        const n = Number(value);
+        return Number.isFinite(n) && n > 0 ? n : fallback;
+    };
+    return {
+        firstEventMs: pick(override.firstByteMs, DEFAULT_FIRST_EVENT_TIMEOUT_MS),
+        idleMs: pick(override.idleMs, DEFAULT_IDLE_TIMEOUT_MS),
+    };
+}
+
+function streamTimeoutError() {
+    const err = new Error('El asistente está tardando más de lo esperado.');
+    err.name = 'StreamTimeoutError';
+    err.code = 'STREAM_TIMEOUT';
+    err.errorCategory = 'TIMEOUT';
+    err.retryable = true;
+    return err;
+}
+
+export async function ragQueryStream({ question, classIds, subjectId, sessionId, conversationHistory = [], historyWindowSize = 4, transcriptFocus = null, sandbox = false, simulateStudent = false, botTone, botLength, includeSources, promptVersion = null, signal } = {}, onEvent) {
+    const { firstEventMs, idleMs } = streamTimeouts();
+
+    // #406: la demora se corta con un AbortController propio, encadenado al del
+    // llamador — así la persona puede cancelar desde la interfaz sin esperar el
+    // tope, y el tope libera la pantalla aunque nadie cancele.
+    const controller = new AbortController();
+    let timedOut = false;
+    let reader = null;
+    const relayAbort = () => controller.abort();
+    if (signal) {
+        if (signal.aborted) controller.abort();
+        else signal.addEventListener('abort', relayAbort);
+    }
+
+    let watchdog = null;
+    const armWatchdog = (ms) => {
+        if (watchdog) clearTimeout(watchdog);
+        watchdog = setTimeout(() => {
+            timedOut = true;
+            // Cortar el cuerpo además de la petición: con las cabeceras ya
+            // recibidas, el `read()` pendiente tiene que resolverse igual.
+            try { reader?.cancel(); } catch { /* ya cerrado */ }
+            controller.abort();
+        }, ms);
+    };
+    const disarmWatchdog = () => { if (watchdog) { clearTimeout(watchdog); watchdog = null; } };
+    const release = () => {
+        disarmWatchdog();
+        if (signal) signal.removeEventListener('abort', relayAbort);
+    };
+
+    let response;
+    try {
+        armWatchdog(firstEventMs);
+        response = await apiFetch(`${BASE_URL}/rag-query${sandbox ? '?sandbox=true' : ''}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            // `promptVersion` sólo viaja en modo banco de pruebas (UJ-49): es la
+            // versión propuesta que se enfrenta contra la vigente sin activarla.
+            body: JSON.stringify({ question, classIds, subjectId, sessionId, stream: true, conversationHistory, historyWindowSize, transcriptFocus, sandbox, simulateStudent, botTone, botLength, includeSources, ...(sandbox && promptVersion ? { promptVersion } : {}) }),
+            signal: controller.signal,
+        });
+    } catch (err) {
+        release();
+        if (timedOut) throw streamTimeoutError();
+        throw err;
+    }
 
     if (response.status === 429) {
+        release();
         const rateLimitError = new Error('Límite de consultas alcanzado');
         rateLimitError.status = 429;
         rateLimitError.errorCategory = 'RATE_LIMIT';
@@ -69,10 +143,11 @@ export async function ragQueryStream({ question, classIds, subjectId, sessionId,
             apiError.retryAfterSec = parseRetryAfter(response);
             apiError.errorCategory = 'RATE_LIMIT';
         }
+        release();
         throw apiError;
     }
 
-    const reader = response.body.getReader();
+    reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
     // UJ-29 (#378): el stream puede cerrar sin evento terminal (conexión caída a
@@ -106,12 +181,23 @@ export async function ragQueryStream({ question, classIds, subjectId, sessionId,
         }
     };
 
+    let chunksRead = 0;
     try {
         while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
+            // #406: el primer evento tiene su propio tope (cubre recuperación del
+            // lado del servidor + arranque del modelo); después alcanza el tope de
+            // inactividad entre eventos.
+            armWatchdog(chunksRead === 0 ? firstEventMs : idleMs);
+            let step;
+            try {
+                step = await reader.read();
+            } finally {
+                disarmWatchdog();
+            }
+            if (step.done) break;
 
-            buffer += decoder.decode(value, { stream: true });
+            chunksRead += 1;
+            buffer += decoder.decode(step.value, { stream: true });
             const parts = buffer.split('\n\n');
             buffer = parts.pop();
 
@@ -127,6 +213,17 @@ export async function ragQueryStream({ question, classIds, subjectId, sessionId,
         handlePart(buffer);
         buffer = '';
     } catch (err) {
+        // #406: si el corte lo provocó nuestro propio tope de demora, o la
+        // persona desde la interfaz, no es un corte de red: no se disfraza de
+        // interrupción ni pierde la clasificación que ya traía.
+        if (timedOut) {
+            release();
+            throw streamTimeoutError();
+        }
+        if (err?.name === 'AbortError' || err?.code === 'ABORT_ERR') {
+            release();
+            throw err;
+        }
         console.error('[API] Stream interrupted:', err);
         // #378/UJ-29: el corte a mitad de la respuesta no siempre llega como
         // cierre del stream sin evento terminal; cuando la conexión se pierde
@@ -147,8 +244,16 @@ export async function ragQueryStream({ question, classIds, subjectId, sessionId,
         interruptedError.errorCategory = 'STREAM_INTERRUPTED';
         interruptedError.retryable = true;
         interruptedError.cause = err;
+        release();
         throw interruptedError;
     }
+
+    release();
+
+    // #406: el watchdog pudo resolver el `read()` pendiente cancelando el cuerpo
+    // (el stream cierra "limpio" pero sin evento terminal). Eso es una demora
+    // declarada, no una respuesta cortada.
+    if (timedOut) throw streamTimeoutError();
 
     if (!sawTerminalEvent) {
         const interruptedError = new Error('La respuesta se interrumpió antes de completarse.');
