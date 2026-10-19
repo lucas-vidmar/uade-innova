@@ -148,8 +148,9 @@ test('el resultado lleva al material de cada fallo y deja marcar temas flojos', 
     await expect(consult).toHaveAttribute('href', /#\/student\/chat\?classId=class-01&preset=/);
 
     // Cerrar y reabrir: la marca sobrevive (no vive sólo en la pantalla).
-    await page.goto('/#/student/dashboard');
-    await page.goto('/#/student/class/class-01');
+    // Se recarga la MISMA ruta a propósito: un `goto` al mismo hash no vuelve a
+    // montar la vista, así que la aserción pasaría sin probar nada.
+    await page.reload();
     await page.locator('#class-tab-quiz-btn').click();
     await expect(page.locator('#quiz-marked-topics')).toBeVisible();
     await expect(page.locator('.quiz-marked-topic').first()).toContainText('Arquitectura');
