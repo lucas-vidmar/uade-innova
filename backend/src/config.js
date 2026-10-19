@@ -100,6 +100,10 @@ export const CONFIG = {
     minTurns: 3,
     maxTurns: 5,
     defaultTurns: 4,
+    // #410: el hilo se inyecta en el prompt de respuesta. Un turno se recorta a
+    // `maxTurnChars` y el hilo completo a `maxChars`, descartando lo más viejo.
+    maxTurnChars: 1400,
+    maxChars: 6000,
   },
 
   vector: {
