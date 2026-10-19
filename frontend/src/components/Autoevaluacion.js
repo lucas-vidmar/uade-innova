@@ -87,6 +87,29 @@ function isConsentError(err) {
 }
 
 /**
+ * UJ-30 (pasos 6 y 8): destinos reales desde el resultado.
+ * El encuentro es la vista de la clase donde vive el material (síntesis,
+ * transcripción, materiales). El chat se abre acotado a la clase y con la
+ * pregunta ya escrita —`preset` es lo que el widget de chat consume—, para que
+ * consultar el tema flojo no obligue a reescribir la pregunta a mano.
+ */
+function classEncounterHref(classId) {
+    return `#/student/class/${encodeURIComponent(classId)}`;
+}
+
+function chatConsultHref(classId, question) {
+    const params = new URLSearchParams({ classId, preset: question });
+    return `#/student/chat?${params.toString()}`;
+}
+
+function consultQuestion(topic, source) {
+    const t = topic || 'este tema';
+    return source
+        ? `Quiero repasar "${t}". ¿Me lo explicás según ${source}?`
+        : `Quiero repasar "${t}". ¿Me lo explicás con el material de esta clase?`;
+}
+
+/**
  * Estado interno del widget (evita re-render completo al cambiar de pregunta).
  */
 let state = {
@@ -98,6 +121,8 @@ let state = {
     result: null,
     busy: false,
     previousAttempt: null,
+    // UJ-30 (paso 7): temas flojos que la persona marcó, por persona y unidad.
+    markedTopics: [],
 };
 
 let hostContainer = null;
@@ -112,6 +137,7 @@ function resetState() {
         result: null,
         busy: false,
         previousAttempt: null,
+        markedTopics: [],
     };
 }
 
@@ -132,6 +158,13 @@ export async function renderAutoevaluacion(container, { classId, subjectId, clas
         attempts = await api.getQuizAttempts(subjectId, classId);
     } catch {
         attempts = [];
+    }
+    // UJ-30 (paso 7): la marca de temas flojos vive en el servidor, por persona
+    // y unidad, para que no se pierda al cerrar la pestaña.
+    try {
+        state.markedTopics = await api.getQuizWeakTopics(subjectId, classId);
+    } catch {
+        state.markedTopics = [];
     }
     // El intento anterior queda a mano para poder comparar al cerrar (UJ-31, paso 7).
     state.previousAttempt = attempts.length ? attempts[attempts.length - 1] : null;
@@ -159,6 +192,24 @@ function renderIdle(mount, { classId, subjectId, className, latestResult, attemp
                         <div style="font-size:var(--font-size-sm);color:var(--color-text-secondary);">Tu último intento${previousCount > 1 ? ` (${previousCount} en total)` : ''}</div>
                         <div class="quiz-score-badge" style="color:${passScore ? 'var(--color-success)' : 'var(--color-warning)'};">${latestResult.score}%</div>
                         <div style="font-size:var(--font-size-sm);color:var(--color-text-secondary);">${passScore ? '¡Aprobado!' : 'Aún no aprobás. Repasá y volvé a intentar.'}</div>
+                    </div>
+                ` : ''}
+
+                ${latestResult && (latestResult.answers || []).length > 0 ? `
+                    <button type="button" class="btn btn-ghost" id="quiz-view-last-btn" style="align-self:flex-start;">Ver el último resultado</button>
+                ` : ''}
+
+                ${state.markedTopics.length > 0 ? `
+                    <div class="card" id="quiz-marked-topics" style="border:1px solid var(--color-border);">
+                        <div style="padding:var(--space-4);display:flex;flex-direction:column;gap:var(--space-2);">
+                            <strong style="font-size:var(--font-size-sm);">Tus temas flojos en esta clase</strong>
+                            <p style="margin:0;font-size:var(--font-size-xs);color:var(--color-text-secondary);">Los marcaste vos. Abrí la consulta para repasarlos con el material.</p>
+                            <div style="display:flex;flex-wrap:wrap;gap:var(--space-2);">
+                                ${state.markedTopics.map(t => `
+                                    <a class="quiz-topic-chip quiz-marked-topic" style="text-decoration:none;background:color-mix(in srgb, var(--color-warning) 14%, transparent);color:var(--color-warning);" href="${chatConsultHref(classId, consultQuestion(t, ''))}">★ ${escapeHtml(t)}</a>
+                                `).join('')}
+                            </div>
+                        </div>
                     </div>
                 ` : ''}
 
@@ -193,6 +244,14 @@ function renderIdle(mount, { classId, subjectId, className, latestResult, attemp
         if (!btn) return;
         state.questionCount = Number(btn.dataset.count);
         mount.querySelectorAll('.quiz-count-btn').forEach(b => b.classList.toggle('active', b === btn));
+    });
+
+    // UJ-30: reabrir la pestaña no tiene que borrar los fallos ni los temas
+    // flojos. El último resultado guardado se puede volver a ver desde acá.
+    mount.querySelector('#quiz-view-last-btn')?.addEventListener('click', () => {
+        if (!latestResult) return;
+        state.result = latestResult;
+        renderResults(mount, { classId, subjectId, className });
     });
 
     mount.querySelector('#quiz-generate-btn').addEventListener('click', async () => {
@@ -383,14 +442,22 @@ function renderResults(mount, { classId, subjectId, className }) {
         ` : ''}
 
         ${r.weakTopics.length > 0 ? `
-            <div class="card" style="margin-top:var(--space-4)">
+            <div class="card" id="quiz-weak-topics" style="margin-top:var(--space-4)">
                 <div style="padding:var(--space-5);display:flex;flex-direction:column;gap:var(--space-3);">
                     <h5 style="margin:0;font-weight:700;">${passed ? 'Temas a reforzar' : 'Temas recomendados para repasar'}</h5>
-                    <div style="display:flex;flex-wrap:wrap;gap:var(--space-2);">
-                        ${r.weakTopics.map(t => `
-                            <span class="quiz-topic-chip" style="background:color-mix(in srgb, var(--color-warning) 14%, transparent);color:var(--color-warning);">${escapeHtml(t)}</span>
-                        `).join('')}
+                    <p style="margin:0;font-size:var(--font-size-xs);color:var(--color-text-secondary);">Marcá los temas que sentís flojos: quedan guardados como tuyos en esta clase.</p>
+                    <div style="display:flex;flex-direction:column;gap:var(--space-2);">
+                        ${r.weakTopics.map(t => {
+                            const marked = state.markedTopics.includes(t);
+                            return `
+                            <div class="quiz-topic-row" style="display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);flex-wrap:wrap;">
+                                <button type="button" class="quiz-topic-chip quiz-topic-toggle" data-topic="${escapeHtml(t)}" role="button" aria-pressed="${marked}" title="Marcar o desmarcar este tema como flojo" style="border:1px solid ${marked ? 'var(--color-warning)' : 'var(--color-border)'};background:color-mix(in srgb, var(--color-warning) ${marked ? '20%' : '10%'}, transparent);color:var(--color-warning);cursor:pointer;font-family:var(--font-family);">${marked ? '★' : '☆'} ${escapeHtml(t)}</button>
+                                <a class="quiz-topic-consult" href="${chatConsultHref(classId, consultQuestion(t, ''))}" style="font-size:var(--font-size-xs);font-weight:600;">Consultar este tema</a>
+                            </div>
+                            `;
+                        }).join('')}
                     </div>
+                    <p id="quiz-weak-topics-status" style="margin:0;font-size:var(--font-size-xs);color:var(--color-text-secondary);">${state.markedTopics.length ? `Marcaste ${state.markedTopics.length} tema${state.markedTopics.length === 1 ? '' : 's'} flojo${state.markedTopics.length === 1 ? '' : 's'}.` : 'Todavía no marcaste ningún tema flojo.'}</p>
                 </div>
             </div>
         ` : passed ? `
@@ -401,8 +468,18 @@ function renderResults(mount, { classId, subjectId, className }) {
 
         <h4 class="h5" style="margin:var(--space-6) 0 var(--space-3) 0;">Repaso de respuestas</h4>
         <div style="display:flex;flex-direction:column;gap:var(--space-3);" id="quiz-review-list">
-            ${r.answers.map((a, i) => {
+            ${r.answers.map((a) => {
                 const isCorrect = a.isCorrect;
+                // UJ-30 (paso 6): cada fallo lleva al material que lo respalda. El
+                // rótulo lo emitió el servidor a partir de los bloques de contexto
+                // del cuestionario; sin él, se ofrece el encuentro de la clase.
+                const sourceBlock = !isCorrect ? `
+                    <div class="quiz-review-source" style="display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-3);margin-top:8px;border-top:1px dashed var(--color-border);padding-top:8px;">
+                        <span style="color:var(--color-text-secondary);">📎 ${a.source ? `Se explica en <strong>${escapeHtml(a.source)}</strong>` : `Tema: <strong>${escapeHtml(a.topic || 'sin etiqueta')}</strong>`}</span>
+                        <a class="quiz-review-link" href="${classEncounterHref(classId)}" style="font-weight:600;">Ver el encuentro</a>
+                        <a class="quiz-review-link" href="${chatConsultHref(classId, consultQuestion(a.topic, a.source))}" style="font-weight:600;">Consultar en el chat</a>
+                    </div>
+                ` : '';
                 return `
                 <div class="quiz-review-item">
                     <div style="display:flex;align-items:center;gap:var(--space-2);margin-bottom:var(--space-2);">
@@ -417,6 +494,7 @@ function renderResults(mount, { classId, subjectId, className }) {
                             return `<div style="display:flex;gap:var(--space-2);color:${oi === a.correctIndex ? 'var(--color-success)' : 'var(--color-error)'};">${OPTION_LETTERS[oi] || oi + 1}. ${escapeHtml(opt)} <em>(${label})</em></div>`;
                         }).join('')}
                         ${a.explanation ? `<div style="color:var(--color-text-secondary);margin-top:6px;border-top:1px solid var(--color-border);padding-top:6px;">💡 ${escapeHtml(a.explanation)}</div>` : ''}
+                        ${sourceBlock}
                     </div>
                 </div>
                 `;
@@ -430,5 +508,35 @@ function renderResults(mount, { classId, subjectId, className }) {
 
     mount.querySelector('#quiz-retry-btn').addEventListener('click', () => {
         renderAutoevaluacion(hostContainer, { classId, subjectId, className });
+    });
+
+    // UJ-30 (paso 7): marcar/desmarcar un tema flojo. La marca se persiste por
+    // persona y unidad; el resultado no la deriva, la declara la persona.
+    mount.querySelectorAll('.quiz-topic-toggle').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const topic = btn.dataset.topic;
+            const wasMarked = state.markedTopics.includes(topic);
+            state.markedTopics = wasMarked
+                ? state.markedTopics.filter(t => t !== topic)
+                : [...state.markedTopics, topic];
+            const nowMarked = !wasMarked;
+            btn.setAttribute('aria-pressed', String(nowMarked));
+            btn.textContent = `${nowMarked ? '★' : '☆'} ${topic}`;
+            btn.style.borderColor = nowMarked ? 'var(--color-warning)' : 'var(--color-border)';
+            const status = mount.querySelector('#quiz-weak-topics-status');
+            if (status) {
+                status.textContent = state.markedTopics.length
+                    ? `Marcaste ${state.markedTopics.length} tema${state.markedTopics.length === 1 ? '' : 's'} flojo${state.markedTopics.length === 1 ? '' : 's'}.`
+                    : 'Todavía no marcaste ningún tema flojo.';
+            }
+            try {
+                const saved = await api.saveQuizWeakTopics({ subjectId, classId, topics: state.markedTopics });
+                state.markedTopics = saved;
+            } catch {
+                // La marca sigue visible en pantalla aunque no se haya podido
+                // guardar: se avisa sin bloquear la lectura del resultado.
+                toast('warning', 'No se pudo guardar', 'La marca de temas flojos quedó sólo en esta pantalla.');
+            }
+        });
     });
 }

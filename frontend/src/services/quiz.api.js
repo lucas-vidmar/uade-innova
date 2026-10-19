@@ -76,3 +76,33 @@ export async function getQuizAttempts(subjectId, classId) {
         return [];
     }
 }
+
+// UJ-30 (paso 7): los temas flojos que la persona marca, por persona y unidad.
+// Se guardan en el servidor para que sobrevivan al cierre de la pestaña.
+export async function getQuizWeakTopics(subjectId, classId) {
+    const params = new URLSearchParams({ subjectId, classId });
+    try {
+        const res = await apiFetch(`${BASE_URL}/quiz-weak-topics?${params}`);
+        if (!res.ok) return [];
+        const data = await res.json();
+        return Array.isArray(data?.topics) ? data.topics : [];
+    } catch (err) {
+        console.warn('[API] getQuizWeakTopics failed:', err);
+        return [];
+    }
+}
+
+export async function saveQuizWeakTopics({ subjectId, classId, topics }) {
+    const res = await apiFetch(`${BASE_URL}/quiz-weak-topics`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subjectId, classId, topics }),
+    });
+    if (!res.ok) {
+        const apiError = new Error(`Error ${res.status}: No se pudieron guardar los temas flojos`);
+        apiError.status = res.status;
+        throw apiError;
+    }
+    const data = await res.json();
+    return Array.isArray(data?.topics) ? data.topics : [];
+}

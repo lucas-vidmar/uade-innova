@@ -16,6 +16,7 @@ const CLASS_VIEWS_TABLE = CONFIG.tables.classViews;
 const QUIZ_RESULTS_TABLE = CONFIG.tables.quizResults;
 const QUIZZES_TABLE = CONFIG.tables.quizzes;
 const QUIZ_ATTEMPTS_TABLE = CONFIG.tables.quizAttempts;
+const QUIZ_WEAK_TOPICS_TABLE = CONFIG.tables.quizWeakTopics;
 
 const ensuredTables = new Set();
 
@@ -1227,4 +1228,55 @@ export async function listQuizAttempts(subjectId, userId, classId) {
     .map(fromQuizAttemptEntity)
     .filter((a) => a.userId === userId && a.classId === classId)
     .sort((a, b) => a.attemptNumber - b.attemptNumber);
+}
+
+// ─── Quiz Weak Topics (temas flojos marcados por la persona) ─
+// El resultado de la práctica propone temas a repasar, pero es la persona quien
+// decide cuáles son un tema flojo suyo (UJ-30, paso 7). Esa marca vive por
+// persona y unidad, al margen de los intentos: cerrar la pestaña no la borra.
+
+function toQuizWeakTopicsEntity(record) {
+  return compactObject({
+    partitionKey: record.subjectId,
+    rowKey: `${record.userId}__${record.classId}`,
+    userId: record.userId,
+    classId: record.classId,
+    topics: JSON.stringify(record.topics || []),
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+function fromQuizWeakTopicsEntity(entity) {
+  let topics = [];
+  try { topics = JSON.parse(entity.topics || '[]'); } catch { topics = []; }
+  return {
+    subjectId: entity.partitionKey,
+    userId: entity.userId,
+    classId: entity.classId,
+    topics: Array.isArray(topics) ? topics : [],
+    updatedAt: entity.updatedAt,
+  };
+}
+
+export async function upsertQuizWeakTopics(record) {
+  if (!record?.subjectId || !record?.userId || !record?.classId) {
+    throw new Error('upsertQuizWeakTopics requires subjectId, userId, and classId');
+  }
+  await ensureTable(QUIZ_WEAK_TOPICS_TABLE);
+  const client = getTableClient(QUIZ_WEAK_TOPICS_TABLE);
+  const entity = toQuizWeakTopicsEntity(record);
+  await client.upsertEntity(entity, 'Replace');
+  return fromQuizWeakTopicsEntity(entity);
+}
+
+export async function getQuizWeakTopics(subjectId, userId, classId) {
+  if (!subjectId || !userId || !classId) return null;
+  await ensureTable(QUIZ_WEAK_TOPICS_TABLE);
+  const client = getTableClient(QUIZ_WEAK_TOPICS_TABLE);
+  try {
+    const entity = await client.getEntity(subjectId, `${userId}__${classId}`);
+    return fromQuizWeakTopicsEntity(entity);
+  } catch {
+    return null;
+  }
 }

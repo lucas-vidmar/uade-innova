@@ -87,7 +87,8 @@ import {
     activatePromptVersion, deletePromptVersion
 } from './prompts.api.js';
 import {
-    generateQuiz, saveQuizResult, getQuizResult, getQuizAttempts
+    generateQuiz, saveQuizResult, getQuizResult, getQuizAttempts,
+    getQuizWeakTopics, saveQuizWeakTopics
 } from './quiz.api.js';
 
 export const api = {
@@ -161,4 +162,5 @@ export const api = {
     activatePromptVersion, deletePromptVersion,
 
     generateQuiz, saveQuizResult, getQuizResult, getQuizAttempts,
+    getQuizWeakTopics, saveQuizWeakTopics,
 };
