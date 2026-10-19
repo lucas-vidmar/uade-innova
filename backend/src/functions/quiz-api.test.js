@@ -19,6 +19,8 @@ const resultStore = new Map();
 // El historial de intentos (UJ-31) convive con el resultado vigente: quiz-api
 // importa ambos juegos de funciones, así que la simulación tiene que ofrecerlos.
 const attemptStore = [];
+// Temas flojos marcados por la persona (UJ-30, paso 7), por persona y unidad.
+const weakTopicStore = new Map();
 
 const stateStoreMocks = {
     getEnrollment: mock.fn(async () => ({ status: 'active' })),
@@ -38,6 +40,12 @@ const stateStoreMocks = {
     listQuizAttempts: mock.fn(async (subjectId, userId, classId) => attemptStore
         .filter((a) => a.subjectId === subjectId && a.userId === userId && a.classId === classId)
         .sort((a, b) => a.attemptNumber - b.attemptNumber)),
+    upsertQuizWeakTopics: mock.fn(async (record) => {
+        const saved = { ...record, updatedAt: new Date().toISOString() };
+        weakTopicStore.set(`${record.subjectId}:${record.userId}__${record.classId}`, saved);
+        return saved;
+    }),
+    getQuizWeakTopics: mock.fn(async (subjectId, userId, classId) => weakTopicStore.get(`${subjectId}:${userId}__${classId}`) || null),
 };
 
 const aiMocks = {
@@ -85,6 +93,7 @@ beforeEach(() => {
     quizStore.clear();
     resultStore.clear();
     attemptStore.length = 0;
+    weakTopicStore.clear();
     stateStoreMocks.getEnrollment.mock.mockImplementation(async () => ({ status: 'active' }));
     stateStoreMocks.getConsentStatus.mock.mockImplementation(async () => true);
 });

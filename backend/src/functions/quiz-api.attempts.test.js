@@ -37,6 +37,10 @@ const stateStoreMocks = {
     listQuizAttempts: mock.fn(async (subjectId, userId, classId) => attemptStore
         .filter((a) => a.subjectId === subjectId && a.userId === userId && a.classId === classId)
         .sort((a, b) => a.attemptNumber - b.attemptNumber)),
+    // UJ-30: quiz-api también marca temas flojos; el historial no los usa pero
+    // el módulo los importa, así que la simulación tiene que ofrecerlos.
+    upsertQuizWeakTopics: mock.fn(async (record) => ({ ...record, updatedAt: new Date().toISOString() })),
+    getQuizWeakTopics: mock.fn(async () => null),
 };
 
 const promptsVistos = [];

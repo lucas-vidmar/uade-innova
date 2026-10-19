@@ -12,7 +12,8 @@ import { loadJson } from '../services/storage.js';
 import { getActivePrompt } from '../services/prompts.js';
 import {
     getEnrollment, getConsentStatus, listMaterialsByClass,
-    upsertQuizResult, getQuizResult, saveQuiz, getQuiz, appendQuizAttempt, listQuizAttempts
+    upsertQuizResult, getQuizResult, saveQuiz, getQuiz, appendQuizAttempt, listQuizAttempts,
+    upsertQuizWeakTopics, getQuizWeakTopics
 } from '../services/state-store.js';
 import { parseClientPrincipal, validateFrontDoorId, getAuthenticatedUser } from '../services/auth-utils.js';
 import { normalizeCategorizedError, ErrorCategory } from '../services/error-categories.js';
@@ -81,6 +82,10 @@ function gradeAttempt(quiz, submittedAnswers) {
             isCorrect,
             explanation: q.explanation || '',
             topic: q.topic || '',
+            // UJ-30 (paso 6): la parte del material de la que salió la pregunta
+            // viaja con el fallo para que el resultado pueda enlazarla. Es un
+            // rótulo del bloque de contexto, no la respuesta correcta.
+            source: q.source || '',
         };
     });
     const totalQuestions = quiz.questions.length;
@@ -120,8 +125,12 @@ function extractQuizJson(content) {
     }
 }
 
-function normalizeQuestions(rawList) {
+function normalizeQuestions(rawList, sources = []) {
     const list = Array.isArray(rawList) ? rawList : [];
+    // UJ-30: sólo se acepta como `source` un rótulo que exista de verdad entre
+    // los bloques de contexto. Si el modelo inventa un material, la pregunta
+    // queda sin respaldo en vez de mostrar una cita falsa.
+    const labels = new Map(sources.map((s) => [String(s.label || '').trim().toLowerCase(), s.label]));
     const questions = [];
     for (const raw of list) {
         if (!raw || typeof raw !== 'object') continue;
@@ -132,6 +141,7 @@ function normalizeQuestions(rawList) {
         if (!question || options.length < 2) continue;
         let correctIndex = Number.isInteger(raw.correctIndex) ? raw.correctIndex : options.indexOf(raw.correctAnswer);
         if (correctIndex < 0 || correctIndex >= options.length) correctIndex = 0;
+        const declaredSource = sanitizeText(raw.source || raw.sourceLabel || '', 200);
         questions.push({
             id: uuidv4(),
             question,
@@ -139,20 +149,43 @@ function normalizeQuestions(rawList) {
             correctIndex,
             explanation: sanitizeText(raw.explanation, 500),
             topic: sanitizeText(raw.topic || raw.topicLabel, 200),
+            source: labels.get(declaredSource.toLowerCase()) || '',
         });
     }
     return questions;
 }
 
+const MATERIAL_SOURCE_LABELS = {
+    transcript: 'Transcripción del encuentro',
+    presentation: 'Presentación',
+    notes: 'Notas',
+    bibliography: 'Bibliografía',
+};
+
+function materialSourceLabel(material) {
+    const kind = MATERIAL_SOURCE_LABELS[material.type] || 'Material';
+    return `${kind} — ${material.filename}`;
+}
+
+/**
+ * Arma el contexto del cuestionario y, a la vez, el catálogo de bloques que lo
+ * componen. Cada bloque tiene un rótulo estable: el modelo lo cita por pregunta
+ * y el resultado lo usa para enlazar el material que respalda cada fallo
+ * (UJ-30, paso 6). El rótulo del bloque es el mismo texto que el catálogo, para
+ * que la cita sea verificable contra lo que se le pasó al modelo.
+ */
 async function loadClassContext(subjectId, classId, context) {
     const parts = [];
+    const sources = [];
 
     const summaryData = await loadJson(CONTAINER_SUMMARIES, `${classId}.json`).catch(() => null);
     const summaryText = typeof summaryData === 'string'
         ? summaryData
         : (summaryData?.summary?.content || summaryData?.summary || '');
     if (summaryText) {
-        parts.push(`[RESUMEN DE LA CLASE]\n${sanitizeText(summaryText, 8000)}`);
+        const label = 'Resumen de la clase (síntesis)';
+        parts.push(`[${label}]\n${sanitizeText(summaryText, 8000)}`);
+        sources.push({ id: 'summary', label, kind: 'summary' });
     }
 
     const materials = await listMaterialsByClass(subjectId, classId);
@@ -162,12 +195,14 @@ async function loadClassContext(subjectId, classId, context) {
         const processed = await loadJson(CONTAINER_PROCESSED, `${mat.materialId}.json`).catch(() => null);
         const t = processed?.extractedText || processed?.text || '';
         if (t) {
-            parts.push(`[${mat.type.toUpperCase()} — ${mat.filename}]\n${sanitizeText(t, 4000)}`);
+            const label = materialSourceLabel(mat);
+            parts.push(`[${label}]\n${sanitizeText(t, 4000)}`);
+            sources.push({ id: `material:${mat.materialId}`, label, kind: mat.type, filename: mat.filename });
             loadedTexts++;
         }
     }
     context.log(`[Quiz] Context loaded: summary=${summaryText ? 'yes' : 'no'}, materials=${loadedTexts}/${textMaterials.length}`);
-    return parts.join('\n\n');
+    return { text: parts.join('\n\n'), sources };
 }
 
 const MAX_EXCLUDED_QUESTIONS = 60;
@@ -219,9 +254,15 @@ function previousTopicsOf(attempts) {
     return seen;
 }
 
-async function buildQuizPrompt(subjectName, className, contextText, questionCount, previousQuestions = [], previousTopics = []) {
+async function buildQuizPrompt(subjectName, className, contextText, questionCount, previousQuestions = [], previousTopics = [], sources = []) {
     const promptConfig = await getActivePrompt('quiz').catch(() => null);
-    const systemContent = promptConfig?.systemPrompt || `Sos un docente experto en crear cuestionarios de autoevaluación para estudiantes universitarios.
+    const sourceList = sources.map((s, i) => `${i + 1}. ${s.label}`).join('\n');
+    const sourceRule = sources.length
+        ? `- Cada elemento tiene además un campo "source": el rótulo EXACTO de uno de los bloques de contexto listados abajo, tal cual está escrito (sin agregar ni quitar texto), que respalda la respuesta correcta de esa pregunta.
+- Bloques de contexto disponibles (usá el rótulo tal cual):
+${sourceList}`
+        : '';
+    const baseSystem = promptConfig?.systemPrompt || `Sos un docente experto en crear cuestionarios de autoevaluación para estudiantes universitarios.
 Generás exactamente ${questionCount} preguntas de opción múltiple (4 opciones cada una) sobre el material de clase provisto.
 Cada pregunta debe verificar comprensión real del contenido, no datos triviales.
 
@@ -231,6 +272,10 @@ Requerimientos del JSON de salida:
   { "question": "texto de la pregunta", "options": ["opción A", "opción B", "opción C", "opción D"], "correctIndex": <índice de la opción correcta (0-3)>, "explanation": "explicación breve de por qué es correcta", "topic": "tema o concepto que evalúa" }
 - Deben ser ${questionCount} preguntas exactas.
 - Sin preguntas repetidas ni demasiado parecidas entre sí.`;
+    // UJ-30 (paso 6): el respaldo de cada pregunta se pide siempre, incluso si la
+    // cátedra configuró un prompt propio, porque el resultado lo necesita para
+    // enlazar el material. Sólo se pide cuando hay bloques que citar.
+    const systemContent = sourceRule ? `${baseSystem}\n${sourceRule}` : baseSystem;
     let userContent = (promptConfig?.userPromptTemplate || 'Generá ${questionCount} preguntas de autoevaluación sobre la siguiente clase.\n\nMateria: ${subjectName}\nClase: ${className}\n\nCONTEXTO:\n${contextText}')
         .replace('${questionCount}', String(questionCount))
         .replace('${subjectName}', subjectName || '')
@@ -298,7 +343,7 @@ app.http('generate-quiz', {
         const startTime = Date.now();
         try {
             const contextText = await loadClassContext(subjectId, classId, context);
-            if (!contextText) {
+            if (!contextText.text) {
                 return jsonResponse(400, { error: 'No hay resumen ni materiales procesados disponibles para esta clase.' });
             }
 
@@ -310,7 +355,7 @@ app.http('generate-quiz', {
             const attemptNumber = previousAttempts.length + 1;
 
             const className = body.className || classId;
-            const { systemContent, userContent } = await buildQuizPrompt(subjectName, className, contextText, count, previousQuestions, previousTopics);
+            const { systemContent, userContent } = await buildQuizPrompt(subjectName, className, contextText.text, count, previousQuestions, previousTopics, contextText.sources);
 
             const quizModel = await resolveModelForTask('quiz');
             const result = await chatCompletion(
@@ -328,7 +373,7 @@ app.http('generate-quiz', {
             );
 
             const rawQuestions = extractQuizJson(result?.content);
-            const questions = normalizeQuestions(rawQuestions);
+            const questions = normalizeQuestions(rawQuestions, contextText.sources);
             if (questions.length === 0) {
                 log.warn('Quiz generation returned unparseable output', { length: result?.content?.length, subjectId, classId });
                 return jsonResponse(502, { error: 'No se pudo generar un cuestionario válido. Intentá de nuevo.' });
@@ -511,4 +556,59 @@ app.http('get-quiz-attempts', {
             })),
         });
     })),
+});
+
+const MAX_MARKED_TOPICS = 50;
+
+/**
+ * UJ-30 (paso 7): los temas flojos los marca la persona, no el sistema. La marca
+ * vive por persona y unidad (clase) y sobrevive al cierre de la pestaña, así que
+ * no se deriva del último intento: se guarda aparte.
+ */
+app.http('get-quiz-weak-topics', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'quiz-weak-topics',
+    handler: withCorrelation(withAuth(async (request, context) => {
+        if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
+        const { userId } = getAuthenticatedUser(request);
+        const subjectId = request.query.get('subjectId');
+        const classId = request.query.get('classId');
+        if (!subjectId || !classId) {
+            return jsonResponse(400, { error: 'Parámetros requeridos: subjectId, classId' });
+        }
+        const record = await getQuizWeakTopics(subjectId, userId, classId).catch(() => null);
+        return jsonResponse(200, { topics: record?.topics || [], updatedAt: record?.updatedAt || null });
+    })),
+});
+
+app.http('save-quiz-weak-topics', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'quiz-weak-topics',
+    handler: withCorrelation(withAuth(withRateLimit(async (request, context) => {
+        if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
+        const { userId } = getAuthenticatedUser(request);
+
+        let body;
+        try {
+            body = await request.json();
+        } catch {
+            return jsonResponse(400, { error: 'Body JSON inválido' });
+        }
+
+        const { subjectId, classId, topics } = body || {};
+        if (!subjectId || !classId || !Array.isArray(topics)) {
+            return jsonResponse(400, { error: 'Faltan campos requeridos: subjectId, classId, topics' });
+        }
+        const cleaned = [];
+        for (const raw of topics) {
+            const topic = sanitizeText(raw, 200);
+            if (topic && !cleaned.includes(topic)) cleaned.push(topic);
+            if (cleaned.length >= MAX_MARKED_TOPICS) break;
+        }
+
+        const saved = await upsertQuizWeakTopics({ subjectId, userId, classId, topics: cleaned });
+        return jsonResponse(200, { topics: saved.topics, updatedAt: saved.updatedAt });
+    }, 'general'))),
 });

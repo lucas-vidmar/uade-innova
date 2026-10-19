@@ -26,6 +26,7 @@ export const CONFIG = {
     quizResults: process.env.AZURE_TABLE_QUIZ_RESULTS || 'QuizResults',
     quizzes: process.env.AZURE_TABLE_QUIZZES || 'Quizzes',
     quizAttempts: process.env.AZURE_TABLE_QUIZ_ATTEMPTS || 'QuizAttempts',
+    quizWeakTopics: process.env.AZURE_TABLE_QUIZ_WEAK_TOPICS || 'QuizWeakTopics',
     unansweredQueries: process.env.AZURE_TABLE_UNANSWERED_QUERIES || 'UnansweredQueries',
     adminSettings: process.env.AZURE_TABLE_ADMIN_SETTINGS || 'AdminSettings',
     users: process.env.AZURE_TABLE_USERS || 'Users',
