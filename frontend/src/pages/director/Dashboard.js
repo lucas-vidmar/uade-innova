@@ -130,15 +130,15 @@ export async function renderDirectorDashboard(container) {
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4)">
             <div class="kpi-card" style="margin:0">
               <div class="kpi-label">Clases vistas</div>
-              <div class="kpi-value" id="kpi-classes-viewed">-</div>
+              <div class="kpi-value" id="kpi-classes-viewed" title="Sin datos de visualización en el período.">s/d</div>
             </div>
             <div class="kpi-card" style="margin:0">
               <div class="kpi-label">Alumnos que vieron</div>
-              <div class="kpi-value" id="kpi-students-viewed">-</div>
+              <div class="kpi-value" id="kpi-students-viewed" title="Sin datos de visualización en el período.">s/d</div>
             </div>
             <div class="kpi-card" style="margin:0;grid-column:1/-1">
               <div class="kpi-label">Clases por alumno (promedio)</div>
-              <div class="kpi-value" id="kpi-avg-per-student">-</div>
+              <div class="kpi-value" id="kpi-avg-per-student" title="Sin datos de visualización en el período.">s/d</div>
             </div>
           </div>
         </div>
@@ -369,17 +369,34 @@ export async function renderDirectorDashboard(container) {
 }
 
 // ── Load class view data and update KPIs ─────────────────────
+// Fix #346: the KPI showed a bare "-" when the period had no views (or the
+// read failed), which reads as a broken value. The rest of the product uses
+// "s/d" (sin datos); the value now says that and carries the reason.
+const NO_DATA_VALUE = 's/d';
+const NO_DATA_HINT = 'Sin datos de visualización en el período.';
+
+function setClassViewKpi(id, value, hint = null) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = value;
+  if (hint) {
+    el.setAttribute('title', hint);
+    el.setAttribute('aria-label', `${hint} ${value}`);
+  } else {
+    el.removeAttribute('title');
+    el.removeAttribute('aria-label');
+  }
+}
+
 async function loadAndRenderClassViews(data, container) {
   let subjects = (auth.getUser().subjects || []).filter(s => s.id);
   if (subjects.length === 0) {
     try { subjects = (await api.getSubjects()) || []; } catch (e) { /* ignore */ }
   }
   if (subjects.length === 0) {
-    const kpis = ['kpi-classes-viewed', 'kpi-students-viewed', 'kpi-avg-per-student'];
-    kpis.forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.textContent = '-';
-    });
+    setClassViewKpi('kpi-classes-viewed', NO_DATA_VALUE, NO_DATA_HINT);
+    setClassViewKpi('kpi-students-viewed', NO_DATA_VALUE, NO_DATA_HINT);
+    setClassViewKpi('kpi-avg-per-student', NO_DATA_VALUE, NO_DATA_HINT);
     return;
   }
 
@@ -401,12 +418,13 @@ async function loadAndRenderClassViews(data, container) {
     });
     totalViewedClasses = allClassIds.size;
 
-    document.getElementById('kpi-classes-viewed').textContent = totalViewedClasses;
-    document.getElementById('kpi-students-viewed').textContent = allStudents.size;
-    const avg = allStudents.size > 0 ? (totalViewedClasses / allStudents.size).toFixed(1) : '-';
-    document.getElementById('kpi-avg-per-student').textContent = avg;
+    setClassViewKpi('kpi-classes-viewed', totalViewedClasses);
+    setClassViewKpi('kpi-students-viewed', allStudents.size);
+    const avg = allStudents.size > 0 ? (totalViewedClasses / allStudents.size).toFixed(1) : null;
+    setClassViewKpi('kpi-avg-per-student', avg ?? NO_DATA_VALUE, avg ? null : NO_DATA_HINT);
   } catch (err) {
     console.error('[Director Dashboard] Error loading class views:', err);
+    setClassViewKpi('kpi-avg-per-student', NO_DATA_VALUE, 'No se pudieron leer las visualizaciones.');
   }
 }
 
