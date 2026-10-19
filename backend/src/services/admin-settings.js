@@ -151,6 +151,22 @@ export function validateRetentionPolicy(policy) {
       return { valid: false, error: `El campo "${key}" es requerido.` };
     }
   }
+  // #537: la política tiene que nombrar al responsable que la aprueba. El campo
+  // es opcional para no romper a quien sólo edita períodos, pero cuando viene
+  // tiene que ser un nombre identificable: una cadena vacía no identifica a
+  // nadie y haría que el estado se lea como vigente sin responsable detrás.
+  if ('approvedBy' in policy && policy.approvedBy !== null && policy.approvedBy !== undefined) {
+    if (typeof policy.approvedBy !== 'string') {
+      return { valid: false, error: 'approvedBy debe ser el nombre o identificador del responsable que aprueba la política.' };
+    }
+    const trimmed = policy.approvedBy.trim();
+    if (trimmed.length < 2 || trimmed.length > 200) {
+      return { valid: false, error: 'approvedBy debe tener entre 2 y 200 caracteres.' };
+    }
+    policy.approvedBy = trimmed;
+  } else if ('approvedBy' in policy) {
+    policy.approvedBy = null;
+  }
   if (!isBool(policy.archiveEnabled)) {
     return { valid: false, error: 'archiveEnabled debe ser un booleano.' };
   }

@@ -167,6 +167,35 @@ test('validateRetentionPolicy cross-field rule (AC #2)', async (t) => {
   });
 });
 
+test('validateRetentionPolicy approver (#537)', async (t) => {
+  await t.test('accepts a policy without approvedBy (períodos editables sin re-aprobar)', () => {
+    const result = validateRetentionPolicy(validPolicy());
+    assert.deepStrictEqual(result.valid, true);
+    assert.ok(!('approvedBy' in validPolicy()));
+  });
+
+  await t.test('trims the approver when present', () => {
+    const policy = validPolicy({ approvedBy: '  Lucía Fernández  ' });
+    assert.deepStrictEqual(validateRetentionPolicy(policy).valid, true);
+    assert.strictEqual(policy.approvedBy, 'Lucía Fernández');
+  });
+
+  await t.test('rejects an empty or too-short approver', () => {
+    assert.deepStrictEqual(validateRetentionPolicy(validPolicy({ approvedBy: '   ' })).valid, false);
+    assert.deepStrictEqual(validateRetentionPolicy(validPolicy({ approvedBy: 'L' })).valid, false);
+  });
+
+  await t.test('rejects a non-string approver', () => {
+    assert.deepStrictEqual(validateRetentionPolicy(validPolicy({ approvedBy: 42 })).valid, false);
+  });
+
+  await t.test('null clears the approver', () => {
+    const policy = validPolicy({ approvedBy: null });
+    assert.deepStrictEqual(validateRetentionPolicy(policy).valid, true);
+    assert.strictEqual(policy.approvedBy, null);
+  });
+});
+
 test('mergeWithDefaults overlays custom over defaults', async (t) => {
   await t.test('merges technical partial over defaults', () => {
     const merged = mergeWithDefaults('technical', { retentionDays: 120 });

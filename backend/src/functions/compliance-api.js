@@ -13,7 +13,7 @@ import {
   isValidDeletionRecordId,
   DELETED_CONTAINER_PURGE_DAYS,
 } from '../services/deletion-audit-store.js';
-
+import { buildDataInventory } from '../services/retention-inventory.js';
 const COMPLIANCE_CONTAINER = CONFIG.containers.compliance;
 const POLICY_BLOB = 'retention-policy.json';
 const COMPLIANCE_ROLES = ['Director', 'Admin', 'Security'];
@@ -71,8 +71,16 @@ async function getPolicy() {
 }
 
 function policyResponse(policy, configured, note) {
+  // #537: una política sin responsable identificado no está vigente. `effective`
+  // es la única fuente para el badge de la pantalla; `updatedBy` sigue siendo
+  // sólo quién guardó por última vez, que no es lo mismo que quién aprueba.
+  const approvedBy = typeof policy.approvedBy === 'string' && policy.approvedBy.trim() !== ''
+    ? policy.approvedBy.trim()
+    : null;
+  const effective = configured === true && approvedBy !== null;
   return {
     configured,
+    effective,
     rules: policy.rules,
     softDeleteDays: policy.softDeleteDays,
     archiveEnabled: policy.archiveEnabled,
@@ -81,6 +89,8 @@ function policyResponse(policy, configured, note) {
     deleteDays: policy.deleteDays,
     notifyTeachers: policy.notifyTeachers,
     autoDelete: policy.autoDelete,
+    approvedBy,
+    approvedAt: policy.approvedAt || null,
     updatedAt: policy.updatedAt || null,
     updatedBy: policy.updatedBy || null,
     evaluatedAt: new Date().toISOString(),
@@ -140,11 +150,24 @@ async function handlePutPolicy(request, context) {
 
   try {
     const existing = await getPolicy();
+    // #537: el responsable que aprueba se persiste con su fecha. Si el cliente
+    // no lo manda (por ejemplo, una integración que sólo ajusta períodos) se
+    // conserva el que ya estaba declarado: editar un período no re-aprueba.
+    const incomingApprovedBy = 'approvedBy' in values ? values.approvedBy : (existing?.approvedBy ?? null);
+    const approvedBy = typeof incomingApprovedBy === 'string' && incomingApprovedBy.trim() !== ''
+      ? incomingApprovedBy.trim()
+      : null;
+    const approvedChanged = approvedBy !== (existing?.approvedBy ?? null);
+    const approvedAt = approvedBy === null
+      ? null
+      : (approvedChanged || !existing?.approvedAt ? new Date().toISOString() : existing.approvedAt);
     const policy = {
       ...DEFAULT_RETENTION_POLICY,
       ...values,
       rules: existing?.rules || DEFAULT_POLICY_RULES,
       softDeleteDays: existing?.softDeleteDays ?? DEFAULT_SOFT_DELETE_DAYS,
+      approvedBy,
+      approvedAt,
       updatedAt: new Date().toISOString(),
       updatedBy: userId,
     };
@@ -407,6 +430,33 @@ async function handleVerifyDeletionRecord(request, context) {
   }
 }
 
+async function handleDataInventory(request, context) {
+  if (!isComplianceAuthorized(request, context)) {
+    return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Director, Admin, or Security role required' }) };
+  }
+
+  try {
+    const policy = await getPolicy();
+    const merged = policy
+      ? { ...DEFAULT_RETENTION_POLICY, ...policy }
+      : { ...DEFAULT_RETENTION_POLICY, rules: [], softDeleteDays: DEFAULT_SOFT_DELETE_DAYS };
+    const inventory = buildDataInventory(merged, {
+      configured: Boolean(policy),
+      approvedBy: merged.approvedBy ?? null,
+    });
+    if (!policy) {
+      inventory.note = 'Política de retención no configurada — los plazos del inventario son los valores por defecto de Azure Storage.';
+    }
+    return {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(inventory),
+    };
+  } catch (err) {
+    context.log('[Compliance] Error building data inventory:', err.message);
+    return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Error al construir el inventario de datos personales' }) };  }
+}
+
 app.http('get-compliance-retention-policy', {
   methods: ['GET'],
   authLevel: 'anonymous',
@@ -450,4 +500,13 @@ app.http('get-compliance-deletion-record-verification', {
   authLevel: 'anonymous',
   route: 'compliance/deletion-records/{recordId}/verificacion',
   handler: withCorrelation(withAuth(handleVerifyDeletionRecord, { roles: COMPLIANCE_ROLES })),
+});
+
+// #537: inventario de datos personales por persona y finalidad, resuelto
+// contra la política vigente. Sólo lectura: no toca la retención configurada.
+app.http('get-compliance-data-inventory', {
+  methods: ['GET'],
+  authLevel: 'anonymous',
+  route: 'compliance/data-inventory',
+  handler: withCorrelation(withAuth(handleDataInventory, { roles: COMPLIANCE_ROLES })),
 });

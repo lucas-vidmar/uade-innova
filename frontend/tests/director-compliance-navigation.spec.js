@@ -4,12 +4,43 @@ test.use({ channel: 'chrome' });
 
 const RETENTION_POLICY = {
   configured: true,
+  // #537: la política declara quién la aprueba; sin ese dato no está vigente.
+  effective: true,
+  approvedBy: 'Lucía Fernández (Dirección Académica)',
+  approvedAt: '2026-08-10T12:00:00.000Z',
+  updatedAt: '2026-08-10T12:00:00.000Z',
   rules: [
     { name: 'Transcripciones', enabled: true, action: 'tierToArchive', retentionDays: 365, prefixes: ['transcripts/'] },
     { name: 'Videos', enabled: false, action: 'delete', retentionDays: 30, prefixes: ['videos/'] },
   ],
   softDeleteDays: 7,
   evaluatedAt: '2026-08-10T12:00:00.000Z',
+};
+
+// #537: el inventario lo resuelve el backend contra la política; la pantalla no
+// recalcula plazos. Fixture mínimo para fijar el render.
+const DATA_INVENTORY = {
+  generatedAt: '2026-08-10T12:00:00.000Z',
+  configured: true,
+  effective: true,
+  responsable: { approvedBy: 'Lucía Fernández (Dirección Académica)', approvedAt: '2026-08-10T12:00:00.000Z' },
+  policy: { archiveDays: 730, deleteDays: 1095, softDeleteDays: 7 },
+  totals: { categorias: 1, cubiertas: 1, sinPlazo: 0 },
+  categories: [
+    {
+      id: 'transcripciones',
+      persona: 'Alumno y docente',
+      categoria: 'Transcripciones y audio de clase',
+      queSeGuarda: 'Audio de la clase y su transcripción (VTT).',
+      donde: 'Contenedores class-audio y processed',
+      finalidad: 'Accesibilidad y repaso de la clase.',
+      governedBy: 'archiveDays',
+      periodoDias: 730,
+      accion: 'Archivo en frío (Cold Storage)',
+      estado: 'vigente',
+      cubierto: true,
+    },
+  ],
 };
 
 async function mockDirectorSession(page) {
@@ -19,6 +50,11 @@ async function mockDirectorSession(page) {
     localStorage.setItem('onboarding-teacher-completed', 'true');
     localStorage.setItem('onboarding-director-completed', 'true');
     sessionStorage.setItem('edu_role', 'director');
+    // El guard de rutas cerrojo exige identidad resuelta; sin uid el director
+    // rebota a #/login y el spec mediría el guard, no la pantalla.
+    sessionStorage.setItem('edu_uid', 'dir-001');
+    sessionStorage.setItem('edu_email', 'director@uade.edu.ar');
+    sessionStorage.setItem('edu_token', 'token-de-prueba');
     sessionStorage.setItem('edu_active_subject', 'arq-software-2026');
     sessionStorage.setItem('edu_consent_accepted', 'true');
     sessionStorage.setItem('edu_logged_in', 'true');
@@ -81,6 +117,10 @@ async function mockDirectorSession(page) {
   await page.route('**/api/compliance/retention-policy*', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(RETENTION_POLICY) });
   });
+  // #537: inventario de datos personales por persona y finalidad.
+  await page.route('**/api/compliance/data-inventory*', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(DATA_INVENTORY) });
+  });
 }
 
 test('director can navigate from the dashboard "Cumplimiento →" link to the compliance evidence page', async ({ page }) => {
@@ -106,11 +146,30 @@ test('director can navigate from the dashboard "Cumplimiento →" link to the co
   const heading = page.locator('h2', { hasText: 'Evidencia de Cumplimiento Normativo' });
   await expect(heading).toBeVisible();
 
-  // Policy payload from the mocked API renders in the retention table.
-  await expect(page.locator('table')).toContainText('Transcripciones');
-  await expect(page.locator('table')).toContainText('Soft Delete Policy');
+  // Policy payload from the mocked API renders in the retention table. Scope to
+  // the first table: la pantalla ahora también publica el inventario por persona.
+  const reglas = page.locator('table').first();
+  await expect(reglas).toContainText('Transcripciones');
+  await expect(reglas).toContainText('Soft Delete Policy');
 
   // QA-004 was a silent routing failure; any uncaught JS error invalidates the fix.
+  expect(pageErrors).toEqual([]);
+});
+
+
+test('#537 — la vista de cumplimiento nombra al responsable y publica el inventario por persona', async ({ page }) => {
+  const pageErrors = [];
+  page.on('pageerror', (err) => pageErrors.push(err));
+
+  await mockDirectorSession(page);
+  await page.goto('/#/director/compliance');
+
+  await expect(page.locator('#compliance-responsable')).toContainText('Lucía Fernández');
+  await expect(page.locator('#compliance-data-inventory')).toContainText('Transcripciones y audio de clase');
+  await expect(page.locator('#compliance-data-inventory')).toContainText('Accesibilidad y repaso de la clase.');
+  await expect(page.locator('#compliance-data-inventory')).toContainText('2 años');
+  await expect(page.locator('#page-content')).not.toContainText('Pendiente de aprobación');
+
   expect(pageErrors).toEqual([]);
 });
 
