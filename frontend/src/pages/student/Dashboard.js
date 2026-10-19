@@ -12,6 +12,39 @@ import { OnboardingEngine, shouldAutoStartOnboarding } from '../../services/onbo
 import { STUDENT_ONBOARDING_STEPS } from './OnboardingSteps.js';
 import { formatLocalDate, parseLocalDate, daysUntilLocalDate } from '../../services/dates.js';
 
+// #401 (UJ-23/UJ-24): el chat-log guarda el alcance de cada turno (`classIds`,
+// con `classId` como respaldo de los turnos viejos). Ese dato es el que permite
+// atribuir cada respuesta a su alcance y rehidratar las fuentes de consulta al
+// reabrir el hilo, en vez de dejarlo deshabilitado y obligar a re-elegir de cero.
+export function classIdsOfTurn(turn) {
+  if (Array.isArray(turn?.classIds) && turn.classIds.length > 0) return turn.classIds.filter(Boolean);
+  return turn?.classId ? [turn.classId] : [];
+}
+
+// #401: el alcance del hilo es el del último tramo (con ese quedó la persona).
+// Sólo si el último turno no lo declara —hilos viejos— se cae a la unión de lo
+// que sí quedó registrado; ampliar por unión sin aviso sería cambiar el alcance
+// en silencio, que es justamente lo que el issue señala.
+export function threadScopeFrom(turns) {
+  const list = Array.isArray(turns) ? turns : [];
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const ids = classIdsOfTurn(list[i]);
+    if (ids.length > 0) return ids;
+  }
+  const union = new Set();
+  list.forEach(turn => classIdsOfTurn(turn).forEach(id => union.add(id)));
+  return Array.from(union);
+}
+
+// #401: los turnos guardados se rehidratan con su alcance para que el hilo
+// muestre con qué clase se preguntó cada tramo.
+export function messagesFromTurns(turns) {
+  return (Array.isArray(turns) ? turns : []).map(turn => ([
+    { role: 'user', content: turn.question, classIds: classIdsOfTurn(turn) },
+    { role: 'assistant', content: turn.answer || '', sources: turn.sources || [], id: turn.id, classIds: classIdsOfTurn(turn) },
+  ])).flat();
+}
+
 function renderSearchResult(result, classesById) {
   const materialIcon = {
     transcript: icon('document'),
@@ -525,10 +558,8 @@ export async function renderStudentDashboard(container) {
       classes: classes || [],
       subjectId: activeSubjectId,
       sessionId,
-      initialMessages: sessionMessages.map(c => ([
-        { role: 'user', content: c.question },
-        { role: 'assistant', content: c.answer || '', sources: c.sources || [], id: c.id }
-      ])).flat(),
+      initialMessages: messagesFromTurns(sessionMessages),
+      initialClassIds: threadScopeFrom(sessionMessages),
       onNewChat: handleNewChat,
       onMessageSent: handleMessageSent,
       onConsentAccepted: startOnboardingIfNeeded,
@@ -815,11 +846,15 @@ export async function renderStudentDashboard(container) {
       classes: classes || [],
       subjectId: activeSubjectId,
       sessionId: seedSessionId || null,
-      initialMessages: seedMessages.map(c => ([
-        { role: 'user', content: c.question },
-        { role: 'assistant', content: c.answer || '', sources: c.sources || [], id: c.id }
-      ])).flat(),
-      initialClassIds: selectedClassId ? [selectedClassId] : [],
+      initialMessages: messagesFromTurns(seedMessages),
+      // #401 (UJ-23/UJ-24): reabrir un hilo restaura el alcance con el que quedó
+      // (el del último tramo), en vez de arrancar con las fuentes vacías y el
+      // input deshabilitado. El `classId` del hash sólo manda cuando no hay hilo.
+      initialClassIds: (() => {
+        const threadScope = threadScopeFrom(seedMessages);
+        if (threadScope.length > 0) return threadScope;
+        return selectedClassId ? [selectedClassId] : [];
+      })(),
       preset: chatPreset,
       onNewChat: handleNewChat,
       onMessageSent: handleMessageSent,

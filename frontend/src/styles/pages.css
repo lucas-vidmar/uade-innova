@@ -3221,6 +3221,25 @@
     padding: 0;
 }
 
+/* #401 (UJ-23/UJ-24): cada respuesta declara con qué alcance se preguntó.
+   Sin esto los tramos de una misma conversación quedaban indistinguibles. */
+.chat-scope {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 8px;
+    margin-bottom: 4px;
+    padding: 2px 8px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-2);
+    color: var(--color-text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
 .chat-bubble-assistant strong {
     color: var(--color-primary-light);
 }
