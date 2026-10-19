@@ -530,7 +530,14 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
 
     const conversationHistory = messages
       .filter(msg => (msg.role === 'user' || msg.role === 'assistant') && typeof msg.content === 'string' && msg.content.trim().length > 0)
-      .map(msg => ({ role: msg.role, content: msg.content.trim() }))
+      .map(msg => {
+        const turn = { role: msg.role, content: msg.content.trim() };
+        // #410: el turno del asistente lleva las fuentes que citó, para que el
+        // seguimiento pueda apoyarse en la bibliografía del hilo.
+        const sources = msg.role === 'assistant' ? historySources(msg.sources) : [];
+        if (sources.length > 0) turn.sources = sources;
+        return turn;
+      })
       .slice(-FOLLOW_UP_HISTORY_WINDOW_SIZE);
 
     input.value = '';
@@ -1281,6 +1288,31 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         seen.add(key);
         return true;
       });
+  };
+
+  // #410: al retomar un hilo, las fuentes citadas por el asistente son la
+  // bibliografía de ese hilo. Si no viajan con el historial, el asistente no
+  // puede responder "¿qué bibliografía respalda lo anterior?" ni nombrar los
+  // materiales: sólo repetir el texto de su respuesta previa.
+  const historySources = (sources) => {
+    if (!Array.isArray(sources)) return [];
+    const seen = new Set();
+    const out = [];
+    for (const s of sources) {
+      const sourceFilename = typeof s?.sourceFilename === 'string' ? s.sourceFilename.trim() : '';
+      const slideTitle = typeof s?.slideTitle === 'string' ? s.slideTitle.trim() : '';
+      const key = `${sourceFilename}|${slideTitle}`;
+      if ((!sourceFilename && !slideTitle) || seen.has(key)) continue;
+      seen.add(key);
+      out.push({
+        sourceFilename: sourceFilename || null,
+        slideTitle: slideTitle || null,
+        materialType: typeof s?.materialType === 'string' ? s.materialType : null,
+      });
+      // El backend recorta a 5 por turno; no tiene sentido mandar más.
+      if (out.length >= 5) break;
+    }
+    return out;
   };
 
   const icon = (name) => {

@@ -342,8 +342,15 @@ test('rag-query should rewrite follow-up questions using recent history', async 
     assert.strictEqual(openaiMocks.generateEmbedding.mock.calls.at(-1).arguments[0], '¿Por que es importante la arquitectura hexagonal?');
 
     const ragMessages = openaiMocks.chatCompletion.mock.calls.at(-1).arguments[0];
-    const ragUserMessage = ragMessages.find(m => m.role === 'user');
+    // #410: la pregunta actual es el último turno; los previos viajan antes como
+    // conversación real, para que el modelo pueda apoyarse en ellos.
+    const ragUserMessage = ragMessages.filter(m => m.role === 'user').at(-1);
     assert.strictEqual(ragUserMessage.content, '¿Por que es importante la arquitectura hexagonal?');
+    assert.deepStrictEqual(
+        ragMessages.slice(1).map(m => m.role),
+        ['user', 'assistant', 'user', 'assistant', 'user'],
+        'el hilo previo debe viajar al prompt de respuesta'
+    );
 });
 
 test('rag-query should keep original question when history is not provided', async () => {
@@ -2236,4 +2243,211 @@ test('#399: una respuesta verificada de otra clase no se sirve con alcance acota
     );
     const logged = context.log.mock.calls.some((c) => String(c.arguments?.[0] || '').includes('fuera de alcance'));
     assert.ok(logged, 'debe registrar el descarte por alcance en los logs');
+});
+
+// ── #410: el hilo tiene que llegar al prompt de RESPUESTA ─────────────────────
+// Reproducción real (piloto): al retomar un hilo con 4 turnos de historial, la
+// pregunta seguimiento recibía "No encontre informacion sobre eso en los
+// materiales seleccionados." porque el historial sólo alimentaba la reescritura
+// de la pregunta y el prompt de respuesta era [system, user(reescrita)].
+test('#410 el prompt de respuesta incluye los turnos previos y sus fuentes', async (t) => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.mockImplementation(async (messages) => {
+        const systemContent = messages?.[0]?.content || '';
+        if (systemContent.includes('Reescribe la ultima pregunta del estudiante')) {
+            return { content: '¿Que bibliografia respalda el diseno de API REST?', usage: { total_tokens: 10 } };
+        }
+        return { content: 'La bibliografia citada es "RESTful Web APIs" [1].', usage: { total_tokens: 20 } };
+    });
+    t.after(() => {
+        openaiMocks.chatCompletion.mock.mockImplementation(async () => ({
+            content: 'Respuesta simulada.',
+            usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 },
+        }));
+    });
+
+    const response = await capturedHandler({
+        json: async () => ({
+            question: 'retomo la duda anterior de este hilo, que bibliografia respalda lo que se respondio antes?',
+            subjectId: 'arq-software-2026',
+            classIds: ['class-05'],
+            sessionId: 'fa93f646-9e3f-419a-97fc-4551c392109b',
+            historyWindowSize: 4,
+            conversationHistory: [
+                { role: 'user', content: '¿Que reglas rigen el diseno de API REST?' },
+                {
+                    role: 'assistant',
+                    content: 'Se aplica la regla TRIPODE-REST: versionar, paginar y documentar [2].',
+                    sources: [
+                        { sourceFilename: 'uj07-apuntes-clase5.docx', slideTitle: 'API REST', materialType: 'pdf' },
+                        { sourceFilename: 'uj07-bibliografia-clase5.docx', materialType: 'bibliography' },
+                    ],
+                },
+            ],
+        }),
+        user: { id: 'alu-003' },
+    }, { log: mock.fn(), error: mock.fn() });
+
+    assert.strictEqual(response.status, 200);
+    const ragMessages = openaiMocks.chatCompletion.mock.calls.at(-1).arguments[0];
+    const systemContent = ragMessages[0].content;
+
+    assert.ok(systemContent.includes('<hilo_de_conversacion>'), 'el prompt debe declarar el hilo abierto');
+    assert.ok(
+        !systemContent.includes('La busqueda no devolvio fragmentos nuevos'),
+        'con material recuperado no se agrega la clausula de hilo sin material',
+    );
+
+    const turnos = ragMessages.slice(1);
+    assert.deepStrictEqual(turnos.map(m => m.role), ['user', 'assistant', 'user']);
+    assert.ok(
+        turnos[1].content.includes('TRIPODE-REST'),
+        'la respuesta previa del asistente debe viajar al prompt',
+    );
+    assert.ok(
+        turnos[1].content.includes('uj07-bibliografia-clase5.docx'),
+        'las fuentes citadas antes tienen que estar disponibles para responder por la bibliografia',
+    );
+    assert.strictEqual(turnos[2].content, '¿Que bibliografia respalda el diseno de API REST?');
+});
+
+test('#410 un seguimiento del hilo no se rechaza cuando la busqueda no trae material', async (t) => {
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async () => []);
+    t.after(() => {
+        vectorStoreMocks.querySimilar.mock.mockImplementation(defaultQuerySimilarImpl);
+    });
+
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.mockImplementation(async (messages) => {
+        const systemContent = messages?.[0]?.content || '';
+        if (systemContent.includes('Reescribe la ultima pregunta del estudiante')) {
+            return { content: '¿Que bibliografia respalda la respuesta anterior?', usage: { total_tokens: 10 } };
+        }
+        return {
+            content: 'Segun lo respondido antes en este hilo, la bibliografia es uj07-bibliografia-clase5.docx.',
+            usage: { total_tokens: 20 },
+        };
+    });
+    t.after(() => {
+        openaiMocks.chatCompletion.mock.mockImplementation(async () => ({
+            content: 'Respuesta simulada.',
+            usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 },
+        }));
+    });
+
+    const response = await capturedHandler({
+        json: async () => ({
+            question: 'retomo la duda anterior de este hilo, que bibliografia respalda lo que se respondio antes?',
+            subjectId: 'arq-software-2026',
+            classIds: ['class-05'],
+            conversationHistory: [
+                { role: 'user', content: '¿Que reglas rigen el diseno de API REST?' },
+                {
+                    role: 'assistant',
+                    content: 'Se aplica la regla TRIPODE-REST [2].',
+                    sources: [{ sourceFilename: 'uj07-bibliografia-clase5.docx', materialType: 'bibliography' }],
+                },
+            ],
+        }),
+        user: { id: 'alu-003' },
+    }, { log: mock.fn(), error: mock.fn() });
+
+    const body = JSON.parse(response.body);
+    assert.strictEqual(response.status, 200);
+    assert.notStrictEqual(
+        body.answer,
+        'No encontre informacion sobre eso en los materiales seleccionados.',
+        'el hilo con respuesta previa no puede cortarse con el rechazo por falta de material',
+    );
+    assert.ok(body.answer.includes('bibliografia-clase5'), 'la respuesta se apoya en el hilo');
+
+    const ragMessages = openaiMocks.chatCompletion.mock.calls.at(-1).arguments[0];
+    assert.ok(
+        ragMessages[0].content.includes('La busqueda no devolvio fragmentos nuevos'),
+        'el prompt debe aclarar que no hay material nuevo y que el hilo manda',
+    );
+});
+
+test('#410 sin hilo, la busqueda vacia sigue devolviendo el rechazo sin llamar al modelo', async (t) => {
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async () => []);
+    t.after(() => {
+        vectorStoreMocks.querySimilar.mock.mockImplementation(defaultQuerySimilarImpl);
+    });
+    openaiMocks.chatCompletion.mock.resetCalls();
+
+    const response = await capturedHandler({
+        json: async () => ({
+            question: 'pregunta sin hilo ni material',
+            subjectId: 'arq-software-2026',
+        }),
+        user: { id: 'alu-003' },
+    }, { log: mock.fn(), error: mock.fn() });
+
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.answer, 'No encontre informacion sobre eso en los materiales seleccionados.');
+    assert.strictEqual(openaiMocks.chatCompletion.mock.callCount(), 0);
+});
+
+test('#410 el hilo se acota: un turno enorme se recorta antes de entrar al prompt', async (t) => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.mockImplementation(async (messages) => {
+        const systemContent = messages?.[0]?.content || '';
+        if (systemContent.includes('Reescribe la ultima pregunta del estudiante')) {
+            return { content: 'pregunta reescrita', usage: { total_tokens: 10 } };
+        }
+        return { content: 'ok', usage: { total_tokens: 10 } };
+    });
+    t.after(() => {
+        openaiMocks.chatCompletion.mock.mockImplementation(async () => ({
+            content: 'Respuesta simulada.',
+            usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 },
+        }));
+    });
+
+    await capturedHandler({
+        json: async () => ({
+            question: '¿y eso por que?',
+            subjectId: 'arq-software-2026',
+            conversationHistory: [
+                { role: 'user', content: 'pregunta previa' },
+                { role: 'assistant', content: 'x'.repeat(9000) },
+            ],
+        }),
+        user: { id: 'alu-003' },
+    }, { log: mock.fn(), error: mock.fn() });
+
+    const ragMessages = openaiMocks.chatCompletion.mock.calls.at(-1).arguments[0];
+    const respuestaPrevia = ragMessages.find(m => m.role === 'assistant');
+    assert.ok(respuestaPrevia, 'la respuesta previa debe viajar al prompt');
+    assert.ok(
+        respuestaPrevia.content.length <= 1401,
+        `el turno previo debe recortarse (largo=${respuestaPrevia.content.length})`,
+    );
+});
+
+test('#410 con hilo pero pregunta nueva sin material, sigue el rechazo sin gastar modelo', async (t) => {
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async () => []);
+    t.after(() => {
+        vectorStoreMocks.querySimilar.mock.mockImplementation(defaultQuerySimilarImpl);
+    });
+    openaiMocks.chatCompletion.mock.resetCalls();
+
+    const response = await capturedHandler({
+        json: async () => ({
+            question: 'como se configura un cluster de kubernetes en produccion?',
+            subjectId: 'arq-software-2026',
+            classIds: ['class-05'],
+            conversationHistory: [
+                { role: 'user', content: '¿Que reglas rigen el diseno de API REST?' },
+                { role: 'assistant', content: 'Se aplica la regla TRIPODE-REST.' },
+            ],
+        }),
+        user: { id: 'alu-003' },
+    }, { log: mock.fn(), error: mock.fn() });
+
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.answer, 'No encontre informacion sobre eso en los materiales seleccionados.');
+    const generaciones = openaiMocks.chatCompletion.mock.calls
+        .filter((call) => !String(call.arguments?.[0]?.[0]?.content || '').includes('Reescribe la ultima pregunta del estudiante'));
+    assert.strictEqual(generaciones.length, 0, 'una consulta nueva sin material no paga generación');
 });

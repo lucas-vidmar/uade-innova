@@ -77,4 +77,13 @@ test('student can ask follow-up question and keep logical flow', async ({ page }
   expect(Array.isArray(capturedRequests[1].conversationHistory)).toBe(true);
   expect(capturedRequests[1].conversationHistory.length).toBeGreaterThanOrEqual(2);
   expect(capturedRequests[1].historyWindowSize).toBe(4);
+
+  // #410: el turno previo del asistente viaja con las fuentes que citó. Sin eso
+  // el seguimiento no puede nombrar la bibliografía de lo respondido antes.
+  const respuestaPrevia = capturedRequests[1].conversationHistory
+    .filter(turn => turn.role === 'assistant')
+    .at(-1);
+  expect(respuestaPrevia).toBeTruthy();
+  expect(respuestaPrevia.content).toContain('arquitectura hexagonal');
+  expect(respuestaPrevia.sources?.[0]?.sourceFilename).toBe('clase1.txt');
 });

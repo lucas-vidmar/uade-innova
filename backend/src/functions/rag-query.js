@@ -31,23 +31,60 @@ import { excludeRetiredMatches, partitionMaterialsByRetirement } from '../servic
 const MIN_HISTORY_TURNS = CONFIG.history.minTurns;
 const MAX_HISTORY_TURNS = CONFIG.history.maxTurns;
 const DEFAULT_HISTORY_TURNS = CONFIG.history.defaultTurns;
+// #410: el hilo viaja también al prompt de respuesta, así que hay que acotarlo:
+// un turno largo (respuesta completa del asistente) no puede comerse el
+// presupuesto de contexto del turno actual.
+const MAX_HISTORY_TURN_CHARS = CONFIG.history.maxTurnChars;
+const MAX_HISTORY_CHARS = CONFIG.history.maxChars;
+const MAX_HISTORY_SOURCES_PER_TURN = 5;
+
+function sanitizeHistorySource(source) {
+    if (!source || typeof source !== 'object') return null;
+    const pick = (value) => (typeof value === 'string' ? value.trim().slice(0, 160) : '');
+    const sourceFilename = pick(source.sourceFilename);
+    const slideTitle = pick(source.slideTitle);
+    if (!sourceFilename && !slideTitle) return null;
+    const materialType = pick(source.materialType);
+    return {
+        sourceFilename: sourceFilename || null,
+        slideTitle: slideTitle || null,
+        materialType: materialType || null,
+    };
+}
 
 function sanitizeTurn(turn) {
     if (!turn || typeof turn !== 'object') return null;
     const role = turn.role === 'assistant' ? 'assistant' : turn.role === 'user' ? 'user' : null;
     const content = typeof turn.content === 'string' ? turn.content.trim() : '';
     if (!role || !content) return null;
-    return { role, content };
+    // #410: las fuentes citadas por el asistente son la bibliografía del hilo.
+    // Sin ellas, "¿qué bibliografía respalda lo anterior?" sólo puede repetir el
+    // texto de la respuesta previa, no nombrar los materiales.
+    const sources = role === 'assistant' && Array.isArray(turn.sources)
+        ? turn.sources.map(sanitizeHistorySource).filter(Boolean).slice(0, MAX_HISTORY_SOURCES_PER_TURN)
+        : [];
+    return sources.length > 0 ? { role, content, sources } : { role, content };
 }
 
 function normalizeConversationHistory(rawHistory, requestedWindowSize) {
     if (!Array.isArray(rawHistory) || rawHistory.length === 0) return [];
     const parsedWindow = Number.isInteger(requestedWindowSize) ? requestedWindowSize : DEFAULT_HISTORY_TURNS;
     const boundedWindow = Math.max(MIN_HISTORY_TURNS, Math.min(MAX_HISTORY_TURNS, parsedWindow));
-    return rawHistory
+    const turns = rawHistory
         .map(sanitizeTurn)
         .filter(Boolean)
-        .slice(-boundedWindow);
+        .slice(-boundedWindow)
+        .map((turn) => (turn.content.length > MAX_HISTORY_TURN_CHARS
+            ? { ...turn, content: `${turn.content.slice(0, MAX_HISTORY_TURN_CHARS).trimEnd()}…` }
+            : turn));
+
+    // Presupuesto total: se descartan los turnos más viejos hasta entrar en el tope.
+    let totalChars = turns.reduce((sum, turn) => sum + turn.content.length, 0);
+    while (turns.length > 1 && totalChars > MAX_HISTORY_CHARS) {
+        totalChars -= turns[0].content.length;
+        turns.shift();
+    }
+    return turns;
 }
 
 async function rewriteQuestionWithHistory(question, conversationHistory, context) {
@@ -86,6 +123,72 @@ Devuelve unicamente la pregunta reescrita en espanol, sin comillas ni explicacio
         context.error('[RAG] Error reescribiendo follow-up. Se usa pregunta original:', err);
         return question;
     }
+}
+
+function formatHistorySource(source) {
+    const parts = [source.slideTitle, source.sourceFilename].filter(Boolean);
+    return parts.join(' — ');
+}
+
+// #410: el historial del hilo viaja al prompt de RESPUESTA como turnos reales.
+// Antes sólo alimentaba la reescritura de la pregunta, así que el modelo no veía
+// el intercambio previo y contestaba que no tenía acceso a él.
+function buildConversationMessages(conversationHistory) {
+    const messages = [];
+    for (const turn of conversationHistory) {
+        let content = turn.content;
+        if (turn.role === 'assistant' && Array.isArray(turn.sources) && turn.sources.length > 0) {
+            const cited = turn.sources.map(formatHistorySource).filter(Boolean);
+            if (cited.length > 0) content = `${content}\n\n[Fuentes citadas en este turno: ${cited.join(' · ')}]`;
+        }
+        const previous = messages[messages.length - 1];
+        // Se fusionan turnos consecutivos del mismo rol: algunos proveedores no
+        // aceptan dos mensajes seguidos con el mismo rol.
+        if (previous && previous.role === turn.role) {
+            previous.content = `${previous.content}\n\n${content}`;
+        } else {
+            messages.push({ role: turn.role, content });
+        }
+    }
+    return messages;
+}
+
+// Instrucción que habilita el hilo dentro de un prompt gobernado que pide
+// responder sólo con <contexto_rag>. Sin ella el modelo sigue negándose aunque
+// los turnos previos estén en la conversación.
+function buildThreadInstruction({ hasThreadAnswer, hasFreshMaterial }) {
+    if (!hasThreadAnswer) return '';
+    const base = `\n\n<hilo_de_conversacion>
+Esta consulta continua un hilo abierto: los turnos previos de la conversacion estan en este mismo intercambio, antes de la pregunta actual, y las fuentes que se citaron en cada respuesta anterior aparecen entre corchetes al final de ese turno.
+Cuando la pregunta retome lo ya conversado ("lo anterior", "eso", "la respuesta previa", "la bibliografia que mencionaste"), responde usando esos turnos y nombra esas fuentes si hacen falta.
+No respondas que no tenes acceso al intercambio previo ni pidas que se repita la pregunta: el hilo esta disponible.`;
+    const noFreshMaterial = hasFreshMaterial
+        ? ''
+        : `\nLa busqueda no devolvio fragmentos nuevos de los materiales para esta pregunta. Si la respuesta ya esta en el hilo, respondela desde el hilo y aclara que proviene de lo respondido antes en esta conversacion. Si no esta en el hilo, responde exactamente: "No encontre informacion sobre eso en los materiales seleccionados."`;
+    return `${base}${noFreshMaterial}\n</hilo_de_conversacion>`;
+}
+
+// #410: señales de que el turno retoma lo ya conversado. Con hilo y sin material
+// nuevo, sólo una pregunta de este tipo justifica pagar una generación: una
+// consulta nueva que no encontró material sigue rechazándose sin llamar al modelo.
+const THREAD_REFERENTIAL_SIGNALS = [
+    'lo anterior', 'lo previo', 'lo dicho', 'lo que se respondio', 'lo que respondiste',
+    'la respuesta anterior', 'la respuesta previa', 'tu respuesta', 'el hilo', 'este hilo',
+    'ese hilo', 'mencionaste', 'mencionamos', 'dijiste', 'dijimos', 'respondiste', 'respondimos',
+    'eso', 'esto', 'esos', 'esas', 'ese', 'esa', 'aquello', 'aquel', 'aquella',
+    'antes', 'anterior', 'anteriores', 'anteriormente', 'previo', 'previa', 'previamente',
+    'la bibliografia',
+];
+
+function normalizeForSignal(text) {
+    return String(text || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function isThreadFollowUp(...texts) {
+    return texts.some((text) => {
+        const normalized = normalizeForSignal(text);
+        return THREAD_REFERENTIAL_SIGNALS.some((signal) => new RegExp(`\\b${signal}\\b`).test(normalized));
+    });
 }
 
 function jsonResponse(status, payload) {
@@ -349,6 +452,9 @@ app.http('rag-query', {
         }
 
         const recentConversationHistory = normalizeConversationHistory(conversationHistory, historyWindowSize);
+        // #410: si el hilo ya tiene una respuesta previa, el turno actual puede
+        // apoyarse en ella aunque la búsqueda no devuelva fragmentos nuevos.
+        const hasThreadAnswer = recentConversationHistory.some((turn) => turn.role === 'assistant');
 
         const principal = context.principal || parseClientPrincipal(request);
         const userRoles = principal?.userRoles || [];
@@ -769,7 +875,11 @@ app.http('rag-query', {
         const REFUSAL_MESSAGE = "No encontre informacion sobre eso en los materiales seleccionados.";
 
         // ── 5. Early return if no context found ───────────────────
-        if (matches.length === 0) {
+        // #410: un seguimiento que retoma el hilo no se rechaza por falta de
+        // material nuevo: la respuesta puede estar en lo ya respondido. El
+        // modelo decide con el hilo delante y mantiene el rechazo si no está.
+        const answersFromThread = hasThreadAnswer && isThreadFollowUp(question, rewrittenQuestion);
+        if (matches.length === 0 && !answersFromThread) {
             // #349: si la consulta era definicional y no hubo material, se
             // compone el mensaje del glosario ("no encontré ese término") como
             // último recurso; en cualquier otro caso, el rechazo estándar.
@@ -967,6 +1077,11 @@ app.http('rag-query', {
           context.error('[RAG] Error loading teacher feedback (non-blocking):', feedbackErr);
         }
 
+        const threadInstruction = buildThreadInstruction({
+            hasThreadAnswer,
+            hasFreshMaterial: matches.length > 0,
+        });
+
         const messages = [
             {
                 role: 'system',
@@ -974,9 +1089,10 @@ app.http('rag-query', {
 
 <contexto_rag>
 ${contextText}
-</contexto_rag>${teacherFeedbackBlock}${deadlineBlock}${preferencesBlock}`,
+</contexto_rag>${teacherFeedbackBlock}${deadlineBlock}${preferencesBlock}${threadInstruction}`,
 
             },
+            ...buildConversationMessages(recentConversationHistory),
             {
                 role: 'user',
                 content: rewrittenQuestion,
