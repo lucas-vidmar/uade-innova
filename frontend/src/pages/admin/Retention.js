@@ -16,6 +16,12 @@ export async function renderAdminRetention(container) {
   // are local defaults. The "Políticas Activas" table binds to this so it
   // reflects the API instead of hardcoded periods.
   let policyConfigured = false;
+  // #343: la constancia de la política (estado y fecha de revisión) también sale
+  // de la API. Antes la tarjeta "Cumplimiento Normativo" decía siempre
+  // "Última revisión: 01/01/2026" y "Vigente" mientras la API respondía
+  // `configured:false` y la vista de Cumplimiento decía "No configurado".
+  let policyUpdatedAt = null;
+  let policyNote = '';
 
   async function loadPolicy() {
     try {
@@ -31,6 +37,8 @@ export async function renderAdminRetention(container) {
           autoDelete: policy.autoDelete ?? config.autoDelete,
         };
         policyConfigured = policy.configured !== false;
+        policyUpdatedAt = policy.updatedAt || null;
+        policyNote = typeof policy.note === 'string' ? policy.note : '';
       }
     } catch (err) {
       console.warn('[Retention] No se pudo cargar la política de retención:', err);
@@ -58,6 +66,21 @@ export async function renderAdminRetention(container) {
   const deleteBadge = () => policyConfigured && config.deleteEnabled
     ? '<span class="badge badge-success">Activo</span>'
     : '<span class="badge badge-warning">Pendiente</span>';
+  // #343: estado y fecha de la política, tal como los informa la API. La vista
+  // de Cumplimiento ya se leía así; esta tarjeta era la única que escribía a
+  // mano una fecha de revisión y un "Vigente" que la API no respaldaba.
+  const policyRevisionText = () => {
+    if (!policyConfigured) {
+      return policyNote || 'Política de retención no configurada — aplican valores por defecto de Azure Storage.';
+    }
+    if (!policyUpdatedAt) return 'Sin fecha de revisión registrada por la API.';
+    const parsed = new Date(policyUpdatedAt);
+    if (Number.isNaN(parsed.getTime())) return 'Sin fecha de revisión registrada por la API.';
+    return `Última revisión: ${parsed.toLocaleString()}`;
+  };
+  const policyStateBadge = () => policyConfigured
+    ? '<span class="badge badge-success">Vigente</span>'
+    : '<span class="badge badge-warning">No configurado</span>';
 
   container.innerHTML = `
     <div class="page-header">
@@ -154,9 +177,9 @@ export async function renderAdminRetention(container) {
         <div style="display:flex;align-items:center;justify-content:space-between;padding:var(--space-3);background:var(--color-surface-2);border-radius:var(--radius-md)">
           <div>
             <strong>Política de Retención</strong>
-            <p class="text-xs text-text-muted" style="margin:2px 0 0">Última revisión: 01/01/2026</p>
+            <p class="text-xs text-text-muted" id="retention-policy-revision" style="margin:2px 0 0">${policyRevisionText()}</p>
           </div>
-          <span class="badge badge-success">Vigente</span>
+          <span id="retention-policy-state">${policyStateBadge()}</span>
         </div>
       </div>
     </div>
@@ -173,6 +196,11 @@ export async function renderAdminRetention(container) {
     document.getElementById('retention-delete-days').value = config.deleteDays;
     document.getElementById('retention-notify-teachers').checked = config.notifyTeachers;
     document.getElementById('retention-auto-delete').checked = config.autoDelete;
+    // #343: la tarjeta de cumplimiento sigue a la política guardada.
+    const revision = document.getElementById('retention-policy-revision');
+    if (revision) revision.textContent = policyRevisionText();
+    const state = document.getElementById('retention-policy-state');
+    if (state) state.innerHTML = policyStateBadge();
   }
 
   function readValues() {
@@ -217,7 +245,9 @@ export async function renderAdminRetention(container) {
       const result = await api.saveRetentionPolicy(values);
       if (result) {
         config = { ...config, ...result };
-        if (result.configured !== false) policyConfigured = true;
+        policyConfigured = result.configured !== false;
+        if (result.updatedAt) policyUpdatedAt = result.updatedAt;
+        if (typeof result.note === 'string') policyNote = result.note;
       }
       renderValues();
       toast('success', 'Políticas actualizadas', 'Los cambios en retención se aplicarán en las próximas horas.');
