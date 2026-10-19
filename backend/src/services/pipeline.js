@@ -13,6 +13,7 @@ import { getMaterialPriority } from './material-classification.js';
 import { detectGlossaryErrors } from './transcription-corrector.js';
 import { ErrorCategory, CategorizedError } from './error-categories.js';
 import { CONFIG } from './config.js';
+import { normalizeClassIds } from './class-ids.js';
 
 const CONTAINER_PROCESSED = 'processed';
 const CONTAINER_SUMMARIES = 'class-summaries';
@@ -31,6 +32,11 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
     const lectureDateIso = new Date().toISOString();
     const openAiHeaders = buildDependencyHeaders(correlationId, traceContext);
     const mt = (materialType || '').toLowerCase();
+    // #578: el material tiene que quedar ligado a clases reales. Si `classIds`
+    // llega anidado como texto (p. ej. `['["class-01"]']` desde un campo
+    // multipart enviado como arreglo JSON) se aplana acá, antes de escribir la
+    // fila autoritativa, la metadata de los vectores y el JSON procesado.
+    const scopedClassIds = normalizeClassIds(classIds);
 
     try {
         let extractedTimeline = null;
@@ -77,7 +83,7 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
         // 1c. Detectar errores de glosario en transcripciones (Story 2.186)
         if (mt === 'transcript') {
             try {
-                const suggestions = await detectGlossaryErrors(subjectId, text, materialId, classIds?.[0], context);
+                const suggestions = await detectGlossaryErrors(subjectId, text, materialId, scopedClassIds[0], context);
                 if (suggestions.length > 0) {
                     context.log(`[Pipeline] Glosario: ${suggestions.length} error(es) detectado(s) en transcripción ${materialId}`);
                 }
@@ -97,7 +103,7 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
         // 2a. Cargar topics de las clases vinculadas (11-4-8) para enriquecer metadatos RAG
         const classTopics = new Map();
         try {
-            for (const classId of classIds || []) {
+            for (const classId of scopedClassIds) {
                 const classes = await loadJson(CONTAINER_CLASSES, `${subjectId}.json`);
                 const classData = (Array.isArray(classes) ? classes : []).find(c => String(c.id) === String(classId));
                 if (classData && Array.isArray(classData.topics) && classData.topics.length > 0) {
@@ -125,8 +131,8 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
                 const chunkIndex = i + index;
                 const metadata = {
                     subjectId,
-                    classId: classIds?.[0] || null,
-                    classIds,
+                    classId: scopedClassIds[0] || null,
+                    classIds: [...scopedClassIds],
                     materialId,
                     materialType,
                     materialPriority: getMaterialPriority(mt, materialPriority),
@@ -140,8 +146,8 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
                     quarantined: false,
                 };
                 // 11-4-8: adjuntar topics de la clase principal para filtrado por tema
-                if (classIds?.[0] && classTopics.has(String(classIds[0]))) {
-                    metadata.topics = classTopics.get(String(classIds[0]));
+                if (scopedClassIds[0] && classTopics.has(String(scopedClassIds[0]))) {
+                    metadata.topics = classTopics.get(String(scopedClassIds[0]));
                 }
                 // Adjuntar título de diapositiva si está disponible (Story 2.161)
                 const slideNumber = resolveSlideNumber(currentBatch[index]);
@@ -188,7 +194,7 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
                 // Guardar activos para cada clase asociada
                 // #328: scoped paths ({subjectId}/{classId}.json) para que un
                 // classId compartido entre materias no colisione.
-                for (const classId of classIds) {
+                for (const classId of scopedClassIds) {
                     // Guardar Resumen
                     await saveJson(CONTAINER_SUMMARIES, `${subjectId}/${classId}.json`, {
                         classId,
@@ -223,7 +229,7 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
                         context.error(`[Pipeline] Error generando guión de podcast (no bloqueante):`, podcastErr);
                     }
                 }
-                context.log(`[Pipeline] Activos IA guardados con éxito para clases: ${classIds.join(', ')}`);
+                context.log(`[Pipeline] Activos IA guardados con éxito para clases: ${scopedClassIds.join(', ')}`);
             } catch (sumErr) {
                 context.error(`[Pipeline] Error generando activos IA (no bloqueante):`, sumErr);
             }
@@ -246,7 +252,7 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
         // 6. Guardar estado final: ready
         const materialState = {
             materialId,
-            classIds,
+            classIds: scopedClassIds,
             subjectId,
             type: materialType,
             filename: fileName,
@@ -272,7 +278,7 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
         context.log(`[Pipeline] Estado guardado: processed/${materialId}.json (ready)`);
 
         if (mt === 'transcript' && extractedTimeline) {
-            for (const classId of classIds) {
+            for (const classId of scopedClassIds) {
                 // #328: scoped timeline path; merge against the scoped blob first,
                 // falling back to legacy only when it belongs to this subject.
                 const timelineBlob = `${subjectId}/${classId}.json`;
@@ -337,7 +343,7 @@ export async function runPipeline({ fileBuffer, fileContentType, fileName, class
         
         const errorState = {
             materialId,
-            classIds,
+            classIds: scopedClassIds,
             subjectId,
             type: materialType,
             filename: fileName,

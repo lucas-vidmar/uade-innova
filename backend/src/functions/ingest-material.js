@@ -14,6 +14,7 @@ import { withAuth } from '../middleware/with-auth.js';
 import { createStructuredLogger } from '../services/structured-logger.js';
 import { checkUploadQuota, recordUpload } from '../services/upload-quota.js';
 import { CONFIG } from '../services/config.js';
+import { normalizeClassIds } from '../services/class-ids.js';
 
 const SESSION_METRICS_TABLE = 'SessionMetrics';
 
@@ -315,6 +316,24 @@ function validateFileType(buffer, materialType, fileName, materialId, context) {
 export { validateFileType, acceptedFormatsLabel };
 
 /**
+ * Acumula el valor de un campo `classIds`/`classId` del multipart (#578).
+ *
+ * Un cliente puede mandar el campo como arreglo JSON (`["class-01"]`), como
+ * lista separada por comas o repetir el campo. Antes se hacía un `split(',')`
+ * sobre el texto crudo, así que un arreglo JSON quedaba como un único id
+ * envuelto en corchetes (`'["class-01"]'`) y después el material no matcheaba
+ * su clase. Acá se normaliza a un arreglo plano en el origen.
+ *
+ * @param {string[]|undefined} previous - ids ya acumulados de campos previos.
+ * @param {string} rawValue - valor crudo del campo.
+ * @returns {string[]}
+ */
+export function mergeClassIdsField(previous, rawValue) {
+    const base = previous === undefined || previous === null ? [] : previous;
+    return normalizeClassIds([...(Array.isArray(base) ? base : [base]), rawValue]);
+}
+
+/**
  * Parsea el cuerpo de la petición multipart/form-data usando busboy.
  */
 async function parseMultipart(request, context) {
@@ -395,9 +414,7 @@ async function parseMultipart(request, context) {
 
         bb.on('field', (name, val) => {
             if (name === 'classIds' || name === 'classId') {
-                const targetName = 'classIds';
-                const parts = val.split(',').map(v => v.trim()).filter(Boolean);
-                fields[targetName] = (fields[targetName] || []).concat(parts);
+                fields.classIds = mergeClassIdsField(fields.classIds, val);
             } else {
                 fields[name] = val;
             }
