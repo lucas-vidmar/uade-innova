@@ -2256,10 +2256,36 @@ app.http('delete-material', {
                 context.error(`[DeleteMaterial] Error eliminando vectores de ${materialId}:`, vErr);
             }
 
+            // #564: el estado del material es lo que alimenta el inventario de
+            // la clase (GET /api/classes cruza clases con la tabla de
+            // materiales). Si esto no se borra, el material sigue listado.
+            let stateDeleted = false;
+            let stateDeleteError = null;
             try {
-                await deleteMaterialStateById(materialId);
+                stateDeleted = await deleteMaterialStateById(materialId);
             } catch (tableErr) {
+                stateDeleteError = tableErr;
                 context.error(`[StateStore] Error eliminando material ${materialId} de tablas:`, tableErr);
+            }
+
+            if (!stateDeleted) {
+                // Puede ser un borrado repetido (la fila ya no estaba) o un
+                // fallo real. Solo se falla si el material sigue en el
+                // inventario: si no, el 200 es correcto e idempotente.
+                const stillListed = stateDeleteError ? true : !!(await getMaterialStateById(materialId).catch(() => null));
+                if (stillListed) {
+                    context.error(`[DeleteMaterial] El estado de ${materialId} no se pudo borrar; el material sigue en el inventario de la clase.`);
+                    return {
+                        status: 500,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            error: 'No se pudo sacar el material del inventario de la clase. Reintentá el borrado.',
+                            errorCategory: 'INTERNAL',
+                            code: 'MATERIAL_STATE_DELETE_FAILED',
+                            softDeleted: deletedNames,
+                        }),
+                    };
+                }
             }
 
             if (quotaRelease?.uploadedBy) {

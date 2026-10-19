@@ -76,6 +76,7 @@ const {
   replaceClassesForSubject,
   listClassesBySubject,
   deleteMaterialStateById,
+  materialStateExists,
   upsertQuizResult,
   getQuizResult,
   listQuizResultsBySubject,
@@ -141,6 +142,30 @@ test('state-store deletes material by row key lookup', async () => {
   const deleted = await deleteMaterialStateById('mat-z');
   assert.strictEqual(deleted, true);
   assert.strictEqual(tableData.materials.length, 0);
+});
+
+// #564: si el mismo materialId quedó en dos particiones, borrar sólo la
+// primera dejaba el material listado en el inventario de la clase.
+test('state-store deletes every row for the same material id, not just the first', async () => {
+  tableData.materials = [
+    { partitionKey: 'sub-1', rowKey: 'mat-dup', classIds: '["class-01"]' },
+    { partitionKey: 'sub-2', rowKey: 'mat-dup', classIds: '["class-01"]' },
+    { partitionKey: 'sub-1', rowKey: 'mat-otro', classIds: '[]' },
+  ];
+
+  const deleted = await deleteMaterialStateById('mat-dup');
+  assert.strictEqual(deleted, true);
+  assert.deepStrictEqual(tableData.materials.map((row) => row.rowKey), ['mat-otro']);
+});
+
+test('state-store reports whether a material state still exists (#564)', async () => {
+  tableData.materials = [
+    { partitionKey: 'sub-1', rowKey: 'mat-vivo', classIds: '[]' },
+  ];
+
+  assert.strictEqual(await materialStateExists('sub-1', 'mat-vivo'), true);
+  assert.strictEqual(await materialStateExists('sub-1', 'mat-borrado'), false);
+  assert.strictEqual(await materialStateExists('sub-1', ''), false);
 });
 
 test('state-store upserts and reads quiz results per student per class', async () => {

@@ -42,6 +42,7 @@ const openaiMocks = {
 
 const vectorStoreMocks = {
     upsertChunks: mock.fn(async () => true),
+    deleteVectorsByFilter: mock.fn(async () => true),
     getIndexStats: mock.fn(async () => ({ totalVectorCount: 5, indexFullness: 0.001, namespaces: {} }))
 };
 
@@ -61,6 +62,7 @@ const storageMocks = {
 
 const stateStoreMocks = {
     upsertMaterialState: mock.fn(async () => true),
+    materialStateExists: mock.fn(async () => true),
 };
 
 mock.module('./parser.js', { namedExports: parserMocks });
@@ -478,4 +480,72 @@ test('runPipeline writes quarantined:false on every vector (always-present field
         assert.strictEqual(vector.metadata.quarantined, false,
             `Vector ${vector.id} debe nacer con quarantined:false`);
     }
+});
+
+// #564: el docente puede borrar el material mientras el pipeline procesa. El
+// estado es lo que alimenta el inventario de la clase, así que reescribirlo
+// "ready" devolvía un material fantasma cuyo blob ya estaba en deleted/.
+test('runPipeline no revive un material borrado durante el procesamiento (#564)', async () => {
+    vectorStoreMocks.upsertChunks.mock.resetCalls();
+    vectorStoreMocks.deleteVectorsByFilter.mock.resetCalls();
+    stateStoreMocks.upsertMaterialState.mock.resetCalls();
+    storageMocks.saveJson.mock.resetCalls();
+    parserMocks.chunkText.mock.mockImplementation(() => ['chunk 1', 'chunk 2']);
+    parserMocks.parseFile.mock.mockImplementation(async () => 'mocked text');
+    stateStoreMocks.materialStateExists.mock.mockImplementation(async () => false);
+
+    const mockContext = { log: mock.fn(), warn: mock.fn(), error: mock.fn() };
+
+    await runPipeline({
+        fileBuffer: Buffer.from('test'),
+        fileContentType: 'text/plain',
+        fileName: 'borrado-en-vuelo.txt',
+        classIds: ['class-01'],
+        subjectId: 'arq-software-2026',
+        materialType: 'notes',
+        materialId: 'mat-borrado',
+        blobUrl: 'http://test',
+    }, mockContext);
+
+    const readyWrites = stateStoreMocks.upsertMaterialState.mock.calls
+        .filter((call) => call.arguments?.[0]?.materialId === 'mat-borrado');
+    assert.deepStrictEqual(readyWrites, [], 'no debe reescribir el estado de un material borrado');
+
+    const processedJsonWrites = storageMocks.saveJson.mock.calls
+        .filter((call) => call.arguments?.[1] === 'mat-borrado.json');
+    assert.deepStrictEqual(processedJsonWrites, [], 'no debe recrear el JSON procesado del material borrado');
+
+    const cleanupCalls = vectorStoreMocks.deleteVectorsByFilter.mock.calls;
+    assert.strictEqual(cleanupCalls.length, 1, 'debe limpiar los vectores que indexó antes de detectar el borrado');
+    assert.deepStrictEqual(cleanupCalls[0].arguments[0], { materialId: { $eq: 'mat-borrado' } });
+
+    assert.strictEqual(mockContext.error.mock.calls.length, 0, 'el borrado en vuelo no es un error del pipeline');
+
+    stateStoreMocks.materialStateExists.mock.mockImplementation(async () => true);
+});
+
+test('runPipeline sigue persistiendo el estado de error de un material que existe (#564)', async () => {
+    stateStoreMocks.upsertMaterialState.mock.resetCalls();
+    parserMocks.parseFile.mock.mockImplementation(async () => {
+        throw new Error('parse roto');
+    });
+    stateStoreMocks.materialStateExists.mock.mockImplementation(async () => true);
+
+    const mockContext = { log: mock.fn(), warn: mock.fn(), error: mock.fn() };
+
+    await runPipeline({
+        fileBuffer: Buffer.from('test'),
+        fileContentType: 'text/plain',
+        fileName: 'roto.txt',
+        classIds: ['class-02'],
+        subjectId: 'arq-software-2026',
+        materialType: 'notes',
+        materialId: 'mat-roto',
+        blobUrl: 'http://test',
+    }, mockContext);
+
+    const errorWrites = stateStoreMocks.upsertMaterialState.mock.calls
+        .filter((call) => call.arguments?.[0]?.status === 'error' && call.arguments?.[0]?.materialId === 'mat-roto');
+    assert.strictEqual(errorWrites.length, 1, 'un material que sigue en el inventario debe quedar marcado error');
+    parserMocks.parseFile.mock.mockImplementation(async () => 'mocked text');
 });
