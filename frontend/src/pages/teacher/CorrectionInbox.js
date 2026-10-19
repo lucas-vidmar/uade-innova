@@ -155,6 +155,7 @@ export async function renderCorrectionInbox(container) {
             <div class="class-list-topics">${escapeHtml(answerExcerpt)}${(c.originalAnswer || '').length > 240 ? '...' : ''}</div>
             <div class="class-list-files">
               Reportado ${date} · ${escapeHtml(classTitle)} · ${escapeHtml(c.studentId || 'Anónimo')}
+              ${c.type === 'negative-rating' ? ' · <span class="badge badge-neutral" title="Señal del pulgar abajo del chat, agrupada con los reportes del mismo punto">Valoración negativa</span>' : ''}
               ${c.issueDetail ? `· "${escapeHtml(c.issueDetail)}"` : ''}
             </div>
           </div>

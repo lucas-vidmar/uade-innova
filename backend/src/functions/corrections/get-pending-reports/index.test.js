@@ -159,6 +159,46 @@ test('get-pending-reports fallback groups by the question, not by a shared answe
   assert.strictEqual(byId['f-b'].coincidences, 1);
 });
 
+test('get-pending-reports puts a negative rating and a report of the same answer in one group (#514)', async () => {
+  mockStateStore.listCorrections.mock.mockImplementation(async () => [
+    {
+      correctionId: 'val-1', subjectId: 'arq-software-2026', studentId: 'alu-004',
+      question: '¿Qué es la arquitectura hexagonal?', originalAnswer: 'Hexagonal separa dominio de infraestructura.',
+      issueDetail: 'Esperaba puertos y adaptadores.', classId: 'class-04', status: 'pending',
+      createdAt: '2026-10-19T12:00:00.000Z', messageId: 'm-1', type: 'negative-rating', groupKey: 'class-04|mat-9#3',
+    },
+    {
+      correctionId: 'rep-1', subjectId: 'arq-software-2026', studentId: 'alu-005',
+      question: '¿Qué es la arquitectura hexagonal?', originalAnswer: 'Hexagonal separa dominio de infraestructura.',
+      issueDetail: 'No menciona puertos.', classId: 'class-04', status: 'pending',
+      createdAt: '2026-10-19T13:00:00.000Z', messageId: 'm-2', type: 'ai-feedback-issue', groupKey: 'class-04|mat-9#3',
+    },
+    {
+      correctionId: 'rep-2', subjectId: 'arq-software-2026', studentId: 'alu-003',
+      question: '¿Qué es DDD?', originalAnswer: 'Otra respuesta.', issueDetail: 'x', classId: 'class-04', status: 'pending',
+      createdAt: '2026-10-19T14:00:00.000Z', messageId: 'm-3', type: 'ai-feedback-issue', groupKey: 'class-04|mat-7#1',
+    },
+  ]);
+
+  const response = await capturedHandler(
+    { query: new URLSearchParams({ subjectId: 'arq-software-2026', status: 'all' }) },
+    { invocationId: 'test-514' }
+  );
+
+  assert.strictEqual(response.status, 200);
+  const body = JSON.parse(response.body);
+  const byId = Object.fromEntries(body.data.map((c) => [c.correctionId, c]));
+  // La marca y el reporte del mismo punto pesan juntos...
+  assert.strictEqual(byId['val-1'].coincidences, 2);
+  assert.strictEqual(byId['rep-1'].coincidences, 2);
+  assert.strictEqual(byId['rep-2'].coincidences, 1);
+  // ...y el grupo con más peso va primero, con la marca más vieja en cabeza.
+  assert.strictEqual(body.data[0].correctionId, 'val-1');
+  // La bandeja puede distinguir el origen de cada señal.
+  assert.strictEqual(byId['val-1'].type, 'negative-rating');
+  assert.strictEqual(byId['rep-1'].type, 'ai-feedback-issue');
+});
+
 test('get-pending-reports should honor correctionId for non-pending states (#350)', async () => {
   mockStateStore.getCorrection.mock.mockImplementation(async (subjectId, correctionId) => {
     if (correctionId === 'verified-1') {

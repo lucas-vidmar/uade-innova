@@ -608,6 +608,7 @@ function toCorrectionEntity(correction) {
     message: correction.message || '',
     classId: correction.classId || '',
     messageId: correction.messageId || '',
+    type: correction.type || undefined,
     groupKey: correction.groupKey || undefined,
     createdAt: correction.createdAt || new Date().toISOString(),
     resolvedAt: correction.resolvedAt || '',
@@ -631,6 +632,7 @@ function fromCorrectionEntity(entity) {
     message: entity.message || '',
     classId: entity.classId || '',
     messageId: entity.messageId || '',
+    type: entity.type || '',
     groupKey: entity.groupKey || '',
     createdAt: entity.createdAt,
     resolvedAt: entity.resolvedAt || '',
@@ -650,10 +652,22 @@ function toCorrectionPendingEntity(correction) {
     question: correction.question,
     originalAnswer: correction.originalAnswer,
     issueDetail: correction.issueDetail || '',
+    // #514: la vista por defecto de la bandeja lee este índice, así que el
+    // punto de convergencia y el origen de la señal viajan también acá.
+    messageId: correction.messageId || '',
+    groupKey: correction.groupKey || '',
+    type: correction.type || '',
   });
 }
 
-export async function upsertCorrection(correction) {
+/**
+ * @param {object} correction
+ * @param {{syncPending?: boolean}} [options] `syncPending: false` deja el
+ *   índice de pendientes como está. Hace falta al volver a escribir una señal
+ *   que la cátedra ya revisó: recrear su fila en `pending` la haría aparecer de
+ *   nuevo en la bandeja como si nunca se hubiera cerrado (#514).
+ */
+export async function upsertCorrection(correction, { syncPending = true } = {}) {
   if (!correction?.subjectId || !correction?.correctionId) {
     throw new Error('upsertCorrection requires subjectId and correctionId');
   }
@@ -665,9 +679,11 @@ export async function upsertCorrection(correction) {
   let client = getTableClient(CORRECTIONS_TABLE);
   await client.upsertEntity(main, 'Replace');
 
-  await ensureTable(CORRECTIONS_PENDING_TABLE);
-  client = getTableClient(CORRECTIONS_PENDING_TABLE);
-  await client.upsertEntity(pending, 'Replace');
+  if (syncPending) {
+    await ensureTable(CORRECTIONS_PENDING_TABLE);
+    client = getTableClient(CORRECTIONS_PENDING_TABLE);
+    await client.upsertEntity(pending, 'Replace');
+  }
 
   return fromCorrectionEntity(main);
 }

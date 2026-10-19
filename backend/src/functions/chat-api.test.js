@@ -20,6 +20,8 @@ const storageState = {
     classes: new Map(),
 };
 
+const ratingsState = { rows: new Map() };
+
 const storageMocks = {
     saveJson: mock.fn(async (container, blobName, data) => {
         if (container === 'chat-logs') {
@@ -49,7 +51,12 @@ const storageMocks = {
         return [];
     }),
     deleteBlob: mock.fn(async () => {}),
-    getTableClient: mock.fn(() => ({})),
+    getTableClient: mock.fn(() => ({
+        createTable: mock.fn(async () => {}),
+        upsertEntity: mock.fn(async (entity) => {
+            ratingsState.rows.set(`${entity.partitionKey}|${entity.rowKey}`, { ...entity });
+        }),
+    })),
 };
 
 const stateStoreMocks = {
@@ -84,6 +91,8 @@ function resetState() {
     storageState.chatLogs.clear();
     storageState.alerts.clear();
     storageState.classes.clear();
+    ratingsState.rows.clear();
+    stateStoreMocks.getCorrection.mock.mockImplementation(async () => null);
     principalMock = { userRoles: ['Docente'], oid: 'teacher-oid' };
 }
 
@@ -553,4 +562,202 @@ test('delete-chat-history sin sessionId borra todo el historial y sus conversaci
     } finally {
         stateStoreMocks.listConversationsByUser.mock.mockImplementation(async () => []);
     }
+});
+
+// ── #514 regression: una valoración negativa entra a la bandeja ─────────────
+// El pulgar abajo toca `chat-feedback` y `chat-rate`. Antes de #514 ninguna de
+// las dos escribía en Corrections, así que la marca quedaba invisible para la
+// cátedra y no podía converger con los reportes del mismo punto.
+test('#514: chat-rate negative opens a pending correction with the convergence key', async () => {
+    resetState();
+    storageState.chatLogs.set('student_1/arq-software-2026/msg-900.json', {
+        id: 'msg-900',
+        question: '¿Qué es la arquitectura hexagonal?',
+        answer: 'Hexagonal separa dominio de infraestructura.',
+        classIds: ['class-04'],
+        sources: [{ materialId: 'mat-9', classId: 'class-04', chunkIndex: 3, sourceFilename: 'hex.pdf' }],
+    });
+    stateStoreMocks.upsertCorrection.mock.resetCalls();
+    principalMock = { userRoles: ['Alumno'], oid: 'student-1' };
+
+    const response = await handlers['chat-rate'](
+        {
+            json: async () => ({
+                sessionId: 'sess-1',
+                messageId: 'msg-900',
+                subjectId: 'arq-software-2026',
+                classId: 'class-04',
+                rating: 'negative',
+                comment: 'Esperaba puertos y adaptadores.',
+            }),
+        },
+        { log: () => {}, error: () => {}, warn: () => {} }
+    );
+
+    assert.strictEqual(response.status, 200);
+    assert.ok(ratingsState.rows.has('arq-software-2026|msg-900'), 'la valoración sigue guardándose en ConversationRatings');
+
+    const correction = stateStoreMocks.upsertCorrection.mock.calls.at(-1)?.arguments?.[0];
+    assert.ok(correction, 'la valoración negativa tiene que persistirse como corrección');
+    assert.strictEqual(correction.subjectId, 'arq-software-2026');
+    assert.strictEqual(correction.messageId, 'msg-900');
+    assert.strictEqual(correction.studentId, 'student-1');
+    assert.strictEqual(correction.status, 'pending');
+    assert.strictEqual(correction.type, 'negative-rating');
+    assert.strictEqual(correction.classId, 'class-04');
+    assert.strictEqual(correction.issueDetail, 'Esperaba puertos y adaptadores.');
+    assert.strictEqual(correction.groupKey, 'class-04|mat-9#3');
+});
+
+test('#514: a positive rating does not open a correction', async () => {
+    resetState();
+    stateStoreMocks.upsertCorrection.mock.resetCalls();
+    principalMock = { userRoles: ['Alumno'], oid: 'student-1' };
+
+    const response = await handlers['chat-rate'](
+        {
+            json: async () => ({
+                sessionId: 'sess-1',
+                messageId: 'msg-901',
+                subjectId: 'arq-software-2026',
+                classId: 'class-04',
+                rating: 'positive',
+            }),
+        },
+        { log: () => {}, error: () => {}, warn: () => {} }
+    );
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(stateStoreMocks.upsertCorrection.mock.callCount(), 0);
+});
+
+test('#514: chat-feedback negative and chat-rate negative land on the same row', async () => {
+    resetState();
+    storageState.chatLogs.set('student_1/arq-software-2026/msg-902.json', {
+        id: 'msg-902',
+        question: '¿Qué es la arquitectura hexagonal?',
+        answer: 'Hexagonal separa dominio de infraestructura.',
+        classIds: ['class-04'],
+        sources: [],
+    });
+    stateStoreMocks.upsertCorrection.mock.resetCalls();
+    principalMock = { userRoles: ['Alumno'], oid: 'student-1' };
+
+    await handlers['chat-feedback'](
+        { json: async () => ({ messageId: 'msg-902', subjectId: 'arq-software-2026', isPositive: false }) },
+        { log: () => {}, error: () => {}, warn: () => {} }
+    );
+    const fromFeedback = stateStoreMocks.upsertCorrection.mock.calls.at(-1)?.arguments?.[0];
+
+    await handlers['chat-rate'](
+        {
+            json: async () => ({
+                sessionId: 'sess-1',
+                messageId: 'msg-902',
+                subjectId: 'arq-software-2026',
+                classId: 'class-04',
+                rating: 'negative',
+                comment: 'Faltó el ejemplo del puerto.',
+            }),
+        },
+        { log: () => {}, error: () => {}, warn: () => {} }
+    );
+    const fromRating = stateStoreMocks.upsertCorrection.mock.calls.at(-1)?.arguments?.[0];
+
+    assert.strictEqual(fromFeedback.correctionId, fromRating.correctionId, 'las dos señales del mismo pulgar comparten fila');
+    assert.strictEqual(fromFeedback.groupKey, fromRating.groupKey);
+    assert.strictEqual(fromRating.issueDetail, 'Faltó el ejemplo del puerto.', 'el comentario del diálogo no se pierde');
+});
+
+test('#514: re-rating a reviewed answer keeps the state the teacher gave it', async () => {
+    resetState();
+    principalMock = { userRoles: ['Alumno'], oid: 'student-1' };
+    stateStoreMocks.getCorrection.mock.mockImplementation(async () => ({
+        correctionId: 'val-existente',
+        subjectId: 'arq-software-2026',
+        classId: 'class-04',
+        studentId: 'student-1',
+        question: '¿Qué es la arquitectura hexagonal?',
+        originalAnswer: 'Hexagonal separa dominio de infraestructura.',
+        issueDetail: 'Faltó el ejemplo del puerto.',
+        messageId: 'msg-903',
+        type: 'negative-rating',
+        groupKey: 'class-04|mat-9#3',
+        status: 'resolved',
+        createdAt: '2026-10-01T10:00:00.000Z',
+        resolvedAt: '2026-10-02T10:00:00.000Z',
+    }));
+    stateStoreMocks.upsertCorrection.mock.resetCalls();
+
+    try {
+        const response = await handlers['chat-rate'](
+            {
+                json: async () => ({
+                    sessionId: 'sess-1',
+                    messageId: 'msg-903',
+                    subjectId: 'arq-software-2026',
+                    classId: 'class-04',
+                    rating: 'negative',
+                    comment: 'Sigo sin ver el ejemplo.',
+                }),
+            },
+            { log: () => {}, error: () => {}, warn: () => {} }
+        );
+
+        assert.strictEqual(response.status, 200);
+        const correction = stateStoreMocks.upsertCorrection.mock.calls.at(-1)?.arguments?.[0];
+        assert.strictEqual(correction.status, 'resolved', 'la marca no reabre lo que la cátedra ya cerró');
+        assert.strictEqual(correction.createdAt, '2026-10-01T10:00:00.000Z');
+        assert.strictEqual(correction.issueDetail, 'Sigo sin ver el ejemplo.');
+        assert.deepStrictEqual(
+            stateStoreMocks.upsertCorrection.mock.calls.at(-1).arguments[1],
+            { syncPending: false },
+            'una fila revisada no vuelve al índice de pendientes'
+        );
+    } finally {
+        stateStoreMocks.getCorrection.mock.mockImplementation(async () => null);
+    }
+});
+
+test('#514: a rating and a report about the same answer share the group key', async () => {
+    resetState();
+    storageState.chatLogs.set('student_1/arq-software-2026/msg-904.json', {
+        id: 'msg-904',
+        question: '¿Qué es la arquitectura hexagonal?',
+        answer: 'Hexagonal separa dominio de infraestructura.',
+        classIds: ['class-04'],
+        sources: [{ materialId: 'mat-9', classId: 'class-04', chunkIndex: 3, sourceFilename: 'hex.pdf' }],
+    });
+    stateStoreMocks.upsertCorrection.mock.resetCalls();
+    principalMock = { userRoles: ['Alumno'], oid: 'student-1' };
+
+    await handlers['chat-report-issue'](
+        {
+            json: async () => ({
+                messageId: 'msg-904',
+                subjectId: 'arq-software-2026',
+                issueDetail: 'La respuesta no menciona puertos.',
+            }),
+        },
+        { log: () => {}, error: () => {}, warn: () => {} }
+    );
+    const fromReport = stateStoreMocks.upsertCorrection.mock.calls.at(-1)?.arguments?.[0];
+
+    await handlers['chat-rate'](
+        {
+            json: async () => ({
+                sessionId: 'sess-1',
+                messageId: 'msg-904',
+                subjectId: 'arq-software-2026',
+                classId: 'class-04',
+                rating: 'negative',
+                comment: 'Falta el ejemplo del puerto.',
+            }),
+        },
+        { log: () => {}, error: () => {}, warn: () => {} }
+    );
+    const fromRating = stateStoreMocks.upsertCorrection.mock.calls.at(-1)?.arguments?.[0];
+
+    assert.strictEqual(fromReport.groupKey, fromRating.groupKey);
+    assert.notStrictEqual(fromReport.correctionId, fromRating.correctionId, 'son dos señales distintas del mismo punto');
 });
