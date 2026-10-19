@@ -1,4 +1,5 @@
 import { saveJson, loadJson } from './storage.js';
+import { resolveGlossaryTerm } from './glossary-match.js';
 
 const GLOSSARY_CONTAINER = 'class-materials';
 // La caché evita leer el blob en cada consulta, pero mientras vive una copia el
@@ -177,9 +178,11 @@ export async function updateGlossary(subjectId, terms, updatedBy) {
 
 /**
  * Busca un término en el glosario de una materia normalizando mayúsculas y
- * acentos de forma case-insensitive. Coincide por término, substring del
- * término o aliases (Story 11.1.6). Devuelve el término completo (con
- * definition) o null si no existe.
+ * acentos de forma case-insensitive. Coincide por término, prefijo del término
+ * o aliases (Story 11.1.6), con el criterio único de `resolveGlossaryTerm`:
+ * ante varios aciertos gana la forma más larga, nunca la primera del archivo
+ * (issue #571). Devuelve el término completo (con definition) o null si no
+ * existe.
  */
 export async function findGlossaryTerm(subjectId, searchTerm) {
   if (!subjectId || !searchTerm) return null;
@@ -187,23 +190,7 @@ export async function findGlossaryTerm(subjectId, searchTerm) {
   const glossary = await getGlossary(subjectId);
   if (!glossary || !Array.isArray(glossary.terms) || glossary.terms.length === 0) return null;
 
-  const term = String(searchTerm).trim().toLowerCase();
-  if (!term) return null;
-
-  return (
-    glossary.terms.find((t) => {
-      const tTerm = String(t.term || '').trim().toLowerCase();
-      const aliases = Array.isArray(t.aliases) ? t.aliases : [];
-      return (
-        tTerm === term ||
-        tTerm.includes(term) ||
-        aliases.some((a) => {
-          const aNorm = String(a || '').trim().toLowerCase();
-          return aNorm === term || aNorm.includes(term);
-        })
-      );
-    }) || null
-  );
+  return resolveGlossaryTerm(glossary.terms, searchTerm);
 }
 
 export function invalidateGlossaryCache(subjectId) {

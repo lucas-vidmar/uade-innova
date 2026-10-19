@@ -57,6 +57,26 @@ test('findGlossaryTerm is case and accent insensitive', async () => {
     assert.strictEqual(found.term, 'Hexagonal');
 });
 
+test('#571: findGlossaryTerm devuelve el término con guiones y no otro que comparta el prefijo', async () => {
+    setupGlossary({
+        subjectId: 'arq-software-2026',
+        terms: [
+            { term: 'QAW-20261018090040', aliases: [], definition: 'Termino viejo.' },
+            { term: 'QAW-2610182111', aliases: ['qaw-ciclo-glosario'], definition: 'Termino del ciclo.' },
+        ],
+    });
+    const found = await findGlossaryTerm('arq-software-2026', 'QAW-2610182111');
+    assert.ok(found);
+    assert.strictEqual(found.term, 'QAW-2610182111');
+    assert.strictEqual(found.definition, 'Termino del ciclo.');
+
+    const viaAlias = await findGlossaryTerm('arq-software-2026', 'qaw-ciclo-glosario');
+    assert.strictEqual(viaAlias?.term, 'QAW-2610182111');
+
+    // Un fragmento que cae en dos términos distintos no se resuelve por orden de archivo.
+    assert.strictEqual(await findGlossaryTerm('arq-software-2026', 'QAW'), null);
+});
+
 test('findGlossaryTerm returns null for unknown term', async () => {
     setupGlossary(sampleGlossary);
     const found = await findGlossaryTerm('arq-software-2026', 'ERP');

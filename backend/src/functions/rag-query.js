@@ -19,6 +19,7 @@ import { listMaterialsBySubject, listReviewedCorrections, listClassesBySubject }
 import { getEnrollment, getConsentStatus } from '../services/state-store.js';
 import { alertIndexIntegrity } from '../services/index-integrity-alert.js';
 import { getGlossary } from '../services/glossary-store.js';
+import { resolveGlossaryTerm } from '../services/glossary-match.js';
 import { getSubjectWeights } from '../services/subject-weights.js';
 import { CONFIG } from '../services/config.js';
 import {
@@ -270,11 +271,21 @@ function buildGlossaryResponse({ answer, glossaryMeta, stream }) {
 /**
  * Detecta una consulta de definición de término ("¿qué significa X?") y
  * extrae el término buscado. Devuelve el término o null si no aplica.
+ *
+ * #571: el charset incluye los separadores que forman parte de un término
+ * (`-`, `.`, `/`, `()`, `+`, `#`). Antes el guion cortaba la captura y
+ * `QAW-2610182111` se buscaba como `QAW`, que matcheaba cualquier otra entrada
+ * del glosario con ese prefijo. La coma queda afuera porque separa una lista de
+ * términos ("DDD, CQRS y hexagonal") y no es parte de ninguno.
  */
-function extractGlossaryTerm(question) {
-    const glossaryPattern = /(?:qu[eé]\s*significa|qu[eé]\s*es|definici[oó]n\s*de|definime|explic[aá]|significado\s*de)\s+[""]?([\w\sáéíóúñüÁÉÍÓÚÑÜ]+)[""]?\??/i;
+export function extractGlossaryTerm(question) {
+    const glossaryPattern = /(?:qu[eé]\s*significa|qu[eé]\s*es|definici[oó]n\s*de|definime|explic[aá]|significado\s*de)\s+["“«]?([\w\sáéíóúñüÁÉÍÓÚÑÜ./()+#-]+)/i;
     const match = question.match(glossaryPattern);
-    const term = match?.[1]?.trim();
+    if (!match?.[1]) return null;
+    const term = match[1]
+        .replace(/^[\s"“«]+/u, '')
+        .replace(/[\s.,;:!?¿¡"”»]+$/u, '')
+        .trim();
     return term || null;
 }
 
@@ -531,16 +542,7 @@ app.http('rag-query', {
             try {
                 const glossary = await getGlossary(subjectId);
                 if (glossary && Array.isArray(glossary.terms) && glossary.terms.length > 0) {
-                    const found = glossary.terms.find((t) => {
-                        const termNorm = (s) => String(s || '').trim().toLowerCase();
-                        const search = termNorm(glossaryLookupTerm);
-                        const aliases = Array.isArray(t.aliases) ? t.aliases : [];
-                        return (
-                            termNorm(t.term) === search ||
-                            termNorm(t.term).includes(search) ||
-                            aliases.some((a) => termNorm(a) === search || termNorm(a).includes(search))
-                        );
-                    });
+                    const found = resolveGlossaryTerm(glossary.terms, glossaryLookupTerm);
                     if (found) {
                         const definition = String(found.definition || '').trim();
                         const answer = definition

@@ -194,7 +194,7 @@ mock.module('@azure/functions', {
 });
 
 // Now import the function under test
-await import('./rag-query.js');
+const ragQueryModule = await import('./rag-query.js');
 
 test('rag-query handler should be registered', () => {
     assert.strictEqual(typeof capturedHandler, 'function');
@@ -1651,6 +1651,53 @@ test('rag-query glossary fast-path returns definition with badge metadata (11.1.
     assert.strictEqual(openaiMocks.chatCompletion.mock.callCount(), 0, 'Glossary fast-path must skip the LLM');
     assert.strictEqual(openaiMocks.generateEmbedding.mock.callCount(), 0, 'Glossary fast-path must skip embedding');
     assert.strictEqual(vectorStoreMocks.querySimilar.mock.callCount(), 0, 'Glossary fast-path must skip vector search');
+});
+
+test('#571: extractGlossaryTerm conserva los separadores del término', () => {
+    const { extractGlossaryTerm } = ragQueryModule;
+    assert.strictEqual(extractGlossaryTerm('¿Qué es QAW-2610182111?'), 'QAW-2610182111');
+    assert.strictEqual(extractGlossaryTerm('¿Qué significa SAGA-CQRS?'), 'SAGA-CQRS');
+    assert.strictEqual(extractGlossaryTerm('definición de v2.1'), 'v2.1');
+    assert.strictEqual(extractGlossaryTerm('¿Qué es "puertos y adaptadores"?'), 'puertos y adaptadores');
+    assert.strictEqual(extractGlossaryTerm('¿Qué es el patrón (CQRS)?'), 'el patrón (CQRS)');
+    assert.strictEqual(extractGlossaryTerm('¿Qué es DDD, CQRS y hexagonal?'), 'DDD');
+    assert.strictEqual(extractGlossaryTerm('¿Qué es?'), null);
+    assert.strictEqual(extractGlossaryTerm('contame del TP'), null);
+});
+
+test('#571: el fast-path de glosario responde el término con guiones y no otro del glosario', async (t) => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.generateEmbedding.mock.resetCalls();
+    vectorStoreMocks.querySimilar.mock.resetCalls();
+
+    const glossary = {
+        subjectId: 'materia1',
+        terms: [
+            { term: 'QAW-20261018090040', aliases: [], definition: 'Termino de prueba QA swarm viejo.' },
+            { term: 'QAW-2610182111', aliases: ['qaw-ciclo-glosario'], definition: 'Termino de prueba QA swarm del ciclo.' },
+        ],
+    };
+    glossaryStoreMocks.getGlossary.mock.mockImplementation(async () => glossary);
+
+    t.after(() => {
+        glossaryStoreMocks.getGlossary.mock.mockImplementation(defaultGetGlossaryImpl);
+    });
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = {
+        json: async () => ({ question: '¿Qué es QAW-2610182111?', subjectId: 'materia1', classIds: ['class1'] }),
+        user: { id: 'test-user' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    const body = JSON.parse(response.body);
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(body.glossary?.term, 'QAW-2610182111', 'debe definir el término consultado, no el que comparte el prefijo');
+    assert.ok(body.answer.includes('QAW-2610182111'));
+    assert.ok(body.answer.includes('Termino de prueba QA swarm del ciclo.'));
+    assert.ok(!body.answer.includes('QAW-20261018090040'), 'no debe devolver otra entrada del glosario');
+    assert.strictEqual(openaiMocks.chatCompletion.mock.callCount(), 0, 'Glossary fast-path must skip the LLM');
 });
 
 test('#349: rag-query glossary MISS falls through to RAG and answers from materials', async (t) => {
