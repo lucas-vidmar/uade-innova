@@ -225,6 +225,36 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
     return signals.some(s => n.includes(s));
   };
 
+  // #401 (UJ-23/UJ-24): el alcance con el que se preguntó cada tramo tiene que
+  // quedar registrado en el hilo, no sólo en la barra de fuentes: al ampliar o
+  // acotar el alcance a mitad de conversación las respuestas eran
+  // indistinguibles entre sí, y al reabrir el hilo no había forma de saber con
+  // qué clase se preguntó cada una.
+  const scopeIdsOf = (msg) => (Array.isArray(msg?.classIds) ? msg.classIds.filter(Boolean) : []);
+
+  const scopeLabelFor = (classIds) => {
+    const ids = Array.isArray(classIds) ? classIds.filter(Boolean) : [];
+    if (ids.length === 0) return '';
+    const subjectClassIds = (classes || []).map(c => c.id).filter(Boolean);
+    if (subjectClassIds.length > 1 && ids.length === subjectClassIds.length && subjectClassIds.every(id => ids.includes(id))) {
+      return 'Toda la materia';
+    }
+    return ids.map(id => {
+      const cls = (classes || []).find(c => c.id === id);
+      const title = cls ? String(cls.title || '').split('—')[0].trim() : '';
+      return title || id;
+    }).join(', ');
+  };
+
+  const renderScopeBadge = (msg) => {
+    const ids = scopeIdsOf(msg);
+    if (ids.length === 0) return '';
+    const label = scopeLabelFor(ids);
+    return `
+      <span class="chat-scope scope-badge" data-scope="${escapeHtml(label)}" data-scope-ids="${escapeHtml(ids.join(','))}" title="Alcance de esta respuesta: ${escapeHtml(label)}">📚 ${escapeHtml(label)}</span>
+    `;
+  };
+
   const renderMessage = (msg) => {
     if (msg.role === 'user') {
       return `
@@ -240,6 +270,8 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
       <div class="chat-msg chat-msg-assistant received animate-fade ${streamingClass} ${msg.id === highlightMessageId ? 'highlight-msg' : ''}" id="msg-${msg.id || ''}">
         <div class="chat-msg-body flex-1 overflow-hidden">
           <div class="chat-bubble chat-bubble-assistant leading-relaxed">${contentHtml}</div>
+
+          ${renderScopeBadge(msg)}
           
           ${msg.verified ? `
           <div class="verified-badge" style="display:flex;align-items:center;gap:4px;padding:4px 10px;margin-bottom:8px;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.2);border-radius:var(--radius-md);color:var(--color-success);font-size:12px;font-weight:600;">
@@ -442,7 +474,11 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
       .slice(-FOLLOW_UP_HISTORY_WINDOW_SIZE);
 
     input.value = '';
-    messages.push({ role: 'user', content: question });
+    // #401: el alcance viaja con el turno, no sólo con la petición — es lo que
+    // permite mostrar con qué clase se preguntó cada tramo y que el hilo
+    // guardado conserve su alcance al reabrirlo.
+    const turnClassIds = [...selectedClassIds];
+    messages.push({ role: 'user', content: question, classIds: turnClassIds });
     isLoading = true;
     render();
 
@@ -454,7 +490,8 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
       sources: [],
       streaming: true,
       // #378: se guarda la pregunta para poder reintentarla sin reescribirla.
-      question
+      question,
+      classIds: turnClassIds
     };
     messages.push(assistantMsg);
     render();
@@ -620,7 +657,14 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
               await api.saveConversation({
                 conversationId: currentSessionId,
                 subjectId,
-                messages: messages.map((m) => ({ role: m.role, content: m.content })),
+                // #401 (UJ-23): el alcance de cada tramo viaja con el mensaje.
+                // Antes se guardaba sólo `{ role, content }`, así que el hilo
+                // guardado perdía con qué clase se había preguntado cada parte.
+                messages: messages.map((m) => ({
+                  role: m.role,
+                  content: m.content,
+                  ...(Array.isArray(m.classIds) && m.classIds.length > 0 ? { classIds: [...m.classIds] } : {}),
+                })),
               });
             } catch (err) {
               console.error('[Chat] Auto-save failed:', err);
