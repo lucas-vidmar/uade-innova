@@ -3594,6 +3594,44 @@
     font-weight: 500;
 }
 
+/* #406: mientras hay una consulta en curso la pantalla declara el estado y ofrece
+   cancelar. Un asistente que no responde no puede dejar el compositor trabado. */
+.chat-stream-status {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-top: var(--space-2);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+}
+
+.chat-cancel-btn,
+.chat-retry-btn {
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-full);
+    color: var(--color-text-secondary);
+    font-family: var(--font-family);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all var(--transition);
+}
+
+.chat-cancel-btn:hover,
+.chat-retry-btn:hover {
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+}
+
+.chat-retry-btn {
+    color: var(--color-primary);
+    border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
+}
+
 .typing-dots {
     display: flex;
     gap: 4px;
