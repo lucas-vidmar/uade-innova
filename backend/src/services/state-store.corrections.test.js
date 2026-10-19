@@ -84,3 +84,24 @@ test('a correction stored without a groupKey still reads back without one (UJ-40
   const read = await getCorrection('arq-software-2026', 'c-legacy');
   assert.strictEqual(read.groupKey, '');
 });
+
+test('upsertCorrection keeps the signal type so the inbox can tell a mark from a report (#514)', async () => {
+  await upsertCorrection({
+    correctionId: 'c-rating',
+    subjectId: 'arq-software-2026',
+    studentId: 'alu-004',
+    question: '¿Qué es la arquitectura hexagonal?',
+    originalAnswer: 'Hexagonal separa dominio de infraestructura.',
+    issueDetail: 'Esperaba puertos y adaptadores.',
+    messageId: 'm-9',
+    type: 'negative-rating',
+    groupKey: 'class-04|mat-9#3',
+    status: 'pending',
+    createdAt: '2026-10-19T12:00:00.000Z',
+  });
+
+  const saved = await getCorrection('arq-software-2026', 'c-rating');
+  assert.strictEqual(saved.type, 'negative-rating');
+  const listed = (await listCorrections('arq-software-2026')).find((c) => c.correctionId === 'c-rating');
+  assert.strictEqual(listed.type, 'negative-rating');
+});

@@ -117,6 +117,7 @@ app.http('get-pending-reports', {
         status: c.status,
         createdAt: c.createdAt,
         resolvedAt: c.resolvedAt || '',
+        type: c.type || '',
       });
 
       // Direct lookup by id (any status): keeps detail reachable after the

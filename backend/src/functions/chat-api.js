@@ -3,7 +3,9 @@ import { withAuth } from '../middleware/with-auth.js';
 import { validateFrontDoorId, parseClientPrincipal, getAuthenticatedUser } from '../services/auth-utils.js';
 import { getEnrollment, upsertCorrection, listCorrections, getCorrection, getConversation, listConversationsByUser, deleteConversation, RATINGS_TABLE } from '../services/state-store.js';
 import { CONFIG } from '../services/config.js';
+import { deriveGroupKey } from '../services/convergence.js';
 import { v4 as uuidv4 } from 'uuid';
+import { createHash } from 'node:crypto';
 /**
  * chat-api.js — Azure Functions para feedback e historial de chat
  */
@@ -41,6 +43,75 @@ async function resolveClassName(subjectId, classId) {
 function missingKeywordTeacherMessage(keyword, className) {
     const base = `Un alumno reportó que el concepto '${keyword}' no aparece en los materiales`;
     return className ? `${base} de ${className}` : `${base} de la materia`;
+}
+
+// ── Señales de valoración (UJ-40 / #514) ─────────────────────────────
+// El pulgar abajo toca dos endpoints (`chat-feedback` y `chat-rate`). Hasta
+// #514 ninguno escribía en la bandeja: quedaban filas sueltas en
+// ConversationRatings y en el chat-log, invisibles para la cátedra. Ahora la
+// valoración negativa se persiste como una corrección más, con la misma clave
+// de convergencia que los reportes, así que dos marcas del mismo punto —o una
+// marca y un reporte— se ven juntas y suman peso.
+const RATING_CORRECTION_TYPE = 'negative-rating';
+const RATING_DETAIL_FALLBACK = 'Valoración negativa sin comentario.';
+
+function classIdOfLog(log) {
+    if (!log) return '';
+    if (log.classId) return log.classId;
+    if (Array.isArray(log.classIds) && log.classIds.length) return log.classIds[0];
+    if (Array.isArray(log.classes) && log.classes.length) return log.classes[0];
+    return '';
+}
+
+function ratingCorrectionId(subjectId, studentId, messageId) {
+    return `val-${createHash('sha1').update(`${subjectId}|${studentId}|${messageId}`).digest('hex').slice(0, 32)}`;
+}
+
+async function recordNegativeRatingSignal({ subjectId, studentId, messageId, classId, comment, log, context }) {
+    const correctionId = ratingCorrectionId(subjectId, studentId, messageId);
+    const resolvedClassId = classId || classIdOfLog(log) || 'unknown';
+    const groupKey = deriveGroupKey({
+        sources: log?.sources,
+        classId: resolvedClassId,
+        question: log?.question,
+        answer: log?.answer,
+        messageId,
+    });
+    const detail = String(comment || '').trim();
+
+    let existing = null;
+    try {
+        existing = await getCorrection(subjectId, correctionId);
+    } catch (err) {
+        context.warn?.(`[chat-rating] No se pudo leer la señal previa (${correctionId}): ${err?.message || err}`);
+    }
+
+    if (existing) {
+        // Volver a valorar la misma respuesta no reabre ni reordena lo que la
+        // cátedra ya revisó: se conserva estado, fecha y grupo.
+        const next = { ...existing, groupKey: existing.groupKey || groupKey };
+        if (detail && detail !== existing.issueDetail) next.issueDetail = detail;
+        // Si la cátedra ya la revisó, la fila no vuelve al índice de pendientes.
+        await upsertCorrection(next, { syncPending: next.status === 'pending' });
+        return correctionId;
+    }
+
+    await upsertCorrection({
+        correctionId,
+        subjectId,
+        classId: resolvedClassId,
+        studentId,
+        question: log?.question || '',
+        originalAnswer: String(log?.answer || '').slice(0, 2000),
+        issueDetail: detail || RATING_DETAIL_FALLBACK,
+        message: '',
+        messageId,
+        type: RATING_CORRECTION_TYPE,
+        groupKey,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+    });
+    return correctionId;
 }
 
 // ── GET /api/chat-history?subjectId={id} ─────────────────────────────
@@ -279,6 +350,25 @@ app.http('chat-feedback', {
 
             await saveJson(CONTAINER_CHAT, blobPath, log);
 
+            // #514: una marca negativa es una señal de calidad, no sólo un
+            // booleano en el chat-log. Entra a la bandeja con la misma clave
+            // de convergencia que un reporte sobre la misma respuesta.
+            if (!isPositive) {
+                try {
+                    await recordNegativeRatingSignal({
+                        subjectId,
+                        studentId: userId,
+                        messageId,
+                        classId: classIdOfLog(log),
+                        comment: '',
+                        log,
+                        context,
+                    });
+                } catch (signalErr) {
+                    context.warn?.(`[chat-feedback] No se pudo registrar la señal en la bandeja: ${signalErr?.message || signalErr}`);
+                }
+            }
+
             return {
                 status: 200,
                 headers: { 'Content-Type': 'application/json' },
@@ -333,8 +423,9 @@ app.http('chat-rate', {
             }
 
             let promptVersion = '';
+            let chatLog = null;
             try {
-                const chatLog = await loadJson('chat-logs', `${sanitizedId}/${subjectId}/${messageId}.json`);
+                chatLog = await loadJson('chat-logs', `${sanitizedId}/${subjectId}/${messageId}.json`);
                 if (chatLog?.promptVersion) promptVersion = chatLog.promptVersion;
             } catch (promptErr) {
                 context.warn(`[chat-rate] Could not load chat log for promptVersion: ${promptErr?.message || promptErr}`);
@@ -353,6 +444,24 @@ app.http('chat-rate', {
             }, 'Merge');
 
             context.log(`[chat-rate] Rating saved: subjectId=${subjectId}, classId=${classId || 'none'}, messageId=${messageId}, rating=${rating}, userId=${sanitizedId}`);
+
+            // #514: la valoración negativa también entra a la bandeja de la
+            // cátedra, con la misma clave de convergencia que un reporte.
+            if (rating === 'negative') {
+                try {
+                    await recordNegativeRatingSignal({
+                        subjectId,
+                        studentId: userId,
+                        messageId,
+                        classId: classId || classIdOfLog(chatLog),
+                        comment,
+                        log: chatLog,
+                        context,
+                    });
+                } catch (signalErr) {
+                    context.warn(`[chat-rate] No se pudo registrar la señal en la bandeja: ${signalErr?.message || signalErr}`);
+                }
+            }
 
             return {
                 status: 200,
@@ -419,16 +528,16 @@ app.http('chat-report-issue', {
             const resolvedClassIdFinal = reportClassId || resolvedClassId || '';
 
             // Convergence key (UJ-40): reports about the same material fragment
-            // must be groupable downstream. Prefer the cited fragment
-            // (material + chunk); fall back to the encounter plus a normalized
-            // answer head so near-identical answers still converge.
-            const primarySource = logSources.find((s) => s && (s.materialId || s.sourceFilename)) || null;
-            const fragmentKey = primarySource
-                ? `${primarySource.classId || resolvedClassIdFinal || 'unknown'}|${primarySource.materialId || primarySource.sourceFilename || ''}#${primarySource.chunkIndex ?? ''}`
-                : '';
-            const questionKey = String(resolvedQuestion || '').toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 120);
-            const answerKey = String(resolvedAnswer || '').toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 120);
-            const groupKey = fragmentKey || `${resolvedClassIdFinal || 'unknown'}|${questionKey || answerKey}`;
+            // must be groupable downstream. The key comes from the shared
+            // helper so a mark (pulgar abajo) and a report about the same
+            // answer land in the same group (#514).
+            const groupKey = deriveGroupKey({
+                sources: logSources,
+                classId: resolvedClassIdFinal,
+                question: resolvedQuestion,
+                answer: resolvedAnswer,
+                messageId,
+            });
 
             const keywordMessage = reportType === 'missing-keyword'
                 ? missingKeywordTeacherMessage(detail, await resolveClassName(subjectId, resolvedClassIdFinal))
