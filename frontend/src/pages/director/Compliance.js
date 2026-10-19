@@ -1,5 +1,6 @@
 import { api } from '../../services/api.js';
 import { renderHeader } from '../../components/Header.js';
+import { dataInventoryHtml, responsableHtml } from '../../components/DataInventory.js';
 
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
@@ -16,9 +17,15 @@ export async function renderDirectorCompliance(container) {
   renderHeader('Cumplimiento Normativo');
   container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary)" class="animate-pulse">Cargando pol&iacute;ticas de retenci&oacute;n...</div>`;
 
-  const policy = await api.getRetentionPolicy();
+  const [policy, inventory] = await Promise.all([
+    api.getRetentionPolicy(),
+    Promise.resolve(api.getDataInventory()).catch(() => null),
+  ]);
 
   const isConfigured = policy?.configured !== false;
+  // #537: guardar la política no la pone en vigor; hace falta que la API
+  // informe quién la aprueba. Hasta entonces los plazos están "pendientes".
+  const isEffective = policy?.effective === true;
 
   container.innerHTML = `
     <div style="padding:var(--space-6);max-width:1400px;margin:0 auto">
@@ -28,7 +35,9 @@ export async function renderDirectorCompliance(container) {
           <p style="margin:var(--space-1) 0 0;color:var(--color-text-secondary);font-size:0.875rem">
             Pol&iacute;ticas de retenci&oacute;n y disposici&oacute;n de datos — &uacute;ltima evaluaci&oacute;n: ${policy?.evaluatedAt ? new Date(policy.evaluatedAt).toLocaleString() : 'N/A'}
             ${!isConfigured ? '<span class="badge badge-warning" style="margin-left:var(--space-2)">No configurado</span>' : ''}
+            ${isConfigured && !isEffective ? '<span class="badge badge-warning" style="margin-left:var(--space-2)">Pendiente de aprobación</span>' : ''}
           </p>
+          <div id="compliance-responsable" style="margin-top:var(--space-1)">${responsableHtml(inventory)}</div>
         </div>
         <div style="display:flex;gap:var(--space-3)">
           <button class="btn btn-secondary" id="btn-export-csv" style="display:inline-flex;align-items:center;gap:var(--space-2)">
@@ -80,6 +89,12 @@ export async function renderDirectorCompliance(container) {
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <div style="margin-top:var(--space-6);background:var(--color-surface-1);border-radius:var(--radius-md);border:1px solid var(--color-border);padding:var(--space-4)">
+        <h3 style="margin:0 0 var(--space-2);color:var(--color-text-primary);font-size:1.1rem">Inventario de datos por persona</h3>
+        <p style="margin:0 0 var(--space-4);color:var(--color-text-secondary);font-size:0.875rem">Qué se guarda de cada persona, dónde vive, con qué finalidad y con qué plazo. El plazo es el que informa la pol&iacute;tica vigente, no una copia de la pantalla.</p>
+        ${dataInventoryHtml(inventory, { id: 'compliance-data-inventory' })}
       </div>
 
       <div style="margin-top:var(--space-6);padding:var(--space-4);background:var(--color-surface-1);border-radius:var(--radius-md);border:1px solid var(--color-border)">

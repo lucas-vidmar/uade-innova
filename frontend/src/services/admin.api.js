@@ -264,6 +264,19 @@ export async function getRetentionPolicy() {
     return res.json();
 }
 
+// #537: inventario de datos personales por persona y finalidad, resuelto por
+// el backend contra la política vigente. Sólo lectura.
+export async function getDataInventory() {
+    try {
+        const res = await fetchWithTimeout(`${BASE_URL}/compliance/data-inventory`, { timeout: 4000 });
+        if (!res.ok) return null;
+        return await res.json();
+    } catch (err) {
+        console.warn('[Compliance] Inventario de datos no disponible:', err?.message || err);
+        return null;
+    }
+}
+
 export async function saveRetentionPolicy(policy) {
     const res = await apiFetch(`${BASE_URL}/compliance/retention-policy`, {
         method: 'PUT',

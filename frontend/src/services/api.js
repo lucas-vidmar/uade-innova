@@ -57,7 +57,7 @@ import {
 import {
     getDirectorStats, getDirectorKpiExport, getDirectorPowerBiMetrics,
     getSafetyRate, getAdminUsers, getVectorHealth, getArchiveUsage,
-    getRetentionPolicy, getRetentionExport, saveRetentionPolicy,
+    getRetentionPolicy, getRetentionExport, saveRetentionPolicy, getDataInventory,
     getSubjectWeights, saveSubjectWeights,
     getAdminConfig, saveAdminConfig, resetAdminConfig,
     createAdminUser, updateAdminUser, deleteAdminUser, resetAdminUserPassword,
@@ -137,7 +137,7 @@ export const api = {
     getDirectorStats, getDirectorKpiExport, getDirectorPowerBiMetrics,
     getSafetyRate, getAdminUsers, getVectorHealth, getArchiveUsage,
     getVectorIndex, quarantineVectorIndex,
-    getRetentionPolicy, getRetentionExport, saveRetentionPolicy,
+    getRetentionPolicy, getRetentionExport, saveRetentionPolicy, getDataInventory,
     getSubjectWeights, saveSubjectWeights,
     getAdminConfig, saveAdminConfig, resetAdminConfig,
     createAdminUser, updateAdminUser, deleteAdminUser, resetAdminUserPassword,

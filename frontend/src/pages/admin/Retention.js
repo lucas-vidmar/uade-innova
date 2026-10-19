@@ -1,5 +1,6 @@
 import { api } from '../../services/api.js';
 import { toast } from '../../components/Toast.js';
+import { dataInventoryHtml, responsableHtml, responsableText } from '../../components/DataInventory.js';
 
 export async function renderAdminRetention(container) {
   // QA-006: defaults must be consistent — permanent deletion (deleteDays)
@@ -22,6 +23,13 @@ export async function renderAdminRetention(container) {
   // `configured:false` y la vista de Cumplimiento decía "No configurado".
   let policyUpdatedAt = null;
   let policyNote = '';
+  // #537: la constancia de la política exige responsable. `policyConfigured`
+  // dice si hay política guardada; `policyEffective` sólo es true cuando además
+  // la API informa quién la aprueba. Mientras falte el responsable, la pantalla
+  // no puede declararla vigente.
+  let policyApprovedBy = null;
+  let policyEffective = false;
+  let inventory = null;
 
   async function loadPolicy() {
     try {
@@ -39,9 +47,18 @@ export async function renderAdminRetention(container) {
         policyConfigured = policy.configured !== false;
         policyUpdatedAt = policy.updatedAt || null;
         policyNote = typeof policy.note === 'string' ? policy.note : '';
+        policyApprovedBy = policy.approvedBy || null;
+        policyEffective = policy.effective === true;
       }
     } catch (err) {
       console.warn('[Retention] No se pudo cargar la política de retención:', err);
+    }
+    // El inventario lo resuelve el backend contra la política persistida: acá no
+    // se recalcula ningún período.
+    try {
+      inventory = await api.getDataInventory();
+    } catch (err) {
+      console.warn('[Retention] No se pudo cargar el inventario de datos personales:', err);
     }
   }
 
@@ -60,27 +77,32 @@ export async function renderAdminRetention(container) {
     }
     return `${days} días`;
   };
-  const archiveBadge = (enabled) => policyConfigured && enabled
+  const archiveBadge = (enabled) => policyEffective && enabled
     ? '<span class="badge badge-success">Activo</span>'
     : '<span class="badge badge-warning">Pendiente</span>';
-  const deleteBadge = () => policyConfigured && config.deleteEnabled
+  const deleteBadge = () => policyEffective && config.deleteEnabled
     ? '<span class="badge badge-success">Activo</span>'
     : '<span class="badge badge-warning">Pendiente</span>';
   // #343: estado y fecha de la política, tal como los informa la API. La vista
   // de Cumplimiento ya se leía así; esta tarjeta era la única que escribía a
   // mano una fecha de revisión y un "Vigente" que la API no respaldaba.
+  // #537: "vigente" exige responsable identificado; sin él, la política está
+  // guardada pero no aprobada, y la pantalla lo dice.
   const policyRevisionText = () => {
     if (!policyConfigured) {
       return policyNote || 'Política de retención no configurada — aplican valores por defecto de Azure Storage.';
     }
-    if (!policyUpdatedAt) return 'Sin fecha de revisión registrada por la API.';
+    const suffix = policyApprovedBy ? '' : ' · Sin responsable identificado que la apruebe.';
+    if (!policyUpdatedAt) return `Sin fecha de revisión registrada por la API.${suffix}`;
     const parsed = new Date(policyUpdatedAt);
-    if (Number.isNaN(parsed.getTime())) return 'Sin fecha de revisión registrada por la API.';
-    return `Última revisión: ${parsed.toLocaleString()}`;
+    if (Number.isNaN(parsed.getTime())) return `Sin fecha de revisión registrada por la API.${suffix}`;
+    return `Última revisión: ${parsed.toLocaleString()}${suffix}`;
   };
-  const policyStateBadge = () => policyConfigured
-    ? '<span class="badge badge-success">Vigente</span>'
-    : '<span class="badge badge-warning">No configurado</span>';
+  const policyStateBadge = () => {
+    if (!policyConfigured) return '<span class="badge badge-warning">No configurado</span>';
+    if (!policyEffective) return '<span class="badge badge-warning">Pendiente de aprobación</span>';
+    return '<span class="badge badge-success">Vigente</span>';
+  };
 
   container.innerHTML = `
     <div class="page-header">
@@ -178,10 +200,24 @@ export async function renderAdminRetention(container) {
           <div>
             <strong>Política de Retención</strong>
             <p class="text-xs text-text-muted" id="retention-policy-revision" style="margin:2px 0 0">${policyRevisionText()}</p>
+            ${responsableHtml(inventory, { id: 'retention-policy-responsable' })}
           </div>
           <span id="retention-policy-state">${policyStateBadge()}</span>
         </div>
+        <div>
+          <label class="form-label" for="retention-approved-by" style="font-weight:600">Responsable que aprueba la conservación</label>
+          <input type="text" class="form-input" id="retention-approved-by" maxlength="200"
+                 placeholder="Nombre y apellido o identificador del responsable"
+                 value="${policyApprovedBy ? String(policyApprovedBy).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : ''}">
+          <p class="text-xs text-text-muted" style="margin-top:4px">Sin responsable identificado la política queda «Pendiente de aprobación» y los tipos de dato no figuran como vigentes.</p>
+        </div>
       </div>
+    </div>
+
+    <div class="card animate-in" style="margin-top:var(--space-6)">
+      <h3 style="margin-bottom:var(--space-2)">Inventario de datos por persona</h3>
+      <p class="text-secondary" style="margin-top:0;margin-bottom:var(--space-4)">Qué se guarda de cada persona, dónde vive y con qué finalidad. El plazo es el que informa la política vigente.</p>
+      ${dataInventoryHtml(inventory)}
     </div>
 
     <div style="display:flex;justify-content:flex-end;gap:var(--space-3);margin-top:var(--space-6)">
@@ -201,9 +237,18 @@ export async function renderAdminRetention(container) {
     if (revision) revision.textContent = policyRevisionText();
     const state = document.getElementById('retention-policy-state');
     if (state) state.innerHTML = policyStateBadge();
+    // #537: responsable y estado de aprobación, también desde la API.
+    const responsable = document.getElementById('retention-policy-responsable');
+    if (responsable) responsable.textContent = responsableText(inventory);
+    const approvedByInput = document.getElementById('retention-approved-by');
+    if (approvedByInput) approvedByInput.value = policyApprovedBy || '';
+    const inventoryEl = document.getElementById('data-inventory');
+    if (inventoryEl) inventoryEl.outerHTML = dataInventoryHtml(inventory);
   }
 
   function readValues() {
+    const approvedByInput = document.getElementById('retention-approved-by');
+    const approvedBy = approvedByInput && approvedByInput.value.trim() ? approvedByInput.value.trim() : null;
     return {
       archiveEnabled: document.getElementById('retention-archive-enabled').checked,
       archiveDays: Number(document.getElementById('retention-cold-days').value),
@@ -211,6 +256,7 @@ export async function renderAdminRetention(container) {
       deleteDays: Number(document.getElementById('retention-delete-days').value),
       notifyTeachers: document.getElementById('retention-notify-teachers').checked,
       autoDelete: document.getElementById('retention-auto-delete').checked,
+      approvedBy,
     };
   }
 
@@ -248,6 +294,15 @@ export async function renderAdminRetention(container) {
         policyConfigured = result.configured !== false;
         if (result.updatedAt) policyUpdatedAt = result.updatedAt;
         if (typeof result.note === 'string') policyNote = result.note;
+        policyApprovedBy = result.approvedBy || null;
+        policyEffective = result.effective === true;
+      }
+      // Los plazos y el responsable del inventario también cambiaron: se vuelve
+      // a pedir al backend en vez de recalcularlo acá.
+      try {
+        inventory = await api.getDataInventory();
+      } catch (err) {
+        console.warn('[Retention] No se pudo refrescar el inventario de datos personales:', err);
       }
       renderValues();
       toast('success', 'Políticas actualizadas', 'Los cambios en retención se aplicarán en las próximas horas.');
