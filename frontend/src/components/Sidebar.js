@@ -64,14 +64,16 @@ export function renderSidebar() {
 
   const activeSubjectId = auth.getActiveSubjectId();
   const subjects = auth.getEnrolledSubjects();
-  // Fix #346: when the enrollment cache is empty but the session still has an
-  // active subject (e.g. enrollments not yet loaded), show the active subject
-  // name instead of "Sin materias asignadas".
+  // Fix #346: the bar used to say "Sin materias asignadas" whenever the
+  // enrollment cache was cold, while the rest of the page (header, class list,
+  // chat) was already working with a valid active subject. The label now comes
+  // from the subject the session actually resolved; the fallback text is only
+  // for a session with no subject at all.
   const displayPool = subjects.length > 0 ? subjects : (user.subjects || []);
-  const activeSubject = displayPool.find(s => s.id === activeSubjectId) || subjects[0] || displayPool[0] || { name: 'Sin materias asignadas', id: null };
-  const displaySubjectName = subjects.length === 0
+  const activeSubject = displayPool.find(s => s.id === activeSubjectId) || subjects[0] || displayPool[0] || null;
+  const displaySubjectName = !activeSubject
     ? 'Sin materias asignadas'
-    : (activeSubject.name.includes('(2026-1)')
+    : (String(activeSubject.name || '').includes('(2026-1)')
         ? activeSubject.name
         : `${activeSubject.name} (2026-1)`);
 
