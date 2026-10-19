@@ -26,6 +26,7 @@ import {
     PublicationStateError,
 } from '../services/class-publication.js';
 import { computeClassProcessingStats } from '../services/class-processing.js';
+import { recordMaterialDeletion, readDeclaredSoftDeleteDays, buildDeletionRecordId, DELETED_CONTAINER_PURGE_DAYS } from '../services/deletion-audit-store.js';
 import {
     applyRetirementChange,
     isRetirementState,
@@ -2189,8 +2190,15 @@ app.http('get-director-powerbi-metrics', {
 // ── DELETE /api/materials/{id} ────────────────────────────────────
 // Borra un material con cascada: elimina los vectores de Pinecone, mueve
 // el archivo original y el JSON procesado al contenedor `deleted/`
-// (soft-delete, retención de 30 días vía lifecycle policy) y libera la
-// cuota del docente.
+// (soft-delete, retención vía lifecycle policy) y libera la cuota del docente.
+//
+// UJ-56 pasos 4, 7 y 9 (#538): cada pedido autorizado deja una constancia en
+// `compliance/deletions/{recordId}.json` con fecha, alcance exacto y responsable,
+// legible por los mismos roles que responden por el cumplimiento
+// (`GET /api/compliance/deletion-records`). Admin se incluye entre los roles que
+// pueden ejecutar el borrado: es el rol que responde por el cumplimiento.
+const DELETE_MATERIAL_ROLES = ['Docente', 'Director', 'Admin'];
+
 app.http('delete-material', {
     methods: ['DELETE'],
     authLevel: 'anonymous',
@@ -2201,17 +2209,67 @@ app.http('delete-material', {
         // In direct Function App calls (without SWA proxy), x-ms-client-principal may be absent.
         // For the pilot, allow deletion when principal header is missing.
         const isAuthorized = !principal
-            || principal?.userRoles?.some(role => ['Docente', 'Director'].includes(role))
+            || principal?.userRoles?.some(role => DELETE_MATERIAL_ROLES.includes(role))
             || process.env.AZURE_FUNCTIONS_ENVIRONMENT === "Development";
         if (!isAuthorized) {
             return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: "Forbidden - Teacher access required" }) };
         }
 
         const materialId = request.params.materialId;
+
+        // Constancia (#538): se reserva el id del registro al entrar, así el
+        // llamador puede citarlo incluso cuando el borrado falla a mitad de camino.
+        const requestedAt = new Date().toISOString();
+        const recordId = buildDeletionRecordId({ requestedAt, materialId });
+        const identity = context?.principal || principal;
+        const actor = {
+            id: identity?.userId || context?.user?.userId || 'anonymous',
+            email: identity?.userDetails || context?.user?.email || null,
+            roles: Array.isArray(identity?.userRoles) ? identity.userRoles : [],
+        };
+        const authorization = {
+            basis: 'role',
+            allowedRoles: DELETE_MATERIAL_ROLES,
+            actorRoles: actor.roles,
+        };
+        const constanciaErrors = [];
+        let material = null;
+        let chunkCount = 0;
+        let vectorsDeleted = false;
+        let stateDeleted = false;
+        let quotaReleased = false;
+        const deletedNames = [];
+
+        const dejarConstancia = async (outcome) => {
+            const declaredDays = await readDeclaredSoftDeleteDays();
+            const constancia = await recordMaterialDeletion({
+                recordId,
+                requestedAt,
+                outcome,
+                actor,
+                authorization,
+                target: {
+                    materialId,
+                    subjectId: material?.subjectId || null,
+                    filename: material?.filename || null,
+                    materialType: material?.type || null,
+                    classIds: material?.classIds || [],
+                    uploadedBy: material?.uploadedBy || null,
+                    fileSize: material?.fileSize || 0,
+                },
+                scope: { blobsMoved: deletedNames, chunkCount, vectorsDeleted, stateDeleted, quotaReleased, errors: constanciaErrors },
+                retention: { declaredDays, containerPurgeDays: DELETED_CONTAINER_PURGE_DAYS },
+                correlationId: context?.correlationId || null,
+            });
+            if (!constancia.recorded) {
+                context?.warn?.(`[DeleteMaterial] No se pudo dejar constancia de ${materialId}: ${constancia.error}`);
+                constanciaErrors.push(`constancia: ${constancia.error}`);
+            }
+            return constancia;
+        };
+
         try {
             // Look up material state for attribution, chunk count and blob location.
-            let material = null;
-            let chunkCount = 0;
             let quotaRelease = null;
             try {
                 material = await getMaterialStateById(materialId);
@@ -2222,13 +2280,13 @@ app.http('delete-material', {
                     }
                 }
             } catch (lookupErr) {
+                constanciaErrors.push(`lookup: ${lookupErr.message}`);
                 context?.log?.warn?.(`[DeleteMaterial] Could not look up ${materialId} for quota release: ${lookupErr.message}`);
             }
 
             // Soft-delete: mover archivo original a `deleted/` (retención 30 días).
             const containerDeleted = 'deleted';
             const containerMaterials = CONFIG.containers.materials;
-            const deletedNames = [];
             try {
                 const blobName = deriveMaterialBlobName(material, materialId);
                 if (blobName) {
@@ -2236,6 +2294,7 @@ app.http('delete-material', {
                     if (moved) deletedNames.push(`deleted/${blobName}`);
                 }
             } catch (bErr) {
+                constanciaErrors.push(`blob: ${bErr.message}`);
                 context.error(`[DeleteMaterial] Error moviendo blob original de ${materialId} a deleted/:`, bErr);
             }
 
@@ -2245,26 +2304,29 @@ app.http('delete-material', {
                 const moved = await moveBlob(CONTAINER_PROCESSED, processedBlob, containerDeleted, processedBlob);
                 if (moved) deletedNames.push(`deleted/${processedBlob}`);
             } catch (pErr) {
+                constanciaErrors.push(`processed: ${pErr.message}`);
                 context.error(`[DeleteMaterial] Error moviendo JSON procesado de ${materialId} a deleted/:`, pErr);
             }
 
             // Limpieza en Vector Store
             try {
                 await vectorStore.deleteVectorsByFilter({ materialId: { "$eq": materialId } });
+                vectorsDeleted = true;
                 context.log(`[DeleteMaterial] Vectores para ${materialId} eliminados.`);
             } catch (vErr) {
+                constanciaErrors.push(`vectores: ${vErr.message}`);
                 context.error(`[DeleteMaterial] Error eliminando vectores de ${materialId}:`, vErr);
             }
 
             // #564: el estado del material es lo que alimenta el inventario de
             // la clase (GET /api/classes cruza clases con la tabla de
             // materiales). Si esto no se borra, el material sigue listado.
-            let stateDeleted = false;
             let stateDeleteError = null;
             try {
                 stateDeleted = await deleteMaterialStateById(materialId);
             } catch (tableErr) {
                 stateDeleteError = tableErr;
+                constanciaErrors.push(`estado: ${tableErr.message}`);
                 context.error(`[StateStore] Error eliminando material ${materialId} de tablas:`, tableErr);
             }
 
@@ -2275,6 +2337,7 @@ app.http('delete-material', {
                 const stillListed = stateDeleteError ? true : !!(await getMaterialStateById(materialId).catch(() => null));
                 if (stillListed) {
                     context.error(`[DeleteMaterial] El estado de ${materialId} no se pudo borrar; el material sigue en el inventario de la clase.`);
+                    const constancia = await dejarConstancia('partial');
                     return {
                         status: 500,
                         headers: { 'Content-Type': 'application/json' },
@@ -2283,6 +2346,8 @@ app.http('delete-material', {
                             errorCategory: 'INTERNAL',
                             code: 'MATERIAL_STATE_DELETE_FAILED',
                             softDeleted: deletedNames,
+                            deletionRecordId: constancia.recordId,
+                            deletionRecorded: constancia.recorded,
                         }),
                     };
                 }
@@ -2291,16 +2356,41 @@ app.http('delete-material', {
             if (quotaRelease?.uploadedBy) {
                 try {
                     await releaseUpload(quotaRelease.uploadedBy, quotaRelease.fileSize || 0);
+                    quotaReleased = true;
                     context.log(`[DeleteMaterial] Quota released for ${quotaRelease.uploadedBy} (material ${materialId})`);
                 } catch (quotaErr) {
+                    constanciaErrors.push(`cuota: ${quotaErr.message}`);
                     context?.log?.warn?.(`[DeleteMaterial] Quota release failed (non-fatal): ${quotaErr.message}`);
                 }
             }
 
-            return { status: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: true, softDeleted: deletedNames, chunkCount }) };
+            // Una repetición sobre un material que ya no estaba no borró nada:
+            // la constancia lo dice explícitamente en vez de fingir un borrado.
+            const outcome = (deletedNames.length > 0 || chunkCount > 0 || stateDeleted) ? 'deleted' : 'already-absent';
+            const constancia = await dejarConstancia(outcome);
+            return {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: true,
+                    softDeleted: deletedNames,
+                    chunkCount,
+                    deletionRecordId: constancia.recordId,
+                    deletionRecorded: constancia.recorded,
+                }),
+            };
         } catch (err) {
             context.error(err);
-            return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: `No se pudo borrar el material: ${err.message}` }) };
+            const constancia = await dejarConstancia('failed');
+            return {
+                status: 500,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    error: `No se pudo borrar el material: ${err.message}`,
+                    deletionRecordId: constancia.recordId,
+                    deletionRecorded: constancia.recorded,
+                }),
+            };
         }
     }))
 });

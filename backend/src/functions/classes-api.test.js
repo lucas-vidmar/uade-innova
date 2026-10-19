@@ -2055,3 +2055,156 @@ test('classes-api delete-material es idempotente cuando la fila ya no estaba (#5
     stateStoreMocks.deleteMaterialStateById.mock.mockImplementation(async () => true);
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
 });
+
+// ── #538 / UJ-56 pasos 4, 7 y 9: el borrado deja constancia ───────────────
+
+function constanciasEscritas() {
+    return storageMocks.saveJson.mock.calls
+        .map((call) => call.arguments)
+        .filter(([container, blob]) => container === 'compliance' && String(blob).startsWith('deletions/'));
+}
+
+test('delete-material: Admin ejecuta el borrado (rol que responde por el cumplimiento) y deja constancia', async (t) => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({
+        userId: 'adm-001',
+        userDetails: 'admin@uade.edu.ar',
+        userRoles: ['authenticated', 'Admin'],
+    }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+    stateStoreMocks.getMaterialStateById.mock.mockImplementation(async () => ({
+        materialId: 'mat-538',
+        subjectId: 'arq-software-2026',
+        filename: 'rv3-538.txt',
+        type: 'notes',
+        classIds: ['class-01'],
+        blobUrl: 'https://stacc.blob.core.windows.net/class-materials/arq-software-2026/mat-538.txt',
+        chunkCount: 1,
+        uploadedBy: 'prof-001',
+        fileSize: 27,
+    }));
+    stateStoreMocks.deleteMaterialStateById.mock.mockImplementation(async () => true);
+
+    const mockContext = { log: makeMockLog(), error: mock.fn(), correlationId: 'corr-538' };
+    const mockRequest = { params: { materialId: 'mat-538' } };
+
+    const response = await handlers['delete-material'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 200, 'Admin debe poder ejecutar el borrado');
+
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.success, true);
+    assert.strictEqual(body.deletionRecorded, true);
+    assert.match(body.deletionRecordId, /^\d{8}T\d{9}-mat-538-[a-f0-9]{6}$/);
+
+    const escritas = constanciasEscritas().filter(([, blob]) => blob === `deletions/${body.deletionRecordId}.json`);
+    assert.strictEqual(escritas.length, 1, 'el borrado debe dejar exactamente una constancia con ese id');
+    const [container, blob, record] = escritas[0];
+    assert.strictEqual(container, 'compliance');
+    assert.strictEqual(blob, `deletions/${body.deletionRecordId}.json`);
+    assert.strictEqual(record.action, 'material-delete');
+    assert.strictEqual(record.outcome, 'deleted');
+    assert.ok(record.requestedAt, 'la constancia lleva fecha del pedido');
+    assert.strictEqual(record.actor.id, 'adm-001');
+    assert.strictEqual(record.actor.email, 'admin@uade.edu.ar');
+    assert.deepStrictEqual(record.authorization.allowedRoles, ['Docente', 'Director', 'Admin']);
+    assert.strictEqual(record.target.materialId, 'mat-538');
+    assert.strictEqual(record.target.subjectId, 'arq-software-2026');
+    assert.strictEqual(record.target.filename, 'rv3-538.txt');
+    assert.deepStrictEqual(record.scope.blobsMoved, ['deleted/arq-software-2026/mat-538.txt', 'deleted/mat-538.json']);
+    assert.strictEqual(record.scope.chunkCount, 1);
+    assert.strictEqual(typeof record.scope.vectorsDeleted, 'boolean');
+    assert.strictEqual(record.scope.stateDeleted, true);
+    assert.strictEqual(record.retention.declaredDays, 7);
+    assert.strictEqual(record.retention.containerPurgeDays, 30);
+    // withCorrelation usa uuid v4 (mockeado a '1234' en este archivo): la
+    // constancia queda atada a la misma correlación que el resto del pedido.
+    assert.strictEqual(record.correlationId, '1234');
+
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: [] }));
+    stateStoreMocks.getMaterialStateById.mock.mockImplementation(async () => null);
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+});
+
+test('delete-material: una repetición queda registrada como already-absent, no como borrado', async (t) => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'prof-001', userRoles: ['Docente'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+    stateStoreMocks.getMaterialStateById.mock.mockImplementation(async () => null);
+    stateStoreMocks.deleteMaterialStateById.mock.mockImplementation(async () => false);
+    storageMocks.moveBlob.mock.mockImplementation(async () => false);
+
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
+    const mockRequest = { params: { materialId: 'mat-repetido' } };
+
+    const response = await handlers['delete-material'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+    const body = JSON.parse(response.body);
+    assert.deepStrictEqual(body.softDeleted, []);
+
+    const [, , record] = constanciasEscritas().find(([, blob]) => blob === `deletions/${body.deletionRecordId}.json`);
+    assert.strictEqual(record.outcome, 'already-absent');
+    assert.deepStrictEqual(record.scope.blobsMoved, []);
+    assert.strictEqual(record.scope.chunkCount, 0);
+
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: [] }));
+    stateStoreMocks.deleteMaterialStateById.mock.mockImplementation(async () => true);
+    storageMocks.moveBlob.mock.mockImplementation(async () => true);
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+});
+
+test('delete-material: si la constancia no se puede escribir, el borrado vale igual y lo declara', async (t) => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'adm-001', userRoles: ['Admin'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+    stateStoreMocks.getMaterialStateById.mock.mockImplementation(async () => ({
+        materialId: 'mat-sin-constancia',
+        subjectId: 'arq-software-2026',
+        filename: 'x.txt',
+        chunkCount: 1,
+    }));
+    stateStoreMocks.deleteMaterialStateById.mock.mockImplementation(async () => true);
+    storageMocks.saveJson.mock.mockImplementation(async () => { throw new Error('storage caído'); });
+
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
+    const mockRequest = { params: { materialId: 'mat-sin-constancia' } };
+
+    const response = await handlers['delete-material'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 200, 'el borrado no se revierte por no poder asentar la constancia');
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.success, true);
+    assert.strictEqual(body.deletionRecorded, false);
+    assert.ok(body.deletionRecordId, 'se informa el id para poder reclamar la constancia faltante');
+
+    storageMocks.saveJson.mock.mockImplementation(async () => true);
+    stateStoreMocks.getMaterialStateById.mock.mockImplementation(async () => null);
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: [] }));
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+});
+
+test('delete-material: el borrado parcial se registra como partial con el error', async (t) => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'adm-001', userRoles: ['Admin'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+    const material = { materialId: 'mat-parcial', subjectId: 'arq-software-2026', filename: 'x.txt', chunkCount: 2 };
+    stateStoreMocks.getMaterialStateById.mock.mockImplementation(async () => material);
+    stateStoreMocks.deleteMaterialStateById.mock.mockImplementation(async () => { throw new Error('tabla caída'); });
+
+    const mockContext = { log: makeMockLog(), error: mock.fn() };
+    const mockRequest = { params: { materialId: 'mat-parcial' } };
+
+    const response = await handlers['delete-material'](mockRequest, mockContext);
+    assert.strictEqual(response.status, 500);
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.code, 'MATERIAL_STATE_DELETE_FAILED');
+    assert.strictEqual(body.deletionRecorded, true);
+
+    const [, , record] = constanciasEscritas().find(([, blob]) => blob === `deletions/${body.deletionRecordId}.json`);
+    assert.strictEqual(record.outcome, 'partial');
+    assert.strictEqual(record.scope.stateDeleted, false);
+    assert.ok(record.scope.errors.some((e) => e.startsWith('estado:')), 'la constancia explica qué falló');
+
+    stateStoreMocks.getMaterialStateById.mock.mockImplementation(async () => null);
+    stateStoreMocks.deleteMaterialStateById.mock.mockImplementation(async () => true);
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: [] }));
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+});
