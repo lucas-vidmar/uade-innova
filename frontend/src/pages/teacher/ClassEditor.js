@@ -673,6 +673,23 @@ export async function renderClassEditor(container) {
             }
         }
 
+        // #436: el estado de edición vive sólo en memoria (localState + dirty), así
+        // que un refresco (F5) o cerrar la pestaña descartaba el trabajo sin aviso.
+        // Registramos una guarda de salida acotada a esta pantalla: mientras haya
+        // cambios sin guardar, el navegador pide confirmación antes de descargar.
+        const beforeUnloadGuard = (e) => {
+            if (!dirty) return;
+            e.preventDefault();
+            e.returnValue = '';
+            return '';
+        };
+        window.addEventListener('beforeunload', beforeUnloadGuard);
+        // Al salir de la ruta (hashchange) quitamos la guarda para no dejarla pegada
+        // a otras pantallas.
+        window.addEventListener('hashchange', () => {
+            window.removeEventListener('beforeunload', beforeUnloadGuard);
+        }, { once: true });
+
         render();
     } catch (err) {
         console.error('Error loading class editor:', err);
