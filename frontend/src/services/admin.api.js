@@ -287,6 +287,49 @@ export async function getRetentionExport(format) {
     return blob;
 }
 
+/**
+ * UJ-56 pasos 4, 7 y 9 (#538): constancias de borrado de material. Devuelve
+ * `{ records, count, policy }` o null si la lectura falla (la pantalla no
+ * inventa "sin borrados" cuando no pudo leer).
+ */
+export async function getDeletionRecords(filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.materialId) params.set('materialId', filters.materialId);
+    if (filters.subjectId) params.set('subjectId', filters.subjectId);
+    if (filters.limit) params.set('limit', String(filters.limit));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    try {
+        const res = await fetchWithTimeout(`${BASE_URL}/compliance/deletion-records${qs}`, { timeout: 6000 });
+        if (!res.ok) return null;
+        return res.json();
+    } catch (err) {
+        console.error('[API] getDeletionRecords failed:', err);
+        return null;
+    }
+}
+
+export async function getDeletionRecord(recordId) {
+    try {
+        const res = await fetchWithTimeout(`${BASE_URL}/compliance/deletion-records/${encodeURIComponent(recordId)}`, { timeout: 6000 });
+        if (!res.ok) return null;
+        return res.json();
+    } catch (err) {
+        console.error('[API] getDeletionRecord failed:', err);
+        return null;
+    }
+}
+
+export async function verifyDeletionRecord(recordId) {
+    try {
+        const res = await fetchWithTimeout(`${BASE_URL}/compliance/deletion-records/${encodeURIComponent(recordId)}/verificacion`, { timeout: 10000 });
+        if (!res.ok) return null;
+        return res.json();
+    } catch (err) {
+        console.error('[API] verifyDeletionRecord failed:', err);
+        return null;
+    }
+}
+
 export async function getSubjectWeights(subjectId) {
     if (!subjectId) return { data: { notes: 1.35, bibliography: 1.1, transcript: 1.0, presentation: 0.95 }, defaults: true, readFailed: false };
     try {
