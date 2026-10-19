@@ -142,6 +142,9 @@ export const CONFIG = {
 
   rateLimit: {
     windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 60000,
+    // Conteo service-wide (#455): una sola entidad por clave/tier en Table
+    // Storage para que el tope no dependa de la instancia que atiende el pedido.
+    sharedTable: process.env.AZURE_TABLE_RATE_LIMIT || 'RateLimitCounters',
     tiers: {
       chat: Number(process.env.RATE_LIMIT_CHAT_PER_MIN) || 30,
       ingest: Number(process.env.RATE_LIMIT_INGEST_PER_MIN) || 10,
