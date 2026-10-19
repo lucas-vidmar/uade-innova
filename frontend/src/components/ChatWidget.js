@@ -82,7 +82,7 @@ function resolveChatErrorMessage(errOrData) {
   return ERROR_MESSAGES.UNKNOWN;
 }
 
-export function createChatWidget({ classes = [], subjectId = '', sessionId = null, initialMessages = [], highlightMessageId = null, transcriptFocus: initialTranscriptFocus = null, initialClassIds = [], preset = null, onNewChat, onMessageSent, onConsentAccepted }) {
+export function createChatWidget({ classes = [], subjectId = '', sessionId = null, initialMessages = [], highlightMessageId = null, transcriptFocus: initialTranscriptFocus = null, initialClassIds = [], preset = null, onNewChat, onMessageSent, onConsentAccepted, onOpenSavedConversations }) {
   const user = auth.getUser();
   const rawEnrollment = auth.isEnrolled(subjectId);
   // En dev mock sin enrollments cacheados, permitir chat para desarrollo local;
@@ -124,11 +124,21 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
       <div class="chat-sources-bar">
         <div class="chat-sources-top">
           <span class="chat-sources-label">Fuentes de consulta:</span>
-          
-          <button class="chat-new-btn" id="chat-clear" title="Nuevo chat">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            <span>Nuevo chat</span>
-          </button>
+
+          <div class="chat-sources-actions">
+            <!-- #404 (UJ-24, UJ-25): punto de entrada a SUP-05 ("Mis Conversaciones
+                 Guardadas"), la superficie que lista, abre y borra los hilos
+                 guardados. Antes el modal existía pero no lo alcanzaba nadie. -->
+            <button class="chat-new-btn chat-saved-btn" id="chat-saved" title="Mis Conversaciones Guardadas" aria-label="Mis Conversaciones Guardadas">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+              <span>Hilos guardados</span>
+            </button>
+
+            <button class="chat-new-btn" id="chat-clear" title="Nuevo chat">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <span>Nuevo chat</span>
+            </button>
+          </div>
         </div>
         <div class="chat-chips-container" id="chat-chips">
           ${(classes || []).map(c => `
@@ -346,6 +356,13 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
       currentSessionId = crypto.randomUUID();
       render();
       if (onNewChat) onNewChat({ newSessionId: currentSessionId });
+    });
+
+    // #404 (UJ-24, UJ-25): abre la superficie SUP-05 ("Mis Conversaciones
+    // Guardadas"). El dueño de la página decide cómo montarla y qué hacer al
+    // cargar un hilo; el widget sólo expone el punto de entrada.
+    container.querySelector('#chat-saved')?.addEventListener('click', () => {
+      if (onOpenSavedConversations) onOpenSavedConversations();
     });
 
     // Citation click (event delegation)
