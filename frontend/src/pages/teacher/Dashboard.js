@@ -172,7 +172,7 @@ export async function renderTeacherDashboard(container) {
       }).join('')}
     </div>
 
-    <div class="section-title" style="margin-top:var(--space-10)"><h2>${icon('clock')} Tareas y deadlines</h2><div class="line"></div></div>
+    <div class="section-title" style="margin-top:var(--space-10)"><h2 id="deadlines-section" tabindex="-1">${icon('clock')} Tareas y deadlines</h2><div class="line"></div></div>
     <div style="margin-bottom:var(--space-4);display:flex;gap:var(--space-3)">
       <button class="btn btn-primary" id="create-task-btn">${icon('target')} Crear tarea</button>
     </div>
@@ -218,7 +218,7 @@ export async function renderTeacherDashboard(container) {
       </div>
     </div>
 
-    <div class="section-title" style="margin-top:var(--space-10)"><h2>${icon('alert')} Alertas de Calidad IA</h2><div class="line"></div></div>
+    <div class="section-title" style="margin-top:var(--space-10)"><h2 id="alerts-section" tabindex="-1">${icon('alert')} Alertas de Calidad IA</h2><div class="line"></div></div>
     <div class="card">
       <div class="card-header">
         <span class="card-title">Reportes de alumnos</span>

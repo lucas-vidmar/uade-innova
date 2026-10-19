@@ -59,6 +59,30 @@ const ROUTES = {
     '/admin/archive-usage': () => import('./pages/director/ArchiveUsage.js').then(m => m.renderDirectorArchiveUsage),
 };
 
+/* ── Section deep links ───────────────────────────────────────
+   #347: hay rutas del docente que nunca existieron como página propia —
+   su contenido vive como sección dentro del tablero ("Tareas y deadlines",
+   "Alertas de Calidad IA"). Antes caían en el fallback de ruta desconocida y
+   el tablero las reemplazaba sin aviso, así que un enlace directo o guardado
+   perdía el destino. Ahora se resuelven a la ruta real del tablero y el foco
+   queda en la sección pedida: misma página, destino explícito y URL estable
+   (la URL no se reescribe, así el enlace sigue siendo compartible). */
+const SECTION_ROUTES = {
+    '/teacher/deadlines': { path: '/teacher/dashboard', section: 'deadlines-section', label: 'Tareas y deadlines' },
+    '/teacher/interventions': { path: '/teacher/dashboard', section: 'alerts-section', label: 'Alertas de Calidad IA' },
+};
+
+async function focusRouteSection(container, sectionId) {
+    const target = container.querySelector(`#${sectionId}`);
+    if (!target) return;
+    target.scrollIntoView({ block: 'start' });
+    // El título ya trae tabindex="-1"; el foco programático hace que un lector
+    // de pantalla anuncie la sección a la que se llegó, no la página entera.
+    try {
+        target.focus({ preventScroll: true });
+    } catch (_) { /* focus no soportado: el scroll ya ubicó la sección */ }
+}
+
 /* ── App shell ───────────────────────────────────────────── */
 function buildShell() {
     const appEl = document.getElementById('app');
@@ -140,6 +164,12 @@ async function handleRoute() {
         matchedPath = '/director/class';
     }
 
+    // #347: secciones del tablero docente pedidas como ruta propia.
+    const sectionRoute = SECTION_ROUTES[fullPath] || null;
+    if (sectionRoute) {
+        matchedPath = sectionRoute.path;
+    }
+
     buildShell();
 
     // Route Guard: authentication first, then role-based access control
@@ -203,6 +233,9 @@ async function handleRoute() {
         try {
             const renderFn = await routeLoader();
             await renderFn(pageContent);
+            if (sectionRoute) {
+                await focusRouteSection(pageContent, sectionRoute.section);
+            }
         } catch (err) {
             console.error('[Router] Page render error:', err);
             // #379: nunca mostrar el mensaje crudo del error (el navegador filtraba
