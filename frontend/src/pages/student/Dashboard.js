@@ -6,6 +6,7 @@ import { auth, isDevMockEnabled } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
 import { renderBottomNav } from '../../components/BottomNav.js';
 import { createChatWidget } from '../../components/ChatWidget.js';
+import { renderSavedConversationsModal } from '../../components/SavedConversationsModal.js';
 import { toast } from '../../components/Toast.js';
 import { OnboardingEngine, shouldAutoStartOnboarding } from '../../services/onboarding.js';
 import { STUDENT_ONBOARDING_STEPS } from './OnboardingSteps.js';
@@ -531,6 +532,7 @@ export async function renderStudentDashboard(container) {
       onNewChat: handleNewChat,
       onMessageSent: handleMessageSent,
       onConsentAccepted: startOnboardingIfNeeded,
+      onOpenSavedConversations: openSavedConversations,
     });
     chatMount.appendChild(chatWidget);
     updateHistorySidebar(history);
@@ -560,6 +562,63 @@ export async function renderStudentDashboard(container) {
   const handleMessageSent = async ({ sessionId } = {}) => {
     if (sessionId) syncChatHash(sessionId);
     const history = await api.getChatHistory(activeSubjectId);
+    updateHistorySidebar(history);
+  };
+
+  /**
+   * Fix #404 (UJ-24, UJ-25): monta SUP-05 ("Mis Conversaciones Guardadas") —
+   * la superficie que lista, abre y borra los hilos guardados. El componente
+   * existía pero ningún control lo alcanzaba; acá queda el punto de entrada
+   * (acción "Hilos guardados" en la barra del chat).
+   */
+  const openSavedConversations = () => {
+    renderSavedConversationsModal({
+      subjectId: activeSubjectId,
+      onLoad: (conversation) => { loadSavedConversation(conversation); },
+    });
+  };
+
+  /**
+   * Carga en el chat el hilo elegido en SUP-05. El modal ya trajo la
+   * conversación completa (`GET /api/conversations/{id}`); se monta con esos
+   * mensajes y se deja el hilo identificado en la URL, igual que al abrir un
+   * hilo desde "Chats recientes".
+   */
+  const loadSavedConversation = async (conversation) => {
+    if (!conversation) return;
+    const sessionId = conversation.conversationId;
+    const chatMount = document.getElementById('chat-widget-mount');
+    if (!chatMount || !sessionId) return;
+
+    const [classes, history] = await Promise.all([
+      api.getClasses(activeSubjectId),
+      api.getChatHistory(activeSubjectId),
+    ]);
+
+    const stored = Array.isArray(conversation.messages) ? conversation.messages : [];
+    const initialMessages = stored.length > 0
+      ? stored.map(m => ({ role: m.role, content: m.content || '', sources: m.sources || [] }))
+      : (history || [])
+          .filter(item => (item.sessionId || item.id) === sessionId)
+          .sort((a, b) => new Date(a.timestamp || a.createdAt || 0) - new Date(b.timestamp || b.createdAt || 0))
+          .map(c => ([
+            { role: 'user', content: c.question },
+            { role: 'assistant', content: c.answer || '', sources: c.sources || [], id: c.id },
+          ])).flat();
+
+    chatMount.innerHTML = '';
+    const chatWidget = createChatWidget({
+      classes: classes || [],
+      subjectId: activeSubjectId,
+      sessionId,
+      initialMessages,
+      onNewChat: handleNewChat,
+      onMessageSent: handleMessageSent,
+      onConsentAccepted: startOnboardingIfNeeded,
+      onOpenSavedConversations: openSavedConversations,
+    });
+    chatMount.appendChild(chatWidget);
+    syncChatHash(sessionId);
     updateHistorySidebar(history);
   };
 
@@ -765,6 +824,7 @@ export async function renderStudentDashboard(container) {
       onNewChat: handleNewChat,
       onMessageSent: handleMessageSent,
       onConsentAccepted: startOnboardingIfNeeded,
+      onOpenSavedConversations: openSavedConversations,
     });
     chatMount.appendChild(chatWidget);
     requestAnimationFrame(startOnboardingIfNeeded);

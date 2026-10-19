@@ -31,9 +31,23 @@ export async function renderSavedConversationsModal({ subjectId, onLoad }) {
 
   const listEl = overlay.querySelector('#saved-conversations-list');
   try {
-    const conversations = await api.listConversations(subjectId);
+    const fetched = await api.listConversations(subjectId);
 
-    if (!Array.isArray(conversations) || conversations.length === 0) {
+    // El listado del backend trae una fila por guardado, no por hilo (la clave
+    // de la tabla Conversations incluye el timestamp del último mensaje), así
+    // que un mismo hilo puede aparecer varias veces. Esta superficie lista
+    // hilos: se conserva la fila más reciente de cada conversationId (el
+    // endpoint devuelve el listado ordenado de más reciente a más antiguo).
+    const seen = new Set();
+    const conversations = (Array.isArray(fetched) ? fetched : []).filter((c) => {
+      const id = c?.conversationId;
+      if (!id) return true;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+
+    if (conversations.length === 0) {
       listEl.innerHTML = `
         <div class="flex flex-col items-center justify-center p-8 text-text-muted">
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 12px;">
