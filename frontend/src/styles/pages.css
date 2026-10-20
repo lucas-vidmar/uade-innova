@@ -3626,7 +3626,8 @@
 }
 
 .chat-cancel-btn,
-.chat-retry-btn {
+.chat-retry-btn,
+.chat-more-detail-btn {
     background: transparent;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-full);
@@ -3641,12 +3642,19 @@
 }
 
 .chat-cancel-btn:hover,
-.chat-retry-btn:hover {
+.chat-retry-btn:hover,
+.chat-more-detail-btn:hover {
     color: var(--color-primary);
     border-color: var(--color-primary);
 }
 
 .chat-retry-btn {
+    color: var(--color-primary);
+    border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
+}
+
+/* #479: «Más detalle» — pedido puntual de longitud, no un cambio de preferencia. */
+.chat-more-detail-btn {
     color: var(--color-primary);
     border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
 }

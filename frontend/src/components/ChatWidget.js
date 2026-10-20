@@ -291,6 +291,21 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
     `;
   };
 
+  // #479 (UJ-02 paso 6): «Más detalle» es un pedido de UNA consulta. Sólo se
+  // ofrece cuando la preferencia guardada es más breve que «Detallada» (si ya
+  // está en Detallada no hay nada que ampliar), cuando la respuesta se puede
+  // volver a generar (no es un fallo, no está en curso) y cuando no vino por un
+  // camino que no pasa por el modelo — una respuesta verificada por el docente
+  // o un término del glosario volverían idénticos.
+  const puedePedirMasDetalle = (msg, streaming = false) => {
+    if (streaming || !msg || msg.role !== 'assistant') return false;
+    if (msg.isError === true || msg.interrupted === true) return false;
+    if (msg.detailRequested === true) return false;
+    if (msg.verified === true || msg.glossary?.found === true) return false;
+    if (!String(msg.question || '').trim()) return false;
+    return (auth.getBotPreferences?.().length || 'detailed') !== 'detailed';
+  };
+
   const renderMessage = (msg) => {
     if (msg.role === 'user') {
       return `
@@ -377,6 +392,11 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
               ${msg.interrupted || msg.isError ? `
               <button class="chat-retry-btn" data-retry-message-id="${msg.id || ''}" title="Volver a hacer la misma pregunta">
                 ↻ Reintentar
+              </button>
+              ` : ''}
+              ${puedePedirMasDetalle(msg, isStreaming) ? `
+              <button class="chat-more-detail-btn" data-detail-message-id="${msg.id || ''}" title="Pedir una respuesta más desarrollada para esta consulta, sin cambiar tus preferencias" aria-label="Pedir más detalle para esta consulta">
+                ✦ Más detalle
               </button>
               ` : ''}
             </div>
@@ -474,6 +494,19 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
       });
     });
 
+    // #479 (UJ-02 paso 6): pedir más detalle para UNA consulta. Se reenvía la
+    // misma pregunta con `lengthOverride: 'detailed'`; ni `edu_bot_length` ni el
+    // perfil del servidor cambian, así que la próxima consulta vuelve a regirse
+    // por la preferencia guardada.
+    container.querySelectorAll('.chat-more-detail-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (isLoading) return;
+        const msg = messages.find(m => String(m.id) === String(btn.dataset.detailMessageId));
+        if (!msg || !String(msg.question || '').trim()) return;
+        sendMessage(msg.question, { regenerateMsgId: msg.id, lengthOverride: 'detailed' });
+      });
+    });
+
     // #406: cancelar la consulta en curso. Es la salida inmediata cuando el
     // asistente no responde, sin esperar el tope de demora.
     container.querySelector('#chat-cancel')?.addEventListener('click', () => cancelStream());
@@ -533,14 +566,16 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
     }, { force: true });
   };
 
-    const sendMessage = async (explicitQuestion) => {
+    const sendMessage = async (explicitQuestion, options = {}) => {
     const input = container.querySelector('#chat-input');
-    const question = String(explicitQuestion ?? input?.value ?? '').trim();
-    if (!question || isLoading || selectedClassIds.length === 0 || hasEnrollment === false) return;
+    const regenerateId = options.regenerateMsgId || null;
+    // #479 (UJ-02 paso 6): «Más detalle» pide una longitud mayor para UNA
+    // consulta. Viaja en la petición de ese turno (`lengthOverride`) y no toca
+    // `edu_bot_length` ni el perfil del servidor: la preferencia guardada sigue
+    // siendo la misma después del pedido.
+    const lengthOverride = options.lengthOverride || null;
 
-    const botPrefs = auth.getBotPreferences();
-
-    const conversationHistory = messages
+    const collectHistory = (list) => list
       .filter(msg => (msg.role === 'user' || msg.role === 'assistant') && typeof msg.content === 'string' && msg.content.trim().length > 0)
       .map(msg => {
         const turn = { role: msg.role, content: msg.content.trim() };
@@ -552,29 +587,60 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
       })
       .slice(-FOLLOW_UP_HISTORY_WINDOW_SIZE);
 
-    input.value = '';
-    // #401: el alcance viaja con el turno, no sólo con la petición — es lo que
-    // permite mostrar con qué clase se preguntó cada tramo y que el hilo
-    // guardado conserve su alcance al reabrirlo.
-    const turnClassIds = [...selectedClassIds];
-    messages.push({ role: 'user', content: question, classIds: turnClassIds });
+    // #479: regenerar una respuesta existente reenvía la misma pregunta, con el
+    // alcance con el que se hizo y el hilo anterior a ella (sin la respuesta que
+    // se está ampliando, para que el modelo no la repita tal cual).
+    const target = regenerateId ? messages.find(m => String(m.id) === String(regenerateId)) : null;
+    if (regenerateId && (!target || target.role !== 'assistant' || isLoading)) return;
+
+    const question = String((target?.question ?? explicitQuestion ?? input?.value) || '').trim();
+    const turnClassIds = target
+      ? (Array.isArray(target.classIds) && target.classIds.length > 0 ? [...target.classIds] : [...selectedClassIds])
+      : [...selectedClassIds];
+    if (!question || isLoading || turnClassIds.length === 0 || hasEnrollment === false) return;
+
+    const botPrefs = auth.getBotPreferences();
+
+    const conversationHistory = target
+      ? collectHistory(messages.slice(0, messages.indexOf(target)))
+      : collectHistory(messages);
+
+    let assistantMsg;
+    if (target) {
+      // La respuesta se regenera en su lugar: mismo turno, misma evidencia.
+      assistantMsg = target;
+      assistantMsg.content = TYPING_PLACEHOLDER_HTML;
+      assistantMsg.streaming = true;
+      assistantMsg.sources = [];
+      assistantMsg.verified = false;
+      assistantMsg.glossary = null;
+      assistantMsg.model = '';
+      assistantMsg.isError = false;
+      assistantMsg.interrupted = false;
+      assistantMsg.abstained = false;
+      assistantMsg.feedback = null;
+      if (lengthOverride) assistantMsg.detailRequested = true;
+    } else {
+      input.value = '';
+      // #401: el alcance viaja con el turno, no sólo con la petición — es lo que
+      // permite mostrar con qué clase se preguntó cada tramo y que el hilo
+      // guardado conserve su alcance al reabrirlo.
+      messages.push({ role: 'user', content: question, classIds: turnClassIds });
+      assistantMsg = {
+        id: 'ai-' + Date.now(),
+        role: 'assistant',
+        content: TYPING_PLACEHOLDER_HTML,
+        sources: [],
+        streaming: true,
+        // #378: se guarda la pregunta para poder reintentarla sin reescribirla.
+        question,
+        classIds: turnClassIds
+      };
+      messages.push(assistantMsg);
+    }
     isLoading = true;
     cancelRequested = false;
     delayNotice = false;
-    render();
-
-    // Placeholder para la respuesta de la IA
-    const assistantMsg = {
-      id: 'ai-' + Date.now(),
-      role: 'assistant',
-      content: TYPING_PLACEHOLDER_HTML,
-      sources: [],
-      streaming: true,
-      // #378: se guarda la pregunta para poder reintentarla sin reescribirla.
-      question,
-      classIds: turnClassIds
-    };
-    messages.push(assistantMsg);
     render();
 
     // #406: la consulta queda cancelable desde la pantalla y su demora se declara
@@ -602,6 +668,8 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
         botTone: botPrefs?.tone,
         botLength: botPrefs?.length,
         includeSources: botPrefs?.includeSources,
+        // #479: sólo para este turno; la preferencia guardada no se modifica.
+        lengthOverride,
         // #406: señal propia del turno, para poder cancelar y para cortar la demora.
         signal: controller.signal,
       }, (type, data) => {

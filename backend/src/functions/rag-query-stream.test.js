@@ -402,6 +402,141 @@ test('rag-query should omit preferences block when no bot prefs are sent', async
     assert.ok(capturedOptions?.max_tokens > 400, 'Should keep default max_tokens when not concise');
 });
 
+test('#479/UJ-02: «más detalle» aplica al turno que lo pide y no a la preferencia guardada', async () => {
+    openaiMocks.generateEmbedding.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.resetCalls();
+
+    const capturado = [];
+    openaiMocks.chatCompletion.mock.mockImplementation(async (messages, stream, options) => {
+        const systemContent = messages?.[0]?.content || '';
+        if (!stream && systemContent.includes('Reescribe la ultima pregunta del estudiante')) {
+            return { content: 'mas detalle?', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } };
+        }
+        if (!stream) {
+            capturado.push({ systemContent, options });
+            return { content: 'sync', usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 } };
+        }
+        return (async function* () {
+            yield { choices: [{ delta: { content: 'Ok' } }] };
+            yield { usage: { prompt_tokens: 4, completion_tokens: 3, total_tokens: 7 } };
+        })();
+    });
+
+    const pedir = (extra) => capturedHandler({
+        json: async () => ({
+            question: '¿Qué es el acoplamiento entre módulos?',
+            subjectId: 'materia1',
+            classIds: ['class1'],
+            stream: false,
+            // La preferencia guardada de la persona es «Concisa».
+            botTone: 'formal',
+            botLength: 'concise',
+            ...extra,
+        }),
+        user: { id: 'test-user' },
+        headers: { get: () => 'test-header' },
+    }, { log: mock.fn(), error: mock.fn() });
+
+    // 1. Consulta normal: rige la preferencia guardada.
+    const normal = await pedir({});
+    assert.strictEqual(normal.status, 200);
+    // 2. La misma consulta con el pedido puntual de más detalle.
+    const ampliada = await pedir({ lengthOverride: 'detailed' });
+    assert.strictEqual(ampliada.status, 200);
+    // 3. Otra consulta después del pedido puntual: la preferencia sigue mandando.
+    const despues = await pedir({});
+    assert.strictEqual(despues.status, 200);
+
+    const [turnoNormal, turnoAmpliado, turnoDespues] = capturado;
+
+    // Antes del arreglo el pedido no tenía efecto: el techo de 400 tokens y la
+    // instrucción de brevedad seguían aplicándose (rag-query.js:708 / :147-161).
+    assert.ok(turnoNormal.systemContent.includes('Respondé de forma concisa'), 'la consulta normal mantiene la instrucción concisa');
+    assert.strictEqual(turnoNormal.options?.max_tokens, 400, 'la consulta normal mantiene el techo de 400 tokens');
+
+    assert.ok(turnoAmpliado.systemContent.includes('Respondé de forma detallada'), 'el pedido puntual pide desarrollo');
+    assert.ok(!turnoAmpliado.systemContent.includes('Respondé de forma concisa'), 'el pedido puntual no arrastra la instrucción opuesta');
+    assert.ok(turnoAmpliado.systemContent.includes('<pedido_puntual>'), 'el pedido puntual se declara como pedido de un turno');
+    assert.ok(turnoAmpliado.options?.max_tokens > 400, 'el pedido puntual no queda recortado por el techo de «Concisa»');
+
+    // La preferencia guardada no cambió: el turno siguiente vuelve a ser conciso.
+    assert.ok(turnoDespues.systemContent.includes('Respondé de forma concisa'), 'la consulta posterior vuelve a la preferencia guardada');
+    assert.strictEqual(turnoDespues.options?.max_tokens, 400, 'la consulta posterior vuelve al techo de «Concisa»');
+    assert.ok(!turnoDespues.systemContent.includes('<pedido_puntual>'), 'el pedido puntual no sobrevive al turno que lo pidió');
+});
+
+test('#479/UJ-02: el pedido puntual de longitud no se persiste en ninguna capa', async () => {
+    storageMocks.saveJson.mock.resetCalls();
+    storageMocks.getTableClient.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.mockImplementation(async (messages, stream) => {
+        const systemContent = messages?.[0]?.content || '';
+        if (!stream && systemContent.includes('Reescribe la ultima pregunta del estudiante')) {
+            return { content: 'persistencia?', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } };
+        }
+        if (!stream) return { content: 'sync', usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 } };
+        return (async function* () {
+            yield { choices: [{ delta: { content: 'Ok' } }] };
+            yield { usage: { prompt_tokens: 4, completion_tokens: 3, total_tokens: 7 } };
+        })();
+    });
+
+    const response = await capturedHandler({
+        json: async () => ({
+            question: '¿Qué es el acoplamiento entre módulos?',
+            subjectId: 'materia1',
+            classIds: ['class1'],
+            stream: false,
+            botLength: 'concise',
+            lengthOverride: 'detailed',
+        }),
+        user: { id: 'test-user' },
+        headers: { get: () => 'test-header' },
+    }, { log: mock.fn(), error: mock.fn() });
+    assert.strictEqual(response.status, 200);
+
+    // Ninguna escritura de este turno lleva la preferencia ni el pedido: el
+    // override viaja por consulta, no por identidad (no hay endpoint de perfil
+    // en el camino de rag-query, y ningún guardado lo incluye).
+    const escrituras = storageMocks.saveJson.mock.calls.map(c => JSON.stringify(c.arguments)).join('\n');
+    assert.ok(!/lengthOverride/.test(escrituras), 'el pedido puntual no se escribe en almacenamiento');
+    assert.ok(!/botLength/.test(escrituras), 'la preferencia no se reescribe desde rag-query');
+});
+
+test('#479/UJ-02: un lengthOverride desconocido se ignora y no relaja el techo', async () => {
+    let capturedOptions = null;
+    let capturedSystemContent = '';
+    openaiMocks.chatCompletion.mock.mockImplementation(async (messages, stream, options) => {
+        const systemContent = messages?.[0]?.content || '';
+        if (!stream && systemContent.includes('Reescribe la ultima pregunta del estudiante')) {
+            return { content: 'invalido?', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } };
+        }
+        if (!stream) {
+            capturedSystemContent = systemContent;
+            capturedOptions = options;
+            return { content: 'sync', usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 } };
+        }
+        return (async function* () { yield { choices: [{ delta: { content: 'Ok' } }] }; })();
+    });
+
+    const response = await capturedHandler({
+        json: async () => ({
+            question: '¿Qué es el acoplamiento entre módulos?',
+            subjectId: 'materia1',
+            classIds: ['class1'],
+            stream: false,
+            botLength: 'concise',
+            lengthOverride: 'extenso',
+        }),
+        user: { id: 'test-user' },
+        headers: { get: () => 'test-header' },
+    }, { log: mock.fn(), error: mock.fn() });
+
+    assert.strictEqual(response.status, 200);
+    assert.ok(capturedSystemContent.includes('Respondé de forma concisa'), 'rige la preferencia guardada');
+    assert.strictEqual(capturedOptions?.max_tokens, 400, 'no se relaja el techo con un valor inválido');
+    assert.ok(!capturedSystemContent.includes('<pedido_puntual>'), 'no se declara un pedido que no se entendió');
+});
+
 test('#358/UJ-22: isAbstentionAnswer detecta el rechazo canónico, los rechazos del modelo y la respuesta vacía', () => {
     assert.strictEqual(isAbstentionAnswer('No encontre informacion sobre eso en los materiales seleccionados.'), true, 'rechazo canónico sin tildes');
     assert.strictEqual(isAbstentionAnswer('No encontré información sobre eso en el material.'), true, 'rechazo del modelo con tildes');
