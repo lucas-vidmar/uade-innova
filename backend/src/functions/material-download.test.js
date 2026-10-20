@@ -57,9 +57,16 @@ function makeRequest(query) {
 }
 
 test('material-download exige identidad: sin sesión no entrega nada', async () => {
-    authUtilsMocks.getAuthenticatedUser.mock.mockImplementationOnce(() => ({ userId: 'anonymous' }));
-    const res = await handlers['material-download'](makeRequest('subjectId=arq-software-2026&materialId=mat-1'), context);
-    assert.strictEqual(res.status, 401);
+    // El limitador de caudal (#458) también resuelve la identidad del pedido,
+    // así que el mock tiene que valer para toda la petición y no para una
+    // única llamada.
+    authUtilsMocks.getAuthenticatedUser.mock.mockImplementation(() => ({ userId: 'anonymous' }));
+    try {
+        const res = await handlers['material-download'](makeRequest('subjectId=arq-software-2026&materialId=mat-1'), context);
+        assert.strictEqual(res.status, 401);
+    } finally {
+        authUtilsMocks.getAuthenticatedUser.mock.mockImplementation(() => ({ userId: 'prof-002', role: 'Docente' }));
+    }
 });
 
 test('material-download exige matrícula activa en la materia', async () => {

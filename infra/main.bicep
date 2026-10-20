@@ -171,6 +171,8 @@ var anomalousUsageAlertName = 'alert-anomalous-token-usage-${take(resourceToken,
 var anomalousUsageActionGroupName = 'ag-token-usage-${take(resourceToken, 8)}'
 var ttftAnomalyAlertName = 'alert-ttft-anomaly-${take(resourceToken, 8)}'
 var ttftAnomalyActionGroupName = 'ag-ttft-anomaly-${take(resourceToken, 8)}'
+var caudalAlertName = 'alert-caudal-servicio-${take(resourceToken, 8)}'
+var caudalActionGroupName = 'ag-caudal-servicio-${take(resourceToken, 8)}'
 
 @description('Allowed CORS origins for the Functions App. Production is restricted to the Static Web App origin, injected from the azd environment variable AZURE_STATIC_WEB_APP_URI via main.parameters.json. Default keeps local dev origins working.')
 param allowedCorsOrigins array = ['http://localhost:4280', 'http://localhost:5173']
@@ -388,6 +390,23 @@ module ttftAnomalyAlert './modules/ttft-anomaly-alert.bicep' = if (!empty(notifi
     severity: ttftAnomalySeverity
     lookbackMinutes: 15
     minimumSamples: 3
+    tags: tags
+  }
+}
+
+// ─── Module: Caudal del servicio (#458) ──────────────────────────
+// Avisa al operador cuando el caudal cruza el umbral de lo reservado o cuando
+// las denegaciones se vuelven sostenidas. El backend emite `CaudalEvent`.
+module caudalAlert './modules/caudal-alert.bicep' = if (!empty(notificationEmail)) {
+  name: 'caudalAlert'
+  params: {
+    location: location
+    workspaceId: appInsights.outputs.logAnalyticsWorkspaceId
+    notificationEmail: notificationEmail
+    webhookUri: webhookUri
+    scheduledQueryRuleName: caudalAlertName
+    actionGroupName: caudalActionGroupName
+    denialSurgeThreshold: 50
     tags: tags
   }
 }

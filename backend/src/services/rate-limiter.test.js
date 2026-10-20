@@ -115,9 +115,14 @@ const { withRateLimit, resolveRateLimitKey, resolveRateLimitDecision } = await i
 
 test('BELOW_LIMIT — requests under the tier limit are allowed', () => {
     const limiter = createTestLimiter();
-    assert.deepEqual(limiter.check('uid:alu-1', 'chat'), { allowed: true });
-    assert.deepEqual(limiter.check('uid:alu-1', 'chat'), { allowed: true });
-    assert.deepEqual(limiter.check('uid:alu-1', 'chat'), { allowed: true });
+    // Desde #458 la decisión también informa caudal usado y tope: es lo que
+    // alimenta el aviso de umbral y las cabeceras de la respuesta.
+    const first = limiter.check('uid:alu-1', 'chat');
+    assert.equal(first.allowed, true);
+    assert.equal(first.used, 1);
+    assert.equal(first.limit, 3);
+    assert.equal(limiter.check('uid:alu-1', 'chat').allowed, true);
+    assert.equal(limiter.check('uid:alu-1', 'chat').allowed, true);
 });
 
 test('OVER_LIMIT — exceeding the tier limit returns allowed=false with retryAfterSec', () => {

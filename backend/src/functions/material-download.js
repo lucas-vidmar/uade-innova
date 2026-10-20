@@ -1,6 +1,7 @@
 import { app } from '@azure/functions';
 import { withAuth } from '../middleware/with-auth.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
+import { withRateLimit } from '../middleware/with-rate-limit.js';
 import { getMaterialState, getEnrollment } from '../services/state-store.js';
 import { saveJson } from '../services/storage.js';
 import { BlobSASPermissions, generateBlobSASQueryParameters, StorageSharedKeyCredential, SASProtocol } from '@azure/storage-blob';
@@ -29,7 +30,7 @@ app.http('material-download', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'material-download',
-    handler: withCorrelation(withAuth(async (request, context) => {
+    handler: withCorrelation(withRateLimit(withAuth(async (request, context) => {
         const log = createStructuredLogger('material-download', context);
 
         if (!validateFrontDoorId(request)) {
@@ -159,5 +160,5 @@ app.http('material-download', {
             log.error('Error al generar la descarga', { subjectId, materialId, error: err?.message });
             return jsonResponse(500, { error: 'Error al generar descarga', code: 'DOWNLOAD_FAILED' });
         }
-    })),
+    }))),
 });
