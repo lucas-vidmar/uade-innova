@@ -89,7 +89,9 @@ import {
 } from './prompts.api.js';
 import {
     generateQuiz, saveQuizResult, getQuizResult, getQuizAttempts,
-    getQuizWeakTopics, saveQuizWeakTopics, getQuizScope
+    getQuizWeakTopics, saveQuizWeakTopics, getQuizScope,
+    getGroupQuiz, createGroupQuiz, saveGroupQuizResponse,
+    getGroupQuizComparison, saveGroupQuizRecord
 } from './quiz.api.js';
 
 export const api = {
@@ -164,4 +166,7 @@ export const api = {
 
     generateQuiz, saveQuizResult, getQuizResult, getQuizAttempts,
     getQuizWeakTopics, saveQuizWeakTopics, getQuizScope,
+    // #445 (UJ-32): práctica compartida del grupo.
+    getGroupQuiz, createGroupQuiz, saveGroupQuizResponse,
+    getGroupQuizComparison, saveGroupQuizRecord,
 };

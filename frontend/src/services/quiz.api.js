@@ -148,3 +148,122 @@ export async function getQuizScope(subjectId) {
     }
     return res.json();
 }
+
+/* ── Práctica compartida del grupo (#445 / UJ-32) ──────────────────
+   Arriba de la práctica individual hay una práctica del grupo: un solo conjunto
+   emitido para las personas con matrícula activa de la materia, que cada una
+   responde por separado y que después se compara pregunta por pregunta. Estas
+   llamadas no tocan la práctica individual (otras rutas, otro estado). */
+
+function quizError(message, res, data) {
+    const err = new Error(message);
+    err.status = res.status;
+    const code = typeof data?.error === 'object' ? data.error?.code : data?.code;
+    if (code) err.code = code;
+    const category = data?.errorCategory || (typeof data?.error === 'object' ? data.error?.errorCategory : null);
+    if (category) err.errorCategory = category;
+    return err;
+}
+
+function groupScopeParams(subjectId, { scope = 'class', classId } = {}) {
+    const params = new URLSearchParams({ subjectId });
+    if (scope === 'unit') params.set('scope', 'unit');
+    else if (classId) params.set('classId', classId);
+    return params;
+}
+
+/**
+ * Estado de la práctica compartida de un alcance: cuántas personas forman el
+ * grupo, si ya hay una práctica abierta, qué respondió quien consulta y si el
+ * grupo ya asentó un resultado común. No genera nada.
+ */
+export async function getGroupQuiz({ subjectId, scope = 'class', classId } = {}) {
+    const params = groupScopeParams(subjectId, { scope, classId });
+    const res = await apiFetch(`${BASE_URL}/group-quiz?${params}`);
+    if (!res.ok) {
+        let data = null;
+        try { data = await res.json(); } catch {}
+        throw quizError(data?.error?.message || `Error ${res.status}: no se pudo leer la práctica del grupo`, res, data);
+    }
+    return res.json();
+}
+
+/**
+ * Abre la práctica compartida. Si ya hay una abierta para ese alcance la
+ * devuelve tal cual (`reused: true`): el conjunto es el mismo para todo el
+ * grupo y sólo la primera apertura gasta una generación.
+ */
+export async function createGroupQuiz({ subjectId, scope = 'class', classId, classIds, topics, subjectName, unitName, questionCount }) {
+    const payload = { subjectId, scope };
+    if (scope === 'unit') {
+        if (Array.isArray(classIds)) payload.classIds = classIds;
+        if (Array.isArray(topics) && topics.length) payload.topics = topics;
+        if (unitName) payload.unitName = unitName;
+    } else if (classId) {
+        payload.classId = classId;
+    }
+    if (subjectName) payload.subjectName = subjectName;
+    if (questionCount) payload.questionCount = questionCount;
+
+    const res = await apiFetch(`${BASE_URL}/group-quiz`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+        let data = null;
+        try { data = await res.json(); } catch {}
+        if (res.status === 429) {
+            const err = quizError('Límite de intentos alcanzado. Esperá unos segundos.', res, data);
+            err.errorCategory = 'RATE_LIMIT';
+            throw err;
+        }
+        throw quizError(data?.error?.message || `Error ${res.status}: no se pudo abrir la práctica del grupo`, res, data);
+    }
+    return res.json();
+}
+
+/** La respuesta individual a la práctica común. Se corrige en el servidor. */
+export async function saveGroupQuizResponse({ subjectId, groupQuizId, answers }) {
+    const res = await apiFetch(`${BASE_URL}/group-quiz-response`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subjectId, groupQuizId, answers }),
+    });
+    if (!res.ok) {
+        let data = null;
+        try { data = await res.json(); } catch {}
+        throw quizError(data?.error?.message || `Error ${res.status}: no se pudo guardar tu respuesta`, res, data);
+    }
+    return res.json();
+}
+
+/**
+ * La comparación del grupo. El servidor la cierra con 409
+ * `GROUP_QUIZ_NOT_ANSWERED` hasta que la persona respondió la suya.
+ */
+export async function getGroupQuizComparison({ subjectId, groupQuizId }) {
+    const params = new URLSearchParams({ subjectId, groupQuizId });
+    const res = await apiFetch(`${BASE_URL}/group-quiz-comparison?${params}`);
+    if (!res.ok) {
+        let data = null;
+        try { data = await res.json(); } catch {}
+        throw quizError(data?.error?.message || `Error ${res.status}: no se pudo cargar la comparación del grupo`, res, data);
+    }
+    return res.json();
+}
+
+/** Asienta el resultado común del grupo con los temas que no pudo acordar. */
+export async function saveGroupQuizRecord({ subjectId, groupQuizId }) {
+    const res = await apiFetch(`${BASE_URL}/group-quiz-record`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subjectId, groupQuizId }),
+    });
+    if (!res.ok) {
+        let data = null;
+        try { data = await res.json(); } catch {}
+        throw quizError(data?.error?.message || `Error ${res.status}: no se pudo asentar el resultado común`, res, data);
+    }
+    return res.json();
+}
