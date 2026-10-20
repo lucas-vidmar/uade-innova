@@ -343,6 +343,48 @@ export async function verifyDeletionRecord(recordId) {
     }
 }
 
+/**
+ * UJ-62 / #456: rastro de los pedidos de datos. Devuelve el payload del
+ * backend (`records`, `totals`, `alcance`, `retencion`, `trazado`, `origen`) o
+ * **null** si la lectura falló — la pantalla no debe mostrar "sin pedidos"
+ * cuando en realidad no pudo leer.
+ */
+export async function getAccessLog(filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.from) params.set('from', filters.from);
+    if (filters.to) params.set('to', filters.to);
+    if (filters.outcome) params.set('outcome', filters.outcome);
+    if (filters.correlationId) params.set('correlationId', filters.correlationId);
+    if (filters.actor) params.set('actor', filters.actor);
+    if (filters.limit) params.set('limit', String(filters.limit));
+    if (filters.cursor) params.set('cursor', filters.cursor);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    try {
+        const res = await fetchWithTimeout(`${BASE_URL}/audit/access-log${qs}`, { timeout: 8000 });
+        if (!res.ok) return null;
+        return await res.json();
+    } catch (err) {
+        console.error('[API] getAccessLog failed:', err);
+        return null;
+    }
+}
+
+/** Exportación del rastro para el auditor (`csv` o `json`). Null si falló. */
+export async function getAccessLogExport(filters = {}, format = 'csv') {
+    const params = new URLSearchParams({ format });
+    for (const key of ['from', 'to', 'outcome', 'correlationId', 'actor']) {
+        if (filters[key]) params.set(key, filters[key]);
+    }
+    try {
+        const res = await fetchWithTimeout(`${BASE_URL}/audit/access-log/export?${params.toString()}`, { timeout: 15000 });
+        if (!res.ok) return null;
+        return await res.blob();
+    } catch (err) {
+        console.error('[API] getAccessLogExport failed:', err);
+        return null;
+    }
+}
+
 export async function getSubjectWeights(subjectId) {
     if (!subjectId) return { data: { notes: 1.35, bibliography: 1.1, transcript: 1.0, presentation: 0.95 }, defaults: true, readFailed: false };
     try {

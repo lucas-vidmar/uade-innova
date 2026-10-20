@@ -72,3 +72,4 @@ import './functions/cors-preflight.js';
 import './functions/class-views-api.js';
 import './functions/quiz-api.js';
 import './functions/access-review-api.js';
+import './functions/access-audit-api.js';

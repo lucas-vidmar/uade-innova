@@ -92,6 +92,34 @@ export async function renderDirectorCompliance(container) {
       </div>
 
       <div style="margin-top:var(--space-6);background:var(--color-surface-1);border-radius:var(--radius-md);border:1px solid var(--color-border);overflow:hidden">
+        <div style="padding:var(--space-4);border-bottom:1px solid var(--color-border);display:flex;justify-content:space-between;align-items:flex-start;gap:var(--space-4);flex-wrap:wrap">
+          <div>
+            <h3 style="margin:0;color:var(--color-text-primary);font-size:1.0625rem">Rastro de pedidos de datos</h3>
+            <p style="margin:var(--space-1) 0 0;color:var(--color-text-secondary);font-size:0.8125rem">
+              Un asiento por pedido: qui&eacute;n lo hizo, qu&eacute; pidi&oacute;, cu&aacute;ndo, desde d&oacute;nde y si se entreg&oacute; o se deneg&oacute;.
+              El contenido del pedido no se copia y el origen se declara cuando la plataforma no lo informa.
+            </p>
+          </div>
+          <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap">
+            <select id="audit-outcome" class="form-select" style="font-size:0.8125rem;padding:4px 8px">
+              <option value="">Todos</option>
+              <option value="delivered">Entregados</option>
+              <option value="denied">Denegados</option>
+              <option value="error">Con error</option>
+            </select>
+            <input id="audit-correlation" class="form-input" placeholder="correlaci&oacute;n"
+              style="font-size:0.8125rem;padding:4px 8px;width:190px" />
+            <button class="btn btn-secondary" id="btn-audit-search" style="font-size:0.8125rem">Buscar</button>
+            <button class="btn btn-secondary" id="btn-audit-csv" style="font-size:0.8125rem">&#x2193; Entregados y denegados (CSV)</button>
+            <button class="btn btn-secondary" id="btn-audit-json" style="font-size:0.8125rem">&#x2193; JSON</button>
+          </div>
+        </div>
+        <div id="access-log-body" style="padding:var(--space-4);color:var(--color-text-secondary);font-size:0.875rem">
+          Cargando rastro de pedidos...
+        </div>
+      </div>
+
+      <div style="margin-top:var(--space-6);background:var(--color-surface-1);border-radius:var(--radius-md);border:1px solid var(--color-border);overflow:hidden">
         <div style="padding:var(--space-4);border-bottom:1px solid var(--color-border)">
           <h3 style="margin:0;color:var(--color-text-primary);font-size:1.0625rem">Constancias de borrado de material</h3>
           <p style="margin:var(--space-1) 0 0;color:var(--color-text-secondary);font-size:0.8125rem">
@@ -136,6 +164,8 @@ export async function renderDirectorCompliance(container) {
   });
 
   cargarConstanciasDeBorrado();
+  cargarRastroDeAccesos();
+  wireRastroDeAccesos();
 
   document.getElementById('btn-export-json')?.addEventListener('click', async () => {
     const btn = document.getElementById('btn-export-json');
@@ -275,5 +305,143 @@ async function cargarConstanciasDeBorrado() {
           </div>`;
       }
     });
+  });
+}
+
+// ── Rastro de pedidos de datos (UJ-62 pasos 5, 7, 8 y 9 / #456) ────────────
+// La pantalla no inventa nada: si la lectura falla lo dice ("no pude leer" no
+// es "no hubo pedidos"), y si el origen no está disponible lo muestra como
+// "no disponible" en vez de dejar la celda vacía.
+
+const ACCESS_OUTCOME_STYLE = {
+  delivered: 'background:rgba(52,211,153,0.15);color:rgb(52,211,153)',
+  denied: 'background:rgba(239,68,68,0.15);color:rgb(239,68,68)',
+  error: 'background:rgba(148,163,184,0.2);color:rgb(148,163,184)',
+};
+
+const ACCESS_OUTCOME_LABEL = {
+  delivered: 'Entregado',
+  denied: 'Denegado',
+  error: 'Error',
+};
+
+function filtrosRastro() {
+  const outcome = document.getElementById('audit-outcome')?.value || '';
+  const correlationId = document.getElementById('audit-correlation')?.value?.trim() || '';
+  const filtros = {};
+  if (outcome) filtros.outcome = outcome;
+  if (correlationId) filtros.correlationId = correlationId;
+  return filtros;
+}
+
+async function cargarRastroDeAccesos() {
+  const body = document.getElementById('access-log-body');
+  if (!body) return;
+
+  const data = await api.getAccessLog({ ...filtrosRastro(), limit: 25 });
+  if (!data) {
+    body.innerHTML = `
+      <p style="margin:0;color:var(--color-danger,#ef4444)">
+        No se pudo leer el rastro de pedidos. Esto <strong>no</strong> significa que no haya pedidos registrados.
+      </p>`;
+    return;
+  }
+
+  const records = data.records || [];
+  const totals = data.totals || {};
+  const trazado = data.trazado || {};
+  const retencion = data.retencion || {};
+  const origen = data.origen || {};
+
+  const aviso = [];
+  if (trazado.activo === false) {
+    aviso.push('El rastro está desactivado en este entorno: un listado vacío no prueba que no hubo pedidos.');
+  }
+  if (trazado.almacenConfigurado === false) {
+    aviso.push('El almacén del rastro no está configurado: los pedidos no se están asentando.');
+  }
+  if (origen.disponible === false && records.length > 0) {
+    aviso.push(origen.nota || 'La plataforma no informó el origen de estos pedidos.');
+  }
+
+  const resumen = `
+    <div style="margin-bottom:var(--space-3);display:flex;gap:var(--space-4);flex-wrap:wrap;font-size:0.8125rem">
+      <span><strong style="color:rgb(52,211,153)">${esc(totals.entregados ?? 0)}</strong> entregados</span>
+      <span><strong style="color:rgb(239,68,68)">${esc(totals.denegados ?? 0)}</strong> denegados</span>
+      <span><strong style="color:var(--color-text-secondary)">${esc(totals.errores ?? 0)}</strong> con error</span>
+      <span style="color:var(--color-text-secondary)">ventana ${esc(fechaCorta(data.window?.from))} — ${esc(fechaCorta(data.window?.to))}</span>
+    </div>`;
+
+  const notaRetencion = `
+    <div style="margin-top:var(--space-3);color:var(--color-text-secondary);font-size:0.75rem">
+      Retención declarada del rastro: ${esc(retencion.days ?? 'N/A')} días
+      ${retencion.enforced === false ? '· <span style="color:rgb(251,191,36)">declarada, todavía no aplicada por la política</span>' : ''}
+      · ${esc(data.alcance || '')}
+    </div>`;
+
+  if (records.length === 0) {
+    body.innerHTML = `${resumen}
+      <p style="margin:0">Todavía no hay pedidos registrados en esta ventana con estos filtros.</p>
+      ${aviso.map((a) => `<p style="margin:var(--space-1) 0 0;color:rgb(251,191,36);font-size:0.8125rem">${esc(a)}</p>`).join('')}
+      ${notaRetencion}`;
+    return;
+  }
+
+  const th = (label) => `<th style="padding:var(--space-3) var(--space-4);text-align:left;color:var(--color-text-secondary);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.05em">${label}</th>`;
+  const td = (content) => `<td style="padding:var(--space-3) var(--space-4);color:var(--color-text-primary);font-size:0.8125rem">${content}</td>`;
+
+  body.innerHTML = `
+    ${resumen}
+    <table style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr style="border-bottom:2px solid var(--color-border)">
+          ${th('Fecha')}${th('Resultado')}${th('Qué se pidió')}${th('Quién')}${th('Desde dónde')}${th('Estado')}${th('Correlación')}
+        </tr>
+      </thead>
+      <tbody>
+        ${records.map((r) => `
+          <tr style="border-bottom:1px solid var(--color-border)">
+            ${td(fechaCorta(r.at))}
+            ${td(`<span style="display:inline-block;padding:2px 8px;border-radius:var(--radius-sm);font-size:0.75rem;font-weight:600;${ACCESS_OUTCOME_STYLE[r.outcome] || ''}">${esc(ACCESS_OUTCOME_LABEL[r.outcome] || r.outcome)}</span>`)}
+            ${td(`${esc(r.request?.method || '')} <code>${esc(r.request?.path || 'N/A')}</code><br><span style="color:var(--color-text-secondary);font-size:0.75rem">${esc(r.surface || 'superficie no declarada')}</span>`)}
+            ${td(`${esc(r.actor?.id || 'anonymous')}<br><span style="color:var(--color-text-secondary);font-size:0.75rem">${esc(r.actor?.role || (r.actor?.identified ? '' : 'sin identidad verificada'))}</span>`)}
+            ${td(r.origin?.available
+              ? `<code style="font-size:0.75rem">${esc(r.origin.ip)}</code>`
+              : '<span style="color:var(--color-text-secondary);font-size:0.75rem">no disponible</span>')}
+            ${td(`${esc(r.status ?? 'N/A')}${r.denial?.code ? `<br><span style="color:var(--color-text-secondary);font-size:0.75rem">${esc(r.denial.code)}</span>` : ''}`)}
+            ${td(`<code style="font-size:0.75rem;color:var(--color-text-secondary)">${esc(r.correlationId || 'N/A')}</code>`)}
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    ${aviso.map((a) => `<p style="margin:var(--space-2) 0 0;color:rgb(251,191,36);font-size:0.8125rem">${esc(a)}</p>`).join('')}
+    ${notaRetencion}`;
+}
+
+function wireRastroDeAccesos() {
+  document.getElementById('btn-audit-search')?.addEventListener('click', () => { cargarRastroDeAccesos(); });
+
+  document.getElementById('btn-audit-csv')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-audit-csv');
+    if (btn) btn.disabled = true;
+    try {
+      const blob = await api.getAccessLogExport(filtrosRastro(), 'csv');
+      if (blob) downloadBlob(blob, `rastro-accesos-${new Date().toISOString().slice(0, 10)}.csv`);
+      else console.error('[Audit] La exportación del rastro no está disponible');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+
+  document.getElementById('btn-audit-json')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-audit-json');
+    if (btn) btn.disabled = true;
+    try {
+      const blob = await api.getAccessLogExport(filtrosRastro(), 'json');
+      if (blob) downloadBlob(blob, `rastro-accesos-${new Date().toISOString().slice(0, 10)}.json`);
+      else console.error('[Audit] La exportación del rastro no está disponible');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   });
 }

@@ -33,6 +33,10 @@ export const CONFIG = {
     sessions: process.env.AZURE_TABLE_SESSIONS || 'Sessions',
     identityAudit: process.env.AZURE_TABLE_IDENTITY_AUDIT || 'IdentityAudit',
     accessReview: process.env.AZURE_TABLE_ACCESS_REVIEW || 'AccessReview',
+    // #456: rastro append-only de los pedidos de datos (quién, qué, cuándo,
+    // desde dónde, entregado/denegado). Se crea sola al primer asiento, como
+    // IdentityAudit y AccessReview.
+    accessAudit: process.env.AZURE_TABLE_ACCESS_AUDIT || 'AccessAudit',
   },
 
   containers: {
