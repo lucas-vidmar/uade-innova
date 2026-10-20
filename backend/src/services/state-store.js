@@ -1182,6 +1182,12 @@ function toQuizEntity(quiz) {
     rowKey: quiz.quizId,
     userId: quiz.userId,
     classId: quiz.classId,
+    // UJ-30: el alcance con el que se emitió el cuestionario. `class` es la
+    // práctica de una clase; `unit`, la que reúne los temas de varias.
+    scope: quiz.scope,
+    classIds: Array.isArray(quiz.classIds) && quiz.classIds.length
+      ? JSON.stringify(quiz.classIds)
+      : undefined,
     questions: JSON.stringify(quiz.questions || []),
     createdAt: quiz.createdAt || new Date().toISOString(),
     expiresAt: quiz.expiresAt,
@@ -1190,12 +1196,16 @@ function toQuizEntity(quiz) {
 
 function fromQuizEntity(entity) {
   let questions = [];
+  let classIds = [];
   try { questions = JSON.parse(entity.questions || '[]'); } catch { questions = []; }
+  try { classIds = JSON.parse(entity.classIds || '[]'); } catch { classIds = []; }
   return {
     subjectId: entity.partitionKey,
     quizId: entity.rowKey,
     userId: entity.userId,
     classId: entity.classId,
+    scope: entity.scope || 'class',
+    classIds: Array.isArray(classIds) ? classIds : [],
     questions,
     createdAt: entity.createdAt,
     expiresAt: entity.expiresAt,

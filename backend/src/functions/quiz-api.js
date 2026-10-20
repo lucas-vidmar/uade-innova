@@ -1,8 +1,15 @@
 /**
  * quiz-api.js — Autoevaluación
+ * GET  /api/quiz-scope    : anuncia el alcance (temas y materiales) de la práctica de la unidad
  * POST /api/generate-quiz : genera 5-10 preguntas MCQ desde resumen + materiales de la clase
+ *                           o de la unidad (alcance completo o subconjunto de sus clases)
  * POST /api/quiz-result   : persiste el resultado de un intento por alumno/clase
  * GET  /api/quiz-result   : devuelve el último resultado del alumno para una clase
+ *
+ * UJ-30 (pasos 1 y 2): la práctica es de la UNIDAD. El pedido lleva un alcance
+ * (`scope: 'class'` —lo de siempre— o `scope: 'unit'`), el sistema anuncia los
+ * temas que abarca antes de empezar y permite acotarlos a un subconjunto de las
+ * clases publicadas. La práctica por clase sigue funcionando igual.
  */
 import { app } from '@azure/functions';
 import { withAuth } from '../middleware/with-auth.js';
@@ -11,10 +18,11 @@ import { chatCompletion, getChatModelName, getModelDisplayName, resolveModelForT
 import { loadJson } from '../services/storage.js';
 import { getActivePrompt } from '../services/prompts.js';
 import {
-    getEnrollment, getConsentStatus, listMaterialsByClass,
+    getEnrollment, getConsentStatus, listMaterialsByClass, listClassesBySubject,
     upsertQuizResult, getQuizResult, saveQuiz, getQuiz, appendQuizAttempt, listQuizAttempts,
     upsertQuizWeakTopics, getQuizWeakTopics
 } from '../services/state-store.js';
+import { isPublished, resolveClassPublicationState } from '../services/publication-state.js';
 import { parseClientPrincipal, validateFrontDoorId, getAuthenticatedUser } from '../services/auth-utils.js';
 import { normalizeCategorizedError, ErrorCategory } from '../services/error-categories.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
@@ -28,6 +36,21 @@ const DEFAULT_QUESTION_COUNT = 5;
 const MIN_QUESTION_COUNT = 5;
 const MAX_QUESTION_COUNT = 10;
 const PASS_THRESHOLD = 60;
+// UJ-30 (pasos 1 y 2): el alcance del cuestionario. `class` es la práctica de
+// siempre (una clase); `unit` reúne los temas de todas las clases publicadas de
+// la unidad o el subconjunto que la persona elija antes de empezar.
+const SCOPE_CLASS = 'class';
+const SCOPE_UNIT = 'unit';
+// Clave de persistencia del intento de unidad: no es una clase, así que el
+// resultado y el historial de la práctica de la unidad no se mezclan con los de
+// ninguna clase (que siguen guardándose con su propio classId).
+const UNIT_SCOPE_KEY = '__unit__';
+const MAX_UNIT_CLASSES = 20;
+const MAX_REQUESTED_TOPICS = 20;
+// Presupuesto de contexto de la unidad. Sin tope, seis clases con resumen y
+// materiales desbordan la ventana del modelo y encarecen cada generación.
+const UNIT_CONTEXT_BUDGET = 24000;
+const UNIT_SUMMARY_SHARE = 0.4;
 // El cuestionario emitido se conserva para poder corregir el intento en el
 // servidor. Pasada la ventana, el intento se rechaza con QUIZ_EXPIRED y la
 // persona genera uno nuevo.
@@ -84,8 +107,11 @@ function gradeAttempt(quiz, submittedAnswers) {
             topic: q.topic || '',
             // UJ-30 (paso 6): la parte del material de la que salió la pregunta
             // viaja con el fallo para que el resultado pueda enlazarla. Es un
-            // rótulo del bloque de contexto, no la respuesta correcta.
+            // rótulo del bloque de contexto, no la respuesta correcta. Con
+            // alcance de unidad viaja también la clase del bloque, para que el
+            // repaso vuelva al encuentro del tema que falló.
             source: q.source || '',
+            classId: q.classId || '',
         };
     });
     const totalQuestions = quiz.questions.length;
@@ -110,6 +136,77 @@ function sanitizeText(text, maxLen) {
     return String(text || '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ' ').trim().substring(0, maxLen);
 }
 
+// ─── Alcance de la práctica (UJ-30, pasos 1 y 2) ────────────────────
+// El alcance se declara en el pedido, no se deduce: `class` es la práctica de
+// una clase (contrato heredado) y `unit` la de la unidad completa o el
+// subconjunto de clases que la persona eligió. Cualquier valor desconocido cae
+// en `class` para no cambiar el comportamiento de quien no manda alcance.
+
+function normalizeScope(raw) {
+    return String(raw || '').trim().toLowerCase() === SCOPE_UNIT ? SCOPE_UNIT : SCOPE_CLASS;
+}
+
+function normalizeClassIdList(raw) {
+    if (!Array.isArray(raw)) return [];
+    const ids = [];
+    for (const value of raw) {
+        const id = sanitizeText(value, 120);
+        if (id && !ids.includes(id)) ids.push(id);
+        if (ids.length >= MAX_UNIT_CLASSES) break;
+    }
+    return ids;
+}
+
+/**
+ * Temas que la persona marcó como flojos en la práctica de cada clase. Es la
+ * única fuente honesta de «los temas que más le preocupan»: no se inventan ni se
+ * deducen del material, los declaró ella misma (UJ-30, paso 7).
+ */
+function normalizeTopicList(raw) {
+    if (!Array.isArray(raw)) return [];
+    const topics = [];
+    for (const value of raw) {
+        const topic = sanitizeText(value, 120);
+        if (topic && !topics.includes(topic)) topics.push(topic);
+        if (topics.length >= MAX_REQUESTED_TOPICS) break;
+    }
+    return topics;
+}
+
+const TEXTUAL_MATERIAL_TYPES = ['transcript', 'presentation', 'notes', 'bibliography'];
+
+function isTextualMaterial(material) {
+    return Boolean(material) && TEXTUAL_MATERIAL_TYPES.includes(material.type);
+}
+
+function publishedClassesOf(classes) {
+    return (Array.isArray(classes) ? classes : [])
+        .filter((c) => c && c.id && isPublished(resolveClassPublicationState(c)))
+        .slice(0, MAX_UNIT_CLASSES);
+}
+
+function classLabelOf(classInfo) {
+    return sanitizeText(classInfo?.title, 160) || sanitizeText(classInfo?.id, 120);
+}
+
+/**
+ * Los temas de una clase son los que la cátedra declaró. Cuando la clase no
+ * declara ninguno, el tema es la clase misma (su título): el anuncio se queda
+ * con lo que hay, sin inventar etiquetas.
+ */
+function classTopicsOf(classInfo) {
+    const declared = Array.isArray(classInfo?.topics)
+        ? classInfo.topics.map((t) => sanitizeText(t, 120)).filter(Boolean)
+        : [];
+    if (declared.length) return { topics: declared, declared: true };
+    const fallback = classLabelOf(classInfo);
+    return { topics: fallback ? [fallback] : [], declared: false };
+}
+
+function scopeKeyOf(scope, classId) {
+    return scope === SCOPE_UNIT ? UNIT_SCOPE_KEY : classId;
+}
+
 function extractQuizJson(content) {
     if (!content) return null;
     let text = String(content).trim();
@@ -129,8 +226,10 @@ function normalizeQuestions(rawList, sources = []) {
     const list = Array.isArray(rawList) ? rawList : [];
     // UJ-30: sólo se acepta como `source` un rótulo que exista de verdad entre
     // los bloques de contexto. Si el modelo inventa un material, la pregunta
-    // queda sin respaldo en vez de mostrar una cita falsa.
-    const labels = new Map(sources.map((s) => [String(s.label || '').trim().toLowerCase(), s.label]));
+    // queda sin respaldo en vez de mostrar una cita falsa. Con alcance de unidad
+    // el bloque además identifica su clase, para que el fallo pueda volver al
+    // encuentro del tema que corresponde y no a la unidad entera.
+    const labels = new Map(sources.map((s) => [String(s.label || '').trim().toLowerCase(), s]));
     const questions = [];
     for (const raw of list) {
         if (!raw || typeof raw !== 'object') continue;
@@ -142,6 +241,7 @@ function normalizeQuestions(rawList, sources = []) {
         let correctIndex = Number.isInteger(raw.correctIndex) ? raw.correctIndex : options.indexOf(raw.correctAnswer);
         if (correctIndex < 0 || correctIndex >= options.length) correctIndex = 0;
         const declaredSource = sanitizeText(raw.source || raw.sourceLabel || '', 200);
+        const matched = labels.get(declaredSource.toLowerCase()) || null;
         questions.push({
             id: uuidv4(),
             question,
@@ -149,7 +249,8 @@ function normalizeQuestions(rawList, sources = []) {
             correctIndex,
             explanation: sanitizeText(raw.explanation, 500),
             topic: sanitizeText(raw.topic || raw.topicLabel, 200),
-            source: labels.get(declaredSource.toLowerCase()) || '',
+            source: matched?.label || '',
+            classId: matched?.classId || '',
         });
     }
     return questions;
@@ -205,6 +306,129 @@ async function loadClassContext(subjectId, classId, context) {
     return { text: parts.join('\n\n'), sources };
 }
 
+/**
+ * Arma el contexto de la unidad: resumen y materiales de cada clase elegida,
+ * con el presupuesto repartido entre todas. Cada bloque se rotula con la clase a
+ * la que pertenece, así el modelo no mezcla temas y la cita de cada pregunta
+ * sigue siendo verificable contra un material concreto.
+ */
+async function loadUnitContext(subjectId, classes, context) {
+    const parts = [];
+    const sources = [];
+    const perClassBudget = Math.max(800, Math.floor(UNIT_CONTEXT_BUDGET / Math.max(classes.length, 1)));
+    const summaryBudget = Math.max(400, Math.floor(perClassBudget * UNIT_SUMMARY_SHARE));
+    const materialBudget = Math.max(400, perClassBudget - summaryBudget);
+    let loadedSummaries = 0;
+    let loadedMaterials = 0;
+
+    for (const classInfo of classes) {
+        const classId = classInfo.id;
+        const classLabel = classLabelOf(classInfo);
+
+        const summaryData = await loadJson(CONTAINER_SUMMARIES, `${classId}.json`).catch(() => null);
+        const summaryText = typeof summaryData === 'string'
+            ? summaryData
+            : (summaryData?.summary?.content || summaryData?.summary || '');
+        if (summaryText) {
+            const label = `Resumen — ${classLabel}`;
+            parts.push(`[${label}]\n${sanitizeText(summaryText, summaryBudget)}`);
+            sources.push({ id: `summary:${classId}`, label, kind: 'summary', classId, classTitle: classLabel });
+            loadedSummaries++;
+        }
+
+        const materials = await listMaterialsByClass(subjectId, classId).catch(() => []);
+        const textMaterials = materials.filter(isTextualMaterial);
+        // El presupuesto de materiales de la clase se reparte entre los que
+        // tengan texto extraído: el primero no se lleva todo el espacio.
+        const perMaterial = Math.max(300, Math.floor(materialBudget / Math.max(textMaterials.length, 1)));
+        for (const mat of textMaterials) {
+            const processed = await loadJson(CONTAINER_PROCESSED, `${mat.materialId}.json`).catch(() => null);
+            const t = processed?.extractedText || processed?.text || '';
+            if (!t) continue;
+            const label = `${classLabel} · ${materialSourceLabel(mat)}`;
+            parts.push(`[${label}]\n${sanitizeText(t, perMaterial)}`);
+            sources.push({
+                id: `material:${mat.materialId}`,
+                label,
+                kind: mat.type,
+                filename: mat.filename,
+                classId,
+                classTitle: classLabel,
+            });
+            loadedMaterials++;
+        }
+    }
+    context.log(`[Quiz] Unit context loaded: classes=${classes.length}, summaries=${loadedSummaries}, materials=${loadedMaterials}, chars=${parts.join('\n\n').length}`);
+    return { text: parts.join('\n\n'), sources };
+}
+
+/**
+ * Anuncio del alcance de la práctica de la unidad (UJ-30, paso 1). No genera
+ * nada: lo que anuncia es lo que hay publicado —clases, sus temas declarados y
+ * los materiales procesados—, más los temas que la persona ya marcó como flojos
+ * en cada clase. Con eso el panel puede decir qué abarca antes de empezar y
+ * ofrecer el acotamiento sin gastar una generación.
+ */
+async function buildUnitAnnouncement(subjectId, userId) {
+    const published = publishedClassesOf(await listClassesBySubject(subjectId).catch(() => []));
+    const classes = [];
+    const topics = [];
+    let materialCount = 0;
+
+    for (const classInfo of published) {
+        const materials = await listMaterialsByClass(subjectId, classInfo.id).catch(() => []);
+        const usable = materials.filter(isTextualMaterial);
+        const { topics: classTopics, declared } = classTopicsOf(classInfo);
+        const markedRecord = await getQuizWeakTopics(subjectId, userId, classInfo.id).catch(() => null);
+        const markedTopics = normalizeTopicList(markedRecord?.topics || []);
+        materialCount += usable.length;
+
+        for (const topic of classTopics) {
+            topics.push({
+                topic,
+                classId: classInfo.id,
+                classTitle: classLabelOf(classInfo),
+                declared,
+                markedWeak: markedTopics.includes(topic),
+            });
+        }
+
+        classes.push({
+            classId: classInfo.id,
+            title: classLabelOf(classInfo),
+            date: classInfo.date || null,
+            topics: classTopics,
+            topicsDeclared: declared,
+            markedTopics,
+            materialCount: usable.length,
+            materials: usable.map((m) => ({ type: m.type, filename: m.filename, label: materialSourceLabel(m) })),
+            hasMaterialText: usable.length > 0,
+        });
+    }
+
+    return {
+        subjectId,
+        scope: {
+            kind: SCOPE_UNIT,
+            classCount: classes.length,
+            classIds: classes.map((c) => c.classId),
+            topicCount: topics.length,
+            materialCount,
+        },
+        classes,
+        topics,
+        // Frase canónica del anuncio: el panel la muestra tal cual y la
+        // evidencia la verifica contra los datos, sin reescribirla.
+        headline: classes.length
+            ? `Esta práctica abarca los ${topics.length} temas de ${classes.length} clase${classes.length === 1 ? '' : 's'} publicada${classes.length === 1 ? '' : 's'} de la unidad.`
+            : 'La unidad todavía no tiene clases publicadas: no hay temas para practicar.',
+        coverage: { classCount: classes.length, topicCount: topics.length, materialCount },
+        generatedAt: new Date().toISOString(),
+    };
+}
+
+
+
 const MAX_EXCLUDED_QUESTIONS = 60;
 
 /**
@@ -254,15 +478,7 @@ function previousTopicsOf(attempts) {
     return seen;
 }
 
-async function buildQuizPrompt(subjectName, className, contextText, questionCount, previousQuestions = [], previousTopics = [], sources = []) {
-    const promptConfig = await getActivePrompt('quiz').catch(() => null);
-    const sourceList = sources.map((s, i) => `${i + 1}. ${s.label}`).join('\n');
-    const sourceRule = sources.length
-        ? `- Cada elemento tiene además un campo "source": el rótulo EXACTO de uno de los bloques de contexto listados abajo, tal cual está escrito (sin agregar ni quitar texto), que respalda la respuesta correcta de esa pregunta.
-- Bloques de contexto disponibles (usá el rótulo tal cual):
-${sourceList}`
-        : '';
-    const baseSystem = promptConfig?.systemPrompt || `Sos un docente experto en crear cuestionarios de autoevaluación para estudiantes universitarios.
+const CLASS_SYSTEM_PROMPT = (questionCount) => `Sos un docente experto en crear cuestionarios de autoevaluación para estudiantes universitarios.
 Generás exactamente ${questionCount} preguntas de opción múltiple (4 opciones cada una) sobre el material de clase provisto.
 Cada pregunta debe verificar comprensión real del contenido, no datos triviales.
 
@@ -272,21 +488,76 @@ Requerimientos del JSON de salida:
   { "question": "texto de la pregunta", "options": ["opción A", "opción B", "opción C", "opción D"], "correctIndex": <índice de la opción correcta (0-3)>, "explanation": "explicación breve de por qué es correcta", "topic": "tema o concepto que evalúa" }
 - Deben ser ${questionCount} preguntas exactas.
 - Sin preguntas repetidas ni demasiado parecidas entre sí.`;
+
+// UJ-30 (paso 1): con alcance de unidad el cuestionario no es «de una clase»:
+// cubre los temas de todas las clases incluidas, repartidas entre ellas.
+const UNIT_SYSTEM_PROMPT = (questionCount, topicLabels) => `Sos un docente experto en crear cuestionarios de autoevaluación para estudiantes universitarios.
+Generás exactamente ${questionCount} preguntas de opción múltiple (4 opciones cada una) que cubren la UNIDAD completa, no una clase suelta: el material provisto reúne los temas de varias clases.
+Cada pregunta debe verificar comprensión real del contenido, no datos triviales.
+
+Requerimientos del JSON de salida:
+- Devolvé EXCLUSIVAMENTE un array JSON válido, sin texto adicional, sin marcas de código.
+- Cada elemento tiene la forma:
+  { "question": "texto de la pregunta", "options": ["opción A", "opción B", "opción C", "opción D"], "correctIndex": <índice de la opción correcta (0-3)>, "explanation": "explicación breve de por qué es correcta", "topic": "tema de la unidad que evalúa", "source": "rótulo del bloque de contexto que respalda la respuesta" }
+- Deben ser ${questionCount} preguntas exactas.
+- Repartí las preguntas entre los temas incluidos (${topicLabels.length} en total), sin que todas salgan del mismo tema.
+- El campo "topic" debe nombrar el tema tal como figura en la lista de temas incluidos.
+- Sin preguntas repetidas ni demasiado parecidas entre sí.
+- Siempre devolvés las ${questionCount} preguntas: si un tema tiene poco material, cubrí los demás en vez de entregar menos.`;
+
+async function buildQuizPrompt({
+    subjectName,
+    className,
+    contextText,
+    questionCount,
+    previousQuestions = [],
+    previousTopics = [],
+    sources = [],
+    unit = null,
+}) {
+    const promptConfig = await getActivePrompt('quiz').catch(() => null);
+    const sourceList = sources.map((s, i) => `${i + 1}. ${s.label}`).join('\n');
+    const sourceRule = sources.length
+        ? `- Cada elemento tiene además un campo "source": el rótulo EXACTO de uno de los bloques de contexto listados abajo, tal cual está escrito (sin agregar ni quitar texto), que respalda la respuesta correcta de esa pregunta.
+- Bloques de contexto disponibles (usá el rótulo tal cual):
+${sourceList}`
+        : '';
+    const topicLabels = unit ? unit.topicLabels : [];
+    const baseSystem = promptConfig?.systemPrompt
+        || (unit ? UNIT_SYSTEM_PROMPT(questionCount, topicLabels) : CLASS_SYSTEM_PROMPT(questionCount));
     // UJ-30 (paso 6): el respaldo de cada pregunta se pide siempre, incluso si la
     // cátedra configuró un prompt propio, porque el resultado lo necesita para
     // enlazar el material. Sólo se pide cuando hay bloques que citar.
     const systemContent = sourceRule ? `${baseSystem}\n${sourceRule}` : baseSystem;
-    let userContent = (promptConfig?.userPromptTemplate || 'Generá ${questionCount} preguntas de autoevaluación sobre la siguiente clase.\n\nMateria: ${subjectName}\nClase: ${className}\n\nCONTEXTO:\n${contextText}')
+    const defaultUserTemplate = unit
+        ? 'Generá ${questionCount} preguntas de autoevaluación sobre la siguiente unidad (todos sus temas, no una clase suelta).\n\nMateria: ${subjectName}\nUnidad: ${className}\n\nCONTEXTO:\n${contextText}'
+        : 'Generá ${questionCount} preguntas de autoevaluación sobre la siguiente clase.\n\nMateria: ${subjectName}\nClase: ${className}\n\nCONTEXTO:\n${contextText}';
+    let userContent = (promptConfig?.userPromptTemplate || defaultUserTemplate)
         .replace('${questionCount}', String(questionCount))
         .replace('${subjectName}', subjectName || '')
         .replace('${className}', className || '')
         .replace('${contextText}', contextText);
+    if (unit) {
+        // El alcance va escrito en el pedido: qué temas abarca esta práctica y de
+        // qué clase sale cada uno. Es lo mismo que el panel anunció antes de
+        // empezar, así que el cuestionario no puede cubrir otra cosa.
+        userContent += `\n\nEsta práctica es de la unidad y abarca los temas de estas ${unit.scopeLines.length} clases:\n`
+            + unit.scopeLines.map((line, i) => `${i + 1}. ${line}`).join('\n')
+            + `\nCubrí todos esos temas, no sólo el primero, y citá en "source" el bloque del tema del que sale cada pregunta.`;
+        if (unit.priorityTopics.length) {
+            userContent += `\n\nLa persona pidió concentrar la práctica en estos temas, que son los que más le preocupan:\n`
+                + unit.priorityTopics.map((t, i) => `${i + 1}. ${t}`).join('\n')
+                + `\nSi esos temas están entre los incluidos, al menos la mitad de las preguntas tienen que ser de ellos. Si el material no alcanza para alguno, cubrí el resto de los temas incluidos sin inventar contenido.`;
+        }
+    }
     // UJ-31: la persona ya hizo la práctica y vuelve a ponerse a prueba. El nuevo
-    // conjunto tiene que cubrir la misma clase pero sin repetir lo ya visto.
+    // conjunto tiene que cubrir el mismo alcance pero sin repetir lo ya visto.
     if (previousQuestions.length) {
-        userContent += `\n\nLa persona ya respondió una práctica de esta clase. NO repitas ninguna de estas preguntas, ni las reformules para evaluar el mismo punto:\n`
+        const alcance = unit ? 'esta unidad' : 'esta clase';
+        const alcanceNoun = unit ? 'la unidad' : 'la clase';
+        userContent += `\n\nLa persona ya respondió una práctica de ${alcance}. NO repitas ninguna de estas preguntas, ni las reformules para evaluar el mismo punto:\n`
             + previousQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')
-            + `\nCubrí los mismos temas de la clase, pero con preguntas nuevas sobre otros puntos del material, de dificultad equivalente.`;
+            + `\nCubrí los mismos temas de ${alcanceNoun}, pero con preguntas nuevas sobre otros puntos del material, de dificultad equivalente.`;
     }
     // UJ-31, paso 7: la comparación tema por tema sólo se apoya en la misma vara si
     // el conjunto nuevo declara los mismos temas que el anterior. Sin esta consigna
@@ -295,10 +566,47 @@ Requerimientos del JSON de salida:
     if (previousTopics.length) {
         userContent += `\n\nPara que el resultado se pueda comparar tema por tema con la práctica anterior, cada pregunta debe declarar su campo "topic" usando EXACTAMENTE una de estas etiquetas, tal cual está escrita (sin variantes, sin sinónimos y sin crear etiquetas nuevas):\n`
             + previousTopics.map((t, i) => `${i + 1}. ${t}`).join('\n')
-            + `\nRepartí las ${questionCount} preguntas entre esos temas, priorizando los que mejor representan el material de la clase.`;
+            + `\nRepartí las ${questionCount} preguntas entre esos temas, priorizando los que mejor representan el material de la ${unit ? 'unidad' : 'clase'}.`;
     }
     return { systemContent, userContent };
 }
+
+/**
+ * GET /api/quiz-scope — anuncia el alcance de la práctica de la unidad antes de
+ * empezar (UJ-30, pasos 1 y 2). Devuelve los temas (clases publicadas) que la
+ * práctica abarcaría, con sus materiales y los temas que la persona ya marcó
+ * como flojos, para que el panel lo anuncie y permita acotarlo. No genera nada:
+ * no consume tokens ni crea estado.
+ */
+app.http('get-quiz-scope', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'quiz-scope',
+    handler: withCorrelation(withAuth(async (request, context) => {
+        const log = createStructuredLogger('get-quiz-scope', context);
+        if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
+        const { userId } = getAuthenticatedUser(request);
+        const subjectId = request.query.get('subjectId');
+        if (!subjectId) return jsonResponse(400, { error: 'Parámetros requeridos: subjectId' });
+
+        const principal = parseClientPrincipal(request);
+        const isTeacherOrDirector = principal?.userRoles?.some((r) => ['Docente', 'Director'].includes(r));
+        if (principal && !isTeacherOrDirector) {
+            const enrollment = await getEnrollment(subjectId, userId).catch(() => null);
+            if (!enrollment || enrollment.status !== 'active') {
+                return jsonResponse(403, { error: 'ENROLLMENT_REQUIRED', message: 'No estás matriculado en esta materia.' });
+            }
+        }
+
+        const announcement = await buildUnitAnnouncement(subjectId, userId);
+        log.info('quiz-scope announced', {
+            subjectId,
+            classCount: announcement.coverage.classCount,
+            topicCount: announcement.coverage.topicCount,
+        });
+        return jsonResponse(200, announcement);
+    })),
+});
 
 app.http('generate-quiz', {
     methods: ['POST'],
@@ -317,8 +625,58 @@ app.http('generate-quiz', {
             return jsonResponse(400, { error: 'Body JSON inválido' });
         }
 
-        const { subjectId, classId, questionCount, subjectName } = body || {};
-        if (!subjectId || !classId) {
+        const { subjectId, classId: requestedClassId, questionCount, subjectName } = body || {};
+        const scope = normalizeScope(body?.scope);
+        const requestedClassIds = normalizeClassIdList(body?.classIds);
+        const priorityTopics = normalizeTopicList(body?.topics);
+        if (!subjectId) {
+            return jsonResponse(400, { error: 'Faltan campos requeridos: subjectId, classId' });
+        }
+        // Un acotamiento vacío es un pedido explícito sin temas: se rechaza, no
+        // se interpreta como «toda la unidad» (eso sólo vale si no se acotó).
+        if (Array.isArray(body?.classIds) && requestedClassIds.length === 0) {
+            return jsonResponse(400, {
+                error: {
+                    code: 'QUIZ_SCOPE_EMPTY',
+                    message: 'Elegí al menos un tema de la unidad para armar la práctica.',
+                },
+                errorCategory: 'VALIDATION',
+            });
+        }
+
+        // El alcance se resuelve antes de tocar el modelo: en la unidad son las
+        // clases publicadas (o el subconjunto pedido), y una elección vacía o
+        // ajena se rechaza acá en vez de generar un cuestionario vacío.
+        let classId = requestedClassId;
+        let unitClasses = [];
+        if (scope === SCOPE_UNIT) {
+            const published = publishedClassesOf(await listClassesBySubject(subjectId).catch(() => []));
+            if (requestedClassIds.length) {
+                const unknown = requestedClassIds.filter((id) => !published.some((c) => c.id === id));
+                if (unknown.length) {
+                    return jsonResponse(400, {
+                        error: {
+                            code: 'QUIZ_SCOPE_INVALID',
+                            message: `Los temas elegidos no están publicados en esta unidad: ${unknown.join(', ')}.`,
+                        },
+                        errorCategory: 'VALIDATION',
+                    });
+                }
+                unitClasses = published.filter((c) => requestedClassIds.includes(c.id));
+            } else {
+                unitClasses = published;
+            }
+            if (unitClasses.length === 0) {
+                return jsonResponse(400, {
+                    error: {
+                        code: 'QUIZ_SCOPE_EMPTY',
+                        message: 'Elegí al menos un tema de la unidad para armar la práctica: hoy no hay clases publicadas para practicar.',
+                    },
+                    errorCategory: 'VALIDATION',
+                });
+            }
+            classId = UNIT_SCOPE_KEY;
+        } else if (!classId) {
             return jsonResponse(400, { error: 'Faltan campos requeridos: subjectId, classId' });
         }
         const count = normalizeQuestionCount(questionCount);
@@ -342,20 +700,56 @@ app.http('generate-quiz', {
 
         const startTime = Date.now();
         try {
-            const contextText = await loadClassContext(subjectId, classId, context);
+            const contextText = scope === SCOPE_UNIT
+                ? await loadUnitContext(subjectId, unitClasses, context)
+                : await loadClassContext(subjectId, classId, context);
             if (!contextText.text) {
+                if (scope === SCOPE_UNIT) {
+                    return jsonResponse(400, {
+                        error: {
+                            code: 'QUIZ_SCOPE_EMPTY',
+                            message: 'Los temas elegidos todavía no tienen resumen ni materiales procesados: no hay con qué armar la práctica.',
+                        },
+                        errorCategory: 'VALIDATION',
+                    });
+                }
                 return jsonResponse(400, { error: 'No hay resumen ni materiales procesados disponibles para esta clase.' });
             }
 
-            // Intentos previos de esta persona en esta clase: el nuevo conjunto no
-            // repite lo ya visto (UJ-31) y la pantalla puede anunciar el número.
+            // Intentos previos de esta persona en este alcance: el nuevo conjunto
+            // no repite lo ya visto (UJ-31) y la pantalla puede anunciar el número.
+            // Los intentos de la unidad viven aparte de los de cada clase.
             const previousAttempts = await listQuizAttempts(subjectId, userId, classId).catch(() => []);
             const previousQuestions = previousQuestionsOf(previousAttempts);
             const previousTopics = previousTopicsOf(previousAttempts);
             const attemptNumber = previousAttempts.length + 1;
 
-            const className = body.className || classId;
-            const { systemContent, userContent } = await buildQuizPrompt(subjectName, className, contextText.text, count, previousQuestions, previousTopics, contextText.sources);
+            const className = scope === SCOPE_UNIT
+                ? (body.unitName || body.className || subjectId)
+                : (body.className || classId);
+            // Con alcance de unidad el pedido lleva escrito qué temas abarca: es
+            // el mismo alcance que el panel anunció antes de empezar.
+            const unit = scope === SCOPE_UNIT ? (() => {
+                const scopeLines = [];
+                const topicLabels = [];
+                for (const cls of unitClasses) {
+                    const { topics, declared } = classTopicsOf(cls);
+                    const label = classLabelOf(cls);
+                    scopeLines.push(declared ? `${label} — temas: ${topics.join(', ')}` : label);
+                    topicLabels.push(...topics);
+                }
+                return { scopeLines, topicLabels, priorityTopics };
+            })() : null;
+            const { systemContent, userContent } = await buildQuizPrompt({
+                subjectName,
+                className,
+                contextText: contextText.text,
+                questionCount: count,
+                previousQuestions,
+                previousTopics,
+                sources: contextText.sources,
+                unit,
+            });
 
             const quizModel = await resolveModelForTask('quiz');
             const result = await chatCompletion(
@@ -382,7 +776,12 @@ app.http('generate-quiz', {
             const payload = {
                 quizId: uuidv4(),
                 subjectId,
-                classId,
+                // El alcance viaja en la respuesta: de qué es la práctica y, si es
+                // de la unidad, qué clases la componen (lo que se anunció).
+                scope,
+                classId: scope === SCOPE_UNIT ? null : classId,
+                classIds: scope === SCOPE_UNIT ? unitClasses.map((c) => c.id) : [classId],
+                topics: scope === SCOPE_UNIT ? priorityTopics : [],
                 questionCount: questions.length,
                 questions,
                 model: getModelDisplayName(quizModel),
@@ -398,6 +797,8 @@ app.http('generate-quiz', {
                 quizId: payload.quizId,
                 userId,
                 classId,
+                scope,
+                classIds: payload.classIds,
                 questions,
                 createdAt: payload.generatedAt,
                 expiresAt: new Date(Date.now() + QUIZ_TTL_MS).toISOString(),
@@ -432,7 +833,11 @@ app.http('save-quiz-result', {
             return jsonResponse(400, { error: 'Body JSON inválido' });
         }
 
-        const { subjectId, classId, quizId, answers } = body || {};
+        const { subjectId, quizId, answers } = body || {};
+        // El intento de la unidad se guarda bajo su propia clave: no es una clase
+        // y no debe pisar ni mezclarse con el historial de ninguna.
+        const scope = normalizeScope(body?.scope);
+        const classId = scopeKeyOf(scope, body?.classId);
         if (!subjectId || !classId || !quizId || !Array.isArray(answers)) {
             return jsonResponse(400, { error: 'Faltan campos requeridos: subjectId, classId, quizId, answers' });
         }
@@ -518,7 +923,7 @@ app.http('get-quiz-result', {
         if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
         const { userId, sanitizedId } = getAuthenticatedUser(request);
         const subjectId = request.query.get('subjectId');
-        const classId = request.query.get('classId');
+        const classId = scopeKeyOf(normalizeScope(request.query.get('scope')), request.query.get('classId'));
         if (!subjectId || !classId) {
             return jsonResponse(400, { error: 'Parámetros requeridos: subjectId, classId' });
         }
@@ -535,11 +940,11 @@ app.http('get-quiz-attempts', {
         if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
         const { userId } = getAuthenticatedUser(request);
         const subjectId = request.query.get('subjectId');
-        const classId = request.query.get('classId');
+        const classId = scopeKeyOf(normalizeScope(request.query.get('scope')), request.query.get('classId'));
         if (!subjectId || !classId) {
             return jsonResponse(400, { error: 'Parámetros requeridos: subjectId, classId' });
         }
-        // Historial de intentos de esa persona en esa clase, resumido por tema:
+        // Historial de intentos de esa persona en ese alcance, resumido por tema:
         // es lo que permite comparar en qué avanzó y en qué no (UJ-31, paso 7).
         const attempts = await listQuizAttempts(subjectId, userId, classId).catch(() => []);
         return jsonResponse(200, {
@@ -573,7 +978,7 @@ app.http('get-quiz-weak-topics', {
         if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
         const { userId } = getAuthenticatedUser(request);
         const subjectId = request.query.get('subjectId');
-        const classId = request.query.get('classId');
+        const classId = scopeKeyOf(normalizeScope(request.query.get('scope')), request.query.get('classId'));
         if (!subjectId || !classId) {
             return jsonResponse(400, { error: 'Parámetros requeridos: subjectId, classId' });
         }
@@ -597,7 +1002,9 @@ app.http('save-quiz-weak-topics', {
             return jsonResponse(400, { error: 'Body JSON inválido' });
         }
 
-        const { subjectId, classId, topics } = body || {};
+        const { subjectId, topics } = body || {};
+        const scope = normalizeScope(body?.scope);
+        const classId = scopeKeyOf(scope, body?.classId);
         if (!subjectId || !classId || !Array.isArray(topics)) {
             return jsonResponse(400, { error: 'Faltan campos requeridos: subjectId, classId, topics' });
         }

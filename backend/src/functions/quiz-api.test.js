@@ -24,6 +24,8 @@ const weakTopicStore = new Map();
 
 const stateStoreMocks = {
     getEnrollment: mock.fn(async () => ({ status: 'active' })),
+    // UJ-30: el alcance de unidad resuelve las clases publicadas desde acá.
+    listClassesBySubject: mock.fn(async () => []),
     getConsentStatus: mock.fn(async () => true),
     listMaterialsByClass: mock.fn(async () => []),
     saveQuiz: mock.fn(async (quiz) => {
