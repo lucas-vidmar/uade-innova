@@ -38,6 +38,7 @@
 - [API Contracts — Backend](./api-contracts-backend.md)
 - [Integration Architecture](./integration-architecture.md)
 - [Data Models — Backend](./data-models-backend.md) _(To be generated)_
+- [Caudal del servicio — topes, reserva y registro](./caudal-servicio.md)
 - [Component Inventory — Backend](./component-inventory-backend.md) _(To be generated)_
 
 ## Existing Documentation

@@ -599,6 +599,50 @@ export async function trackVectorIndexAnomalyAlert({
     await client.flush({ isAppCrashing: true });
 }
 
+/**
+ * Caudal del servicio (#458): el aviso a quien opera.
+ *
+ * Emite un evento `CaudalEvent` en App Insights cuando se cruza el umbral o se
+ * deniega un pedido. La regla de Azure Monitor (`infra/modules/caudal-alert.bicep`)
+ * manda el mail al operador; el mismo evento queda en el registro de la noche
+ * (`services/caudal-events.js`) para reconstruirla después.
+ */
+export async function trackCaudalEvent({
+    kind,
+    reason,
+    caudalClass,
+    tier,
+    route,
+    key,
+    used,
+    limit,
+    retryAfterSec,
+    windowIdx,
+    correlationId,
+}) {
+    const client = await getClient();
+    if (!client) return;
+
+    client.trackEvent({
+        name: 'CaudalEvent',
+        properties: {
+            kind: kind || 'denial',
+            reason: reason || 'unknown',
+            caudalClass: caudalClass || 'unknown',
+            tier: tier || 'unknown',
+            route: route || 'unknown',
+            key: key || 'unknown',
+            windowIdx: String(windowIdx ?? ''),
+            ...(correlationId && { correlationId }),
+        },
+        measurements: {
+            used: Math.max(0, Number(used) || 0),
+            limit: Math.max(0, Number(limit) || 0),
+            retryAfterSec: Math.max(0, Number(retryAfterSec) || 0),
+        },
+    });
+}
+
 export async function trackVectorBackupRun({
     runId,
     mode = 'backup-only',

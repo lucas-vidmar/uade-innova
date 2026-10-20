@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "8223520109375021155"
+      "templateHash": "2237083613138170201"
     }
   },
   "parameters": {
@@ -413,6 +413,8 @@
     "anomalousUsageActionGroupName": "[format('ag-token-usage-{0}', take(variables('resourceToken'), 8))]",
     "ttftAnomalyAlertName": "[format('alert-ttft-anomaly-{0}', take(variables('resourceToken'), 8))]",
     "ttftAnomalyActionGroupName": "[format('ag-ttft-anomaly-{0}', take(variables('resourceToken'), 8))]",
+    "caudalAlertName": "[format('alert-caudal-servicio-{0}', take(variables('resourceToken'), 8))]",
+    "caudalActionGroupName": "[format('ag-caudal-servicio-{0}', take(variables('resourceToken'), 8))]",
     "safeStorageName": "[take(replace(variables('storageAccountName'), '-', ''), 24)]"
   },
   "resources": [
@@ -4312,6 +4314,241 @@
               "value": "[parameters('lookbackMinutes')]"
             }
           }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'appInsights')]"
+      ]
+    },
+    {
+      "condition": "[not(empty(parameters('notificationEmail')))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "caudalAlert",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "workspaceId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appInsights'), '2025-04-01').outputs.logAnalyticsWorkspaceId.value]"
+          },
+          "notificationEmail": {
+            "value": "[parameters('notificationEmail')]"
+          },
+          "webhookUri": {
+            "value": "[parameters('webhookUri')]"
+          },
+          "scheduledQueryRuleName": {
+            "value": "[variables('caudalAlertName')]"
+          },
+          "actionGroupName": {
+            "value": "[variables('caudalActionGroupName')]"
+          },
+          "denialSurgeThreshold": {
+            "value": 50
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.48.1.52935",
+              "templateHash": "88573679293635362"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for monitor resources."
+              }
+            },
+            "workspaceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Log Analytics Workspace connected to App Insights."
+              }
+            },
+            "notificationEmail": {
+              "type": "string",
+              "metadata": {
+                "description": "Email destination for alert notifications."
+              }
+            },
+            "webhookUri": {
+              "type": "securestring",
+              "defaultValue": "",
+              "maxLength": 2000,
+              "metadata": {
+                "description": "Optional webhook URI for Teams/HTTP notification channel. Empty string disables webhook."
+              }
+            },
+            "scheduledQueryRuleName": {
+              "type": "string",
+              "defaultValue": "alert-caudal-servicio",
+              "metadata": {
+                "description": "Name of the threshold scheduled query alert rule."
+              }
+            },
+            "actionGroupName": {
+              "type": "string",
+              "defaultValue": "ag-caudal-servicio",
+              "metadata": {
+                "description": "Name of the action group that sends email notifications."
+              }
+            },
+            "denialSurgeThreshold": {
+              "type": "int",
+              "defaultValue": 50,
+              "metadata": {
+                "description": "Denials per 5 minutes that count as a sustained degradation."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags to apply to resources."
+              }
+            }
+          },
+          "variables": {
+            "trimmedWebhookUri": "[trim(parameters('webhookUri'))]",
+            "thresholdQuery": "AppEvents\n| where Name == \"CaudalEvent\"\n| where TimeGenerated >= ago(5m)\n| where tostring(Properties.kind) == \"threshold\"\n| extend caudalClass = tostring(Properties.caudalClass), reason = tostring(Properties.reason), route = tostring(Properties.route), used = todouble(Measurements.used), limit = todouble(Measurements.limit)\n| project TimeGenerated, caudalClass, reason, route, used, limit\n",
+            "denialSurgeQueryTemplate": "AppEvents\n| where Name == \"CaudalEvent\"\n| where TimeGenerated >= ago(5m)\n| where tostring(Properties.kind) == \"denial\"\n| extend caudalClass = tostring(Properties.caudalClass), reason = tostring(Properties.reason)\n| summarize denials = count() by caudalClass, reason\n| where denials >= {threshold}\n| project caudalClass, reason, denials\n",
+            "denialSurgeQuery": "[replace(variables('denialSurgeQueryTemplate'), '{threshold}', format('{0}', parameters('denialSurgeThreshold')))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Insights/actionGroups",
+              "apiVersion": "2023-01-01",
+              "name": "[parameters('actionGroupName')]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "groupShortName": "CaudalAlert",
+                "enabled": true,
+                "emailReceivers": [
+                  {
+                    "name": "operations-email",
+                    "emailAddress": "[parameters('notificationEmail')]",
+                    "useCommonAlertSchema": true
+                  }
+                ],
+                "webhookReceivers": "[if(not(empty(variables('trimmedWebhookUri'))), createArray(createObject('name', 'operations-webhook', 'serviceUri', variables('trimmedWebhookUri'), 'useCommonAlertSchema', true())), createArray())]"
+              }
+            },
+            {
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-12-01",
+              "name": "[parameters('scheduledQueryRuleName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "description": "Triggers when the service-wide request rate crosses the reserved threshold (CaudalEvent kind=threshold).",
+                "displayName": "Caudal del servicio sobre el umbral",
+                "severity": 2,
+                "enabled": true,
+                "scopes": [
+                  "[parameters('workspaceId')]"
+                ],
+                "evaluationFrequency": "PT5M",
+                "windowSize": "PT5M",
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "[variables('thresholdQuery')]",
+                      "timeAggregation": "Count",
+                      "operator": "GreaterThanOrEqual",
+                      "threshold": 1,
+                      "dimensions": [
+                        {
+                          "name": "caudalClass",
+                          "operator": "Include",
+                          "values": [
+                            "*"
+                          ]
+                        }
+                      ],
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 1,
+                        "minFailingPeriodsToAlert": 1
+                      }
+                    }
+                  ]
+                },
+                "autoMitigate": true,
+                "actions": {
+                  "actionGroups": [
+                    "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-12-01",
+              "name": "[format('{0}-denegaciones', parameters('scheduledQueryRuleName'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "description": "[format('Triggers when the service denies {0} or more requests in 5 minutes (CaudalEvent kind=denial).', parameters('denialSurgeThreshold'))]",
+                "displayName": "Denegaciones de caudal sostenidas",
+                "severity": 2,
+                "enabled": true,
+                "scopes": [
+                  "[parameters('workspaceId')]"
+                ],
+                "evaluationFrequency": "PT5M",
+                "windowSize": "PT5M",
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "[variables('denialSurgeQuery')]",
+                      "timeAggregation": "Count",
+                      "operator": "GreaterThanOrEqual",
+                      "threshold": 1,
+                      "dimensions": [
+                        {
+                          "name": "reason",
+                          "operator": "Include",
+                          "values": [
+                            "*"
+                          ]
+                        }
+                      ],
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 1,
+                        "minFailingPeriodsToAlert": 1
+                      }
+                    }
+                  ]
+                },
+                "autoMitigate": true,
+                "actions": {
+                  "actionGroups": [
+                    "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+              ]
+            }
+          ]
         }
       },
       "dependsOn": [

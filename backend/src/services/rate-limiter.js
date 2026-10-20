@@ -59,14 +59,29 @@ export function createRateLimiter(options = {}) {
         if (timestamps && timestamps.length >= limit) {
             const oldest = timestamps[0];
             const retryAfterSec = Math.max(1, Math.ceil((windowMs - (nowFn() - oldest)) / 1000));
-            return { allowed: false, retryAfterSec };
+            // `used`/`limit` acompañan la decisión (#458): sin ellos el aviso de
+            // umbral y el registro no pueden decir a qué distancia del tope se
+            // quedó el servicio.
+            return { allowed: false, retryAfterSec, used: timestamps.length, limit, remaining: 0 };
         }
         if (!buckets.has(mapKey)) buckets.set(mapKey, []);
         buckets.get(mapKey).push(nowFn());
-        return { allowed: true };
+        const used = buckets.get(mapKey).length;
+        return { allowed: true, used, limit, remaining: Math.max(0, limit - used) };
     }
 
-    return { check };
+    /**
+     * Caudal consumido en la ventana actual, sin consumir nada (#458). Es la
+     * lectura que usa la superficie de operación para mostrar qué se degradó.
+     */
+    function usage(key, tier = 'general') {
+        const limit = resolveLimit(tier);
+        const timestamps = pruneExpired(bucketKey(key, tier));
+        const used = timestamps ? timestamps.length : 0;
+        return { used, limit, remaining: Math.max(0, limit - used) };
+    }
+
+    return { check, usage };
 }
 
 /**
@@ -178,6 +193,10 @@ export function createSharedRateLimiter(options = {}) {
                 return {
                     allowed: false,
                     retryAfterSec: Math.max(1, Math.ceil((windowMs - elapsedInWindow) / 1000)),
+                    used: Math.floor(used),
+                    limit,
+                    remaining: 0,
+                    windowIdx,
                 };
             }
 
@@ -196,7 +215,14 @@ export function createSharedRateLimiter(options = {}) {
                 } else {
                     await client.createEntity(next);
                 }
-                return { allowed: true };
+                const usedAfter = used + 1;
+                return {
+                    allowed: true,
+                    used: Math.floor(usedAfter),
+                    limit,
+                    remaining: Math.max(0, Math.ceil(limit - usedAfter)),
+                    windowIdx,
+                };
             } catch (err) {
                 if (err?.statusCode === 412 || err?.statusCode === 409) {
                     // Otro request escribió primero: esperar con jitter y releer.
@@ -226,13 +252,53 @@ export function createSharedRateLimiter(options = {}) {
                 return {
                     allowed: false,
                     retryAfterSec: Math.max(1, Math.ceil((windowMs - elapsedInWindow) / 1000)),
+                    used: Math.floor(used),
+                    limit,
+                    remaining: 0,
+                    windowIdx,
                 };
             }
         } catch (err) {
             if (err?.statusCode !== 404) throw err;
         }
-        return { allowed: true };
+        return { allowed: true, used: limit, limit, remaining: 0, windowIdx };
     }
 
-    return { check };
+    /**
+     * Lectura del caudal de servicio consumido en la ventana actual (#458),
+     * sin consumir nada. La superficie de operación la usa para mostrar qué se
+     * degradó y a qué distancia del tope quedó el servicio.
+     */
+    async function usage(key, tier = 'general') {
+        const limit = resolveTierLimit(tier, tiers);
+        const now = nowFn();
+        const windowIdx = Math.floor(now / windowMs);
+        const elapsedInWindow = now - windowIdx * windowMs;
+        const previousWeight = 1 - elapsedInWindow / windowMs;
+        const rowKey = sanitizeRowKey(`${tier}:${key}`);
+        const partitionKey = partitionForRowKey(rowKey);
+        const client = await getReadyClient();
+
+        let entity = null;
+        try {
+            entity = await client.getEntity(partitionKey, rowKey);
+        } catch (err) {
+            if (err?.statusCode !== 404) throw err;
+        }
+
+        let previousCount = 0;
+        let currentCount = 0;
+        const storedWindow = Number(entity?.windowIdx);
+        if (entity && storedWindow === windowIdx) {
+            previousCount = Number(entity.previousCount) || 0;
+            currentCount = Number(entity.currentCount) || 0;
+        } else if (entity && storedWindow === windowIdx - 1) {
+            previousCount = Number(entity.currentCount) || 0;
+        }
+
+        const used = Math.floor(previousCount * previousWeight + currentCount);
+        return { used, limit, remaining: Math.max(0, limit - used), windowIdx };
+    }
+
+    return { check, usage };
 }

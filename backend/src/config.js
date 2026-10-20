@@ -149,11 +149,31 @@ export const CONFIG = {
     // Conteo service-wide (#455): una sola entidad por clave/tier en Table
     // Storage para que el tope no dependa de la instancia que atiende el pedido.
     sharedTable: process.env.AZURE_TABLE_RATE_LIMIT || 'RateLimitCounters',
+    // Tope por identidad: cuánto puede pedir UNA persona por ventana en cada tier.
     tiers: {
       chat: Number(process.env.RATE_LIMIT_CHAT_PER_MIN) || 30,
       ingest: Number(process.env.RATE_LIMIT_INGEST_PER_MIN) || 10,
       general: Number(process.env.RATE_LIMIT_GENERAL_PER_MIN) || 60,
+      // Lo esencial (consulta de material y entrega de documentos) no consume
+      // modelo, así que su tope por persona es holgado: la reserva está para
+      // que el pico de la víspera no lo deje afuera.
+      essential: Number(process.env.RATE_LIMIT_ESSENTIAL_PER_MIN) || 120,
     },
+    // Tope de caudal del servicio (#458): el agregado de todas las identidades
+    // en una ventana. Un tope por identidad no acota nada por sí solo —N
+    // personas × su tope = N × tope—, así que este es el segundo eje.
+    service: {
+      totalPerWindow: Number(process.env.RATE_LIMIT_SERVICE_PER_MIN) || 600,
+      // Porción del tope de servicio que se reserva para lo esencial y que el
+      // caudal interactivo no puede tocar.
+      reservePct: Number(process.env.RATE_LIMIT_RESERVE_PCT) || 25,
+      // Aviso a quien opera: a partir de este % del tope se cruza el umbral y
+      // queda el registro (una sola vez por ventana y por clase).
+      alertThresholdPct: Number(process.env.RATE_LIMIT_ALERT_THRESHOLD_PCT) || 80,
+    },
+    // Registro de la noche: denegaciones y cruces de umbral, con ventana,
+    // clase, clave, motivo y caudal usado, para reconstruir qué se degradó.
+    eventsTable: process.env.AZURE_TABLE_RATE_LIMIT_EVENTS || 'RateLimitEvents',
   },
 
   uploadQuota: {

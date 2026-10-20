@@ -15,7 +15,11 @@ function getCorsHeaders(request) {
     // navegador sólo expone las cabeceras de la lista segura de CORS. Sin esta
     // lista, ninguna pantalla puede leer x-correlation-id y nadie puede citar la
     // correlación de un fallo al reportarlo.
-    'access-control-expose-headers': 'x-correlation-id,traceparent,tracestate',
+    // #458: lo mismo con las cabeceras del caudal (y el `Warning` del umbral):
+    // si la pantalla no puede leerlas, la degradación no está anunciada.
+    'access-control-expose-headers': 'x-correlation-id,traceparent,tracestate,retry-after,warning,'
+      + 'x-caudal-class,x-caudal-service-used,x-caudal-service-limit,x-caudal-service-total,'
+      + 'x-caudal-reserve-limit,x-caudal-threshold,x-caudal-reason,x-caudal-window-idx',
     'access-control-max-age': '86400',
     'vary': 'Origin',
   };

@@ -1,6 +1,7 @@
 import { app } from '@azure/functions';
 import { withAuth } from '../middleware/with-auth.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
+import { withRateLimit } from '../middleware/with-rate-limit.js';
 import { createStructuredLogger } from '../services/structured-logger.js';
 import { loadJson, saveJson, listBlobs, deleteBlob, moveBlob, uploadFile, downloadFile, getTableClient } from '../services/storage.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -872,7 +873,7 @@ app.http('get-classes', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'classes/{subjectId?}',
-    handler: withCorrelation(withAuth(async (request, context) => {
+    handler: withCorrelation(withRateLimit(withAuth(async (request, context) => {
         const log = createStructuredLogger('get-classes', context);
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
         log.info('get-classes triggered');
@@ -1026,7 +1027,7 @@ app.http('get-classes', {
             context.error(err);
             return { status: 500, body: JSON.stringify({ error: 'Error interno' }) };
         }
-    }))
+    })))
 });
 
 // ── GET /api/material-status/{materialId} ──────────────────────────
@@ -1035,7 +1036,7 @@ app.http('get-material-status', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'material-status/{materialId}',
-    handler: withCorrelation(withAuth(async (request, context) => {
+    handler: withCorrelation(withRateLimit(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
 
         const materialId = request.params.materialId;
@@ -1108,7 +1109,7 @@ app.http('get-material-status', {
             });
             return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Error interno' }) };
         }
-    })),
+    }))),
 });
 
 // ── GET /api/material-status?subjectId=...&materialIds=... ─────────
@@ -1117,7 +1118,7 @@ app.http('get-material-status-batch', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'material-status',
-    handler: withCorrelation(withAuth(async (request, context) => {
+    handler: withCorrelation(withRateLimit(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
 
         const subjectId = request.query?.get?.('subjectId');
@@ -1201,7 +1202,7 @@ app.http('get-material-status-batch', {
             });
             return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Error interno' }) };
         }
-    })),
+    }))),
 });
 
 // ── POST /api/material-status/batch ────────────────────────────────
@@ -1210,7 +1211,7 @@ app.http('post-material-status-batch', {
     methods: ['POST'],
     authLevel: 'anonymous',
     route: 'material-status/batch',
-    handler: withCorrelation(withAuth(async (request, context) => {
+    handler: withCorrelation(withRateLimit(withAuth(async (request, context) => {
         if (!validateFrontDoorId(request)) return { status: 403, body: JSON.stringify({ error: 'Forbidden - Invalid Front Door ID' }) };
 
         let body;
@@ -1301,7 +1302,7 @@ app.http('post-material-status-batch', {
             });
             return { status: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Error interno' }) };
         }
-    }))
+    })))
 });
 
 // ── POST /api/classes ──────────────────────────────────────────────
