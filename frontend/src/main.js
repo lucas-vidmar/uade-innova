@@ -27,6 +27,9 @@ const ROUTES = {
     '/student/settings': () => import('./pages/student/Settings.js').then(m => m.renderStudentSettings),
     '/student/reports': () => import('./pages/student/Reports.js').then(m => m.renderStudentReports),
     '/student/search': () => import('./pages/student/SearchResults.js').then(m => m.renderStudentSearchResults),
+    // UJ-30 (paso 1): práctica de autoexamen de la unidad, con alcance anunciado
+    // y acotable. La práctica por clase sigue viviendo en el detalle de clase.
+    '/student/unit-practice': () => import('./pages/student/UnitPractice.js').then(m => m.renderStudentUnitPractice),
     '/student/chat': () => import('./pages/student/Dashboard.js').then(m => m.renderStudentDashboard),
     '/teacher/dashboard': () => import('./pages/teacher/Dashboard.js').then(m => m.renderTeacherDashboard),
     '/teacher/classes': () => import('./pages/teacher/ClassManager.js').then(m => m.renderClassManager),
