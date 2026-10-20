@@ -41,7 +41,20 @@ export function threadScopeFrom(turns) {
 export function messagesFromTurns(turns) {
   return (Array.isArray(turns) ? turns : []).map(turn => ([
     { role: 'user', content: turn.question, classIds: classIdsOfTurn(turn) },
-    { role: 'assistant', content: turn.answer || '', sources: turn.sources || [], id: turn.id, classIds: classIdsOfTurn(turn) },
+    {
+      role: 'assistant',
+      content: turn.answer || '',
+      sources: turn.sources || [],
+      id: turn.id,
+      classIds: classIdsOfTurn(turn),
+      // #408/UJ-27: la configuración declarada y el motivo de la abstención se
+      // recuperan con el hilo, así dos personas del grupo pueden comparar sus
+      // respuestas después de recargar sin perder con qué se generaron.
+      ...(turn.generation ? { generation: turn.generation } : {}),
+      ...(typeof turn.abstained === 'boolean' ? { abstained: turn.abstained } : {}),
+      ...(typeof turn.abstainedWithEvidence === 'boolean' ? { abstainedWithEvidence: turn.abstainedWithEvidence } : {}),
+      ...(typeof turn.evidenceCount === 'number' ? { evidenceCount: turn.evidenceCount } : {}),
+    },
   ])).flat();
 }
 

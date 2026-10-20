@@ -6,6 +6,7 @@ import { auth, isDevMockEnabled } from '../services/auth.js';
 import { showPromptDialog } from './Dialog.js';
 import { toast } from './Toast.js';
 import { renderPrivacyModal } from './PrivacyModal.js';
+import { generationLabel, abstentionNote } from './chat-generation-label.js';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 
@@ -324,7 +325,18 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
           </div>
           ` : ''}
           
-          ${msg.model ? `<div class="model-name-indicator" style="font-size:11px;color:var(--color-text-muted,#9ca3af);margin-top:6px;padding:0 2px;margin-bottom:8px;">Powered by ${msg.model}</div>` : ''}
+          ${msg.generation || msg.model ? `
+          <div class="model-name-indicator" style="font-size:11px;color:var(--color-text-muted,#9ca3af);margin-top:6px;padding:0 2px;margin-bottom:8px;"
+               data-generation-model="${escapeHtml(msg.generation?.model || msg.model || '')}"
+               data-generation-temperature="${msg.generation?.temperature ?? ''}"
+               data-generation-determinism="${escapeHtml(msg.generation?.determinism || '')}"
+               title="Configuración con la que se generó esta respuesta. Si comparás dos respuestas con la misma evidencia, mirá acá antes de dudar del material.">${escapeHtml(generationLabel(msg.generation || { model: msg.model }))}</div>
+          ` : ''}
+
+          ${abstentionNote(msg) ? `
+          <div class="abstention-indicator" style="font-size:11px;color:var(--color-warning,#b45309);padding:0 2px;margin-bottom:8px;"
+               data-abstained="true" data-abstained-with-evidence="${msg.abstainedWithEvidence === true}" data-evidence-count="${msg.evidenceCount ?? ''}">${escapeHtml(abstentionNote(msg))}</div>
+          ` : ''}
 
           <div class="chat-msg-footer mt-3 flex justify-between items-end gap-4">
             ${msg.sources?.length > 0 ? `
@@ -605,6 +617,11 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
           assistantMsg.verified = data.verified || false;
           assistantMsg.model = data.model || '';
           assistantMsg.glossary = data.glossary || null;
+          // #408: la configuración declarada por el backend viaja con la
+          // respuesta; se guarda para mostrarla y para que sobreviva al guardado
+          // del hilo (dos personas del grupo tienen que poder compararla).
+          if (data.generation) assistantMsg.generation = data.generation;
+          if (typeof data.evidenceCount === 'number') assistantMsg.evidenceCount = data.evidenceCount;
           // #358/UJ-22: la abstención la decide el backend; se guarda para que
           // la constancia se muestre por el motivo real y de forma consistente.
           if (typeof data.abstained === 'boolean') assistantMsg.abstained = data.abstained;
@@ -702,6 +719,12 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
           assistantMsg.streaming = false;
           // #358/UJ-22: el backend marca la abstención en el evento final.
           if (typeof data.abstained === 'boolean') assistantMsg.abstained = data.abstained;
+          // #408: la configuración declarada llega también en el cierre (el
+          // camino sin stream sólo manda esto) y la abstención se declara con o
+          // sin evidencia, que no es lo mismo.
+          if (data.generation) assistantMsg.generation = data.generation;
+          if (typeof data.evidenceCount === 'number') assistantMsg.evidenceCount = data.evidenceCount;
+          if (typeof data.abstainedWithEvidence === 'boolean') assistantMsg.abstainedWithEvidence = data.abstainedWithEvidence;
           const msgEl = getMsgEl();
           if (msgEl) {
             msgEl.classList.remove('streaming');
@@ -711,16 +734,46 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
             }
             const body = msgEl.querySelector('.chat-msg-body');
             if (body) {
-              if (assistantMsg.model) {
+              const declaration = generationLabel(assistantMsg.generation || { model: assistantMsg.model });
+              if (declaration) {
                 const existingIndicator = body.querySelector('.model-name-indicator');
                 if (!existingIndicator) {
                   const modelIndicator = document.createElement('div');
                   modelIndicator.className = 'model-name-indicator';
                   modelIndicator.style.cssText = 'font-size:11px;color:var(--color-text-muted, #9ca3af);margin-top:6px;padding:0 2px;';
-                  modelIndicator.textContent = `Powered by ${assistantMsg.model}`;
+                  modelIndicator.textContent = declaration;
+                  if (assistantMsg.generation) {
+                    modelIndicator.dataset.generationModel = assistantMsg.generation.model || '';
+                    modelIndicator.dataset.generationTemperature = String(assistantMsg.generation.temperature ?? '');
+                    modelIndicator.dataset.generationDeterminism = assistantMsg.generation.determinism || '';
+                  }
                   const bubble = body.querySelector('.chat-bubble-assistant');
                   if (bubble) bubble.after(modelIndicator);
+                } else {
+                  existingIndicator.textContent = declaration;
                 }
+              }
+              // #408: la marca de abstención se reescribe con el dato del
+              // cierre, que es el único que sabe si había evidencia adjunta.
+              const existingAbstention = body.querySelector('.abstention-indicator');
+              const note = abstentionNote(assistantMsg);
+              if (note) {
+                let noteEl = existingAbstention;
+                if (!noteEl) {
+                  noteEl = document.createElement('div');
+                  noteEl.className = 'abstention-indicator';
+                  noteEl.style.cssText = 'font-size:11px;color:var(--color-warning, #b45309);padding:0 2px;margin-bottom:8px;';
+                  const bubble = body.querySelector('.chat-bubble-assistant');
+                  const indicador = body.querySelector('.model-name-indicator');
+                  // La marca de abstención va pegada a la declaración, no entre
+                  // la burbuja y la declaración: se leen como un mismo bloque.
+                  if (indicador) indicador.after(noteEl);
+                  else if (bubble) bubble.after(noteEl);
+                }
+                noteEl.textContent = note;
+                noteEl.dataset.abstained = 'true';
+                noteEl.dataset.abstainedWithEvidence = String(assistantMsg.abstainedWithEvidence === true);
+                noteEl.dataset.evidenceCount = String(assistantMsg.evidenceCount ?? '');
               }
               if (isLowConfidence(assistantMsg.content) && !assistantMsg.missingInfoReported) {
                 const actionsArea = body.querySelector('.chat-msg-actions');
@@ -749,6 +802,13 @@ export function createChatWidget({ classes = [], subjectId = '', sessionId = nul
                   role: m.role,
                   content: m.content,
                   ...(Array.isArray(m.classIds) && m.classIds.length > 0 ? { classIds: [...m.classIds] } : {}),
+                  // #408: la declaración de generación y el motivo de la
+                  // abstención viajan con el mensaje guardado; si no, al reabrir
+                  // el hilo la respuesta queda sin árbitro para comparar.
+                  ...(m.generation ? { generation: m.generation } : {}),
+                  ...(typeof m.abstained === 'boolean' ? { abstained: m.abstained } : {}),
+                  ...(typeof m.abstainedWithEvidence === 'boolean' ? { abstainedWithEvidence: m.abstainedWithEvidence } : {}),
+                  ...(typeof m.evidenceCount === 'number' ? { evidenceCount: m.evidenceCount } : {}),
                 })),
               });
             } catch (err) {

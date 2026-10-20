@@ -29,6 +29,9 @@ import {
 } from '../services/rag-ranking.js';
 import { isQuarantined, normalizeClassIds } from '../services/vector-audit.js';
 import { excludeRetiredMatches, partitionMaterialsByRetirement } from '../services/material-retirement.js';
+import {
+    resolveRagGenerationConfig, describeGenerationConfig, DETERMINISM,
+} from '../services/rag-generation-config.js';
 const MIN_HISTORY_TURNS = CONFIG.history.minTurns;
 const MAX_HISTORY_TURNS = CONFIG.history.maxTurns;
 const DEFAULT_HISTORY_TURNS = CONFIG.history.defaultTurns;
@@ -244,14 +247,18 @@ function buildGlossaryResponse({ answer, glossaryMeta, stream }) {
     // #358/UJ-22: el término ausente del glosario también es una abstención; la
     // definición encontrada, no.
     const abstained = answer === GLOSSARY_NOT_FOUND_MSG;
+    // #408: la declaración de configuración también viaja acá. Este camino no
+    // llama al modelo (la definición es fija), así que lo declara tal cual: así
+    // nadie compara una abstención del glosario contra una del modelo.
+    const generation = resolveRagGenerationConfig({ determinism: DETERMINISM.GLOSSARY });
     if (stream) {
         const encoder = new TextEncoder();
         const interactionId = uuidv4();
         const responseStream = new ReadableStream({
             start(controller) {
-                controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ interactionId, sources: [], glossary: glossaryMeta, abstained, model: getChatModelName() })}\n\n`));
+                controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ interactionId, sources: [], glossary: glossaryMeta, abstained, model: getChatModelName(), generation })}\n\n`));
                 controller.enqueue(encoder.encode(`event: delta\ndata: ${JSON.stringify({ content: answer })}\n\n`));
-                controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ answer, abstained })}\n\n`));
+                controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ answer, abstained, generation })}\n\n`));
                 controller.close();
             }
         });
@@ -265,7 +272,7 @@ function buildGlossaryResponse({ answer, glossaryMeta, stream }) {
             body: responseStream,
         };
     }
-    return jsonResponse(200, { id: uuidv4(), answer, sources: [], glossary: glossaryMeta, abstained });
+    return jsonResponse(200, { id: uuidv4(), answer, sources: [], glossary: glossaryMeta, abstained, generation });
 }
 
 /**
@@ -887,6 +894,16 @@ app.http('rag-query', {
             // último recurso; en cualquier otro caso, el rechazo estándar.
             const noMatchAnswer = glossaryMissTerm ? GLOSSARY_NOT_FOUND_MSG : REFUSAL_MESSAGE;
             const noMatchGlossaryMeta = glossaryMissTerm ? { found: false, term: glossaryMissTerm } : null;
+            // #408: acá la abstención NO es del muestreo del modelo — no hay
+            // fragmentos, así que no se llama al modelo. Se declara como tal para
+            // que nadie la compare contra una abstención del modelo sobre
+            // evidencia que sí existía.
+            const noContextGeneration = resolveRagGenerationConfig({ determinism: DETERMINISM.NO_CONTEXT });
+            const noContextDeclaration = {
+                evidenceCount: 0,
+                abstainedWithEvidence: false,
+                generation: noContextGeneration,
+            };
             context.log(`[RAG] No matches found for subjectId=${subjectId}. ${glossaryMissTerm ? 'Definitional query: glossary not-found fallback.' : 'Sending refusal stream.'}`);
             // Audit unanswered query (no context) for prompt-injection / knowledge-gap detection (#221).
             trackUnansweredQuery({
@@ -907,14 +924,14 @@ app.http('rag-query', {
                         // #358/UJ-22: se marca `abstained: true` para que la UI
                         // deje constancia de la pregunta sin respuesta por el
                         // motivo real (sin contexto), no por coincidencia textual.
-                        controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ sources: [], abstained: true, model: getChatModelName(), ...(noMatchGlossaryMeta ? { glossary: noMatchGlossaryMeta } : {}) })}\n\n`));
+                        controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ sources: [], abstained: true, model: getChatModelName(), ...noContextDeclaration, ...(noMatchGlossaryMeta ? { glossary: noMatchGlossaryMeta } : {}) })}\n\n`));
 
                         // 2. Enviar el mensaje como un delta para que la UI lo anime/muestre progresivamente si quiere, 
                         // o al menos use el path más probado del frontend.
                         controller.enqueue(encoder.encode(`event: delta\ndata: ${JSON.stringify({ content: noMatchAnswer })}\n\n`));
 
                         // 3. Enviar evento final
-                        controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ answer: noMatchAnswer, abstained: true })}\n\n`));
+                        controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ answer: noMatchAnswer, abstained: true, ...noContextDeclaration })}\n\n`));
                         controller.close();
                     }
                 });
@@ -928,6 +945,7 @@ app.http('rag-query', {
                     answer: noMatchAnswer,
                     sources: [],
                     abstained: true,
+                    ...noContextDeclaration,
                     ...(noMatchGlossaryMeta ? { glossary: noMatchGlossaryMeta } : {}),
                 });
             }
@@ -1056,6 +1074,23 @@ app.http('rag-query', {
         context.log(`[PromptGovernance] Respuesta gobernada por versionId=${promptId} (origen=${promptSource}${sandboxMode ? ', sandbox' : ''})`);
         const ragModel = await resolveModelForTask('rag-master');
 
+        // ── #408/UJ-27: configuración de generación DECLARADA ──
+        // La respuesta del asistente se generaba con el default del servicio
+        // (temperature 0.3) y sin declararlo en ningún lado: dos personas con la
+        // misma evidencia podían recibir textos distintos —o una respuesta y una
+        // abstención— sin forma de saber que la diferencia era del muestreo.
+        // Desde acá la temperatura baja a 0 y el bloque viaja en cada respuesta
+        // (metadata SSE, `done`, payload sin stream y log de la interacción), así
+        // que la comparación entre dos personas tiene árbitro: mismo modelo,
+        // mismos parámetros, misma evidencia → la diferencia es del proveedor.
+        const generation = resolveRagGenerationConfig({
+            model: ragModel,
+            modelLabel: getModelDisplayName(ragModel),
+            maxTokens,
+            promptVersion: promptId,
+        });
+        context.log(`[RAG] Generación declarada: ${describeGenerationConfig(generation)}`);
+
         // ── 6b. Cargar feedback docente (correcciones revisadas) ──
         let teacherFeedbackBlock = '';
         try {
@@ -1124,7 +1159,9 @@ ${contextText}
                     const encoder = new TextEncoder();
 
                     // Enviar metadatos iniciales
-                    controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ interactionId, sources, model: getModelDisplayName(ragModel), promptVersion: promptId })}\n\n`));
+                    // #408: `generation` declara modelo y parámetros con los que
+                    // se va a generar ESTA respuesta, antes de que se genere.
+                    controller.enqueue(encoder.encode(`event: metadata\ndata: ${JSON.stringify({ interactionId, sources, model: getModelDisplayName(ragModel), promptVersion: promptId, evidenceCount: sources.length, generation })}\n\n`));
 
                     let fullAnswer = '';
                     let finalUsage = null;
@@ -1140,7 +1177,7 @@ ${contextText}
                     }
 
                     try {
-                        const stream = await chatCompletion(messages, true, { model: ragModel, headers: dependencyHeaders, signal: request.signal, max_tokens: maxTokens });
+                        const stream = await chatCompletion(messages, true, { model: ragModel, temperature: generation.temperature, headers: dependencyHeaders, signal: request.signal, max_tokens: maxTokens });
                         for await (const chunk of stream) {
                             const delta = chunk.choices?.[0]?.delta?.content || '';
                             if (delta) {
@@ -1200,6 +1237,12 @@ ${contextText}
                             promptVersion: promptId,
                             sandbox: sandboxMode,
                             simulateStudent: simulateStudentMode,
+                            // #408: la declaración queda en el log de la
+                            // interacción, así el historial (chat-history) puede
+                            // mostrarla al reabrir el hilo y la comparación entre
+                            // dos personas se puede auditar después.
+                            generation,
+                            abstained: isAbstentionAnswer(fullAnswer),
                             timestamp: new Date().toISOString(),
                         };
 
@@ -1232,7 +1275,13 @@ ${contextText}
                         // #358/UJ-22: `abstained` marca el rechazo redactado por
                         // el modelo (o la respuesta vacía) para que la UI deje
                         // constancia sin depender de coincidencia textual.
-                        controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ usage: finalUsage, answer: fullAnswer, abstained: isAbstentionAnswer(fullAnswer) })}\n\n`));
+                        // #408: `evidenceCount` + `generation` dejan ver si la
+                        // abstención salió CON evidencia disponible (el modelo se
+                        // abstuvo) o SIN ella (el material no alcanza). Son dos
+                        // cosas distintas y antes se veían iguales.
+                        const abstained = isAbstentionAnswer(fullAnswer);
+                        const evidenceCount = sources.length;
+                        controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ usage: finalUsage, answer: fullAnswer, abstained, evidenceCount, abstainedWithEvidence: abstained && evidenceCount > 0, generation })}\n\n`));
                         controller.close();
                     } catch (err) {
                         if (err?.name === 'AbortError' || err?.code === 'ABORT_ERR') {
@@ -1286,7 +1335,7 @@ ${contextText}
         let answer;
         let chatUsage;
         try {
-            const chatResult = await chatCompletion(messages, false, { model: ragModel, headers: dependencyHeaders, max_tokens: maxTokens });
+            const chatResult = await chatCompletion(messages, false, { model: ragModel, temperature: generation.temperature, headers: dependencyHeaders, max_tokens: maxTokens });
             answer = chatResult.content;
             chatUsage = chatResult.usage;
         } catch (err) {
@@ -1401,6 +1450,10 @@ ${contextText}
             promptVersion: promptId,
             sandbox: sandboxMode,
             simulateStudent: simulateStudentMode,
+            // #408: misma declaración que en el camino con stream, para que el
+            // historial y la comparación entre personas la puedan leer.
+            generation,
+            abstained: isRefusalLike,
             timestamp: new Date().toISOString(),
             feedback: null
         };
@@ -1427,6 +1480,16 @@ ${contextText}
             }
         }
 
-        return jsonResponse(200, { id: interactionId, answer, sources, abstained: isRefusalLike });
+        return jsonResponse(200, {
+            id: interactionId,
+            answer,
+            sources,
+            abstained: isRefusalLike,
+            evidenceCount: sources.length,
+            abstainedWithEvidence: isRefusalLike && sources.length > 0,
+            model: getModelDisplayName(ragModel),
+            promptVersion: promptId,
+            generation,
+        });
     }), 'chat')),
 });
