@@ -109,9 +109,6 @@ test('teacher sees simplified Tasa Fallo Seguro card scoped to subject', async (
       }),
     });
   });
-  await page.route('**/api/sga/teacher-alerts?**', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
-  });
   await page.route('**/api/classes?**', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });

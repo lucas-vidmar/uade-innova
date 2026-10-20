@@ -195,9 +195,8 @@ export async function renderTeacherAnalytics(container) {
   }
 
   try {
-    const [data, alerts, classes, classViews, enrollments, users, safetyRate] = await Promise.all([
+    const [data, classes, classViews, enrollments, users, safetyRate] = await Promise.all([
       api.getTeacherAnalytics(activeSubjectId),
-      api.getTeacherAlerts(activeSubjectId),
       api.getClasses(activeSubjectId).catch(() => []),
       api.getClassViews(activeSubjectId).catch(() => []),
       api.getEnrollmentsBySubject(activeSubjectId).catch(() => []),
@@ -208,7 +207,6 @@ export async function renderTeacherAnalytics(container) {
       throw new Error('Datos de analítica incompletos');
     }
     const maxCount = Math.max(...data.topQuestions.map(q => q.count));
-    const highAlerts = (alerts || []).filter((item) => item.severity === 'high');
     const gaps = computeThematicGaps(data.frictionTopics, classes, classViews);
 
     container.innerHTML = `
@@ -227,54 +225,10 @@ export async function renderTeacherAnalytics(container) {
       </div>
     </div>
 
-    <div class="card" id="teacher-alerts-card" style="margin-bottom:var(--space-8)">
-      <div class="card-header">
-        <span class="card-title">🚨 Alertas docentes (engagement/material)</span>
-        <span class="badge ${highAlerts.length > 0 ? 'badge-error' : 'badge-info'}">${(alerts || []).length} activas</span>
-      </div>
-
-      ${(alerts || []).length === 0 ? `
-        <div class="empty-state" style="padding:20px">No hay alertas críticas para esta materia.</div>
-      ` : `
-        <div class="table-wrap">
-          <table class="data-table" id="teacher-alerts-table">
-            <thead>
-              <tr>
-                <th>Tipo</th>
-                <th>Detalle</th>
-                <th>Indicadores</th>
-                <th>Severidad</th>
-                <th>Acción sugerida</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${(alerts || []).map((alert) => {
-      const isMaterial = alert.type === 'material_report';
-      const detailLabel = isMaterial
-        ? `Clase ${alert.classId || '-'} · ${(alert.materialType || 'material').toUpperCase()}`
-        : `${alert.studentName || alert.studentId || 'Alumno'} · Clase ${alert.classId || '-'}`;
-      const indicators = isMaterial
-        ? `${alert.reportCount || 0} reportes`
-        : `${alert.attendance || 'N/D'} asistencia · Promedio ${typeof alert.avgGrade === 'number' ? alert.avgGrade : 'N/D'}`;
-      return `
-                <tr>
-                  <td><span class="badge ${isMaterial ? 'badge-warning' : 'badge-error'}">${isMaterial ? 'Material reportado' : 'Bajo engagement'}</span></td>
-                  <td>
-                    <strong>${alert.title}</strong>
-                    <div style="color:var(--color-text-secondary);font-size:var(--font-size-xs)">${detailLabel}</div>
-                    <div style="color:var(--color-text-secondary);font-size:var(--font-size-xs)">${alert.description || ''}</div>
-                  </td>
-                  <td>${indicators}</td>
-                  <td><span class="badge ${alert.severity === 'high' ? 'badge-error' : 'badge-warning'}">${alert.severity === 'high' ? 'Alta' : 'Media'}</span></td>
-                  <td style="font-size:var(--font-size-xs)">${alert.recommendedAction || '-'}</td>
-                </tr>
-              `;
-    }).join('')}
-            </tbody>
-          </table>
-        </div>
-      `}
-    </div>
+    <!-- #467: la lectura de "Alertas docentes" salió de esta pantalla. Su fuente
+         (GET /api/sga/teacher-alerts) devuelve una lista fija vacía, sin tabla ni
+         blob detrás: una tarjeta vacía se lee como "no hay riesgo" cuando en
+         realidad no hay medición. Vuelve cuando exista la fuente real. -->
 
     <div class="grid-2" style="margin-bottom:var(--space-8)">
       <!-- Top Questions -->

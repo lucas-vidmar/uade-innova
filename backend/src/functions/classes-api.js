@@ -255,13 +255,18 @@ function createSubjectDailyBucket(date, subjectId) {
 }
 
 export async function loadEarlyAlertSummary(context) {
+    // #467: este resumen sólo informa riesgo de la tabla de intervenciones
+    // (inactividad, consultas, engagement medidos en la plataforma). Antes
+    // arrastraba además attendanceBelow60Count / attendance60To75Count /
+    // attendanceAbove75Count / lowAttendanceCount / lowGradeCount siempre en 0:
+    // no hay fuente de asistencia ni de calificaciones, y esos ceros se leían en
+    // el tablero como "nadie por debajo del umbral". Se retiran hasta que exista
+    // la integración con el sistema académico.
     try {
         const tableClient = getTableClient(INTERVENTIONS_TABLE);
         await tableClient.createTable();
         const summary = {
             totalStudentsAtRisk: 0, highRiskCount: 0, mediumRiskCount: 0,
-            lowAttendanceCount: 0, lowGradeCount: 0,
-            attendanceBelow60Count: 0, attendance60To75Count: 0, attendanceAbove75Count: 0,
         };
         for await (const entity of tableClient.listEntities()) {
             if (entity.state === 'resolved') continue;
@@ -278,8 +283,6 @@ export async function loadEarlyAlertSummary(context) {
         logWarn(context, `[director/stats] Could not load interventions summary: ${err.message}`);
         return {
             totalStudentsAtRisk: 0, highRiskCount: 0, mediumRiskCount: 0,
-            lowAttendanceCount: 0, lowGradeCount: 0,
-            attendanceBelow60Count: 0, attendance60To75Count: 0, attendanceAbove75Count: 0,
         };
     }
 }
@@ -2064,7 +2067,7 @@ app.http('get-director-stats', {
                 adoptionRate,
                 subjectAdoption,
                 earlyAlertSummary,
-                _earlyAlertSource: 'Interventions table (login/engagement risk) — attendance/grade fields require SGA integration',
+                _earlyAlertSource: 'Interventions table (login/engagement risk). Attendance and grade cuts are not reported: no academic-system source (#467).',
                 powerBiSource: {
                     mode: 'continuous-export-db',
                     storage: 'Azure Table Storage',

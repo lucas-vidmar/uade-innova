@@ -2,51 +2,6 @@ import {
     BASE_URL, apiFetch, fetchWithTimeout, readList, delay, parseApiError
 } from './core.js';
 
-function normalizeTeacherAlert(item = {}, idx = 0) {
-    const type = item.type === 'material_report' ? 'material_report' : 'low_engagement';
-    const severity = item.severity === 'high' ? 'high' : 'medium';
-    return {
-        id: item.id || `teacher-alert-${idx}`,
-        type,
-        severity,
-        subjectId: item.subjectId || null,
-        classId: item.classId || null,
-        studentId: item.studentId || null,
-        studentName: item.studentName || null,
-        materialId: item.materialId || null,
-        materialType: item.materialType || null,
-        title: String(item.title || (type === 'low_engagement' ? 'Alerta de baja participación' : 'Alerta de material reportado')),
-        description: String(item.description || ''),
-        attendance: item.attendance || null,
-        avgGrade: typeof item.avgGrade === 'number' ? item.avgGrade : null,
-        reportCount: typeof item.reportCount === 'number' ? item.reportCount : 0,
-        createdAt: item.createdAt || new Date().toISOString(),
-        recommendedAction: String(item.recommendedAction || ''),
-    };
-}
-
-function normalizeEarlyAlert(item = {}) {
-    const normalizeRisk = (value) => (['low', 'medium', 'high'].includes(value) ? value : 'medium');
-    const normalizeInterventionFlag = (value, risk) => {
-        if (['stable', 'watchlist', 'at_risk'].includes(value)) return value;
-        if (risk === 'high') return 'at_risk';
-        if (risk === 'medium') return 'watchlist';
-        return 'stable';
-    };
-    const risk = normalizeRisk(item.risk);
-    return {
-        id: String(item.id || ''),
-        studentId: String(item.studentId || ''),
-        name: String(item.name || 'Alumno sin nombre'),
-        subjectId: String(item.subjectId || ''),
-        subject: String(item.subject || 'Materia no informada'),
-        risk,
-        interventionFlag: normalizeInterventionFlag(item.interventionFlag, risk),
-        attendance: String(item.attendance || '0%'),
-        avgGrade: typeof item.avgGrade === 'number' ? item.avgGrade : 0,
-    };
-}
-
 export async function getTasks(studentId, options = {}) {
     // fix #352: with `strict: true` a failed read throws instead of looking
     // like "this student has no pending work".
@@ -57,57 +12,18 @@ export async function getTasks(studentId, options = {}) {
     });
 }
 
-export async function getEarlyAlerts(subjectId, options = {}) {
-    const resolvedSubjectId = typeof subjectId === 'string' ? subjectId : (subjectId && typeof subjectId === 'object' ? subjectId.subjectId : undefined);
-    const interventionOnly = typeof subjectId === 'object' && subjectId !== null
-        ? Boolean(subjectId.interventionOnly)
-        : Boolean(options.interventionOnly);
-
-    try {
-        const params = new URLSearchParams();
-        if (resolvedSubjectId) params.set('subjectId', resolvedSubjectId);
-        if (interventionOnly) params.set('interventionOnly', 'true');
-        const query = params.toString() ? `?${params.toString()}` : '';
-        const res = await fetchWithTimeout(`${BASE_URL}/sga/early-alerts${query}`, { timeout: 4000 });
-        if (!res.ok) return [];
-        const data = await res.json();
-        return Array.isArray(data) ? data.map(normalizeEarlyAlert) : [];
-    } catch (err) {
-        console.error('[API] getEarlyAlerts failed:', err);
-        return [];
-    }
-}
-
-export async function getAttendanceStats(subjectId) {
-    try {
-        const res = await fetchWithTimeout(`${BASE_URL}/sga/attendance?subjectId=${encodeURIComponent(subjectId)}`, { timeout: 4000 });
-        if (!res.ok) return { average: 0, critical: 0, trend: 'stable', subjectId, updatedAt: new Date().toISOString() };
-        return await res.json();
-    } catch (err) {
-        console.error('[API] getAttendanceStats failed:', err);
-        return { average: 0, critical: 0, trend: 'stable', subjectId, updatedAt: new Date().toISOString() };
-    }
-}
+// #467: acá vivían getEarlyAlerts, getAttendanceStats y getTeacherAlerts. Sus
+// endpoints (GET /api/sga/early-alerts, /attendance, /teacher-alerts) devuelven
+// listas fijas vacías o `{ average: null, ... }` porque no hay fuente: no leen
+// ninguna tabla ni blob. Los clientes además inventaban ceros al fallar
+// (`average: 0, trend: 'stable'`), que se leían como una medición real. Sin
+// consumidor en la interfaz y sin fuente, se retiran del cliente hasta que la
+// integración con el sistema académico exista.
 
 export async function getTeacherAnalytics(subjectId) {
     const res = await apiFetch(`${BASE_URL}/analytics?subjectId=${subjectId}`);
     if (!res.ok) throw await parseApiError(res, `Error ${res.status}: no se pudieron cargar los datos de analítica.`);
     return res.json();
-}
-
-export async function getTeacherAlerts(subjectId) {
-    if (!subjectId) return [];
-    try {
-        const res = await fetchWithTimeout(`${BASE_URL}/sga/teacher-alerts?subjectId=${encodeURIComponent(subjectId)}`, { timeout: 4000 });
-        if (!res.ok) throw await parseApiError(res, `Error ${res.status}: no se pudieron cargar las alertas docentes.`);
-        const data = await res.json();
-        if (!Array.isArray(data)) return [];
-        return data.map((item, idx) => normalizeTeacherAlert(item, idx));
-    } catch (err) {
-        if (err?.retryable === false || err?.status === 401 || err?.status === 403) throw err;
-        console.error('[API] getTeacherAlerts failed:', err);
-        return [];
-    }
 }
 
 function sessionMockingEnabled() {

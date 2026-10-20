@@ -329,6 +329,11 @@ test('classes-api get-director-stats returns aggregate summary without student i
     assert.strictEqual(typeof payload.earlyAlertSummary.totalStudentsAtRisk, 'number');
     assert.strictEqual(typeof payload.earlyAlertSummary.highRiskCount, 'number');
     assert.strictEqual(typeof payload.earlyAlertSummary.mediumRiskCount, 'number');
+    // #467: no se reportan cortes de asistencia ni de promedio: no hay fuente y
+    // un 0 fijo se leía como "nadie por debajo del umbral".
+    for (const key of ['attendanceBelow60Count', 'attendance60To75Count', 'attendanceAbove75Count', 'lowAttendanceCount', 'lowGradeCount']) {
+        assert.strictEqual(payload.earlyAlertSummary[key], undefined, `${key} no debe informarse sin fuente`);
+    }
 
     assert.strictEqual(payload.name, undefined);
     assert.strictEqual(payload.studentId, undefined);

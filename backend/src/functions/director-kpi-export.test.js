@@ -168,6 +168,20 @@ test('kpi-export returns 200 printable HTML for format=pdf', async () => {
     assert.match(res.body, /Dashboard Directivo/);
 });
 
+// #467: el export no puede presentar cortes de asistencia/promedio sin fuente.
+test('kpi-export no reporta asistencia ni promedio y declara la ausencia', async () => {
+    const csv = await handlers['get-director-kpi-export'](getRequest('csv'), makeContext());
+    assert.strictEqual(csv.status, 200);
+    assert.match(csv.body, /Asistencia y promedio,sin fuente/);
+    assert.doesNotMatch(csv.body, /Asistencia < 60%/);
+    assert.doesNotMatch(csv.body, /Asistencia 60-75%/);
+
+    const pdf = await handlers['get-director-kpi-export'](getRequest('pdf'), makeContext());
+    assert.strictEqual(pdf.status, 200);
+    assert.match(pdf.body, /Asistencia y promedio<\/td><td>sin fuente/);
+    assert.doesNotMatch(pdf.body, /Asistencia &lt; 60%/);
+});
+
 test('kpi-export returns 200 CSV when metrics computation throws', async () => {
     classesApiMocks.computeDirectorMetrics.mock.mockImplementation(async () => {
         throw new Error('storage unavailable');
