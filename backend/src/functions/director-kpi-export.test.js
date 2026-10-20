@@ -78,6 +78,8 @@ const classesApiMocks = {
         attendanceBelow60Count: 0, attendance60To75Count: 0, attendanceAbove75Count: 0,
     })),
     loadSubjects: mock.fn(async () => []),
+    // #491: la exportación reusa la lectura de adopción del panel.
+    buildDirectorAdoptionReading: mock.fn(async () => null),
     POWERBI_DEFAULT_DAYS: 14,
 };
 
@@ -149,6 +151,7 @@ beforeEach(() => {
     principalMock = { userRoles: ['Director'], userId: 'director-1' };
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Development';
     classesApiMocks.computeDirectorMetrics.mock.mockImplementation(async () => structuredClone(EMPTY_METRICS));
+    classesApiMocks.buildDirectorAdoptionReading.mock.mockImplementation(async () => null);
     azureCostMocks.getAzureCostForBudget.mock.mockImplementation(
         async () => ({ success: false, currentMonthSpend: 0, daily: [] }),
     );
@@ -240,4 +243,52 @@ test('kpi-export quotes CSV cells with commas/quotes and coerces string costs', 
     const res = await handlers['get-director-kpi-export'](getRequest('csv'), makeContext());
     assert.strictEqual(res.status, 200);
     assert.match(res.body, /"Arq, ""Plan 2026""",0\.001000/);
+});
+
+// #491 (UJ-43): la exportación lleva las mismas tres dimensiones que el panel,
+// cada una con su total, y declara los huecos de la lectura.
+const ADOPTION_READING = {
+    criteria: 'Uso: persona con al menos una interacción registrada en SessionMetrics dentro de la ventana.',
+    dimensions: {
+        subject: {
+            key: 'subject', label: 'Unidad',
+            rows: [{ key: 'arq-software-2026', label: 'Arquitectura de Software 2026', unassigned: false, cohort: 6, active: 4, rate: 67, sources: {} }],
+            total: { key: 'total', label: 'Total por unidad', cohort: 6, active: 4, rate: 67, rows: 1 },
+        },
+        campus: {
+            key: 'campus', label: 'Sede',
+            rows: [{ key: '__sin_dato__', label: 'Sin sede declarada', unassigned: true, cohort: 6, active: 4, rate: 67, sources: { sin_dato: 7 } }],
+            total: { key: 'total', label: 'Total por sede', cohort: 6, active: 4, rate: 67, rows: 1 },
+        },
+        track: {
+            key: 'track', label: 'Carrera',
+            rows: [{ key: 'Tecnicatura', label: 'Tecnicatura', unassigned: false, cohort: 6, active: 4, rate: 67, sources: { unidad: 7 } }],
+            total: { key: 'total', label: 'Total por carrera', cohort: 6, active: 4, rate: 67, rows: 1 },
+        },
+    },
+    integrity: { distinctCohort: 6, distinctActive: 4, orphanPeople: 0 },
+    gaps: [{ dimension: 'campus', reason: 'sede_sin_declarar', count: 6, detail: '6 persona(s) sin sede declarada: ni la matrícula ni el perfil traen el dato.' }],
+};
+
+test('kpi-export incluye las tres dimensiones de adopción y los huecos declarados (#491)', async () => {
+    classesApiMocks.buildDirectorAdoptionReading.mock.mockImplementation(async () => structuredClone(ADOPTION_READING));
+
+    const res = await handlers['get-director-kpi-export'](getRequest('csv'), makeContext());
+    assert.strictEqual(res.status, 200);
+    const csv = res.body || res.bodyAsString || '';
+    assert.match(csv, /seccion,dimension,corte,cohorte,personas_con_uso,tasa_pct,fuente/);
+    assert.match(csv, /Adopcion,Unidad,Arquitectura de Software 2026,6,4,67/);
+    assert.match(csv, /Adopcion,Unidad,TOTAL,6,4,67/);
+    assert.match(csv, /Adopcion,Sede,Sin sede declarada,6,4,67/);
+    assert.match(csv, /Adopcion,Sede,TOTAL,6,4,67/);
+    assert.match(csv, /Adopcion,Carrera,Tecnicatura,6,4,67/);
+    assert.match(csv, /Huecos de la lectura,sede_sin_declarar/);
+    assert.match(csv, /criterio_adopcion,Uso: persona con al menos una interacción/);
+
+    const html = await handlers['get-director-kpi-export'](getRequest('pdf'), makeContext());
+    assert.strictEqual(html.status, 200);
+    const body = html.body || html.bodyAsString || '';
+    assert.match(body, /Adopci&oacute;n por unidad/);
+    assert.match(body, /Adopci&oacute;n por sede/);
+    assert.match(body, /Adopci&oacute;n por carrera/);
 });

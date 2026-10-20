@@ -4,6 +4,7 @@ import { parseClientPrincipal, validateFrontDoorId, getAuthenticatedUser, resolv
 import { toFrontendRole } from '../services/allowlist.js';
 import { trackUserLogin } from '../services/telemetry.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
+import { normalizeCampus, normalizeTrack } from '../services/adoption-dimensions.js';
 
 const tableName = "UserProfiles";
 
@@ -32,7 +33,10 @@ app.http('get-profile', {
                 // #375: constancia de la entrada guiada.
                 onboardingStatus: null,
                 onboardingAt: null,
-                onboardingStep: null
+                onboardingStep: null,
+                // #491: sin fila de perfil no hay sede ni carrera declaradas.
+                campus: null,
+                track: null
             };
 
             // Single per-user identity (#329): same key save-profile writes.
@@ -85,7 +89,11 @@ app.http('get-profile', {
                     includeSources: asBool(entity.includeSources, true),
                     onboardingStatus: VALID_ONBOARDING_STATUSES.includes(entity.onboardingStatus) ? entity.onboardingStatus : null,
                     onboardingAt: typeof entity.onboardingAt === 'string' && !Number.isNaN(Date.parse(entity.onboardingAt)) ? entity.onboardingAt : null,
-                    onboardingStep: Number.isInteger(entity.onboardingStep) ? entity.onboardingStep : null
+                    onboardingStep: Number.isInteger(entity.onboardingStep) ? entity.onboardingStep : null,
+                    // #491 (UJ-43): dimensiones declaradas de la persona. null =
+                    // el dato no está declarado (no es una cadena vacía).
+                    campus: normalizeCampus(entity.campus),
+                    track: normalizeTrack(entity.track)
                 };
             } catch (err) {
                 if (err.statusCode === 404) {

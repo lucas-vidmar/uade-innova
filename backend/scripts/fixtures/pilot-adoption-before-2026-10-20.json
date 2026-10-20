@@ -1,0 +1,35 @@
+{
+  "_nota": "Estado previo del piloto (UJ-43 / #491) capturado contra el entorno del piloto el 2026-10-20 vía GET /api/subjects y GET /api/enrollments?subjectId=... con la identidad dir-001. Se guardan sólo identificadores sintéticos del piloto: sin nombres, emails ni credenciales. Ni las matrículas ni los perfiles ni las unidades tenían sede o carrera por persona: la única carrera del modelo era subjects[].track.",
+  "_capturado": "2026-10-20T02:35:00Z",
+  "_fuente": {
+    "unidades": "GET /api/subjects",
+    "matriculas": "GET /api/enrollments?subjectId=<id>",
+    "personas": "GET /api/manage/users (sólo id/rol/estado; ningún campo de sede ni carrera)"
+  },
+  "subjects": [
+    { "id": "arq-software-2026", "name": "Arquitectura de Software 2026", "track": "Tecnicatura", "group": "" },
+    { "id": "diseno-sistemas-2026", "name": "Diseño de Sistemas 2026", "track": "Tecnicatura", "group": "" },
+    { "id": "eco-internacional-2026", "name": "Economía Internacional Monetaria 2026", "track": "Licenciatura", "group": "" },
+    { "id": "dasi-1c2023", "name": "DASI - Análisis de Sistemas e Información Gerencial", "track": null, "group": "todos" }
+  ],
+  "enrollments": [
+    { "subjectId": "arq-software-2026", "userId": "1132", "role": "student", "status": "active" },
+    { "subjectId": "arq-software-2026", "userId": "admin-001", "role": "admin", "status": "active" },
+    { "subjectId": "arq-software-2026", "userId": "alu-001", "role": "student", "status": "active" },
+    { "subjectId": "arq-software-2026", "userId": "alu-002", "role": "student", "status": "active" },
+    { "subjectId": "arq-software-2026", "userId": "alu-003", "role": "student", "status": "active" },
+    { "subjectId": "arq-software-2026", "userId": "alu-004", "role": "student", "status": "active" },
+    { "subjectId": "arq-software-2026", "userId": "alu-005", "role": "student", "status": "active" },
+    { "subjectId": "arq-software-2026", "userId": "dir-001", "role": "director", "status": "active" },
+    { "subjectId": "arq-software-2026", "userId": "doc-001", "role": "teacher", "status": "active" },
+    { "subjectId": "arq-software-2026", "userId": "prof-001", "role": "teacher", "status": "active" },
+    { "subjectId": "arq-software-2026", "userId": "prof-002", "role": "teacher", "status": "active" },
+    { "subjectId": "diseno-sistemas-2026", "userId": "alu-001", "role": "student", "status": "active" }
+  ],
+  "profiles": [
+    { "userId": "alu-001", "theme": "light", "language": "es" },
+    { "userId": "alu-002", "theme": "light", "language": "es" },
+    { "userId": "alu-003", "theme": "light", "language": "es" }
+  ],
+  "identidadesDelPiloto": ["alu-001", "alu-002", "alu-003", "alu-004", "alu-005"]
+}

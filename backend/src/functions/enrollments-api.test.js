@@ -14,6 +14,8 @@ const stateStoreMocks = {
     getEnrollmentsBySubject: mock.fn(async () => []),
     upsertEnrollment: mock.fn(async (e) => e),
     deleteEnrollment: mock.fn(async () => true),
+    // #491: el PATCH de dimensiones es parte del grafo de importación del módulo.
+    patchEnrollmentDimensions: mock.fn(async () => ({})),
 };
 
 mock.module('../services/auth-utils.js', { namedExports: authUtilsMocks });
@@ -379,6 +381,114 @@ test('get-enrollments rejects teacher reading a roster of a subject they do not 
     assert.strictEqual(res.status, 403);
     const body = JSON.parse(res.body);
     assert.strictEqual(body.error.code, 'FORBIDDEN');
+
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+});
+// ── #491 (UJ-43): sede y carrera en la matrícula ─────────────────
+test('POST /api/enrollments guarda sede y carrera cuando llegan declaradas (#491)', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'dir-001', userRoles: ['Director'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+    stateStoreMocks.upsertEnrollment.mock.mockImplementation(async (e) => e);
+
+    const ctx = makeContext();
+    ctx.user = { id: 'dir-001', userId: 'dir-001', role: 'Director' };
+    const req = makeRequest({}, {
+        subjectId: 'arq-software-2026',
+        userId: 'alu-001',
+        role: 'student',
+        campus: '  Monserrat ',
+        track: 'Tecnicatura',
+    });
+    const res = await handlers['create-enrollment'](req, ctx);
+    assert.strictEqual(res.status, 200);
+
+    const [saved] = stateStoreMocks.upsertEnrollment.mock.calls.at(-1).arguments;
+    assert.strictEqual(saved.campus, 'Monserrat', 'se normaliza el espacio sobrante');
+    assert.strictEqual(saved.campusSource, 'declarado');
+    assert.strictEqual(saved.track, 'Tecnicatura');
+    assert.strictEqual(saved.trackSource, 'declarado');
+
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+});
+
+test('POST /api/enrollments rechaza una sede desmedida en vez de recortarla (#491)', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'dir-001', userRoles: ['Director'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+
+    const ctx = makeContext();
+    ctx.user = { id: 'dir-001', userId: 'dir-001', role: 'Director' };
+    const req = makeRequest({}, {
+        subjectId: 'arq-software-2026',
+        userId: 'alu-001',
+        role: 'student',
+        campus: 'x'.repeat(120),
+    });
+    const res = await handlers['create-enrollment'](req, ctx);
+    assert.strictEqual(res.status, 400);
+    assert.strictEqual(JSON.parse(res.body).error.code, 'INVALID_DIMENSION');
+
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+});
+
+test('PATCH /api/enrollments declara sede y carrera de una matrícula existente (#491)', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'dir-001', userRoles: ['Director'] }));
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+
+    stateStoreMocks.getEnrollment.mock.mockImplementation(async () => ({
+        subjectId: 'arq-software-2026', userId: 'alu-002', role: 'student', status: 'active',
+    }));
+    stateStoreMocks.patchEnrollmentDimensions.mock.mockImplementation(async () => ({}));
+
+    const ctx = makeContext();
+    ctx.user = { id: 'dir-001', userId: 'dir-001', role: 'Director' };
+    const req = makeRequest({}, {
+        subjectId: 'arq-software-2026', userId: 'alu-002', campus: 'Recoleta', track: 'Tecnicatura',
+    });
+    const res = await handlers['patch-enrollment-dimensions'](req, ctx);
+    assert.strictEqual(res.status, 200);
+
+    const [patch] = stateStoreMocks.patchEnrollmentDimensions.mock.calls.at(-1).arguments;
+    assert.deepEqual(
+        { campus: patch.campus, track: patch.track, campusSource: patch.campusSource, trackSource: patch.trackSource },
+        { campus: 'Recoleta', track: 'Tecnicatura', campusSource: 'declarado', trackSource: 'declarado' },
+    );
+    assert.strictEqual(res.body.includes('declarado'), false, 'la respuesta no expone la fuente interna como valor');
+
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
+});
+
+test('PATCH /api/enrollments exige estar en la dirección y una matrícula existente (#491)', async () => {
+    const prevEnv = process.env.AZURE_FUNCTIONS_ENVIRONMENT;
+    process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Production';
+
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'doc-001', userRoles: ['Docente'] }));
+    const teacherCtx = makeContext();
+    teacherCtx.user = { id: 'doc-001', userId: 'doc-001', role: 'Docente' };
+    const teacherRes = await handlers['patch-enrollment-dimensions'](
+        makeRequest({}, { subjectId: 'arq-software-2026', userId: 'alu-002', campus: 'Recoleta' }),
+        teacherCtx,
+    );
+    assert.strictEqual(teacherRes.status, 403);
+
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userId: 'dir-001', userRoles: ['Director'] }));
+    stateStoreMocks.getEnrollment.mock.mockImplementation(async () => null);
+    const ctx = makeContext();
+    ctx.user = { id: 'dir-001', userId: 'dir-001', role: 'Director' };
+    const missing = await handlers['patch-enrollment-dimensions'](
+        makeRequest({}, { subjectId: 'arq-software-2026', userId: 'no-existe', campus: 'Recoleta' }),
+        ctx,
+    );
+    assert.strictEqual(missing.status, 404);
+
+    const empty = await handlers['patch-enrollment-dimensions'](
+        makeRequest({}, { subjectId: 'arq-software-2026', userId: 'alu-002' }),
+        ctx,
+    );
+    assert.strictEqual(empty.status, 400);
+    assert.strictEqual(JSON.parse(empty.body).error.code, 'MISSING_FIELDS');
 
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
 });

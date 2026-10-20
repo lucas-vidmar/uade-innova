@@ -108,7 +108,8 @@ El backend expone ~55 endpoints HTTP, 6 funciones timer-triggered y 1 blob-trigg
 | GET | `/api/sga/teacher-alerts` | Teacher/Director | Alertas docente (mock) |
 | GET | `/api/enrollments` | Self/Director | Inscripciones |
 | GET | `/api/enrollments/check` | FrontDoor | Verifica inscripción |
-| POST | `/api/enrollments` | Teacher/Director | Crea inscripción |
+| POST | `/api/enrollments` | Teacher/Director | Crea inscripción. Acepta `campus` y `track` opcionales (#491) |
+| PATCH | `/api/enrollments` | Director | Declara `campus`/`track` de una matrícula existente sin tocar el resto de la fila (#491) |
 | DELETE | `/api/enrollments` | Director | Elimina inscripción |
 | GET | `/api/analytics` | Teacher/Director | Analytics docente |
 | GET | `/api/tasks` | Self/Director | Tareas priorizadas (mock) |
@@ -205,6 +206,43 @@ El backend expone ~55 endpoints HTTP, 6 funciones timer-triggered y 1 blob-trigg
   }
 }
 ```
+
+### Lectura de adopción desagregada (`GET /api/director/stats`)
+
+Desde #491 (UJ-43 / DI-01) la respuesta trae la lectura abierta por unidad, sede
+y carrera, cada dimensión con su propio total, además de los campos previos
+(`adoptionRate`, `subjectAdoption`, `wausBySubject`):
+
+```json
+{
+  "adoptionRate": 67,
+  "adoptionCohort": 6,
+  "adoptionCriteria": "Uso: persona con al menos una interacción registrada en SessionMetrics dentro de la ventana. Cohorte: matrículas activas de rol student. …",
+  "adoptionWindowDays": 30,
+  "adoptionByDimension": {
+    "subject": { "label": "Unidad", "rows": [{ "key": "arq-software-2026", "label": "Arquitectura de Software 2026", "cohort": 6, "active": 4, "rate": 67, "unassigned": false, "sources": {} }], "total": { "cohort": 6, "active": 4, "rate": 67, "rows": 1 } },
+    "campus": { "label": "Sede", "rows": [{ "key": "__sin_dato__", "label": "Sin sede declarada", "cohort": 6, "active": 4, "rate": 67, "unassigned": true }], "total": { "cohort": 6, "active": 4, "rate": 67 } },
+    "track": { "label": "Carrera", "rows": [{ "key": "Tecnicatura", "label": "Tecnicatura", "cohort": 6, "active": 4, "rate": 67, "unassigned": false }], "total": { "cohort": 6, "active": 4, "rate": 67 } }
+  },
+  "adoptionIntegrity": { "distinctCohort": 6, "distinctActive": 4, "orphanPeople": 0, "multiBucketCampus": 0, "multiBucketTrack": 0, "enrollmentsSkipped": 5 },
+  "adoptionGaps": [{ "dimension": "campus", "reason": "sede_sin_declarar", "count": 6, "detail": "6 persona(s) sin sede declarada: …" }],
+  "adoptionSources": { "cohort": { "table": "Enrollments", "readable": true }, "dimensions": { "tables": ["Enrollments", "UserProfiles"], "readable": true }, "usage": { "table": "SessionMetrics", "readable": true } }
+}
+```
+
+Contrato de la lectura:
+
+- `rate` es `null` cuando la cohorte del corte es 0: no se informa `0%` (que se
+  leería como «nadie usó el servicio»).
+- Cada persona de la cohorte cae en exactamente un corte por dimensión: con su
+  valor o en el corte `unassigned` (`__sin_dato__`). `orphanPeople` tiene que
+  ser 0; si no lo es, el panel lo declara.
+- Los totales de cada dimensión cuentan personas distintas; una persona con
+  matrícula en dos unidades figura en cada corte y una sola vez en el total.
+- `adoptionGaps` declara lo que la lectura no puede cubrir (unidades sin
+  cohorte, personas sin sede, carreras con una sola sede, matrículas fuera del
+  catálogo). Nunca se rellena un hueco con un promedio ni con un valor supuesto.
+- No se exponen identificadores de personas: sólo conteos por corte.
 
 ## Almacenamiento
 

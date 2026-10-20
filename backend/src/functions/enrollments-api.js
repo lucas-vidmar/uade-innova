@@ -2,7 +2,10 @@ import { app } from '@azure/functions';
 import { withAuth } from '../middleware/with-auth.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
-import { getEnrollment, getEnrollmentsByUser, getEnrollmentsBySubject, upsertEnrollment, deleteEnrollment } from '../services/state-store.js';
+import { getEnrollment, getEnrollmentsByUser, getEnrollmentsBySubject, upsertEnrollment, deleteEnrollment, patchEnrollmentDimensions } from '../services/state-store.js';
+import { normalizeCampus, normalizeDimension, normalizeTrack } from '../services/adoption-dimensions.js';
+
+const MAX_DIMENSION_LENGTH = 80;
 
 function jsonResponse(status, payload) {
   return {
@@ -10,6 +13,19 @@ function jsonResponse(status, payload) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   };
+}
+
+/**
+ * Sede y carrera son etiquetas declaradas: se aceptan sólo como texto corto
+ * (#491). Un valor desmedido se rechaza en vez de guardarse truncado.
+ */
+function validateDimensionLengths({ campus, track }) {
+  const tooLong = [campus, track].find((value) => value && value.length > MAX_DIMENSION_LENGTH);
+  if (!tooLong) return null;
+  return jsonResponse(400, {
+    success: false,
+    error: { code: 'INVALID_DIMENSION', message: `campus y track no pueden superar ${MAX_DIMENSION_LENGTH} caracteres` },
+  });
 }
 
 function isTeacherOrDirector(principal) {
@@ -202,6 +218,14 @@ app.http('create-enrollment', {
       return scope.error;
     }
 
+    // #491 (UJ-43): la matrícula puede declarar sede y carrera. Se guardan sólo
+    // cuando llegan con valor: un campo ausente no borra el dato ya declarado
+    // (upsertEnrollment es Merge).
+    const campus = normalizeCampus(body.campus);
+    const track = normalizeTrack(body.track);
+    const dimensionError = validateDimensionLengths({ campus, track });
+    if (dimensionError) return dimensionError;
+
     try {
       const enrollment = await upsertEnrollment({
         subjectId,
@@ -209,8 +233,10 @@ app.http('create-enrollment', {
         role,
         status: status || 'active',
         enrolledAt: body.enrolledAt || new Date().toISOString(),
+        ...(campus ? { campus, campusSource: 'declarado' } : {}),
+        ...(track ? { track, trackSource: 'declarado' } : {}),
       });
-      context.log(`[Enrollment] Created: subjectId=${subjectId}, userId=${userId}, role=${role}`);
+      context.log(`[Enrollment] Created: subjectId=${subjectId}, userId=${userId}, role=${role} campus=${campus || 'n/d'} track=${track || 'n/d'}`);
       return jsonResponse(200, {
         success: true,
         data: enrollment,
@@ -218,6 +244,68 @@ app.http('create-enrollment', {
       });
     } catch (err) {
       context.error(`[Enrollment] Error creating enrollment: ${err.message}`);
+      return jsonResponse(500, { success: false, error: { code: 'INTERNAL_ERROR', message: err.message } });
+    }
+  })),
+});
+
+// ── PATCH /api/enrollments (director only) ─────────────────────
+// Declara sede y carrera de una matrícula sin tocar el resto de la fila (#491).
+// Es la superficie con la que se completa el dato de la cohorte del piloto y
+// con la que se corrige una asignación equivocada (UJ-43 paso 5).
+app.http('patch-enrollment-dimensions', {
+  methods: ['PATCH'],
+  authLevel: 'anonymous',
+  route: 'enrollments',
+  handler: withCorrelation(withAuth(async (request, context) => {
+    if (!validateFrontDoorId(request)) return jsonResponse(403, { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } });
+
+    const principal = parseClientPrincipal(request);
+    if (!isDirector(principal)) {
+      return jsonResponse(403, { success: false, error: { code: 'INSUFFICIENT_ROLE', message: 'Director role required' } });
+    }
+
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return jsonResponse(400, { success: false, error: { code: 'INVALID_BODY', message: 'Invalid JSON body' } });
+    }
+
+    const subjectId = normalizeDimension(body?.subjectId);
+    const userId = normalizeDimension(body?.userId);
+    if (!subjectId || !userId) {
+      return jsonResponse(400, { success: false, error: { code: 'MISSING_FIELDS', message: 'subjectId y userId son requeridos' } });
+    }
+
+    const campus = normalizeCampus(body.campus);
+    const track = normalizeTrack(body.track);
+    if (!campus && !track) {
+      return jsonResponse(400, { success: false, error: { code: 'MISSING_FIELDS', message: 'campus o track son requeridos' } });
+    }
+    const dimensionError = validateDimensionLengths({ campus, track });
+    if (dimensionError) return dimensionError;
+
+    try {
+      const existing = await getEnrollment(subjectId, userId);
+      if (!existing) {
+        return jsonResponse(404, { success: false, error: { code: 'NOT_FOUND', message: 'No existe una matrícula para esa unidad y persona' } });
+      }
+      await patchEnrollmentDimensions({
+        subjectId,
+        userId,
+        ...(campus ? { campus, campusSource: 'declarado' } : {}),
+        ...(track ? { track, trackSource: 'declarado' } : {}),
+      });
+      const updated = await getEnrollment(subjectId, userId);
+      context.log(`[Enrollment] Dimensions patched: subjectId=${subjectId} userId=${userId} campus=${campus || 'n/d'} track=${track || 'n/d'}`);
+      return jsonResponse(200, {
+        success: true,
+        data: updated,
+        meta: { timestamp: new Date().toISOString() },
+      });
+    } catch (err) {
+      context.error(`[Enrollment] Error patching dimensions: ${err.message}`);
       return jsonResponse(500, { success: false, error: { code: 'INTERNAL_ERROR', message: err.message } });
     }
   })),

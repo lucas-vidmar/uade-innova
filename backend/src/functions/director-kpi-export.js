@@ -97,6 +97,53 @@ function buildCsv(data) {
   }
   lines.push('');
 
+  // #491 (UJ-43): las tres dimensiones de la lectura de adopción, cada una con
+  // su propio total y con las personas que cayeron en el corte «sin declarar».
+  // El export lleva los mismos cortes que el panel: mismas dimensiones, mismo
+  // cuadro.
+  const adoption = isRecord(d.adoptionByDimension) ? d.adoptionByDimension : null;
+  if (adoption) {
+    lines.push('seccion,dimension,corte,cohorte,personas_con_uso,tasa_pct,fuente');
+    for (const name of ['subject', 'campus', 'track']) {
+      const dimension = isRecord(adoption[name]) ? adoption[name] : null;
+      if (!dimension) continue;
+      for (const row of asArray(dimension.rows)) {
+        if (!isRecord(row)) continue;
+        const sources = isRecord(row.sources) ? Object.keys(row.sources).join('+') : '';
+        lines.push([
+          'Adopcion',
+          csvCell(dimension.label || name),
+          csvCell(row.label || row.key),
+          toNum(row.cohort),
+          toNum(row.active),
+          row.rate === null || row.rate === undefined ? 'no calculable' : toNum(row.rate),
+          csvCell(sources || 'sin dato'),
+        ].join(','));
+      }
+      const total = isRecord(dimension.total) ? dimension.total : null;
+      if (total) {
+        lines.push([
+          'Adopcion',
+          csvCell(dimension.label || name),
+          'TOTAL',
+          toNum(total.cohort),
+          toNum(total.active),
+          total.rate === null || total.rate === undefined ? 'no calculable' : toNum(total.rate),
+          csvCell(''),
+        ].join(','));
+      }
+    }
+    lines.push('');
+    lines.push('seccion,hueco,motivo,personas_o_unidades,detalle');
+    for (const gap of asArray(d.adoptionGaps)) {
+      if (!isRecord(gap)) continue;
+      lines.push(`Huecos de la lectura,${csvCell(gap.reason || '')},${csvCell(gap.dimension || '')},${toNum(gap.count)},${csvCell(gap.detail || '')}`);
+    }
+    lines.push('');
+    lines.push(`criterio_adopcion,${csvCell(d.adoptionCriteria || '')}`);
+  }
+  lines.push('');
+
   lines.push('seccion,docente,transcripciones,presentaciones,apuntes,bibliografia,total');
   const byTeacher = asArray(isRecord(d.materialUploads) ? d.materialUploads.byTeacher : []);
   for (const t of byTeacher) {
@@ -123,6 +170,25 @@ function buildHtml(data) {
   }).join('');
   const wausRows = asArray(d.wausBySubject).filter(isRecord).map(s =>
     `<tr><td>${t(s.subjectName || s.subjectId)}</td><td>${toNum(s.currentWeek)}</td></tr>`
+  ).join('');
+  // #491 (UJ-43): el reporte imprimible lleva los mismos tres cortes que el panel.
+  const adoptionDimension = (name) => {
+    const adoptionMap = isRecord(d.adoptionByDimension) ? d.adoptionByDimension : {};
+    const dimension = isRecord(adoptionMap[name]) ? adoptionMap[name] : null;
+    if (!dimension) return '';
+    const rows = asArray(dimension.rows).filter(isRecord).map(row =>
+      `<tr><td>${t(row.label || row.key)}</td><td>${toNum(row.cohort)}</td><td>${toNum(row.active)}</td><td>${row.rate === null || row.rate === undefined ? 'no calculable' : toNum(row.rate) + '%'}</td></tr>`
+    ).join('');
+    const total = isRecord(dimension.total) ? dimension.total : null;
+    const totalRow = total
+      ? `<tr><th>Total por ${t(String(dimension.label || name).toLowerCase())}</th><th>${toNum(total.cohort)}</th><th>${toNum(total.active)}</th><th>${total.rate === null || total.rate === undefined ? 'no calculable' : toNum(total.rate) + '%'}</th></tr>`
+      : '';
+    return `<h2>Adopci&oacute;n por ${t(String(dimension.label || name).toLowerCase())}</h2>
+  <table><thead><tr><th>Corte</th><th>Cohorte</th><th>Personas con uso</th><th>Tasa</th></tr></thead>
+  <tbody>${rows}${totalRow}</tbody></table>`;
+  };
+  const adoptionGaps = asArray(d.adoptionGaps).filter(isRecord).map(gap =>
+    `<li><strong>${t(gap.dimension)}</strong> — ${t(gap.detail || gap.reason)}</li>`
   ).join('');
   const byTeacher = asArray(isRecord(d.materialUploads) ? d.materialUploads.byTeacher : []);
   const materialRows = byTeacher.filter(isRecord).map(tm =>
@@ -192,6 +258,12 @@ function buildHtml(data) {
   <h2>Carga de Materiales por Docente</h2>
   <table><thead><tr><th>Docente</th><th>Transcripciones</th><th>Presentaciones</th><th>Apuntes</th><th>Bibliograf&iacute;a</th><th>Total</th></tr></thead>
   <tbody>${materialRows || '<tr><td colspan="6">Sin datos</td></tr>'}</tbody></table>
+
+  ${adoptionDimension('subject')}
+  ${adoptionDimension('campus')}
+  ${adoptionDimension('track')}
+  ${adoptionGaps ? `<h2>Huecos de la lectura</h2><ul style="font-size:9pt;color:#64748b">${adoptionGaps}</ul>` : ''}
+  ${d.adoptionCriteria ? `<p class="kpi-note">${t(d.adoptionCriteria)}</p>` : ''}
 
   <div class="footer">Este informe contiene datos agregados y anonimizados. No incluye informaci&oacute;n personal identificable (PII).</div>
 </body></html>`;
@@ -267,33 +339,24 @@ app.http('get-director-kpi-export', {
         context.log.warn(`[KpiExport] Could not compute class processing: ${err.message}`);
       }
 
-      // #417: adoption base = real active student enrollments, matching the
-      // director dashboard. The previous 60-student-per-subject default was a
-      // fabricated base that made the percentage meaningless.
-      let totalEnrolled = 0;
+      // #491 (UJ-43): la exportación usa la misma lectura que el panel para que
+      // el cuadro exportado tenga las mismas dimensiones (unidad, sede, carrera)
+      // con sus propios totales y los huecos declarados.
+      let adoption = null;
       try {
-        const stateStore = await import('../services/state-store.js');
-        if (typeof stateStore.countActiveStudentEnrollments === 'function') {
-          totalEnrolled = await stateStore.countActiveStudentEnrollments();
+        const classesApi = await import('./classes-api.js');
+        const subjects = typeof classesApi.loadSubjects === 'function'
+          ? ((await classesApi.loadSubjects()) || [])
+          : [];
+        if (typeof classesApi.buildDirectorAdoptionReading === 'function') {
+          adoption = await classesApi.buildDirectorAdoptionReading(context, { metrics: safeMetrics, subjects });
         }
       } catch (err) {
-        logWarn(context, `[KpiExport] Could not count enrollments: ${err.message}`);
+        logWarn(context, `[KpiExport] Could not build adoption reading: ${err.message}`);
       }
-      if (totalEnrolled <= 0) {
-        // Only fall back to a subject-declared count when it actually exists.
-        try {
-          const classesApi = await import('./classes-api.js');
-          const allSubjects = typeof classesApi.loadSubjects === 'function'
-            ? ((await classesApi.loadSubjects()) || [])
-            : [];
-          totalEnrolled = allSubjects.reduce((sum, s) => sum + (toNum(s?.enrolledCount, 0) || 0), 0);
-        } catch (err) {
-          context.log.warn(`[KpiExport] Could not load subjects: ${err.message}`);
-        }
-      }
-      const adoptionRate = uniqueActiveUsers > 0 && totalEnrolled > 0
-        ? Math.min(100, Math.round(uniqueActiveUsers / totalEnrolled * 100))
-        : 0;
+      const adoptionDimensions = adoption?.dimensions || null;
+      const adoptionRate = adoptionDimensions?.subject?.total?.rate ?? null;
+      const adoptionCohort = adoptionDimensions?.subject?.total?.cohort ?? 0;
 
       const earlyAlertSummary = await loadEarlyAlertSummary(context).catch((err) => {
         logWarn(context, `[KpiExport] Could not load early-alert summary: ${err.message}`);
@@ -312,6 +375,11 @@ app.http('get-director-kpi-export', {
         classesProcessedCriteria: classProcessing.criteria,
         ragInteractions: latest.ragInteractions || 0,
         adoptionRate,
+        adoptionCohort,
+        adoptionByDimension: adoptionDimensions,
+        adoptionGaps: adoption?.gaps || [],
+        adoptionCriteria: adoption?.criteria || '',
+        adoptionIntegrity: adoption?.integrity || null,
         costPerActiveStudent,
         earlyAlertSummary: earlyAlertSummary || {},
         budget: budget || {},

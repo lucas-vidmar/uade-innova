@@ -2,9 +2,15 @@ import { app } from '@azure/functions';
 import { withAuth } from '../middleware/with-auth.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { parseClientPrincipal, validateFrontDoorId, resolveIdentityKey } from '../services/auth-utils.js';
+import { normalizeCampus, normalizeTrack } from '../services/adoption-dimensions.js';
 
 const tableName = "UserProfiles";
 const storageAccountUrl = `https://${process.env.AZURE_STORAGE_ACCOUNT_NAME}.table.core.windows.net`;
+
+// #491 (UJ-43): la sede y la carrera de la persona viajan con el perfil. Son
+// etiquetas declaradas, no catálogos: se guardan como texto corto o no se
+// guardan (un string vacío no es un dato).
+const MAX_DIMENSION_LENGTH = 80;
 
 // Bot preferences (story 11-5-1): valid values. Invalid payload values are
 // dropped so the stored (existing) value is preserved.
@@ -64,6 +70,20 @@ app.http('save-profile', {
             if (botPrefs.botLength) entity.botLength = botPrefs.botLength;
             if (botPrefs.includeSources !== undefined) entity.includeSources = botPrefs.includeSources;
 
+            // #491: sede y carrera declaradas por la persona o por el alta. Si el
+            // valor llega vacío o desmedido no se escribe (el Merge conserva el
+            // que ya estaba): nunca se borra un dato por un payload parcial.
+            const campus = normalizeCampus(reqBody?.campus);
+            const track = normalizeTrack(reqBody?.track);
+            if (campus && campus.length > MAX_DIMENSION_LENGTH) {
+                return { status: 400, jsonBody: { error: `La sede no puede superar ${MAX_DIMENSION_LENGTH} caracteres` } };
+            }
+            if (track && track.length > MAX_DIMENSION_LENGTH) {
+                return { status: 400, jsonBody: { error: `La carrera no puede superar ${MAX_DIMENSION_LENGTH} caracteres` } };
+            }
+            if (campus) entity.campus = campus;
+            if (track) entity.track = track;
+
             const onboarding = normalizeOnboarding(reqBody?.onboarding);
             if (onboarding) {
                 entity.onboardingStatus = onboarding.status;
@@ -81,7 +101,7 @@ app.http('save-profile', {
             // Upsert the data seamlessly handling initial creation or subsequent updates
             await tableClient.upsertEntity(entity, "Merge");
 
-            context.log(`[SaveProfile] Profile saved userId=${userId} theme=${entity.theme} botTone=${entity.botTone} botLength=${entity.botLength} includeSources=${entity.includeSources} onboardingStatus=${entity.onboardingStatus}`);
+            context.log(`[SaveProfile] Profile saved userId=${userId} theme=${entity.theme} botTone=${entity.botTone} botLength=${entity.botLength} includeSources=${entity.includeSources} onboardingStatus=${entity.onboardingStatus} campus=${entity.campus || 'n/d'} track=${entity.track || 'n/d'}`);
 
             return {
                 status: 200,

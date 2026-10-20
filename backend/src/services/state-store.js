@@ -468,6 +468,14 @@ function toEnrollmentEntity(enrollment) {
     role: enrollment.role,
     status: enrollment.status || 'active',
     enrolledAt: enrollment.enrolledAt || new Date().toISOString(),
+    // #491 (UJ-43): dimensiones de la lectura de adopción. La sede y la carrera
+    // viajan con la matrícula (y con el perfil como respaldo) porque una misma
+    // persona puede estar en unidades de carreras distintas. Se guardan sólo si
+    // están declaradas: un valor vacío no es un dato.
+    campus: enrollment.campus,
+    campusSource: enrollment.campusSource,
+    track: enrollment.track,
+    trackSource: enrollment.trackSource,
   });
 }
 
@@ -478,6 +486,12 @@ function fromEnrollmentEntity(entity) {
     role: entity.role,
     status: entity.status,
     enrolledAt: entity.enrolledAt,
+    // Sólo aparecen cuando están declarados: una fila previa al backfill (#491)
+    // no gana campos vacíos que después se lean como dato.
+    ...(entity.campus ? { campus: entity.campus } : {}),
+    ...(entity.campusSource ? { campusSource: entity.campusSource } : {}),
+    ...(entity.track ? { track: entity.track } : {}),
+    ...(entity.trackSource ? { trackSource: entity.trackSource } : {}),
   };
 }
 
@@ -543,8 +557,72 @@ export async function upsertEnrollment(enrollment) {
   await ensureTable(ENROLLMENTS_TABLE);
   const client = getTableClient(ENROLLMENTS_TABLE);
   const entity = toEnrollmentEntity(enrollment);
-  await client.upsertEntity(entity, 'Replace');
+  // Merge (no Replace): una escritura que no trae sede ni carrera (#491) no
+  // puede borrar las dimensiones ya declaradas de la matrícula.
+  await client.upsertEntity(entity, 'Merge');
   return fromEnrollmentEntity(entity);
+}
+
+/**
+ * Completa sede/carrera de una matrícula sin tocar el resto de la fila (#491).
+ * Se usa desde la migración de backfill: Merge preserva role/status/enrolledAt
+ * y cualquier campo que no forme parte del parche.
+ */
+export async function patchEnrollmentDimensions({ subjectId, userId, campus, campusSource, track, trackSource } = {}) {
+  if (!subjectId || !userId) {
+    throw new Error('patchEnrollmentDimensions requires subjectId and userId');
+  }
+  const patch = compactObject({
+    partitionKey: subjectId,
+    rowKey: userId,
+    campus,
+    campusSource,
+    track,
+    trackSource,
+  });
+  if (Object.keys(patch).length <= 2) return null;
+  await ensureTable(ENROLLMENTS_TABLE);
+  const client = getTableClient(ENROLLMENTS_TABLE);
+  await client.upsertEntity(patch, 'Merge');
+  return patch;
+}
+
+/**
+ * Lee las dimensiones declaradas en los perfiles (#491). Devuelve sólo lo que
+ * hace falta para la lectura: no expone nombre, email ni ningún otro dato.
+ * @returns {Promise<Map<string, {campus: string|null, track: string|null}>>}
+ */
+export async function listProfileDimensions() {
+  await ensureTable(USER_PROFILES_TABLE);
+  const entities = await queryAllEntities(USER_PROFILES_TABLE);
+  const dimensions = new Map();
+  for (const entity of entities) {
+    const userId = entity.rowKey;
+    if (!userId) continue;
+    dimensions.set(userId, {
+      campus: entity.campus || null,
+      track: entity.track || null,
+    });
+  }
+  return dimensions;
+}
+
+/**
+ * Completa sede/carrera de un perfil sin tocar el resto de la fila (#491).
+ */
+export async function patchProfileDimensions({ userId, campus, track } = {}) {
+  if (!userId) throw new Error('patchProfileDimensions requires userId');
+  const patch = compactObject({
+    partitionKey: 'Profiles',
+    rowKey: userId,
+    campus,
+    track,
+  });
+  if (Object.keys(patch).length <= 2) return null;
+  await ensureTable(USER_PROFILES_TABLE);
+  const client = getTableClient(USER_PROFILES_TABLE);
+  await client.upsertEntity(patch, 'Merge');
+  return patch;
 }
 
 export async function getConsentStatus(userId) {
