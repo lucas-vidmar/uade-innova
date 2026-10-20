@@ -202,6 +202,11 @@ function jsonResponse(status, payload) {
 
 const GLOSSARY_NOT_FOUND_MSG = 'No encontré ese término en el glosario de la materia. ¿Querés preguntarle al docente que lo agregue?';
 
+// #479 (UJ-02 paso 6): valores que puede tomar el pedido puntual de longitud
+// (`lengthOverride`). Son los mismos que la preferencia guardada, pero se
+// aplican sólo al turno que los pide.
+const VALID_LENGTH_OVERRIDES = ['concise', 'detailed'];
+
 /**
  * #358/UJ-22: la abstención ("el material no alcanza") es una decisión del
  * backend, no una coincidencia literal en el texto del modelo. Se expone como
@@ -456,10 +461,25 @@ app.http('rag-query', {
             return jsonResponse(400, { error: 'Body JSON inválido' });
         }
 
-        const { question, classIds, subjectId, sessionId, stream = false, conversationHistory, historyWindowSize, transcriptFocus, sandbox = false, simulateStudent = false, botTone, botLength, includeSources, promptVersion } = body;
+        const { question, classIds, subjectId, sessionId, stream = false, conversationHistory, historyWindowSize, transcriptFocus, sandbox = false, simulateStudent = false, botTone, botLength, includeSources, promptVersion, lengthOverride } = body;
 
         if (!question || !subjectId) {
                 return jsonResponse(400, { error: 'Faltan campos requeridos: question, subjectId' });
+        }
+
+        // #479 (UJ-02 paso 6): «más detalle» es un pedido de UNA consulta, no un
+        // cambio de preferencia. Viaja en el cuerpo de esa petición
+        // (`lengthOverride`) y sólo manda para este turno: no se guarda en el
+        // perfil ni se lee de él, así que quien fijó «Concisa» sigue en Concisa
+        // para la consulta siguiente. Un valor desconocido se ignora (no rompe
+        // la consulta) y deja valer la preferencia guardada.
+        const lengthOverrideRequested = VALID_LENGTH_OVERRIDES.includes(lengthOverride) ? lengthOverride : null;
+        if (lengthOverride !== undefined && lengthOverride !== null && !lengthOverrideRequested) {
+            context.log(`[RAG] lengthOverride ignorado (valor inválido: ${String(lengthOverride).slice(0, 32)}) — rige la preferencia guardada`);
+        }
+        const effectiveBotLength = lengthOverrideRequested || botLength;
+        if (lengthOverrideRequested) {
+            context.log(`[RAG] Pedido puntual de longitud aplicado al turno: ${lengthOverrideRequested} (preferencia guardada sin cambios: ${botLength || 'sin preferencia'})`);
         }
 
         const recentConversationHistory = normalizeConversationHistory(conversationHistory, historyWindowSize);
@@ -1034,10 +1054,19 @@ app.http('rag-query', {
         }
 
         // ── 6a. Preferencias del asistente (tono/longitud/fuentes) ──
-        const preferencesBlock = buildPreferencesBlock({ botTone, botLength, includeSources });
+        // #479: el pedido puntual del turno manda sobre la preferencia guardada
+        // en lo que respecta a la longitud. No se envía la instrucción de la
+        // preferencia para no dar dos órdenes contradictorias al modelo.
+        const preferencesBlock = buildPreferencesBlock({ botTone, botLength: effectiveBotLength, includeSources });
+        const detailRequestBlock = lengthOverrideRequested === 'detailed'
+            ? `\n\n<pedido_puntual>\nEsta consulta puntual pidio expresamente MAS DETALLE. La instruccion de longitud de las preferencias no aplica a este turno: desarrolla la respuesta con mayor profundidad, explicando el porque y los conceptos implicados. El pedido vale solo para esta respuesta: no cambia las preferencias del estudiante.\n</pedido_puntual>`
+            : '';
 
-        // Response length cap for concise preference (story #223 / 11-5-1)
-        const maxTokens = botLength === 'concise' ? Math.min(CONFIG.ai.maxTokens.chat, 400) : CONFIG.ai.maxTokens.chat;
+        // Response length cap for concise preference (story #223 / 11-5-1).
+        // #479: el tope sigue a la longitud EFECTIVA del turno, así que un
+        // pedido puntual de más detalle no queda recortado por la preferencia
+        // «Concisa» guardada.
+        const maxTokens = effectiveBotLength === 'concise' ? Math.min(CONFIG.ai.maxTokens.chat, 400) : CONFIG.ai.maxTokens.chat;
 
         // La versión ACTIVA es la que responde a cualquiera (UJ-48 paso 6). El banco de
         // pruebas puede pedir una versión concreta (`promptVersion`) para enfrentarla
@@ -1091,7 +1120,7 @@ app.http('rag-query', {
 
 <contexto_rag>
 ${contextText}
-</contexto_rag>${teacherFeedbackBlock}${deadlineBlock}${preferencesBlock}${threadInstruction}`,
+</contexto_rag>${teacherFeedbackBlock}${deadlineBlock}${preferencesBlock}${detailRequestBlock}${threadInstruction}`,
 
             },
             ...buildConversationMessages(recentConversationHistory),
