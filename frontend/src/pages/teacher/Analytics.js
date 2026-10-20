@@ -60,6 +60,125 @@ export async function renderTeacherAnalytics(container) {
       .filter((w) => w.length > 2);
   }
 
+  // Origen declarado de cada pregunta (#420, UJ-42). Lo calcula el backend a
+  // partir de la interacción (sin material / valoración baja / reporte abierto);
+  // acá sólo se muestra, sin inferir nada.
+  const ORIGEN_LABEL = {
+    consultaSinMaterial: 'Sin material',
+    valoracionBaja: 'Valoración baja',
+    reporteAbierto: 'Reporte abierto',
+    sinSenal: 'Sin señal',
+  };
+
+  const ORIGEN_CLASS = {
+    consultaSinMaterial: 'badge-warning',
+    valoracionBaja: 'badge-error',
+    reporteAbierto: 'badge-info',
+    sinSenal: 'badge-info',
+  };
+
+  function originChips(origenes) {
+    const list = Array.isArray(origenes) && origenes.length > 0 ? origenes : ['sinSenal'];
+    return list
+      .map((origen) => `<span class="badge ${ORIGEN_CLASS[origen] || 'badge-info'} origin-chip" data-origen="${escapeHtml(origen)}">${escapeHtml(ORIGEN_LABEL[origen] || origen)}</span>`)
+      .join(' ');
+  }
+
+  function originSummary(origenes) {
+    if (!origenes) return '';
+    return ['consultaSinMaterial', 'valoracionBaja', 'reporteAbierto']
+      .filter((origen) => Number(origenes[origen]) > 0)
+      .map((origen) => `${ORIGEN_LABEL[origen]} ${Number(origenes[origen])}`)
+      .join(' · ');
+  }
+
+  /**
+   * Lectura por tema (#420, UJ-42): agrupa por el temario que declara la
+   * unidad (`classes.topics`, servido por el backend en `temario` y `topics`).
+   * Lo que no cae en ningún tema declarado va al grupo explícito «Sin tema».
+   */
+  function renderTopicReading(data) {
+    const temas = Array.isArray(data.topics) ? data.topics : [];
+    const sinTema = data.sinTema && typeof data.sinTema === 'object'
+      ? data.sinTema
+      : { tema: 'Sin tema', key: 'sin-tema', count: 0, origenes: {}, questions: [], questionVariants: 0 };
+    const temario = data.temario || {};
+    const encuentros = Array.isArray(temario.encuentros) ? temario.encuentros : [];
+    const totalConsultas = temas.reduce((sum, t) => sum + (Number(t.count) || 0), 0) + (Number(sinTema.count) || 0);
+    const resumenOrigenes = originSummary((data.origenes || {}).totales);
+
+    const rowHeader = (tema, extraBadge) => `
+      <div style="display:flex;align-items:baseline;gap:var(--space-2);flex-wrap:wrap">
+        <span style="font-size:var(--font-size-sm);font-weight:600;flex:1;min-width:200px">${escapeHtml(tema.tema)}</span>
+        ${extraBadge || ''}
+        <span class="badge badge-info" title="${tema.count} consultas">${tema.count} consultas</span>
+        ${originChips(Object.keys(tema.origenes || {}).filter((o) => Number(tema.origenes[o]) > 0 && o !== 'sinSenal'))}
+      </div>`;
+
+    const questionList = (tema) => {
+      const questions = Array.isArray(tema.questions) ? tema.questions : [];
+      if (questions.length === 0) {
+        return '<div style="font-size:var(--font-size-xs);color:var(--color-text-muted);margin-top:6px">Sin consultas en este grupo.</div>';
+      }
+      return `
+        <details style="margin-top:6px">
+          <summary style="cursor:pointer;font-size:var(--font-size-xs);color:var(--color-text-secondary)">Ver ${questions.length}${tema.questionVariants > questions.length ? ` de ${tema.questionVariants}` : ''} preguntas de este tema</summary>
+          <ul style="margin:6px 0 0;padding-left:18px;font-size:var(--font-size-xs);color:var(--color-text-secondary)">
+            ${questions.map((q) => `<li>${escapeHtml(q.text)} <span class="badge badge-info">${q.count}</span> ${originChips(q.origenes)}</li>`).join('')}
+          </ul>
+        </details>`;
+    };
+
+    const themeRows = temas.map((tema, i) => `
+      <div class="topic-item" data-tema="${escapeHtml(tema.key || tema.tema)}" style="border-bottom:1px solid var(--color-border);padding:var(--space-3) 0">
+        ${rowHeader({ ...tema, tema: `${i + 1}. ${tema.tema}` }, (tema.declaredIn || []).length > 0
+          ? `<span class="badge badge-info" title="Encuentros que declaran este tema">${(tema.declaredIn || []).map(escapeHtml).join(' · ')}</span>`
+          : '')}
+        ${questionList(tema)}
+      </div>`).join('');
+
+    const sinTemaRow = `
+      <div class="topic-item topic-item--sin-tema" data-tema="sin-tema" style="border-bottom:1px solid var(--color-border);padding:var(--space-3) 0;background:var(--color-surface-2);border-radius:var(--radius-md)">
+        ${rowHeader({
+          ...sinTema,
+          tema: `Sin tema · preguntas que no caen en el temario`,
+        }, '<span class="badge badge-warning" title="Ningún tema declarado por la unidad coincide">Sin tema declarado</span>')}
+        <div style="font-size:var(--font-size-xs);color:var(--color-text-muted);margin-top:4px">
+          Ninguno de los ${Number(temario.totalTemas) || 0} temas que declara la unidad reúne estas consultas. Quedan acá, no se descartan.
+        </div>
+        ${questionList(sinTema)}
+      </div>`;
+
+    return `
+      <div class="card" id="teacher-topic-reading" style="margin-bottom:var(--space-8)">
+        <div class="card-header">
+          <span class="card-title">🧩 Preguntas sin buena respuesta, por tema</span>
+          <span class="badge badge-info">${temas.length} temas · ${totalConsultas} consultas</span>
+        </div>
+        <p style="margin:0 0 var(--space-2);color:var(--color-text-secondary);font-size:var(--font-size-xs)">
+          Agrupado con el temario que declara la unidad (<code>classes.topics</code>: ${Number(temario.totalTemas) || 0} temas en ${encuentros.length} encuentros).
+          Cada pregunta declara su origen: consulta sin material, valoración baja o reporte abierto.
+          ${resumenOrigenes ? `<br><strong>Origen del total de la unidad:</strong> ${escapeHtml(resumenOrigenes)}.` : ''}
+        </p>
+        ${themeRows || '<div class="empty-state" style="padding:16px">Ninguna consulta cayó en un tema declarado por la unidad.</div>'}
+        ${sinTemaRow}
+      </div>`;
+  }
+
+  /**
+   * Lectura por encuentro (#420, UJ-50): cada encuentro con sus consultas.
+   * Se usa tanto para la participación como para los temas y su origen.
+   */
+  function renderEncounterThemes(entry) {
+    const temas = Array.isArray(entry?.topics) ? entry.topics : [];
+    if (temas.length === 0) {
+      return '<div style="font-size:var(--font-size-xs);color:var(--color-text-muted);margin-top:6px">Sin consultas atribuidas a este encuentro.</div>';
+    }
+    return `<ul style="margin:6px 0 0;padding-left:18px;font-size:var(--font-size-xs);color:var(--color-text-secondary)">
+      ${temas.slice(0, 4).map((tema) => `<li>${escapeHtml(tema.tema)} <span class="badge badge-info">${tema.count}</span> ${originChips(Object.keys(tema.origenes || {}).filter((o) => Number(tema.origenes[o]) > 0 && o !== 'sinSenal'))}</li>`).join('')}
+    </ul>`;
+  }
+
   function computeThematicGaps(frictionTopics, classes, classViews) {
     if (!frictionTopics || frictionTopics.length === 0) return [];
     const maxQueries = Math.max(...frictionTopics.map((t) => Number(t.queries) || 0), 1);
@@ -207,7 +326,6 @@ export async function renderTeacherAnalytics(container) {
     if (!data || !data.topQuestions || !data.frictionTopics) {
       throw new Error('Datos de analítica incompletos');
     }
-    const maxCount = Math.max(...data.topQuestions.map(q => q.count));
     const highAlerts = (alerts || []).filter((item) => item.severity === 'high');
     const gaps = computeThematicGaps(data.frictionTopics, classes, classViews);
 
@@ -287,8 +405,13 @@ export async function renderTeacherAnalytics(container) {
           ${data.topQuestions.map((q, i) => `
             <div style="display:flex;align-items:baseline;gap:var(--space-2);padding:var(--space-2) var(--space-3);border-radius:var(--radius-md);background:var(--color-surface-2)">
               <span style="font-size:var(--font-size-xs);font-weight:700;color:var(--color-text-muted);min-width:20px">${i + 1}.</span>
-              <span style="flex:1;font-size:var(--font-size-sm);line-height:1.4">${escapeHtml(q.text)}</span>
-              <span class="badge badge-info" title="${q.count} consultas">${q.count}</span>
+              <span style="flex:1;font-size:var(--font-size-sm);line-height:1.4">${escapeHtml(q.text)}
+                <span style="display:block;font-size:10px;color:var(--color-text-muted);margin-top:2px">Tema: ${escapeHtml(q.tema || 'Sin tema')}</span>
+              </span>
+              <span style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+                <span class="badge badge-info" title="${q.count} consultas">${q.count}</span>
+                ${originChips(q.origenes)}
+              </span>
             </div>
           `).join('')}
         </div>
@@ -306,13 +429,17 @@ export async function renderTeacherAnalytics(container) {
     return `
               <div class="friction-item">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-2)">
-                  <span style="font-size:var(--font-size-sm);font-weight:600">${i + 1}. ${t.topic}</span>
+                  <span style="font-size:var(--font-size-sm);font-weight:600">${i + 1}. ${escapeHtml(t.topic)}</span>
                   <span class="badge badge-error">${pct}% sin resolver</span>
                 </div>
                 <div class="progress-bar">
                   <div class="progress-fill" style="--progress-value:${pct}%"></div>
                 </div>
-                <div style="font-size:var(--font-size-xs);color:var(--color-text-muted);margin-top:4px">${t.queries} consultas · ${t.unresolved} sin respuesta satisfactoria</div>
+                <div style="font-size:var(--font-size-xs);color:var(--color-text-muted);margin-top:4px;display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap">
+                  <span>${t.queries} consultas · ${t.unresolved} sin respuesta satisfactoria</span>
+                  <span style="font-size:10px">· Tema: ${escapeHtml(t.tema || 'Sin tema')}</span>
+                  ${originChips(t.origenes)}
+                </div>
               </div>
             `;
   }).join('')}
@@ -322,26 +449,39 @@ export async function renderTeacherAnalytics(container) {
 
     ${renderThematicGaps(gaps, data.topQuestions)}
 
-    ${renderEncounterReading(data.byClass, classes, classViews, enrollments, escapeHtml)}
+    ${renderTopicReading(data)}
+
+    ${renderEncounterReading(data.byClass, classes, classViews, enrollments, escapeHtml, renderEncounterThemes)}
 
     <!-- Queries over time (simple bar chart) -->
     <div class="card">
       <div class="card-header">
         <span class="card-title">📈 Frecuencia de consultas por tema</span>
+        <span class="badge badge-info">Temario de la unidad</span>
       </div>
       <div class="bar-chart">
-        ${data.topQuestions.map(q => {
-    const shortLabel = q.text.length > 28 ? `${q.text.slice(0, 28)}…` : q.text;
-    return `
-          <div class="bar-chart-item">
+        ${(() => {
+    // El gráfico se arma con los temas declarados (#420), no con el texto
+    // literal de cada pregunta: es la lectura que el título promete.
+    const temasChart = (Array.isArray(data.topics) ? data.topics : []).slice(0, 8);
+    const sinTemaChart = data.sinTema && Number(data.sinTema.count) > 0
+      ? [{ tema: 'Sin tema', count: Number(data.sinTema.count), key: 'sin-tema' }]
+      : [];
+    const serie = [...temasChart, ...sinTemaChart];
+    const maxTema = Math.max(...serie.map((t) => Number(t.count) || 0), 1);
+    return serie.map((t) => {
+      const shortLabel = t.tema.length > 28 ? `${t.tema.slice(0, 28)}…` : t.tema;
+      return `
+          <div class="bar-chart-item" data-tema="${escapeHtml(t.key || t.tema)}">
             <div class="bar-chart-bar-wrap">
-              <div class="bar-chart-bar" style="--bar-height:${Math.round((q.count / maxCount) * 100)}%" title="${escapeHtml(q.text)}: ${q.count} consultas"></div>
+              <div class="bar-chart-bar" style="--bar-height:${Math.round((Number(t.count) / maxTema) * 100)}%" title="${escapeHtml(t.tema)}: ${t.count} consultas"></div>
             </div>
-            <div class="bar-chart-label" title="${escapeHtml(q.text)}">${escapeHtml(shortLabel)}</div>
-            <div class="bar-chart-val">${q.count}</div>
+            <div class="bar-chart-label" title="${escapeHtml(t.tema)}">${escapeHtml(shortLabel)}</div>
+            <div class="bar-chart-val">${t.count}</div>
           </div>
         `;
-  }).join('')}
+    }).join('');
+  })()}
       </div>
     </div>
 
@@ -388,7 +528,16 @@ export async function renderTeacherAnalytics(container) {
  * el alcance de la consulta (`byClass` del backend). Sin promedio de la unidad:
  * cada encuentro se lee por separado.
  */
-function renderEncounterReading(byClass, classes, classViews, enrollments, escapeHtml) {
+function renderEncounterReading(byClass, classes, classViews, enrollments, escapeHtml, renderThemes) {
+  const ORIGEN_CORTO = { consultaSinMaterial: 'sin material', valoracionBaja: 'valoración baja', reporteAbierto: 'reporte abierto' };
+  const originLine = (origenes) => {
+    if (!origenes) return '';
+    return Object.keys(ORIGEN_CORTO)
+      .filter((origen) => Number(origenes[origen]) > 0)
+      .map((origen) => `${ORIGEN_CORTO[origen]} ${Number(origenes[origen])}`)
+      .join(' · ');
+  };
+
   const enrolled = new Set(
     (enrollments || [])
       .filter((e) => e.role === 'student' && e.status === 'active')
@@ -410,19 +559,29 @@ function renderEncounterReading(byClass, classes, classViews, enrollments, escap
     const viewed = viewedByClass[c.id] ? viewedByClass[c.id].size : 0;
     const pct = enrolled.size > 0 ? Math.round((viewed / enrolled.size) * 100) : 0;
     const q = byClassId.get(c.id);
-    const questions = q && q.topQuestions && q.topQuestions.length
-      ? `<ul style="margin:6px 0 0;padding-left:18px;font-size:var(--font-size-xs);color:var(--color-text-secondary)">${q.topQuestions
-          .map((t) => `<li>${escapeHtml(t.text)} <span class="badge badge-info">${t.count}</span></li>`)
-          .join('')}</ul>`
+    const themes = q && typeof renderThemes === 'function'
+      ? renderThemes(q)
       : '<div style="font-size:var(--font-size-xs);color:var(--color-text-muted);margin-top:6px">Sin consultas atribuidas a este encuentro.</div>';
+    const declared = Array.isArray(c.topics) && c.topics.length
+      ? `<div style="font-size:10px;color:var(--color-text-muted);margin-top:4px">Temario que declara el encuentro: ${c.topics.map((topic) => escapeHtml(topic)).join(' · ')}</div>`
+      : '';
+    const literal = q && Array.isArray(q.topQuestions) && q.topQuestions.length
+      ? `<details style="margin-top:4px"><summary style="cursor:pointer;font-size:var(--font-size-xs);color:var(--color-text-muted)">Ver preguntas literales del encuentro</summary>
+          <ul style="margin:4px 0 0;padding-left:18px;font-size:var(--font-size-xs);color:var(--color-text-secondary)">${q.topQuestions
+          .map((t) => `<li>${escapeHtml(t.text)} <span class="badge badge-info">${t.count}</span></li>`)
+          .join('')}</ul></details>`
+      : '';
     return `
       <div class="encounter-item" data-class-id="${escapeHtml(c.id)}" style="border-bottom:1px solid var(--color-border);padding:var(--space-3) 0">
         <div style="display:flex;align-items:baseline;gap:var(--space-3);flex-wrap:wrap">
           <span style="font-size:var(--font-size-sm);font-weight:600;flex:1;min-width:180px">${escapeHtml(c.title || c.name || c.id)}</span>
           <span class="badge ${pct >= 60 ? 'badge-success' : pct > 0 ? 'badge-warning' : 'badge-error'}">${viewed}/${enrolled.size} participaron (${pct}%)</span>
           <span class="badge badge-info">${q ? q.questionCount : 0} consultas</span>
+          ${q && originLine(q.origenes) ? `<span style="font-size:10px;color:var(--color-text-muted)">${originLine(q.origenes)}</span>` : ''}
         </div>
-        ${questions}
+        ${themes}
+        ${declared}
+        ${literal}
       </div>`;
   }).join('');
 
