@@ -51,3 +51,4 @@ Fuente: Azure Cost Management API · Incluye N servicios
 | `BUDGET_WEEKEND_FACTOR` | `0.6` | Factor de actividad en fines de semana (0-1) |
 | `AI_INPUT_COST_PER_MILLION_TOKENS` | `0.15` | Costo por millón de tokens input (fallback token-based) |
 | `AI_OUTPUT_COST_PER_MILLION_TOKENS` | `0.60` | Costo por millón de tokens output (fallback token-based) |
+| `AI_PRICING_EFFECTIVE_FROM` | — | Fecha (`YYYY-MM-DD`) desde la que vale el precio configurado. El panel de costo la muestra junto al precio; si el precio se configura por entorno y esta fecha no se declara, el panel dice «sin fecha de vigencia declarada» en vez de inventar una (UJ-54 / #528). |

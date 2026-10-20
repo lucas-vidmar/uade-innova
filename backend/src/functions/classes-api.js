@@ -173,12 +173,34 @@ function computeOutputCost(completionTokens = 0) {
 }
 
 export function getPricingPerMillion() {
+    const vigency = resolvePricingVigency();
     return {
         inputPerMillionTokensUsd: getInputCostPerToken() * 1000000,
         outputPerMillionTokensUsd: getOutputCostPerToken() * 1000000,
         inputPerTokenUsd: getInputCostPerToken(),
         outputPerTokenUsd: getOutputCostPerToken(),
+        currency: 'USD',
+        // UJ-54 (paso 3): un precio sin fecha de vigencia no explica un costo.
+        effectiveFrom: vigency.effectiveFrom,
+        effectiveFromSource: vigency.declaredBy,
     };
+}
+
+// El precio por millón que convierte tokens a USD entró al repositorio en
+// 17bc5ac (2026-04-11) y sigue siendo el valor por defecto. Si el entorno lo
+// reemplaza (AI_INPUT/OUTPUT_COST_PER_MILLION_TOKENS) la vigencia la declara el
+// operador en AI_PRICING_EFFECTIVE_FROM; si no la declara, la superficie dice
+// "sin fecha declarada" en vez de inventar una.
+export const DEFAULT_PRICING_EFFECTIVE_FROM = '2026-04-11';
+
+function resolvePricingVigency() {
+    const raw = String(process.env.AI_PRICING_EFFECTIVE_FROM || '').trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+        return { effectiveFrom: raw, declaredBy: 'AI_PRICING_EFFECTIVE_FROM' };
+    }
+    const envDeclared = Boolean(process.env.AI_INPUT_COST_PER_MILLION_TOKENS || process.env.AI_OUTPUT_COST_PER_MILLION_TOKENS);
+    if (!envDeclared) return { effectiveFrom: DEFAULT_PRICING_EFFECTIVE_FROM, declaredBy: 'repositorio (17bc5ac)' };
+    return { effectiveFrom: null, declaredBy: 'precio configurado por entorno, sin fecha de vigencia declarada' };
 }
 
 async function loadSessionMetricsRows(context, windowDays) {
@@ -285,8 +307,12 @@ export async function loadEarlyAlertSummary(context) {
     }
 }
 
-export async function computeDirectorMetrics(context, requestedDays = POWERBI_DEFAULT_DAYS) {
-    const days = Math.min(Math.max(Number(requestedDays) || POWERBI_DEFAULT_DAYS, 1), 90);
+export async function computeDirectorMetrics(context, requestedDays = POWERBI_DEFAULT_DAYS, options = {}) {
+    // `maxDays` existe para la lectura interna del panel de costo, que necesita
+    // el período y su comparación en una sola pasada de la tabla (mismo criterio,
+    // una sola lectura). El parámetro público sigue limitado a 90.
+    const maxDays = Math.min(Math.max(Number(options.maxDays) || 90, 1), MAX_METRICS_WINDOW_DAYS);
+    const days = Math.min(Math.max(Number(requestedDays) || POWERBI_DEFAULT_DAYS, 1), maxDays);
     const { rows, readError } = await loadSessionMetricsRows(context, days);
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
@@ -482,6 +508,223 @@ export function computeCostSpikeAlert(daily) {
     if (avgCost < MIN_COST_THRESHOLD || todayCost <= avgCost * 2) return null;
     const delta = Math.round(((todayCost - avgCost) / avgCost) * 100);
     return { detected: true, delta, todayAvg: todayCost, sevenDayAvg: avgCost };
+}
+
+// ── Panel de costo (UJ-54, decisión a) ──────────────────────────────
+// Qué mide el panel, dicho una sola vez y con el mismo criterio para el período
+// y para su comparación: consumo RAG registrado en SessionMetrics (tokens de
+// entrada y salida) convertido a USD con el precio declarado. La atribución de
+// costo real por persona depende de Azure Cost Management (#303).
+export const COST_PANEL_CRITERION = {
+    id: 'tokens-x-declared-price',
+    label: 'Costo estimado = tokens registrados × precio declarado',
+    unit: 'USD',
+    source: 'SessionMetrics (token-based)',
+    measures: [
+        'consumo total del período (tokens de entrada y salida)',
+        'consumo y costo por unidad',
+        'consumo por persona activa (tokens por persona activa)',
+    ],
+    excludes: [
+        'infraestructura, storage y logs: requieren Azure Cost Management (#303)',
+        'atribución de costo real por persona: requiere Azure Cost Management (#303)',
+    ],
+};
+
+// Tope de ventana para las lecturas internas (período + comparación). El
+// parámetro público `days` sigue limitado a 90.
+export const MAX_METRICS_WINDOW_DAYS = 180;
+
+function rowHasTokenConsumption(row) {
+    if (String(row?.eventType || '').trim() === 'material-upload') return false;
+    return Number(row?.promptTokens || 0) > 0 || Number(row?.completionTokens || 0) > 0;
+}
+
+function percentDelta(current, previous) {
+    if (!Number.isFinite(current) || !Number.isFinite(previous) || previous === 0) return null;
+    return Number((((current - previous) / previous) * 100).toFixed(1));
+}
+
+/**
+ * Agrega el consumo de una ventana de fechas (inclusive, en UTC) con el mismo
+ * criterio que usa el resto del panel: sólo filas con tokens, costo por
+ * `computeInputCost`/`computeOutputCost`. Es la única función que agrega, así
+ * que período y comparación no pueden medirse distinto.
+ */
+export function summarizeConsumptionWindow(rows, { startDate, endDate } = {}) {
+    const users = new Set();
+    const subjects = new Map();
+    let promptTokens = 0;
+    let completionTokens = 0;
+    let totalTokens = 0;
+    let ragInteractions = 0;
+    let totalCostUsd = 0;
+
+    for (const row of rows || []) {
+        if (!rowHasTokenConsumption(row)) continue;
+        const iso = toIsoDate(row?.timestamp);
+        if (!iso || iso < startDate || iso > endDate) continue;
+
+        const rowPrompt = Number(row?.promptTokens || 0) || 0;
+        const rowCompletion = Number(row?.completionTokens || 0) || 0;
+        const cost = computeInputCost(rowPrompt) + computeOutputCost(rowCompletion);
+
+        promptTokens += rowPrompt;
+        completionTokens += rowCompletion;
+        totalTokens += Number(row?.totalTokens || 0) || 0;
+        ragInteractions += 1;
+        totalCostUsd += cost;
+
+        const userId = String(row?.userId || '').trim();
+        if (userId && userId !== 'anonymous') users.add(userId);
+
+        const subjectId = safeObjectKey(String(row?.subjectId || '').trim() || 'sin-unidad');
+        if (!subjects.has(subjectId)) {
+            subjects.set(subjectId, {
+                subjectId,
+                subjectName: row?.subjectName || (subjectId === 'sin-unidad' ? 'Sin unidad' : subjectId),
+                promptTokens: 0,
+                completionTokens: 0,
+                totalTokens: 0,
+                ragInteractions: 0,
+                totalCostUsd: 0,
+                users: new Set(),
+            });
+        }
+        const subject = subjects.get(subjectId);
+        subject.promptTokens += rowPrompt;
+        subject.completionTokens += rowCompletion;
+        subject.totalTokens += Number(row?.totalTokens || 0) || 0;
+        subject.ragInteractions += 1;
+        subject.totalCostUsd += cost;
+        if (userId && userId !== 'anonymous') subject.users.add(userId);
+    }
+
+    const roundedCost = Number(totalCostUsd.toFixed(6));
+    const bySubject = Array.from(subjects.values())
+        .map((subject) => ({
+            subjectId: subject.subjectId,
+            subjectName: subject.subjectName,
+            promptTokens: subject.promptTokens,
+            completionTokens: subject.completionTokens,
+            totalTokens: subject.totalTokens,
+            ragInteractions: subject.ragInteractions,
+            totalCostUsd: Number(subject.totalCostUsd.toFixed(6)),
+            activeUsers: subject.users.size,
+            costSharePct: totalCostUsd > 0 ? Number(((subject.totalCostUsd / totalCostUsd) * 100).toFixed(1)) : 0,
+        }))
+        .sort((a, b) => b.totalCostUsd - a.totalCostUsd || a.subjectId.localeCompare(b.subjectId));
+
+    return {
+        startDate,
+        endDate,
+        promptTokens,
+        completionTokens,
+        totalTokens,
+        ragInteractions,
+        totalCostUsd: roundedCost,
+        activeUsers: users.size,
+        tokensPerActiveUser: users.size > 0 ? Number((totalTokens / users.size).toFixed(1)) : null,
+        costPerInteractionUsd: ragInteractions > 0 ? Number((roundedCost / ragInteractions).toFixed(8)) : null,
+        bySubject,
+    };
+}
+
+/**
+ * Atribución de costo por persona activa. Necesita el desglose de Azure Cost
+ * Management (#303: la suscripción está sin Cost Management Reader porque lo
+ * tiene que asignar el Owner). Hasta entonces se declara bloqueada — no se
+ * estima con una división sin respaldo — y el cálculo queda listo para cuando
+ * llegue `azureCostByUser`.
+ */
+export function buildPerActiveUserAttribution({ activeUsers = 0, totalCostUsd = 0, azureCostByUser = null } = {}) {
+    const base = {
+        activeUsers,
+        formula: 'costo del período ÷ personas activas del período',
+        source: 'Azure Cost Management (desglose por identidad)',
+    };
+    const hasBreakdown = Array.isArray(azureCostByUser) && azureCostByUser.length > 0;
+    if (!hasBreakdown) {
+        return {
+            ...base,
+            status: 'blocked',
+            blockedBy: '#303',
+            costUsd: null,
+            reason: 'La atribución de costo real por persona requiere Azure Cost Management API (issue #303, bloqueado: falta que el Owner asigne Cost Management Reader sobre la suscripción).',
+        };
+    }
+    if (!(Number(activeUsers) > 0)) {
+        return { ...base, status: 'no-data', blockedBy: null, costUsd: null, reason: 'No hubo personas activas en el período.' };
+    }
+    return {
+        ...base,
+        status: 'available',
+        blockedBy: null,
+        costUsd: Number((Number(totalCostUsd) / Number(activeUsers)).toFixed(6)),
+        reason: null,
+    };
+}
+
+function isoDay(date) {
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+}
+
+function shiftUtcDay(date, days) {
+    const shifted = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+    shifted.setUTCDate(shifted.getUTCDate() + days);
+    return shifted;
+}
+
+/**
+ * Arma el panel: qué se mide, el precio con su vigencia, el período elegido y la
+ * comparación contra el período inmediatamente anterior de la misma duración,
+ * medidos los dos con `summarizeConsumptionWindow` (mismo criterio).
+ */
+export function buildCostPanel(rows, { days = POWERBI_DEFAULT_DAYS, compare = 'previous-period', today = new Date(), azureCostByUser = null } = {}) {
+    const windowDays = Math.min(Math.max(Number(days) || POWERBI_DEFAULT_DAYS, 1), 90);
+    const end = shiftUtcDay(today, 0);
+    const start = shiftUtcDay(today, -(windowDays - 1));
+    const period = { ...summarizeConsumptionWindow(rows, { startDate: isoDay(start), endDate: isoDay(end) }), days: windowDays };
+
+    let comparison = null;
+    if (compare === 'previous-period') {
+        const previousEnd = shiftUtcDay(today, -windowDays);
+        const previousStart = shiftUtcDay(today, -(windowDays * 2 - 1));
+        const previous = summarizeConsumptionWindow(rows, {
+            startDate: isoDay(previousStart),
+            endDate: isoDay(previousEnd),
+        });
+        comparison = {
+            ...previous,
+            deltas: {
+                totalCostUsd: percentDelta(period.totalCostUsd, previous.totalCostUsd),
+                totalTokens: percentDelta(period.totalTokens, previous.totalTokens),
+                ragInteractions: percentDelta(period.ragInteractions, previous.ragInteractions),
+                activeUsers: percentDelta(period.activeUsers, previous.activeUsers),
+                tokensPerActiveUser: period.tokensPerActiveUser != null && previous.tokensPerActiveUser != null
+                    ? percentDelta(period.tokensPerActiveUser, previous.tokensPerActiveUser)
+                    : null,
+                costPerInteractionUsd: period.costPerInteractionUsd != null && previous.costPerInteractionUsd != null
+                    ? percentDelta(period.costPerInteractionUsd, previous.costPerInteractionUsd)
+                    : null,
+            },
+        };
+    }
+
+    return {
+        criterion: COST_PANEL_CRITERION,
+        pricing: getPricingPerMillion(),
+        windowDays,
+        period,
+        comparison,
+        attribution: {
+            perActiveUser: buildPerActiveUserAttribution({
+                activeUsers: period.activeUsers,
+                totalCostUsd: period.totalCostUsd,
+                azureCostByUser,
+            }),
+        },
+    };
 }
 
 function normalizeLimit(value, fallback = 1000) {
@@ -1998,7 +2241,11 @@ app.http('get-director-stats', {
         }
 
         context.log('get-director-stats triggered');
-        const metrics = await computeDirectorMetrics(context, POWERBI_DEFAULT_DAYS);
+        // UJ-54 (paso 1): la ventana se puede fijar desde la superficie. El panel
+        // de costo pide acá la misma ventana que a la tarjeta de costo, para no
+        // mostrar dos períodos distintos bajo una sola etiqueta.
+        const days = Math.min(Math.max(Number(request.query?.get?.('days')) || POWERBI_DEFAULT_DAYS, 1), 90);
+        const metrics = await computeDirectorMetrics(context, days);
         const spikeAlert = computeCostSpikeAlert(metrics.daily);
         const earlyAlertSummary = await loadEarlyAlertSummary(context);
         const uniqueActiveUsers = metrics.totals.uniqueActiveUsers;
@@ -2073,6 +2320,9 @@ app.http('get-director-stats', {
                     windowDays: metrics.windowDays,
                     updatedAt: metrics.updatedAt,
                 },
+                // UJ-54 (paso 1): la ventana efectivamente medida, para que la
+                // superficie no tenga que suponerla.
+                windowDays: metrics.windowDays,
                 // UJ-54: la superficie tiene que poder declarar de dónde lee el consumo
                 // y en qué estado está esa fuente (si respondió o no).
                 sourceState: {
@@ -2114,9 +2364,24 @@ app.http('get-director-powerbi-metrics', {
             return { status: 403, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Forbidden - Director or Admin access required' }) };
         }
 
-        const days = request.query?.get?.('days') || POWERBI_DEFAULT_DAYS;
+        // UJ-54 (decisión a): el panel fija la ventana y la compara contra la
+        // anterior de igual duración con el mismo criterio. Una sola lectura de
+        // SessionMetrics cubre las dos ventanas (lookback = 2 × days), así que la
+        // comparación no puede medirse distinto que el período.
+        const days = Math.min(Math.max(Number(request.query?.get?.('days')) || POWERBI_DEFAULT_DAYS, 1), 90);
         const subjectId = request.query?.get?.('subjectId') || '';
-        const metrics = await computeDirectorMetrics(context, days);
+        const compare = String(request.query?.get?.('compare') || 'previous-period') === 'none' ? 'none' : 'previous-period';
+        const lookbackDays = compare === 'previous-period' ? days * 2 : days;
+        const metrics = await computeDirectorMetrics(context, lookbackDays, { maxDays: MAX_METRICS_WINDOW_DAYS });
+        const panel = buildCostPanel(metrics._rawRows || [], { days, compare });
+        const windowStart = panel.period.startDate;
+        const windowDaily = (metrics.daily || []).filter((entry) => entry.date >= windowStart);
+        const windowCostBySubject = (metrics.costBySubject || [])
+            .map((subject) => ({
+                ...subject,
+                dailyCost: (subject.dailyCost || []).filter((entry) => entry.date >= windowStart),
+            }))
+            .filter((subject) => subject.dailyCost.length > 0);
 
         const azureCost = await getAzureCostForBudget(context);
         const useAzureCost = azureCost?.success;
@@ -2125,7 +2390,7 @@ app.http('get-director-powerbi-metrics', {
                 currentMonthSpend: azureCost.currentMonthSpend,
                 costSource: 'azure-cost-api',
             })
-            : computeBudgetProjectionV2(metrics.daily, {
+            : computeBudgetProjectionV2(windowDaily, {
                 costSource: 'token-based',
             });
 
@@ -2135,6 +2400,10 @@ app.http('get-director-powerbi-metrics', {
             for (const row of metrics._rawRows || []) {
                 const sId = String(row?.subjectId || '').trim();
                 if (sId !== subjectId) continue;
+                // Sólo la ventana elegida: la lectura interna trae también el
+                // período de comparación y no puede colarse en el desglose.
+                const iso = toIsoDate(row?.timestamp);
+                if (!iso || iso < windowStart) continue;
                 const eventType = String(row?.eventType || '').trim();
                 if (eventType === 'material-upload') continue;
                 const hasTokens = Number(row?.promptTokens || 0) > 0 || Number(row?.completionTokens || 0) > 0;
@@ -2162,25 +2431,30 @@ app.http('get-director-powerbi-metrics', {
                     table: SESSION_METRICS_TABLE,
                     integrationHint: 'Power BI can connect directly to exported DB metrics via this endpoint or Azure Table connector.',
                 },
-                pricing: getPricingPerMillion(),
+                pricing: panel.pricing,
+                // UJ-54 (decisión a): qué se mide, con qué precio y desde cuándo.
+                criterion: panel.criterion,
+                period: panel.period,
+                comparison: panel.comparison,
+                attribution: panel.attribution,
                 summary: {
-                    totalPromptTokens: metrics.totals.promptTokens,
-                    totalCompletionTokens: metrics.totals.completionTokens,
-                    totalTokens: metrics.totals.totalTokens,
-                    totalInteractions: metrics.totals.ragInteractions,
-                    totalCostUsd: metrics.totals.totalCost,
-                    avgCostPerInteractionUsd: Number((metrics.totals.totalCost / Math.max(metrics.totals.ragInteractions, 1)).toFixed(8)),
+                    totalPromptTokens: panel.period.promptTokens,
+                    totalCompletionTokens: panel.period.completionTokens,
+                    totalTokens: panel.period.totalTokens,
+                    totalInteractions: panel.period.ragInteractions,
+                    totalCostUsd: panel.period.totalCostUsd,
+                    avgCostPerInteractionUsd: Number((panel.period.totalCostUsd / Math.max(panel.period.ragInteractions, 1)).toFixed(8)),
                 },
                 updatedAt: metrics.updatedAt,
-                windowDays: metrics.windowDays,
+                windowDays: days,
                 // UJ-54: estado de la fuente de consumo (respondió o no).
                 sourceState: {
                     table: SESSION_METRICS_TABLE,
                     readable: !metrics.readError,
                     error: metrics.readError || null,
                 },
-                daily: metrics.daily,
-                costBySubject: metrics.costBySubject,
+                daily: windowDaily,
+                costBySubject: windowCostBySubject,
                 costByClass,
                 projectedEndOfMonth: budget.projectedEndOfMonth,
             }),

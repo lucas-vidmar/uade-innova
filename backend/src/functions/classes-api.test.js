@@ -2208,3 +2208,223 @@ test('delete-material: el borrado parcial se registra como partial con el error'
     authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: [] }));
     process.env.AZURE_FUNCTIONS_ENVIRONMENT = prevEnv;
 });
+
+
+// ── UJ-54 (decisión a): el panel de costo fija qué se mide, el período y
+// compara dos períodos con el mismo criterio ────────────────────────────────
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function utcDayOffset(offset) {
+    const now = new Date();
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + offset));
+}
+
+function isoDayOffset(offset) {
+    return utcDayOffset(offset).toISOString().slice(0, 10);
+}
+
+function timestampOffset(offset) {
+    return new Date(utcDayOffset(offset).getTime() + 12 * 60 * 60 * 1000).toISOString();
+}
+
+test('UJ-54: summarizeConsumptionWindow mide sólo la ventana pedida y con el criterio declarado', async () => {
+    const { summarizeConsumptionWindow } = await import('./classes-api.js');
+    const rows = [
+        { userId: 'alu-001', subjectId: 's1', subjectName: 'Unidad 1', promptTokens: 1000000, completionTokens: 0, totalTokens: 1000000, timestamp: timestampOffset(0) },
+        { userId: 'alu-002', subjectId: 's1', subjectName: 'Unidad 1', promptTokens: 0, completionTokens: 1000000, totalTokens: 1000000, timestamp: timestampOffset(-1) },
+        // fuera de la ventana de 7 días: no puede colarse en el período
+        { userId: 'alu-001', subjectId: 's2', subjectName: 'Unidad 2', promptTokens: 2000000, completionTokens: 0, totalTokens: 2000000, timestamp: timestampOffset(-10) },
+        // una carga de material no es consumo
+        { userId: 'alu-001', eventType: 'material-upload', promptTokens: 9000000, totalTokens: 9000000, timestamp: timestampOffset(0) },
+        // anónimo suma consumo pero no es una persona activa
+        { userId: 'anonymous', subjectId: 's1', promptTokens: 1000000, completionTokens: 0, totalTokens: 1000000, timestamp: timestampOffset(-2) },
+    ];
+
+    const summary = summarizeConsumptionWindow(rows, { startDate: isoDayOffset(-6), endDate: isoDayOffset(0) });
+
+    assert.strictEqual(summary.startDate, isoDayOffset(-6));
+    assert.strictEqual(summary.endDate, isoDayOffset(0));
+    assert.strictEqual(summary.totalTokens, 3000000, 'sólo las filas dentro de la ventana');
+    assert.strictEqual(summary.promptTokens, 2000000);
+    assert.strictEqual(summary.completionTokens, 1000000);
+    assert.strictEqual(summary.ragInteractions, 3);
+    assert.strictEqual(summary.activeUsers, 2, 'anonymous no cuenta como persona activa');
+    // 2M input × $0.15/1M + 1M output × $0.60/1M
+    assert.strictEqual(summary.totalCostUsd, 0.9);
+    assert.strictEqual(summary.tokensPerActiveUser, 1500000);
+    assert.strictEqual(summary.bySubject.length, 1, 'la unidad del período anterior no aparece');
+    assert.strictEqual(summary.bySubject[0].subjectId, 's1');
+    assert.strictEqual(summary.bySubject[0].totalTokens, 3000000);
+    assert.strictEqual(summary.bySubject[0].activeUsers, 2);
+    assert.strictEqual(summary.bySubject[0].costSharePct, 100);
+});
+
+test('UJ-54: buildCostPanel compara el período anterior con el mismo criterio y declara el precio con su vigencia', async () => {
+    const { buildCostPanel } = await import('./classes-api.js');
+    const rows = [
+        { userId: 'alu-001', subjectId: 's1', promptTokens: 1000000, totalTokens: 1000000, timestamp: timestampOffset(0) },
+        { userId: 'alu-002', subjectId: 's1', promptTokens: 1000000, totalTokens: 1000000, timestamp: timestampOffset(-1) },
+        { userId: 'alu-003', subjectId: 's1', promptTokens: 1000000, totalTokens: 1000000, timestamp: timestampOffset(-10) },
+    ];
+
+    const panel = buildCostPanel(rows, { days: 7 });
+
+    assert.strictEqual(panel.windowDays, 7);
+    assert.strictEqual(panel.period.days, 7);
+    assert.strictEqual(panel.period.startDate, isoDayOffset(-6));
+    assert.strictEqual(panel.period.endDate, isoDayOffset(0));
+    assert.strictEqual(panel.period.totalTokens, 2000000);
+    assert.strictEqual(panel.period.totalCostUsd, 0.3);
+
+    assert.ok(panel.comparison, 'el panel compara por defecto contra el período anterior');
+    assert.strictEqual(panel.comparison.startDate, isoDayOffset(-13));
+    assert.strictEqual(panel.comparison.endDate, isoDayOffset(-7));
+    assert.strictEqual(panel.comparison.totalTokens, 1000000);
+    assert.strictEqual(panel.comparison.totalCostUsd, 0.15);
+    assert.strictEqual(panel.comparison.deltas.totalCostUsd, 100, 'misma fórmula en las dos ventanas');
+    assert.strictEqual(panel.comparison.deltas.totalTokens, 100);
+
+    assert.strictEqual(panel.criterion.id, 'tokens-x-declared-price');
+    assert.ok(panel.criterion.excludes.some((item) => item.includes('#303')));
+    assert.strictEqual(panel.pricing.inputPerMillionTokensUsd, 0.15);
+    assert.strictEqual(panel.pricing.outputPerMillionTokensUsd, 0.6);
+    assert.strictEqual(panel.pricing.currency, 'USD');
+    assert.strictEqual(panel.pricing.effectiveFrom, '2026-04-11');
+
+    assert.strictEqual(panel.attribution.perActiveUser.status, 'blocked');
+    assert.strictEqual(panel.attribution.perActiveUser.blockedBy, '#303');
+    assert.strictEqual(panel.attribution.perActiveUser.costUsd, null, 'no se estima la atribución bloqueada');
+    assert.strictEqual(panel.attribution.perActiveUser.activeUsers, 2);
+});
+
+test('UJ-54: buildCostPanel sin comparación no inventa una variación', async () => {
+    const { buildCostPanel } = await import('./classes-api.js');
+    const panel = buildCostPanel([{ userId: 'alu-001', promptTokens: 1000, totalTokens: 1000, timestamp: timestampOffset(0) }], { days: 7, compare: 'none' });
+    assert.strictEqual(panel.comparison, null);
+    assert.strictEqual(panel.period.totalTokens, 1000);
+});
+
+test('UJ-54: la atribución por persona activa queda bloqueada por #303 y lista para cuando haya desglose', async () => {
+    const { buildPerActiveUserAttribution } = await import('./classes-api.js');
+    const blocked = buildPerActiveUserAttribution({ activeUsers: 4, totalCostUsd: 1.2 });
+    assert.strictEqual(blocked.status, 'blocked');
+    assert.strictEqual(blocked.blockedBy, '#303');
+    assert.strictEqual(blocked.costUsd, null);
+    assert.match(blocked.reason, /Cost Management/);
+
+    const available = buildPerActiveUserAttribution({ activeUsers: 4, totalCostUsd: 1.2, azureCostByUser: [{ userId: 'alu-001', costUsd: 0.9 }] });
+    assert.strictEqual(available.status, 'available');
+    assert.strictEqual(available.blockedBy, null);
+    assert.strictEqual(available.costUsd, 0.3);
+});
+
+test('UJ-54: un precio declarado por entorno sin fecha de vigencia no se fecha con una fecha inventada', async () => {
+    const { getPricingPerMillion, DEFAULT_PRICING_EFFECTIVE_FROM } = await import('./classes-api.js');
+    const prevInput = process.env.AI_INPUT_COST_PER_MILLION_TOKENS;
+    const prevEffective = process.env.AI_PRICING_EFFECTIVE_FROM;
+    try {
+        delete process.env.AI_PRICING_EFFECTIVE_FROM;
+        process.env.AI_INPUT_COST_PER_MILLION_TOKENS = '0.5';
+        const undeclared = getPricingPerMillion();
+        assert.strictEqual(undeclared.inputPerMillionTokensUsd, 0.5);
+        assert.strictEqual(undeclared.effectiveFrom, null);
+
+        process.env.AI_PRICING_EFFECTIVE_FROM = '2026-10-01';
+        assert.strictEqual(getPricingPerMillion().effectiveFrom, '2026-10-01');
+
+        delete process.env.AI_INPUT_COST_PER_MILLION_TOKENS;
+        delete process.env.AI_PRICING_EFFECTIVE_FROM;
+        assert.strictEqual(getPricingPerMillion().effectiveFrom, DEFAULT_PRICING_EFFECTIVE_FROM);
+    } finally {
+        if (prevInput === undefined) delete process.env.AI_INPUT_COST_PER_MILLION_TOKENS;
+        else process.env.AI_INPUT_COST_PER_MILLION_TOKENS = prevInput;
+        if (prevEffective === undefined) delete process.env.AI_PRICING_EFFECTIVE_FROM;
+        else process.env.AI_PRICING_EFFECTIVE_FROM = prevEffective;
+    }
+});
+
+test('UJ-54: get-director-powerbi-metrics expone período, comparación y atribución bloqueada', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: makeListEntitiesResult([
+            { userId: 'alu-001', subjectId: 's1', classId: 'c1', promptTokens: 1000000, totalTokens: 1000000, timestamp: timestampOffset(0) },
+            { userId: 'alu-002', subjectId: 's1', classId: 'c1', promptTokens: 1000000, totalTokens: 1000000, timestamp: timestampOffset(-10) },
+        ])
+    }));
+
+    const mockRequest = { params: {}, query: new Map([['days', '7'], ['compare', 'previous-period'], ['subjectId', 's1']]) };
+    const response = await handlers['get-director-powerbi-metrics'](mockRequest, { log: makeMockLog(), error: mock.fn() });
+    assert.strictEqual(response.status, 200);
+    const payload = JSON.parse(response.body);
+
+    assert.strictEqual(payload.windowDays, 7);
+    assert.strictEqual(payload.daily.length, 7, 'el gráfico no arrastra el período de comparación');
+    assert.strictEqual(payload.period.startDate, isoDayOffset(-6));
+    assert.strictEqual(payload.period.totalCostUsd, 0.15, 'el período no suma la fila del período anterior');
+    assert.ok(payload.comparison, 'la comparación viene en la misma respuesta');
+    assert.strictEqual(payload.comparison.totalCostUsd, 0.15);
+    assert.strictEqual(payload.comparison.startDate, isoDayOffset(-13));
+    assert.strictEqual(payload.summary.totalCostUsd, 0.15);
+    assert.strictEqual(payload.criterion.id, 'tokens-x-declared-price');
+    assert.strictEqual(payload.pricing.effectiveFrom, '2026-04-11');
+    assert.strictEqual(payload.attribution.perActiveUser.blockedBy, '#303');
+    assert.strictEqual(payload.attribution.perActiveUser.status, 'blocked');
+    assert.strictEqual(payload.costByClass.length, 1);
+    assert.strictEqual(payload.costByClass[0].cost, 0.15, 'el desglose por clase es sólo del período');
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({ listEntities: defaultListEntities }));
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: [] }));
+});
+
+test('UJ-54: get-director-powerbi-metrics sin comparación devuelve comparison null', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: makeListEntitiesResult([
+            { userId: 'alu-001', subjectId: 's1', promptTokens: 1000000, totalTokens: 1000000, timestamp: timestampOffset(0) },
+        ])
+    }));
+
+    const response = await handlers['get-director-powerbi-metrics'](
+        { params: {}, query: new Map([['days', '7'], ['compare', 'none']]) },
+        { log: makeMockLog(), error: mock.fn() }
+    );
+    assert.strictEqual(response.status, 200);
+    const payload = JSON.parse(response.body);
+    assert.strictEqual(payload.comparison, null);
+    assert.strictEqual(payload.period.totalCostUsd, 0.15);
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({ listEntities: defaultListEntities }));
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: [] }));
+});
+
+test('UJ-54: get-director-stats mide la ventana pedida y la declara', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+    storageMocks.getTableClient.mock.mockImplementation((table) => {
+        if (table === 'SessionMetrics') {
+            return { listEntities: makeListEntitiesResult([
+                { userId: 'alu-001', subjectId: 's1', promptTokens: 1000000, totalTokens: 1000000, timestamp: timestampOffset(0) },
+                { userId: 'alu-002', subjectId: 's1', promptTokens: 1000000, totalTokens: 1000000, timestamp: timestampOffset(-20) },
+            ]) };
+        }
+        return { listEntities: defaultListEntities, createTable: async () => {} };
+    });
+
+    const wide = await handlers['get-director-stats']({ params: {}, query: new Map([['days', '30']]) }, { log: makeMockLog(), error: mock.fn() });
+    assert.strictEqual(wide.status, 200);
+    const widePayload = JSON.parse(wide.body);
+    assert.strictEqual(widePayload.windowDays, 30);
+    assert.strictEqual(widePayload.powerBiSource.windowDays, 30);
+    assert.strictEqual((widePayload.costBySubject[0]?.dailyCost || []).length, 2, '30 días incluyen las dos fechas');
+
+    const narrow = await handlers['get-director-stats']({ params: {}, query: new Map([['days', '7']]) }, { log: makeMockLog(), error: mock.fn() });
+    const narrowPayload = JSON.parse(narrow.body);
+    assert.strictEqual(narrowPayload.windowDays, 7);
+    assert.strictEqual((narrowPayload.costBySubject[0]?.dailyCost || []).length, 1, '7 días no incluyen la fila de hace 20 días');
+
+    const byDefault = await handlers['get-director-stats']({ params: {}, query: new Map() }, { log: makeMockLog(), error: mock.fn() });
+    assert.strictEqual(JSON.parse(byDefault.body).windowDays, 14, 'sin days sigue la ventana por defecto');
+
+    storageMocks.getTableClient.mock.mockImplementation(() => ({ listEntities: defaultListEntities }));
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: [] }));
+});
