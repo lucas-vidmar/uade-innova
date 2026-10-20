@@ -141,6 +141,7 @@ export const api = {
     getRetentionPolicy, getRetentionExport, saveRetentionPolicy,
     getDeletionRecords, getDeletionRecord, verifyDeletionRecord, getDataInventory,
     getAccessLog, getAccessLogExport,
+    getSubjectWeights, saveSubjectWeights,
     getVectorIndex, quarantineVectorIndex,
     getAdminConfig, saveAdminConfig, resetAdminConfig,
     createAdminUser, updateAdminUser, deleteAdminUser, resetAdminUserPassword,
