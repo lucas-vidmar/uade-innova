@@ -2,9 +2,13 @@ import {
     BASE_URL, apiFetch, fetchWithTimeout, parseApiError
 } from './core.js';
 
-export async function getDirectorStats() {
+export async function getDirectorStats(days) {
+    // UJ-54 (paso 1): la ventana se puede fijar desde la superficie. Sin `days`
+    // el backend usa su ventana por defecto (POWERBI_DEFAULT_DAYS).
+    const numericDays = Number(days);
+    const qs = Number.isFinite(numericDays) && numericDays > 0 ? `?days=${encodeURIComponent(numericDays)}` : '';
     try {
-        const res = await fetchWithTimeout(`${BASE_URL}/director/stats`, { timeout: 4000 });
+        const res = await fetchWithTimeout(`${BASE_URL}/director/stats${qs}`, { timeout: 4000 });
         if (!res.ok) return null;
         const text = await res.text();
         if (!text) return null;
@@ -29,9 +33,15 @@ export async function getDirectorKpiExport(format) {
     }
 }
 
-export async function getDirectorPowerBiMetrics(days = 14) {
+export async function getDirectorPowerBiMetrics(days = 14, options = {}) {
+    // UJ-54 (paso 3): el panel compara dos períodos con el mismo criterio, así
+    // que la ventana de comparación se pide junto con la del período.
+    const compare = options?.compare === 'none' ? 'none' : 'previous-period';
+    const params = new URLSearchParams();
+    params.set('days', days);
+    params.set('compare', compare);
     try {
-        const res = await fetchWithTimeout(`${BASE_URL}/director/powerbi-metrics?days=${encodeURIComponent(days)}`, { timeout: 4000 });
+        const res = await fetchWithTimeout(`${BASE_URL}/director/powerbi-metrics?${params.toString()}`, { timeout: 6000 });
         if (!res.ok) {
             return {
                 source: { mode: 'fallback', storage: 'Azure Table Storage', table: 'SessionMetrics' },
