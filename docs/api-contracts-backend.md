@@ -103,9 +103,9 @@ El backend expone ~55 endpoints HTTP, 6 funciones timer-triggered y 1 blob-trigg
 | Método | Ruta | Auth | Descripción |
 |--------|------|------|-------------|
 | GET | `/api/sga/tasks` | Enrollment | Tareas del alumno (mock) |
-| GET | `/api/sga/early-alerts` | Director | Alertas tempranas (mock) |
-| GET | `/api/sga/attendance` | Teacher/Director | Asistencia (mock) |
-| GET | `/api/sga/teacher-alerts` | Teacher/Director | Alertas docente (mock) |
+| GET | `/api/sga/early-alerts` | Director | Sin fuente: respuesta fija `[]`. Ninguna pantalla lo consume (#467) |
+| GET | `/api/sga/attendance` | Teacher/Director | Sin fuente: respuesta fija `{ average: null, critical: null, trend: null }`. Ninguna pantalla lo consume (#467) |
+| GET | `/api/sga/teacher-alerts` | Teacher/Director | Sin fuente: respuesta fija `[]`. Ninguna pantalla lo consume (#467) |
 | GET | `/api/enrollments` | Self/Director | Inscripciones |
 | GET | `/api/enrollments/check` | FrontDoor | Verifica inscripción |
 | POST | `/api/enrollments` | Teacher/Director | Crea inscripción |

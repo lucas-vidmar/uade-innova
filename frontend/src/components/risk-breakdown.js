@@ -84,6 +84,10 @@ export function renderRiskBreakdownHTML(thresholds = {}, scopeLabel = null) {
         <p style="margin:0;font-size:0.85rem;color:var(--color-text-secondary)">
           <code>asistencia &lt; ${att}% &rarr; +3</code>
         </p>
+        <p style="margin:var(--space-2) 0 0;font-size:0.8rem;color:var(--color-warning)">
+          Sin fuente (#467): hoy no se lee asistencia del sistema académico, así que este
+          factor nunca suma. El puntaje que ves sale sólo de inactividad y consultas.
+        </p>
       </div>
 
       <div style="background:var(--color-surface-2);border-radius:var(--radius-md);padding:var(--space-4);margin-bottom:var(--space-3)">

@@ -48,6 +48,18 @@ app.http('sga-get-tasks', {
     })),
 });
 
+// ---------------------------------------------------------------------------
+// #467 — Lecturas de desempeño SIN FUENTE.
+// Los tres handlers de abajo (sga/attendance, sga/teacher-alerts,
+// sga/early-alerts) responden con valores fijos: no leen ninguna tabla ni blob
+// porque la integración con el sistema académico no existe. Ninguna pantalla los
+// consume: las tarjetas que los usaban (alertas docentes en la analítica y los
+// cortes de asistencia/promedio del tablero de dirección) se retiraron en este
+// mismo cambio. Se conservan acá como contrato reservado, documentados como sin
+// fuente, para que la fuente real se enchufe sin renegociar la ruta. NO agregar
+// consumidores en la interfaz hasta que devuelvan datos medidos.
+// ---------------------------------------------------------------------------
+
 app.http('sga-get-attendance', {
     methods: ['GET'],
     authLevel: 'anonymous',
@@ -66,6 +78,8 @@ app.http('sga-get-attendance', {
             return { status: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Parámetro requerido: subjectId' }) };
         }
 
+        // Sin fuente (#467): nulls fijos a propósito. Devolver ceros acá se
+        // leería como "asistencia medida y perfecta".
         return {
             status: 200,
             headers: { 'Content-Type': 'application/json' },

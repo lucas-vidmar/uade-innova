@@ -30,10 +30,11 @@ export async function renderDirectorDashboard(container) {
         count: d.ragInteractions || 0,
     })).sort((a, b) => a.date.localeCompare(b.date));
 
+    // #467: sólo los conteos de riesgo. Los cortes de asistencia y promedio no
+    // tienen fuente (la integración con el sistema académico no existe) y ya no
+    // se muestran: un 0 fijo se leía como "nadie en riesgo".
     const defaultEarlyAlertSummary = {
         totalStudentsAtRisk: 0, highRiskCount: 0, mediumRiskCount: 0,
-        lowAttendanceCount: 0, lowGradeCount: 0,
-        attendanceBelow60Count: 0, attendance60To75Count: 0, attendanceAbove75Count: 0,
     };
     const earlyAlertSummary = { ...defaultEarlyAlertSummary, ...(data.earlyAlertSummary || {}) };
     _kpiData = data;
@@ -228,13 +229,17 @@ export async function renderDirectorDashboard(container) {
             <tbody>
               <tr><td><strong>Riesgo alto</strong></td><td>${earlyAlertSummary.highRiskCount}</td></tr>
               <tr><td><strong>Riesgo medio</strong></td><td>${earlyAlertSummary.mediumRiskCount}</td></tr>
-              <tr><td>Asistencia &lt; 60%</td><td>${earlyAlertSummary.attendanceBelow60Count}</td></tr>
-              <tr><td>Asistencia 60% - 75%</td><td>${earlyAlertSummary.attendance60To75Count}</td></tr>
-              <tr><td>Asistencia &gt; 75%</td><td>${earlyAlertSummary.attendanceAbove75Count}</td></tr>
-              <tr><td>Baja asistencia (total)</td><td>${earlyAlertSummary.lowAttendanceCount}</td></tr>
-              <tr><td>Bajo promedio (total)</td><td>${earlyAlertSummary.lowGradeCount}</td></tr>
             </tbody>
           </table>
+        </div>
+        <!-- #467: las filas de asistencia y promedio salieron de esta tabla. No hay
+             fuente que las alimente (la integración con el sistema académico no
+             existe); se mostraban como 0 fijo y se leían como "nadie en riesgo". -->
+        <div id="director-alerts-unsourced" style="margin-top:var(--space-3);padding:var(--space-3);border-radius:var(--radius-md);background:var(--color-surface-2);font-size:var(--font-size-xs);color:var(--color-text-secondary)">
+          <strong>Asistencia y promedio: sin fuente.</strong>
+          El tablero todavía no lee calificaciones ni asistencia del sistema académico, así
+          que no se muestran esos cortes. Los niveles de riesgo de arriba salen sólo de
+          inactividad, consultas y engagement medidos en la plataforma.
         </div>
         <small style="display:block;margin-top:var(--space-3);color:var(--color-text-secondary)">
           Vista anonimizada: no se muestran datos personales de estudiantes.
@@ -568,6 +573,8 @@ function buildKpiCsv(data) {
   push('Alertas','Total en riesgo', ea.totalStudentsAtRisk || 0);
   push('Alertas','Riesgo alto', ea.highRiskCount || 0);
   push('Alertas','Riesgo medio', ea.mediumRiskCount || 0);
+  // #467: asistencia y promedio no tienen fuente; no se exportan cortes vacíos.
+  push('Alertas','Asistencia y promedio','sin fuente');
   lines.push('');
   lines.push('seccion,materia,semana_actual');
   (data.wausBySubject || []).forEach(s => push('WAUS', s.subjectName || s.subjectId, s.currentWeek || 0));
@@ -679,8 +686,7 @@ function buildPrintHtml(data) {
     <tr><td>Total en riesgo</td><td>${t(ea.totalStudentsAtRisk)}</td></tr>
     <tr><td>Riesgo alto</td><td>${t(ea.highRiskCount)}</td></tr>
     <tr><td>Riesgo medio</td><td>${t(ea.mediumRiskCount)}</td></tr>
-    <tr><td>Asistencia &lt; 60%</td><td>${t(ea.attendanceBelow60Count)}</td></tr>
-    <tr><td>Asistencia 60-75%</td><td>${t(ea.attendance60To75Count)}</td></tr>
+    <tr><td>Asistencia y promedio</td><td>sin fuente</td></tr>
   </tbody></table>
   <div class="footer">Datos anonimizados, sin PII.</div>
 </body></html>`;

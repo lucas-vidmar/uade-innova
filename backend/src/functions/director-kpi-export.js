@@ -77,8 +77,10 @@ function buildCsv(data) {
   lines.push('Alertas tempranas,Total en riesgo,' + toNum(early.totalStudentsAtRisk));
   lines.push('Alertas tempranas,Riesgo alto,' + toNum(early.highRiskCount));
   lines.push('Alertas tempranas,Riesgo medio,' + toNum(early.mediumRiskCount));
-  lines.push('Alertas tempranas,Asistencia < 60%,' + toNum(early.attendanceBelow60Count));
-  lines.push('Alertas tempranas,Asistencia 60-75%,' + toNum(early.attendance60To75Count));
+  // #467: asistencia y promedio no tienen fuente (no hay integración con el
+  // sistema académico). Se declara la ausencia en vez de exportar un 0 fijo que
+  // se lee como "nadie por debajo del umbral".
+  lines.push('Alertas tempranas,Asistencia y promedio,sin fuente');
   lines.push('');
 
   lines.push('seccion,materia,costo_usd');
@@ -177,8 +179,7 @@ function buildHtml(data) {
     <tr><td>Total en riesgo</td><td>${t(earlyAlert.totalStudentsAtRisk)}</td></tr>
     <tr><td>Riesgo alto</td><td>${t(earlyAlert.highRiskCount)}</td></tr>
     <tr><td>Riesgo medio</td><td>${t(earlyAlert.mediumRiskCount)}</td></tr>
-    <tr><td>Asistencia &lt; 60%</td><td>${t(earlyAlert.attendanceBelow60Count)}</td></tr>
-    <tr><td>Asistencia 60-75%</td><td>${t(earlyAlert.attendance60To75Count)}</td></tr>
+    <tr><td>Asistencia y promedio</td><td>sin fuente</td></tr>
   </tbody></table>
 
   <h2>Costo por Materia (30 d&iacute;as)</h2>
@@ -299,8 +300,6 @@ app.http('get-director-kpi-export', {
         logWarn(context, `[KpiExport] Could not load early-alert summary: ${err.message}`);
         return {
           totalStudentsAtRisk: 0, highRiskCount: 0, mediumRiskCount: 0,
-          lowAttendanceCount: 0, lowGradeCount: 0,
-          attendanceBelow60Count: 0, attendance60To75Count: 0, attendanceAbove75Count: 0,
         };
       });
 

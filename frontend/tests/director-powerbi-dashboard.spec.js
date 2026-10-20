@@ -145,9 +145,16 @@ test('director can review DAU, token and cost metrics for Power BI', async ({ pa
   await expect(page.locator('#teacher-uploads-table')).toBeVisible();
   await expect(page.locator('#waus-bar-chart')).toBeVisible();
 
-  await expect(page.locator('#director-alerts-aggregate-table')).toBeVisible();
-  await expect(page.locator('#director-alerts-aggregate-table')).toContainText('Riesgo alto');
-  await expect(page.locator('#director-alerts-aggregate-table')).toContainText('Asistencia < 60%');
-  await expect(page.locator('#director-alerts-aggregate-table')).toContainText('Baja asistencia (total)');
+  // #467: el tablero no presenta cortes de asistencia/promedio que no tienen
+  // fuente. El stub de arriba manda esos valores igual (como los mandaba el
+  // backend viejo) para probar que la pantalla no los dibuja.
+  const alertsTable = page.locator('#director-alerts-aggregate-table');
+  await expect(alertsTable).toBeVisible();
+  await expect(alertsTable).toContainText('Riesgo alto');
+  await expect(alertsTable).toContainText('Riesgo medio');
+  await expect(alertsTable.locator('tbody tr')).toHaveCount(2);
+  await expect(alertsTable).not.toContainText('Asistencia');
+  await expect(alertsTable).not.toContainText('promedio');
+  await expect(page.locator('#director-alerts-unsourced')).toContainText('sin fuente');
 
 });

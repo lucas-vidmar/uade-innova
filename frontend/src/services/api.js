@@ -42,8 +42,7 @@ import {
     getDeadlines, saveDeadline, deleteDeadline, getDeadlineReminders
 } from './deadlines.api.js';
 import {
-    getTasks, getEarlyAlerts, getAttendanceStats,
-    getTeacherAnalytics, getTeacherAlerts,
+    getTasks, getTeacherAnalytics,
     getEnrollments, checkEnrollment,
     createEnrollment, deleteEnrollment,
     getEnrollmentsBySubject,
@@ -125,8 +124,7 @@ export const api = {
 
     getDeadlines, saveDeadline, deleteDeadline, getDeadlineReminders,
 
-    getTasks, getEarlyAlerts, getAttendanceStats,
-    getTeacherAnalytics, getTeacherAlerts,
+    getTasks, getTeacherAnalytics,
     getEnrollments, checkEnrollment,
     createEnrollment, deleteEnrollment,
     getEnrollmentsBySubject,

@@ -67,6 +67,7 @@
       "get": {
         "tags": ["SGA"],
         "summary": "Lista alertas tempranas académicas",
+        "description": "SIN FUENTE (#467): devuelve una lista fija vacía. No lee tabla ni blob y ninguna pantalla lo consume. Se conserva como contrato reservado hasta que exista la integración con el sistema académico.",
         "operationId": "getSgaEarlyAlerts",
         "parameters": [
           {
@@ -111,6 +112,7 @@
       "get": {
         "tags": ["SGA"],
         "summary": "Obtiene métricas de asistencia por materia",
+        "description": "SIN FUENTE (#467): devuelve valores fijos en null (average, critical, trend, updatedAt). No lee tabla ni blob y ninguna pantalla lo consume. Se retiró de la interfaz para no presentar una lectura de desempeño inexistente.",
         "operationId": "getSgaAttendance",
         "parameters": [
           {
