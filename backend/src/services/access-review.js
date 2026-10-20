@@ -158,15 +158,24 @@ export function digestOf(entries) {
 /**
  * Arma el inventario de identidades con su rol, sus permisos vigentes y el acto
  * con que cada permiso se otorgó.
+ *
+ * #551: el inventario de permisos por rol dice qué concede el rol, no qué
+ * alcanza la persona. Cuando el llamador pasa `reachById` (derivado de
+ * matrículas y jerarquía por `services/identity-reach.js`), cada entrada lleva
+ * además su `alcance` con la fuente de cada ítem. El digest del acta no cambia
+ * de significado: sigue siendo el de permisos/estado/acto, y el alcance lleva el
+ * suyo propio (`alcance.digest`).
+ *
  * @param {Array<Object>} users filas de la tabla Users
- * @param {{generatedAt?: string}} [options]
+ * @param {{generatedAt?: string, reachById?: Object<string, Object>|null}} [options]
  */
-export function buildAccessReview(users, { generatedAt = new Date().toISOString() } = {}) {
+export function buildAccessReview(users, { generatedAt = new Date().toISOString(), reachById = null } = {}) {
   const entries = (users || [])
     .map((user) => {
       const evidencia = permissionEvidence(user);
       const estado = statusEvidence(user);
       const permisos = capabilitiesForRole(user.role);
+      const alcance = reachById ? (reachById[user.userId] || null) : null;
       return {
         userId: user.userId,
         name: user.name || null,
@@ -175,6 +184,7 @@ export function buildAccessReview(users, { generatedAt = new Date().toISOString(
         status: user.status || 'active',
         activa: (user.status || 'active') !== 'disabled',
         permisos,
+        alcance,
         evidencia: { ...evidencia, estado },
         huerfano: evidencia.huerfano,
         falta: evidencia.falta,
@@ -185,6 +195,7 @@ export function buildAccessReview(users, { generatedAt = new Date().toISOString(
 
   const activas = entries.filter((e) => e.activa);
   const huerfanos = activas.filter((e) => e.huerfano);
+  const conAlcance = activas.filter((e) => e.alcance);
   const resumen = {
     identidades: entries.length,
     activas: activas.length,
@@ -192,6 +203,16 @@ export function buildAccessReview(users, { generatedAt = new Date().toISOString(
     conEvidencia: activas.length - huerfanos.length,
     huerfanos: huerfanos.length,
   };
+  if (conAlcance.length > 0) {
+    resumen.alcance = {
+      identidades: conAlcance.length,
+      unidades: conAlcance.reduce((n, e) => n + (e.alcance.totales?.unidades || 0), 0),
+      encuentros: conAlcance.reduce((n, e) => n + (e.alcance.totales?.encuentros || 0), 0),
+      materiales: conAlcance.reduce((n, e) => n + (e.alcance.totales?.materiales || 0), 0),
+      permisosEspeciales: conAlcance.reduce((n, e) => n + (e.alcance.permisosEspeciales || []).length, 0),
+      responsabilidadesAbiertas: conAlcance.reduce((n, e) => n + (e.alcance.responsabilidadesAbiertas || []).length, 0),
+    };
+  }
 
   return {
     generatedAt,
@@ -204,20 +225,42 @@ export function buildAccessReview(users, { generatedAt = new Date().toISOString(
 
 /**
  * El acta en CSV, para que un tercero la pueda leer fuera de la aplicación.
+ *
+ * #551: las columnas de alcance van al final para no romper el contrato que ya
+ * consumían las actas exportadas (identidad, rol, estado, permisos, evidencia),
+ * y traen el detalle derivado de matrículas y jerarquía con sus totales.
+ *
  * @param {Object} review salida de buildAccessReview
  * @param {Object} [extra] { reviewId, estado, firma, decisiones }
  */
 export function reviewCsv(review, extra = {}) {
   const q = (v) => `"${String(v === undefined || v === null ? '' : v).replace(/"/g, '""')}"`;
-  const lines = ['identidad,rol,estado,permisos,evidencia_dueno,evidencia_fecha,evidencia_motivo,huerfano,falta'];
+  const reachSummary = (e) => {
+    const a = e.alcance;
+    if (!a) return [q(''), q(''), q(''), q(''), q('')];
+    const t = a.totales || {};
+    return [
+      q((a.unidades || []).map((u) => `${u.unidadId}${u.acceso?.contenido === 'completo' ? '' : ` [${u.acceso?.contenido || ''}]`}`).join('; ')),
+      q(`${t.encuentros || 0} de ${(t.encuentros || 0) + (t.encuentrosNoAlcanzables || 0)} alcanzables`),
+      q(`${t.materiales || 0} alcanzable${(t.materiales || 0) === 1 ? '' : 's'}`),
+      q((a.permisosEspeciales || []).map((p) => p.tipo).join('; ')),
+      q((a.responsabilidadesAbiertas || []).map((r) => `${r.tipo}${r.unidadId ? `@${r.unidadId}` : ''}`).join('; ')),
+    ];
+  };
+  const lines = ['identidad,rol,estado,permisos,evidencia_dueno,evidencia_fecha,evidencia_motivo,huerfano,falta,unidades,encuentros,material,permisos_especiales,responsabilidades_abiertas'];
   for (const e of review.entries || []) {
     lines.push([
       q(e.userId), q(e.role), q(e.status), q((e.permisos || []).join('; ')),
       q(e.evidencia?.dueño), q(e.evidencia?.fecha), q(e.evidencia?.motivo),
       q(e.huerfano ? 'si' : 'no'), q((e.falta || []).join('; ')),
+      ...reachSummary(e),
     ].join(','));
   }
   lines.push(`resumen,,,,,,,,,identidades=${review.resumen.identidades};activas=${review.resumen.activas};permisos=${review.resumen.permisosVigentes};conEvidencia=${review.resumen.conEvidencia};huerfanos=${review.resumen.huerfanos}`);
+  if (review.resumen?.alcance) {
+    const a = review.resumen.alcance;
+    lines.push(`alcance,,,,,,,,,unidades=${a.unidades};encuentros=${a.encuentros};material=${a.materiales};permisosEspeciales=${a.permisosEspeciales};responsabilidadesAbiertas=${a.responsabilidadesAbiertas}`);
+  }
   lines.push(`digest,,,,,,,,,${review.digest}`);
   if (extra.reviewId) lines.push(`ronda,,,,,,,,,${extra.reviewId}`);
   if (extra.estado) lines.push(`estado_acta,,,,,,,,,${extra.estado}`);

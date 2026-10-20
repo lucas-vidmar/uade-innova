@@ -36,6 +36,10 @@ mock.module('../middleware/with-correlation.js', { namedExports: { withCorrelati
 
 const tableData = { Users: [], AccessReview: [] };
 
+// #551: el alcance efectivo se deriva de matrículas, encuentros, material y del
+// catálogo de unidades (`subjects.json`), que se lee por `loadJson`.
+let subjectsCatalog = [];
+
 function createTableClient(tableName) {
   const data = tableData[tableName] || (tableData[tableName] = []);
   return {
@@ -67,16 +71,22 @@ function createTableClient(tableName) {
   };
 }
 
-mock.module('../services/storage.js', { namedExports: { getTableClient: (tableName) => createTableClient(tableName) } });
+mock.module('../services/storage.js', {
+  namedExports: {
+    getTableClient: (tableName) => createTableClient(tableName),
+    loadJson: async () => subjectsCatalog,
+  },
+});
 
 await import('./access-review-api.js');
 const { createUser, getUserById } = await import('../services/users-store.js');
 
-function makeRequest({ body, query } = {}) {
+function makeRequest({ body, query, params } = {}) {
   return {
     headers: { get: () => null },
     json: async () => body,
     query: new URLSearchParams(query || {}),
+    params: params || {},
   };
 }
 
@@ -96,6 +106,10 @@ async function seed() {
 beforeEach(() => {
   tableData.Users.length = 0;
   tableData.AccessReview.length = 0;
+  tableData.Enrollments = [];
+  tableData.classes = [];
+  tableData.materials = [];
+  subjectsCatalog = [];
 });
 
 test('roles — dirección puede leer la revisión; sólo administración aplica y firma (UJ-53)', () => {
@@ -298,4 +312,119 @@ test('POST sign — un acta firmada no admite más decisiones hasta abrir la ron
     makeContext(),
   );
   assert.equal(aplicada.status, 200);
+});
+
+// ─── #551 — alcance efectivo derivado de matrículas y jerarquía ──────────────
+
+/**
+ * Estado del piloto, en tablas: una unidad con dos docentes, dos encuentros (uno
+ * publicado y uno en borrador) y material colgado de cada uno.
+ */
+async function seedReach() {
+  subjectsCatalog = [
+    { id: 'arq-software-2026', name: 'Arquitectura de Software 2026', professorIds: ['prof-001', 'prof-002'] },
+    { id: 'dasi-1c2023', name: 'DASI', professorIds: [] },
+  ];
+  tableData.Enrollments = [
+    { partitionKey: 'arq-software-2026', rowKey: 'alu-001', role: 'student', status: 'active', enrolledAt: '2026-02-01T10:00:00.000Z' },
+    { partitionKey: 'arq-software-2026', rowKey: 'prof-001', role: 'teacher', status: 'active', enrolledAt: '2026-02-01T10:00:00.000Z' },
+    { partitionKey: 'arq-software-2026', rowKey: 'prof-002', role: 'teacher', status: 'active', enrolledAt: '2026-02-01T10:00:00.000Z' },
+  ];
+  tableData.classes = [
+    {
+      partitionKey: 'arq-software-2026', rowKey: 'class-01', title: 'Clase 1', date: '2026-03-01',
+      publicationState: 'publicado', summaryReady: true, professorIds: JSON.stringify(['prof-001', 'prof-002']), studentIds: JSON.stringify([]),
+    },
+    {
+      partitionKey: 'arq-software-2026', rowKey: 'class-02', title: 'Clase 2', date: '2026-03-08',
+      publicationState: 'borrador', summaryReady: false, professorIds: JSON.stringify(['prof-001']), studentIds: JSON.stringify([]),
+    },
+  ];
+  tableData.materials = [
+    { partitionKey: 'arq-software-2026', rowKey: 'mat-publicado', filename: 'guia-01.pdf', classIds: JSON.stringify(['class-01']), type: 'pdf', status: 'processed' },
+    { partitionKey: 'arq-software-2026', rowKey: 'mat-borrador', filename: 'guia-02.pdf', classIds: JSON.stringify(['class-02']), type: 'pdf', status: 'processed' },
+  ];
+}
+
+test('#551 — el inventario dice qué alcanza cada identidad: unidad → encuentro → material, con la fuente de cada ítem', async () => {
+  await seed();
+  await seedReach();
+
+  const data = parse(await handlers['access-review-get'](makeRequest(), makeContext())).data;
+  assert.equal(data.resumen.identidades, 2);
+
+  const alumna = data.entries.find((e) => e.userId === 'alu-001');
+  assert.ok(alumna.alcance, 'cada entrada tiene que traer el alcance efectivo, no sólo la lista de permisos del rol');
+
+  const unidad = alumna.alcance.unidades.find((u) => u.unidadId === 'arq-software-2026');
+  assert.ok(unidad, 'la matrícula activa tiene que aparecer como unidad alcanzada');
+  assert.equal(unidad.nombre, 'Arquitectura de Software 2026');
+  assert.equal(unidad.acceso.via, 'matricula');
+  assert.equal(unidad.acceso.rol, 'student');
+  assert.match(unidad.acceso.fuente, /Enrollments/);
+
+  // El borrador no se le atribuye al alumnado; el publicado sí, con su fuente.
+  assert.deepEqual(unidad.encuentros.map((e) => e.encuentroId), ['class-01']);
+  assert.equal(unidad.encuentrosNoAlcanzables, 1);
+  assert.match(unidad.encuentros[0].fuente, /Classes/);
+
+  // Material: sólo el colgado del encuentro publicado.
+  assert.deepEqual(unidad.material.items.map((m) => m.materialId), ['mat-publicado']);
+  assert.equal(unidad.material.alcanzables, 1);
+  assert.match(unidad.material.items[0].fuente, /Materials/);
+
+  // La docente alcanza además el borrador y su material.
+  const docente = data.entries.find((e) => e.userId === 'prof-001');
+  const unidadDocente = docente.alcance.unidades.find((u) => u.unidadId === 'arq-software-2026');
+  assert.deepEqual(unidadDocente.encuentros.map((e) => e.encuentroId), ['class-01', 'class-02']);
+  assert.equal(unidadDocente.material.items.length, 2);
+  assert.equal(unidadDocente.docentes.activos, 2);
+
+  // El resumen del inventario suma el alcance, para que la cabecera lo pueda decir.
+  assert.equal(data.resumen.alcance.unidades, 2);
+  assert.equal(data.resumen.alcance.encuentros, 3);
+  assert.equal(data.resumen.alcance.materiales, 3);
+});
+
+test('#551 — el alcance no expone contenido ni datos de terceros: sólo lo que hace falta para decidir el acceso', async () => {
+  await seed();
+  await seedReach();
+  const data = parse(await handlers['access-review-get'](makeRequest(), makeContext())).data;
+  const alumna = data.entries.find((e) => e.userId === 'alu-001');
+
+  const serializado = JSON.stringify(alumna.alcance);
+  for (const tercero of ['prof-001', 'prof-002', 'Xavier', 'prof01@uade.edu.ar']) {
+    assert.equal(serializado.includes(tercero), false, `el alcance no debe exponer ${tercero}`);
+  }
+  // Lo que sí hace falta: cuántas personas comparten la unidad y qué alcanza ella.
+  assert.equal(alumna.alcance.unidades[0].docentes.activos, 2);
+});
+
+test('#551 — el acta en CSV lleva el alcance al final sin romper las columnas que ya existían', async () => {
+  await seed();
+  await seedReach();
+  const res = await handlers['access-review-get'](makeRequest({ query: { format: 'csv' } }), makeContext());
+  assert.equal(res.status, 200);
+  assert.match(res.body, /^identidad,rol,estado,permisos,evidencia_dueno,[^\n]*unidades,encuentros,material,permisos_especiales,responsabilidades_abiertas/m);
+  assert.match(res.body, /"alu-001","student","active",[^\n]*"arq-software-2026[^"]*"/);
+  assert.match(res.body, /^alcance,,+unidades=2;/m);
+});
+
+test('#551 — GET reach/{userId} devuelve el alcance de una sola identidad, con sus avisos', async () => {
+  await seed();
+  await seedReach();
+
+  const res = await handlers['access-review-reach'](makeRequest({ params: { userId: 'alu-001' } }), makeContext());
+  assert.equal(res.status, 200);
+  const data = parse(res).data;
+  assert.equal(data.identidad.userId, 'alu-001');
+  assert.equal(data.alcance.unidades.length, 1);
+  assert.equal(data.alcance.unidades[0].unidadId, 'arq-software-2026');
+  assert.match(data.alcance.digest, /^[a-f0-9]{64}$/);
+
+  const inexistente = await handlers['access-review-reach'](makeRequest({ params: { userId: 'no-existe' } }), makeContext());
+  assert.equal(inexistente.status, 404);
+  assert.equal(parse(inexistente).error.code, 'USER_NOT_FOUND');
+
+  assert.deepEqual(declaredRoles['access-review-reach'], ['Admin', 'Director']);
 });

@@ -776,12 +776,20 @@ export async function renderUserManagement(container) {
 
     /**
      * UJ-53 — Revisión periódica de permisos con evidencia.
+     * #551 — Alcance efectivo por identidad.
      *
      * El inventario que se muestra es el que arma el backend con lo que la tabla
      * tiene: cada permiso con su acto (dueño, motivo y fecha) o marcado como
      * huérfano con el dato que le falta. Sobre cada permiso se decide sostener,
      * reducir o retirar; la decisión exige motivo y queda asentada con su efecto.
      * Al final el acta se exporta y se firma contra el digest de lo aplicado.
+     *
+     * La lista de permisos del rol no dice qué alcanza la persona. Por eso cada
+     * fila trae además su **alcance efectivo** —unidades, encuentros, material,
+     * permisos especiales y responsabilidades abiertas— derivado de las
+     * matrículas y de la jerarquía unidad → encuentro → material, con la fuente
+     * de cada ítem. Es lo que permite separar, antes del corte, lo que no puede
+     * quedar sin responsable.
      */
     async function openAccessReviewModal() {
         const overlay = document.createElement('div');
@@ -838,6 +846,96 @@ export async function renderUserManagement(container) {
                 </div>`;
         };
 
+        /**
+         * #551 — el alcance efectivo de la identidad en una línea: qué unidades,
+         * cuántos encuentros y material alcanza, y qué queda sin responsable si
+         * se corta. La lista de permisos del rol dice qué concede el rol; esto
+         * dice qué alcanza esta persona.
+         */
+        const alcanceResumen = (entry) => {
+            const a = entry.alcance;
+            if (!a) {
+                return '<span class="text-secondary" style="font-size:0.75rem;">El inventario no trae el alcance de esta identidad.</span>';
+            }
+            const t = a.totales || {};
+            const plural = (n, uno, varios) => `${n || 0} ${(n || 0) === 1 ? uno : varios}`;
+            const especiales = (a.permisosEspeciales || []).length;
+            const abiertas = (a.responsabilidadesAbiertas || []).length;
+            return `
+                <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;">
+                    <div style="font-size:0.8rem;white-space:nowrap;">${plural(t.unidades, 'unidad', 'unidades')} · ${plural(t.encuentros, 'encuentro', 'encuentros')} · ${plural(t.materiales, 'material', 'materiales')}</div>
+                    <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">
+                        ${especiales > 0 ? `<span class="badge badge-warning" title="Alcanza algo que no viene ni de su rol ni de su matrícula vigente">${plural(especiales, 'permiso especial', 'permisos especiales')}</span>` : ''}
+                        ${abiertas > 0 ? `<span class="badge badge-error" title="Si se corta ahora, esto queda sin responsable">${plural(abiertas, 'responsabilidad abierta', 'responsabilidades abiertas')}</span>` : ''}
+                        <button type="button" class="btn btn-ghost btn-sm ar-reach" data-ar-reach="${escapeHtml(entry.userId)}">Ver alcance</button>
+                    </div>
+                </div>
+            `;
+        };
+
+        const fuenteHtml = (fuente) => (fuente
+            ? `<div style="font-size:0.7rem;color:var(--color-text-secondary);word-break:break-word;"><code>${escapeHtml(String(fuente).slice(0, 240))}</code></div>`
+            : '');
+
+        const listaHtml = (items, render) => (items.length
+            ? `<ul style="margin:6px 0 0 16px;font-size:0.8rem;padding:0;list-style:disc;">${items.map(render).join('')}</ul>`
+            : '');
+
+        /**
+         * #551 — detalle del alcance: unidad → encuentro → material, más los
+         * permisos especiales y las responsabilidades abiertas, cada ítem con la
+         * fuente de la que se derivó. Sólo lo que hace falta para decidir el
+         * acceso: no se muestran respuestas de chat, notas ni datos de terceros.
+         */
+        const alcanceDetalle = (entry) => {
+            const a = entry.alcance;
+            if (!a) {
+                return '<p class="text-secondary" style="margin:0;font-size:0.8rem;">Esta respuesta no trae el alcance derivado. Volvé a abrir la revisión contra la versión que lo calcula.</p>';
+            }
+            const unidades = (a.unidades || []).map((u) => {
+                const encuentros = listaHtml(u.encuentros || [], (e) => `<li>Encuentro <strong>${escapeHtml(e.titulo || e.encuentroId)}</strong> · ${escapeHtml(e.estado || '')}${fuenteHtml(e.fuente)}</li>`);
+                const material = listaHtml((u.material?.items || []).slice(0, 12), (m) => `<li>Material ${escapeHtml(m.nombre || m.materialId)}${fuenteHtml(m.fuente)}</li>`);
+                const masMaterial = (u.material?.items || []).length > 12
+                    ? `<div style="font-size:0.75rem;color:var(--color-text-secondary);">… y ${(u.material.items.length - 12)} material(es) más.</div>`
+                    : '';
+                const alertas = listaHtml(u.alertas || [], (al) => `<li><span class="badge badge-warning">${escapeHtml(al.tipo)}</span> ${escapeHtml(al.descripcion)}${fuenteHtml(al.fuente)}</li>`);
+                return `
+                    <div style="padding:10px;border:1px solid var(--color-border,#e5e7eb);border-radius:8px;margin-bottom:8px;">
+                        <div><strong>Unidad ${escapeHtml(u.nombre || u.unidadId)}</strong> <code style="font-size:0.75rem;">${escapeHtml(u.unidadId)}</code></div>
+                        <div style="font-size:0.8rem;color:var(--color-text-secondary);">
+                            acceso por ${escapeHtml(u.acceso?.via || '')} · rol ${escapeHtml(u.acceso?.rol || '')} · contenido ${escapeHtml(u.acceso?.contenido || '')} ·
+                            ${u.docentes?.activos || 0} docente(s) con matrícula activa${u.docentes?.unicoDocente ? ' (es la única persona a cargo)' : ''} ·
+                            ${(u.encuentros || []).length} encuentro(s) alcanzable(s)${u.encuentrosNoAlcanzables ? ` · ${u.encuentrosNoAlcanzables} que no alcanza` : ''} ·
+                            ${u.material?.alcanzables || 0} material(es)${u.material?.truncado ? ' (lista truncada)' : ''}
+                        </div>
+                        ${fuenteHtml(u.acceso?.fuente)}
+                        ${encuentros}
+                        ${material}
+                        ${masMaterial}
+                        ${alertas}
+                    </div>
+                `;
+            }).join('') || '<p class="text-secondary" style="margin:0 0 8px;font-size:0.8rem;">No alcanza ninguna unidad hoy.</p>';
+
+            const especiales = listaHtml(a.permisosEspeciales || [], (p) => `<li><strong>${escapeHtml(p.tipo)}</strong> — ${escapeHtml(p.descripcion)}${fuenteHtml(p.fuente)}</li>`)
+                || '<div style="font-size:0.8rem;color:var(--color-text-secondary);">Sin permisos especiales: todo lo que alcanza viene de su rol o de sus matrículas.</div>';
+            const abiertas = listaHtml(a.responsabilidadesAbiertas || [], (r) => `<li><strong>${escapeHtml(r.tipo)}</strong> — ${escapeHtml(r.descripcion)}${fuenteHtml(r.fuente)}</li>`)
+                || '<div style="font-size:0.8rem;color:var(--color-text-secondary);">Sin responsabilidades abiertas: nada queda sin responsable si se corta.</div>';
+            const avisos = (a.avisos || []).length
+                ? `<div style="font-size:0.75rem;color:var(--color-text-secondary);margin-top:6px;">Avisos: ${escapeHtml((a.avisos || []).join(' · '))}</div>`
+                : '';
+
+            return `
+                <div style="font-size:0.8rem;color:var(--color-text-secondary);margin-bottom:8px;">
+                    Alcance derivado de ${escapeHtml(a.regla || 'matrículas y jerarquía')} · digest <code>${escapeHtml(String(a.digest || '').slice(0, 16))}…</code>
+                </div>
+                ${unidades}
+                <div style="margin-top:8px;"><strong style="font-size:0.85rem;">Permisos especiales</strong>${especiales}</div>
+                <div style="margin-top:8px;"><strong style="font-size:0.85rem;">Responsabilidades abiertas</strong>${abiertas}</div>
+                ${avisos}
+            `;
+        };
+
         let inventario = null;
 
         const load = async () => {
@@ -858,15 +956,20 @@ export async function renderUserManagement(container) {
             }
 
             const r = inventario.resumen || {};
+            const ra = r.alcance || null;
             headEl.innerHTML = `Ronda <code>${escapeHtml(inventario.reviewId)}</code> · acta ${escapeHtml(inventario.estadoActa)} ·
                 ${r.activas || 0} identidades activas · ${r.permisosVigentes || 0} permisos vigentes ·
                 <strong>${r.huerfanos || 0} huérfanos</strong> ·
-                <span title="Un tercero recalcula este digest sobre el inventario y lo compara">digest <code>${escapeHtml(String(inventario.digest || '').slice(0, 16))}…</code></span>`;
+                <span title="Un tercero recalcula este digest sobre el inventario y lo compara">digest <code>${escapeHtml(String(inventario.digest || '').slice(0, 16))}…</code></span>
+                ${ra ? `<br />Alcance efectivo (derivado de matrículas y jerarquía): ${ra.unidades || 0} unidad(es) · ${ra.encuentros || 0} encuentro(s) · ${ra.materiales || 0} material(es) ·
+                    <strong>${ra.permisosEspeciales || 0} permiso(s) especial(es)</strong> · <strong>${ra.responsabilidadesAbiertas || 0} responsabilidad(es) abierta(s)</strong>` : ''}
+                ${(inventario.alcanceAvisos || []).length ? `<br /><span style="font-size:0.75rem;">${escapeHtml((inventario.alcanceAvisos || []).join(' · '))}</span>` : ''}`;
 
             tableEl.innerHTML = `
+                <style>#ar-table table td, #ar-table table th { vertical-align: top; }</style>
                 <table class="table">
                     <thead>
-                        <tr><th>Identidad</th><th>Rol</th><th>Permisos vigentes</th><th>Acto de otorgamiento</th><th style="text-align:center">Decisión</th></tr>
+                        <tr><th>Identidad</th><th>Rol</th><th>Permisos vigentes</th><th>Alcance efectivo</th><th>Acto de otorgamiento</th><th style="text-align:center">Decisión</th></tr>
                     </thead>
                     <tbody>
                         ${(inventario.entries || []).map((entry) => `
@@ -877,6 +980,7 @@ export async function renderUserManagement(container) {
                                 </td>
                                 <td>${roleBadge(entry.role)}${entry.activa ? '' : ' <span class="badge badge-neutral">Deshabilitado</span>'}</td>
                                 <td title="${escapeHtml((entry.permisos || []).join(' · '))}">${(entry.permisos || []).length} permisos</td>
+                                <td>${alcanceResumen(entry)}</td>
                                 <td>${evidenciaDe(entry)}</td>
                                 <td style="text-align:center;white-space:nowrap">
                                     ${inventario.estadoActa === 'firmada' ? '<span class="text-secondary" style="font-size:0.75rem;">acta firmada</span>' : `
@@ -886,8 +990,13 @@ export async function renderUserManagement(container) {
                                     `}
                                 </td>
                             </tr>
+                            <tr class="ar-reach-row" data-ar-reach-row="${escapeHtml(entry.userId)}" style="display:none;">
+                                <td colspan="6" style="background:var(--color-surface-alt,transparent);">
+                                    ${alcanceDetalle(entry)}
+                                </td>
+                            </tr>
                             <tr class="ar-reason-row" data-ar-reason="${escapeHtml(entry.userId)}" style="display:none;">
-                                <td colspan="5" style="background:var(--color-surface-alt,transparent);">
+                                <td colspan="6" style="background:var(--color-surface-alt,transparent);">
                                     <div style="display:flex;gap:8px;align-items:flex-start;">
                                         <input class="form-input ar-reason" data-ar-input="${escapeHtml(entry.userId)}" placeholder="Motivo de la decisión (obligatorio)" style="flex:1;" />
                                         <button class="btn btn-primary btn-sm ar-apply" data-ar-apply="${escapeHtml(entry.userId)}">Aplicar</button>
@@ -933,6 +1042,17 @@ export async function renderUserManagement(container) {
                 signBtn.style.display = 'inline-block';
                 openRoundBtn.style.display = 'none';
             }
+
+            tableEl.querySelectorAll('.ar-reach').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const userId = btn.getAttribute('data-ar-reach');
+                    const row = tableEl.querySelector(`.ar-reach-row[data-ar-reach-row="${CSS.escape(userId)}"]`);
+                    if (!row) return;
+                    const abierto = row.style.display !== 'none';
+                    row.style.display = abierto ? 'none' : 'table-row';
+                    btn.textContent = abierto ? 'Ver alcance' : 'Ocultar alcance';
+                });
+            });
 
             tableEl.querySelectorAll('.ar-decide').forEach((btn) => {
                 btn.addEventListener('click', () => {

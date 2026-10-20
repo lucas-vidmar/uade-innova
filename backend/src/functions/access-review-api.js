@@ -8,6 +8,13 @@
  *                                Un permiso sin acto sale marcado `huerfano`, con el
  *                                dato que le falta, nunca disimulado. `?format=csv`
  *                                devuelve el acta en CSV para un tercero.
+ *                                #551: cada entrada trae además su `alcance` (unidades,
+ *                                encuentros, material, permisos especiales y
+ *                                responsabilidades abiertas) derivado de matrículas y
+ *                                jerarquía, con la fuente de cada ítem.
+ *   GET  /reach/{userId}         el alcance de una sola identidad, con el mismo
+ *                                detalle y sus avisos: es lo que se mira antes de
+ *                                cortar a alguien sin dejar nada sin responsable.
  *   GET  /decisions              las decisiones aplicadas en la ronda, con responsable,
  *                                motivo, fecha y efecto: el acta que se firma.
  *   POST /decisions              aplica sostener / reducir / retirar sobre una identidad.
@@ -41,6 +48,7 @@ import {
   DEFAULT_REVIEW_ID,
 } from '../services/access-review.js';
 import { structuredErrorResponse, ErrorCategory } from '../services/error-categories.js';
+import { buildIdentityReach, loadReachSources } from '../services/identity-reach.js';
 
 const READ_ROLES = ['Admin', 'Director'];
 const WRITE_ROLES = ['Admin'];
@@ -63,10 +71,39 @@ function forbidden(message) {
   return structuredErrorResponse(403, message, ErrorCategory.AUTH, 'FORBIDDEN');
 }
 
+/**
+ * Alcance efectivo de cada identidad (#551), derivado de matrículas y jerarquía.
+ * Una fuente que no se puede leer no se rellena con supuestos: se devuelve el
+ * alcance de lo que sí se leyó y los avisos quedan declarados en la respuesta.
+ */
+async function buildReachById(users) {
+  try {
+    const sources = await loadReachSources();
+    const adminsActivos = (users || []).filter((u) => String(u?.role || '').toLowerCase() === 'admin'
+      && String(u?.status || 'active').toLowerCase() === 'active').length;
+    const reachById = {};
+    for (const user of users || []) {
+      if (!user?.userId) continue;
+      reachById[user.userId] = buildIdentityReach({
+        user,
+        enrollments: sources.enrollments,
+        subjects: sources.subjects,
+        classes: sources.classes,
+        materials: sources.materials,
+        adminsActivos,
+        catalogoLeido: sources.catalogoLeido,
+      });
+    }
+    return { reachById, avisos: sources.avisos };
+  } catch (err) {
+    return { reachById: null, avisos: [`No se pudo derivar el alcance efectivo: ${err?.message || 'error de lectura'}.`] };
+  }
+}
+
 async function buildInventory() {
   const users = await listUsers();
-  const review = buildAccessReview(users);
-  const reviewId = await currentReviewId();
+  const [reviewId, reach] = await Promise.all([currentReviewId(), buildReachById(users)]);
+  const review = buildAccessReview(users, { reachById: reach.reachById });
   const [decisiones, firma] = await Promise.all([listDecisions(reviewId), readSignature(reviewId)]);
   const abierta = !firma;
   return {
@@ -74,6 +111,7 @@ async function buildInventory() {
     estadoActa: abierta ? 'abierta' : 'firmada',
     firma,
     decisiones,
+    alcanceAvisos: reach.avisos,
     ...review,
   };
 }
@@ -98,6 +136,53 @@ app.http('access-review-get', {
       return jsonResponse(200, { success: true, data: inventory });
     } catch (err) {
       context.error('[AccessReview] Error armando el inventario:', err);
+      return errorResponse(err);
+    }
+  }, { roles: READ_ROLES })),
+});
+
+// ── GET /api/dashboard-admin/access-review/reach/{userId} ───────────────────
+// #551 — el alcance de UNA identidad, con el detalle de cada ítem y su fuente.
+// Es la misma derivación que el inventario, pedida para una sola persona: sirve
+// a quien prepara el corte para no leer el inventario entero.
+app.http('access-review-reach', {
+  methods: ['GET'],
+  authLevel: 'anonymous',
+  route: 'dashboard-admin/access-review/reach/{userId}',
+  handler: withCorrelation(withAuth(async (request, context) => {
+    try {
+      const userId = String(request.params?.userId || '').trim();
+      if (!userId) {
+        return jsonResponse(400, { success: false, error: { code: 'MISSING_USER_ID', message: 'userId es requerido.' } });
+      }
+      const user = await getUserById(userId);
+      if (!user) {
+        return jsonResponse(404, { success: false, error: { code: 'USER_NOT_FOUND', message: `No existe un usuario con id "${userId}".` } });
+      }
+      const users = await listUsers();
+      const adminsActivos = (users || []).filter((u) => String(u?.role || '').toLowerCase() === 'admin'
+        && String(u?.status || 'active').toLowerCase() === 'active').length;
+      const sources = await loadReachSources();
+      const alcance = buildIdentityReach({
+        user,
+        enrollments: sources.enrollments,
+        subjects: sources.subjects,
+        classes: sources.classes,
+        materials: sources.materials,
+        adminsActivos,
+        catalogoLeido: sources.catalogoLeido,
+      });
+      const entry = buildAccessReview([user], { reachById: { [userId]: alcance } }).entries[0];
+      return jsonResponse(200, {
+        success: true,
+        data: {
+          identidad: entry,
+          alcance,
+          avisos: [...sources.avisos, ...(alcance.avisos || [])],
+        },
+      });
+    } catch (err) {
+      context.error('[AccessReview] Error derivando el alcance de la identidad:', err);
       return errorResponse(err);
     }
   }, { roles: READ_ROLES })),
