@@ -30,6 +30,8 @@ const ROUTES = {
     // UJ-30 (paso 1): práctica de autoexamen de la unidad, con alcance anunciado
     // y acotable. La práctica por clase sigue viviendo en el detalle de clase.
     '/student/unit-practice': () => import('./pages/student/UnitPractice.js').then(m => m.renderStudentUnitPractice),
+    // #445 (UJ-32): práctica compartida del grupo (la individual no cambia).
+    '/student/group-practice': () => import('./pages/student/GroupPractice.js').then(m => m.renderStudentGroupPractice),
     '/student/chat': () => import('./pages/student/Dashboard.js').then(m => m.renderStudentDashboard),
     '/teacher/dashboard': () => import('./pages/teacher/Dashboard.js').then(m => m.renderTeacherDashboard),
     '/teacher/classes': () => import('./pages/teacher/ClassManager.js').then(m => m.renderClassManager),

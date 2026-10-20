@@ -370,6 +370,7 @@ export async function renderStudentDashboard(container) {
                   <span>Clases de la materia</span>
                 </div>
                 <a href="#/student/unit-practice" id="unit-practice-link" class="sidebar-section-link">Práctica de la unidad</a>
+                <a href="#/student/group-practice" id="group-practice-link" class="sidebar-section-link">Práctica del grupo</a>
               </div>
               <div class="p-4 text-center text-xs text-text-muted italic animate-pulse">Cargando clases...</div>
             </div>
@@ -812,6 +813,7 @@ export async function renderStudentDashboard(container) {
           <span>Clases de la materia</span>
         </div>
         <a href="#/student/unit-practice" id="unit-practice-section-link" class="sidebar-section-link">Practicar la unidad</a>
+        <a href="#/student/group-practice" id="group-practice-section-link" class="sidebar-section-link">Practicar en grupo</a>
       </div>
       <div class="chat-history-scroll" id="classes-scroll">
         <ul class="sidebar-list">

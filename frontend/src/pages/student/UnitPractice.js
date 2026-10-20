@@ -32,6 +32,7 @@ export async function renderStudentUnitPractice(container) {
           Prepará la evaluación de <strong>${escapeHtml(subjectName)}</strong> en una sola práctica:
           reúne los temas de todas las clases publicadas y podés acotarla a los que más te preocupan.
           Si querés practicar una clase suelta, abrila y usá su pestaña <em>Autoevaluación</em>.
+          ¿La preparan en grupo? <a href="#/student/group-practice" id="unit-practice-group-link" style="font-weight:600;">Abran la práctica compartida →</a>
         </p>
       </header>
       <div id="unit-practice-mount"></div>

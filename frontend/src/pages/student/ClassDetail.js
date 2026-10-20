@@ -446,6 +446,7 @@ export async function renderClassDetail(container) {
                 quizPanel.innerHTML = `
                     <p style="margin:0 0 var(--space-4) 0;font-size:var(--font-size-xs);color:var(--color-text-secondary);">
                         ¿Preparás la evaluación de la materia? <a href="#/student/unit-practice" id="class-quiz-unit-link" style="font-weight:600;">Practicá toda la unidad →</a>
+                        · ¿La preparan entre varias? <a href="#/student/group-practice" id="class-quiz-group-link" style="font-weight:600;">Armen la práctica del grupo →</a>
                     </p>
                     <div id="class-quiz-mount"></div>
                 `;
