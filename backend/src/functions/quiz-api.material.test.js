@@ -45,6 +45,17 @@ const stateStoreMocks = {
         return saved;
     }),
     getQuizWeakTopics: mock.fn(async (subjectId, userId, classId) => weakTopicStore.get(`${subjectId}:${userId}__${classId}`) || null),
+    // #445 (UJ-32): la práctica compartida del grupo tiene sus propias tablas y
+    // no participa de estos casos; se declaran para que el módulo enlace igual.
+    getEnrollmentsBySubject: mock.fn(async () => []),
+    saveGroupQuiz: mock.fn(async (quiz) => quiz),
+    getGroupQuiz: mock.fn(async () => null),
+    findOpenGroupQuiz: mock.fn(async () => null),
+    upsertGroupQuizResponse: mock.fn(async (response) => response),
+    getGroupQuizResponse: mock.fn(async () => null),
+    listGroupQuizResponses: mock.fn(async () => []),
+    upsertGroupQuizRecord: mock.fn(async (record) => record),
+    getGroupQuizRecord: mock.fn(async () => null),
 };
 
 const promptsVistos = [];

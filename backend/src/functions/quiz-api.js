@@ -20,7 +20,12 @@ import { getActivePrompt } from '../services/prompts.js';
 import {
     getEnrollment, getConsentStatus, listMaterialsByClass, listClassesBySubject,
     upsertQuizResult, getQuizResult, saveQuiz, getQuiz, appendQuizAttempt, listQuizAttempts,
-    upsertQuizWeakTopics, getQuizWeakTopics
+    upsertQuizWeakTopics, getQuizWeakTopics,
+    // #445 (UJ-32): práctica compartida del grupo. La individual no toca ninguna
+    // de estas funciones; son tablas y operaciones propias.
+    getEnrollmentsBySubject, saveGroupQuiz, getGroupQuiz, findOpenGroupQuiz,
+    upsertGroupQuizResponse, getGroupQuizResponse, listGroupQuizResponses,
+    upsertGroupQuizRecord, getGroupQuizRecord
 } from '../services/state-store.js';
 import { isPublished, resolveClassPublicationState } from '../services/publication-state.js';
 import { parseClientPrincipal, validateFrontDoorId, getAuthenticatedUser } from '../services/auth-utils.js';
@@ -1017,5 +1022,743 @@ app.http('save-quiz-weak-topics', {
 
         const saved = await upsertQuizWeakTopics({ subjectId, userId, classId, topics: cleaned });
         return jsonResponse(200, { topics: saved.topics, updatedAt: saved.updatedAt });
+    }, 'general'))),
+});
+
+// ─── Práctica compartida del grupo (#445 / UJ-32) ──────────────────
+// La práctica individual sigue siendo lo que era: cada persona genera la suya y
+// la responde sola. Arriba de eso hay una capa de grupo:
+//
+//   1. el grupo es el que la materia ya declara —las matrículas activas de la
+//      unidad—, no un padrón aparte ni integrantes inventados por el panel;
+//   2. la práctica se emite UNA vez para ese grupo: la primera persona que la
+//      abre la genera y las demás abren la misma (mismo conjunto, mismo alcance);
+//   3. cada persona la responde por separado y sólo puede ver la comparación
+//      después de responder la suya: si no, las respuestas ajenas contaminarían
+//      la propia y dejaría de ser individual;
+//   4. la comparación dice en qué preguntas coincidieron y en cuáles no, y el
+//      grupo asienta un resultado común con los temas que no pudo acordar, para
+//      llevarlos a quien enseña (UJ-28, aguas abajo).
+//
+// El costo de una generación lo paga el grupo una sola vez: reabrir la práctica
+// no vuelve a llamar al modelo mientras la ventana siga abierta.
+
+// Una práctica compartida no vive un rato: la gente la responde cuando puede.
+const GROUP_QUIZ_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+// Con una sola respuesta no hay comparación posible: «coincidieron» necesita al
+// menos dos personas que hayan contestado la misma pregunta.
+const GROUP_MIN_RESPONSES_TO_COMPARE = 2;
+
+/**
+ * El grupo de la práctica son las personas con matrícula activa de la materia.
+ * No se inventa un padrón: si la materia no declara matrículas, no hay grupo y
+ * el panel lo dice en vez de simular uno.
+ * @returns {Promise<string[]|null>} ids, o null si no se pudo leer la matrícula.
+ */
+async function loadGroupMemberIds(subjectId) {
+    const enrollments = await getEnrollmentsBySubject(subjectId).catch(() => null);
+    if (!Array.isArray(enrollments)) return null;
+    const ids = [];
+    for (const enrollment of enrollments) {
+        if (String(enrollment?.role || '').toLowerCase() !== 'student') continue;
+        if (String(enrollment?.status || '').toLowerCase() !== 'active') continue;
+        const id = enrollment?.userId;
+        if (!id || ids.includes(id)) continue;
+        ids.push(id);
+    }
+    return ids;
+}
+
+/**
+ * Puerta común de la práctica del grupo. Devuelve el `users` resuelto o la
+ * respuesta de error con la que se corta el pedido.
+ */
+async function requireGroupMembership(request, subjectId) {
+    const { userId } = getAuthenticatedUser(request);
+    const members = await loadGroupMemberIds(subjectId);
+    if (members === null) {
+        return {
+            error: jsonResponse(503, {
+                error: { code: 'GROUP_UNAVAILABLE', message: 'No pudimos determinar el grupo de esta materia. Probá de nuevo.' },
+                errorCategory: 'DEPENDENCY',
+            }),
+        };
+    }
+    if (!members.includes(userId)) {
+        return {
+            error: jsonResponse(403, {
+                error: {
+                    code: 'GROUP_NOT_ENROLLED',
+                    message: 'El grupo de esta práctica son las personas con matrícula activa en la materia: la tuya no figura activa.',
+                },
+                errorCategory: 'AUTH',
+            }),
+        };
+    }
+    return { userId, members };
+}
+
+/**
+ * Resuelve el alcance de la práctica compartida con las mismas reglas que la
+ * individual (unidad completa, subconjunto de clases o una clase), pero devuelve
+ * además las clases y un rótulo para que el panel diga qué abarca la práctica común.
+ */
+async function resolveGroupScope(subjectId, scope, requestedClassId, requestedClassIds) {
+    const classes = await listClassesBySubject(subjectId).catch(() => []);
+    if (scope === SCOPE_UNIT) {
+        const published = publishedClassesOf(classes);
+        if (requestedClassIds.length) {
+            const unknown = requestedClassIds.filter((id) => !published.some((c) => c.id === id));
+            if (unknown.length) {
+                return {
+                    error: {
+                        status: 400,
+                        code: 'QUIZ_SCOPE_INVALID',
+                        message: `Los temas elegidos no están publicados en esta unidad: ${unknown.join(', ')}.`,
+                    },
+                };
+            }
+        }
+        const selected = requestedClassIds.length
+            ? published.filter((c) => requestedClassIds.includes(c.id))
+            : published;
+        if (!selected.length) {
+            return {
+                error: {
+                    status: 400,
+                    code: 'QUIZ_SCOPE_EMPTY',
+                    message: 'Elegí al menos un tema de la unidad para armar la práctica: hoy no hay clases publicadas para practicar.',
+                },
+            };
+        }
+        return {
+            scope,
+            classId: UNIT_SCOPE_KEY,
+            classIds: selected.map((c) => c.id),
+            classes: selected,
+            label: 'la unidad completa',
+        };
+    }
+    const info = classes.find((c) => c.id === requestedClassId) || null;
+    return {
+        scope,
+        classId: requestedClassId,
+        classIds: [requestedClassId],
+        classes: info ? [info] : [],
+        label: info ? classLabelOf(info) : requestedClassId,
+    };
+}
+
+/** Tema con el que se agrupa una pregunta en la comparación. */
+function groupTopicOf(question) {
+    return sanitizeText(question?.topic || '', 200) || 'Sin tema';
+}
+
+function groupTopicSummary(questions) {
+    const acc = new Map();
+    for (const question of questions) {
+        const entry = acc.get(question.topic) || { topic: question.topic, questionCount: 0 };
+        entry.questionCount += 1;
+        acc.set(question.topic, entry);
+    }
+    return Array.from(acc.values());
+}
+
+/**
+ * Arma la comparación del grupo pregunta por pregunta. Deliberadamente no
+ * devuelve quién eligió qué: para responder «¿coincidieron?» alcanza con la
+ * distribución de respuestas, y nombrar a las personas convertiría la
+ * comparación en una exposición de cada una.
+ */
+function buildGroupComparison(groupQuiz, responses, myUserId) {
+    const answeredCount = responses.length;
+    const perQuestion = (groupQuiz.questions || []).map((question) => {
+        const optionCount = Array.isArray(question.options) ? question.options.length : 0;
+        const distribution = new Array(optionCount).fill(0);
+        let mine = null;
+        let mineCorrect = null;
+        let votes = 0;
+        for (const response of responses) {
+            const answer = (response.answers || []).find((a) => a && a.questionId === question.id);
+            const selected = Number.isInteger(answer?.selectedIndex) ? answer.selectedIndex : null;
+            if (selected !== null && selected >= 0 && selected < optionCount) {
+                distribution[selected] += 1;
+                votes += 1;
+            }
+            if (response.userId === myUserId) {
+                mine = selected;
+                mineCorrect = answer?.isCorrect === true;
+            }
+        }
+        const maxVotes = distribution.reduce((max, count) => Math.max(max, count), 0);
+        // Coincidieron = todas las respuestas recibidas eligieron la misma opción.
+        const agreed = votes >= GROUP_MIN_RESPONSES_TO_COMPARE && maxVotes === votes;
+        return {
+            questionId: question.id,
+            question: question.question,
+            options: question.options,
+            topic: groupTopicOf(question),
+            answeredCount: votes,
+            distribution,
+            agreed,
+            commonAnswerIndex: agreed ? distribution.indexOf(maxVotes) : null,
+            correctIndex: question.correctIndex,
+            myAnswerIndex: mine,
+            myCorrect: mineCorrect,
+        };
+    });
+
+    const compared = perQuestion.filter((q) => q.answeredCount >= GROUP_MIN_RESPONSES_TO_COMPARE);
+    const agreedQuestions = compared.filter((q) => q.agreed);
+    const disagreedQuestions = compared.filter((q) => !q.agreed);
+    // Coincidir en una respuesta equivocada no es acuerdo: es un tema que el
+    // grupo comparte mal y que también conviene llevar a quien enseña.
+    const consensusWrong = agreedQuestions.filter((q) => q.commonAnswerIndex !== q.correctIndex);
+
+    return {
+        questions: perQuestion,
+        commonResult: {
+            questionCount: perQuestion.length,
+            answeredCount,
+            memberCount: groupQuiz.memberCount,
+            pendingCount: Math.max(0, groupQuiz.memberCount - answeredCount),
+            comparedCount: compared.length,
+            agreedCount: agreedQuestions.length,
+            disagreedCount: disagreedQuestions.length,
+            consensusWrongCount: consensusWrong.length,
+        },
+        agreed: agreedQuestions.map((q) => ({
+            questionId: q.questionId,
+            question: q.question,
+            topic: q.topic,
+            answerIndex: q.commonAnswerIndex,
+            correctIndex: q.correctIndex,
+            isCorrect: q.commonAnswerIndex === q.correctIndex,
+        })),
+        disagreed: disagreedQuestions.map((q) => ({
+            questionId: q.questionId,
+            question: q.question,
+            topic: q.topic,
+            distribution: q.distribution,
+            correctIndex: q.correctIndex,
+        })),
+        coincidieronEnIncorrecta: consensusWrong.map((q) => ({
+            questionId: q.questionId,
+            question: q.question,
+            topic: q.topic,
+            answerIndex: q.commonAnswerIndex,
+            correctIndex: q.correctIndex,
+        })),
+        // «Temas que no pudieron acordar»: la lista que se lleva a quien enseña.
+        consultTopics: groupTopicSummary(disagreedQuestions),
+    };
+}
+
+// El resumen que ve el grupo no incluye quién la abrió: la práctica es del
+// grupo, no de la persona que la generó, y nombrarla no aporta nada.
+function groupQuizSummary(quiz) {
+    return {
+        groupQuizId: quiz.groupQuizId,
+        scope: quiz.scope,
+        classId: quiz.scope === SCOPE_UNIT ? null : quiz.classId,
+        classIds: quiz.classIds,
+        questionCount: quiz.questionCount,
+        memberCount: quiz.memberCount,
+        createdAt: quiz.createdAt,
+        expiresAt: quiz.expiresAt,
+    };
+}
+
+/**
+ * GET /api/group-quiz — estado de la práctica compartida de un alcance: si ya
+ * existe, cuántas personas respondieron, qué respondió quien consulta y si el
+ * grupo ya asentó un resultado común. No genera nada.
+ */
+app.http('get-group-quiz', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'group-quiz',
+    handler: withCorrelation(withAuth(async (request, context) => {
+        const log = createStructuredLogger('get-group-quiz', context);
+        if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
+        const subjectId = request.query.get('subjectId');
+        const scope = normalizeScope(request.query.get('scope'));
+        const requestedClassId = request.query.get('classId');
+        if (!subjectId) return jsonResponse(400, { error: 'Parámetros requeridos: subjectId' });
+        if (scope === SCOPE_CLASS && !requestedClassId) {
+            return jsonResponse(400, { error: 'Parámetros requeridos: subjectId, classId' });
+        }
+
+        const gate = await requireGroupMembership(request, subjectId);
+        if (gate.error) return gate.error;
+
+        const resolved = await resolveGroupScope(subjectId, scope, requestedClassId, []);
+        if (resolved.error) {
+            return jsonResponse(resolved.error.status, {
+                error: { code: resolved.error.code, message: resolved.error.message },
+                errorCategory: 'VALIDATION',
+            });
+        }
+
+        const practice = await findOpenGroupQuiz(subjectId, scope, resolved.classId).catch(() => null);
+        const myResponse = practice
+            ? await getGroupQuizResponse(practice.groupQuizId, gate.userId).catch(() => null)
+            : null;
+        const responses = practice
+            ? await listGroupQuizResponses(practice.groupQuizId).catch(() => [])
+            : [];
+        const record = practice ? await getGroupQuizRecord(practice.groupQuizId).catch(() => null) : null;
+
+        log.info('group quiz state', {
+            subjectId,
+            scope,
+            classId: resolved.classId,
+            hasPractice: Boolean(practice),
+            answeredCount: responses.length,
+            memberCount: gate.members.length,
+        });
+
+        return jsonResponse(200, {
+            group: {
+                subjectId,
+                memberCount: gate.members.length,
+                // Cómo se forma el grupo, tal como lo deriva el servidor: no hay
+                // integrantes inventados por el panel.
+                derivedFrom: 'matrículas activas de la materia (rol student, estado active)',
+            },
+            scope: {
+                kind: scope,
+                classId: scope === SCOPE_UNIT ? null : resolved.classId,
+                classIds: resolved.classIds,
+                label: resolved.label,
+            },
+            practice: practice
+                ? { ...groupQuizSummary(practice), answeredCount: responses.length }
+                : null,
+            myResponse: myResponse
+                ? {
+                    score: myResponse.score,
+                    correctCount: myResponse.correctCount,
+                    totalQuestions: myResponse.totalQuestions,
+                    passed: myResponse.passed,
+                    weakTopics: myResponse.weakTopics,
+                    answers: myResponse.answers,
+                    submittedAt: myResponse.submittedAt,
+                }
+                : null,
+            record: record
+                ? {
+                    revision: record.revision,
+                    respondedCount: record.respondedCount,
+                    memberCount: record.memberCount,
+                    agreedCount: record.agreed.length,
+                    disagreedCount: record.disagreed.length,
+                    consultTopics: record.consultTopics,
+                    recordedAt: record.recordedAt,
+                }
+                : null,
+        });
+    })),
+});
+
+/**
+ * POST /api/group-quiz — abre la práctica compartida del alcance. Si ya hay una
+ * abierta la devuelve tal cual (`reused: true`): es lo que garantiza que todas
+ * respondan el mismo conjunto. Sólo la primera apertura gasta una generación.
+ */
+app.http('create-group-quiz', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'group-quiz',
+    handler: withCorrelation(withAuth(withRateLimit(async (request, context) => {
+        const log = createStructuredLogger('create-group-quiz', context);
+        if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
+
+        let body;
+        try {
+            body = await request.json();
+        } catch {
+            return jsonResponse(400, { error: 'Body JSON inválido' });
+        }
+
+        const { subjectId, questionCount, subjectName, className } = body || {};
+        const scope = normalizeScope(body?.scope);
+        const requestedClassIds = normalizeClassIdList(body?.classIds);
+        if (!subjectId) return jsonResponse(400, { error: 'Faltan campos requeridos: subjectId' });
+        if (Array.isArray(body?.classIds) && requestedClassIds.length === 0) {
+            return jsonResponse(400, {
+                error: { code: 'QUIZ_SCOPE_EMPTY', message: 'Elegí al menos un tema de la unidad para armar la práctica.' },
+                errorCategory: 'VALIDATION',
+            });
+        }
+
+        const gate = await requireGroupMembership(request, subjectId);
+        if (gate.error) return gate.error;
+
+        const resolved = await resolveGroupScope(subjectId, scope, body?.classId, requestedClassIds);
+        if (resolved.error) {
+            return jsonResponse(resolved.error.status, {
+                error: { code: resolved.error.code, message: resolved.error.message },
+                errorCategory: 'VALIDATION',
+            });
+        }
+
+        const open = await findOpenGroupQuiz(subjectId, scope, resolved.classId).catch(() => null);
+        if (open) {
+            const myResponse = await getGroupQuizResponse(open.groupQuizId, gate.userId).catch(() => null);
+            log.info('group quiz reused', { subjectId, groupQuizId: open.groupQuizId });
+            return jsonResponse(200, {
+                ...groupQuizSummary(open),
+                reused: true,
+                answered: Boolean(myResponse),
+                questions: toClientQuestions(open.questions),
+            });
+        }
+
+        const count = normalizeQuestionCount(questionCount);
+        const startTime = Date.now();
+        try {
+            const contextText = scope === SCOPE_UNIT
+                ? await loadUnitContext(subjectId, resolved.classes, context)
+                : await loadClassContext(subjectId, resolved.classId, context);
+            if (!contextText.text) {
+                return jsonResponse(400, {
+                    error: {
+                        code: 'QUIZ_SCOPE_EMPTY',
+                        message: 'Los temas de esta práctica todavía no tienen resumen ni materiales procesados: no hay con qué armarla.',
+                    },
+                    errorCategory: 'VALIDATION',
+                });
+            }
+
+            // El pedido de la práctica compartida NO lleva exclusiones ni temas
+            // propios de quien la abre: el conjunto tiene que servirle a todo el
+            // grupo por igual, no estar adaptado a una persona.
+            const unit = scope === SCOPE_UNIT ? (() => {
+                const scopeLines = [];
+                const topicLabels = [];
+                for (const cls of resolved.classes) {
+                    const { topics, declared } = classTopicsOf(cls);
+                    const label = classLabelOf(cls);
+                    scopeLines.push(declared ? `${label} — temas: ${topics.join(', ')}` : label);
+                    topicLabels.push(...topics);
+                }
+                return { scopeLines, topicLabels, priorityTopics: [] };
+            })() : null;
+            const { systemContent, userContent } = await buildQuizPrompt({
+                subjectName,
+                className: scope === SCOPE_UNIT ? (body?.unitName || className || subjectId) : (className || resolved.label),
+                contextText: contextText.text,
+                questionCount: count,
+                sources: contextText.sources,
+                unit,
+            });
+
+            const quizModel = await resolveModelForTask('quiz');
+            const result = await chatCompletion(
+                [
+                    { role: 'system', content: systemContent },
+                    { role: 'user', content: userContent },
+                ],
+                false,
+                {
+                    model: quizModel,
+                    temperature: CONFIG.ai.temperature.quiz,
+                    max_tokens: CONFIG.ai.maxTokens.quiz,
+                    headers: context?.dependencyHeaders,
+                }
+            );
+
+            const questions = normalizeQuestions(extractQuizJson(result?.content), contextText.sources);
+            if (questions.length === 0) {
+                log.warn('Group quiz generation returned unparseable output', { subjectId, classId: resolved.classId });
+                return jsonResponse(502, { error: 'No se pudo generar la práctica del grupo. Intentá de nuevo.' });
+            }
+
+            const saved = await saveGroupQuiz({
+                subjectId,
+                groupQuizId: uuidv4(),
+                scope,
+                classId: resolved.classId,
+                classIds: resolved.classIds,
+                questions,
+                questionCount: questions.length,
+                memberCount: gate.members.length,
+                createdBy: gate.userId,
+                createdAt: new Date().toISOString(),
+                expiresAt: new Date(Date.now() + GROUP_QUIZ_TTL_MS).toISOString(),
+            });
+            log.info('group quiz generated', {
+                subjectId,
+                groupQuizId: saved.groupQuizId,
+                questions: questions.length,
+                memberCount: gate.members.length,
+                durationMs: Date.now() - startTime,
+            });
+            // Dos personas abriendo al mismo tiempo pueden generar dos veces. Lo
+            // que se responde es la práctica que quedó vigente, no la que este
+            // pedido acaba de generar: así las siguientes aperturas y las
+            // respuestas posteriores hablan del mismo registro.
+            const vigente = await findOpenGroupQuiz(subjectId, scope, resolved.classId).catch(() => null) || saved;
+            return jsonResponse(200, {
+                ...groupQuizSummary(vigente),
+                reused: false,
+                answered: false,
+                questions: toClientQuestions(vigente.questions),
+                model: getModelDisplayName(quizModel),
+                generatedAt: vigente.createdAt,
+                durationMs: Date.now() - startTime,
+            });
+        } catch (err) {
+            const categorized = normalizeCategorizedError(err, ErrorCategory.LLM);
+            context.error('[GroupQuiz] Error generating shared practice:', categorized);
+            return jsonResponse(categorized.status, {
+                error: `Error generando la práctica del grupo: ${categorized.message}`,
+                errorCategory: categorized.errorCategory,
+            });
+        }
+    }, 'chat'))),
+});
+
+/**
+ * POST /api/group-quiz-response — la respuesta individual a la práctica común.
+ * Se corrige en el servidor contra el cuestionario guardado (igual que la
+ * individual) y se guarda una sola vez por persona: la comparación se arma con
+ * la primera respuesta de cada una.
+ */
+app.http('save-group-quiz-response', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'group-quiz-response',
+    handler: withCorrelation(withAuth(withRateLimit(async (request, context) => {
+        const log = createStructuredLogger('save-group-quiz-response', context);
+        if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
+
+        let body;
+        try {
+            body = await request.json();
+        } catch {
+            return jsonResponse(400, { error: 'Body JSON inválido' });
+        }
+        const { subjectId, groupQuizId, answers } = body || {};
+        if (!subjectId || !groupQuizId || !Array.isArray(answers)) {
+            return jsonResponse(400, { error: 'Faltan campos requeridos: subjectId, groupQuizId, answers' });
+        }
+
+        const gate = await requireGroupMembership(request, subjectId);
+        if (gate.error) return gate.error;
+
+        const quiz = await getGroupQuiz(subjectId, groupQuizId).catch(() => null);
+        if (!quiz) {
+            return jsonResponse(404, {
+                error: { code: 'GROUP_QUIZ_NOT_FOUND', message: 'No encontramos esa práctica del grupo. Abrila de nuevo.' },
+                errorCategory: 'NOT_FOUND',
+            });
+        }
+        if (quiz.expiresAt && Date.parse(quiz.expiresAt) < Date.now()) {
+            return jsonResponse(409, {
+                error: { code: 'GROUP_QUIZ_EXPIRED', message: 'La práctica del grupo venció. Abrí una nueva para volver a intentarlo.' },
+                errorCategory: 'CONFLICT',
+            });
+        }
+        const already = await getGroupQuizResponse(groupQuizId, gate.userId).catch(() => null);
+        if (already) {
+            return jsonResponse(409, {
+                error: {
+                    code: 'GROUP_QUIZ_ALREADY_ANSWERED',
+                    message: 'Ya respondiste esta práctica del grupo: la comparación se arma con la primera respuesta de cada persona.',
+                },
+                errorCategory: 'CONFLICT',
+            });
+        }
+
+        // Sólo `questionId` + `selectedIndex` del cliente: la corrección, el
+        // puntaje y los temas flojos los deriva el servidor.
+        const graded = gradeAttempt(quiz, answers);
+        const saved = await upsertGroupQuizResponse({
+            subjectId,
+            groupQuizId,
+            userId: gate.userId,
+            classId: quiz.classId,
+            score: graded.score,
+            totalQuestions: graded.totalQuestions,
+            correctCount: graded.correctCount,
+            passed: graded.passed,
+            weakTopics: graded.weakTopics,
+            answers: graded.answers,
+            submittedAt: new Date().toISOString(),
+        });
+        const responses = await listGroupQuizResponses(groupQuizId).catch(() => []);
+        log.info('group quiz response saved', {
+            groupQuizId,
+            score: saved.score,
+            answeredCount: responses.length,
+            memberCount: quiz.memberCount,
+        });
+        return jsonResponse(200, {
+            groupQuizId,
+            score: saved.score,
+            totalQuestions: saved.totalQuestions,
+            correctCount: saved.correctCount,
+            passed: saved.passed,
+            weakTopics: saved.weakTopics,
+            answers: saved.answers,
+            submittedAt: saved.submittedAt,
+            answeredCount: responses.length,
+            memberCount: quiz.memberCount,
+        });
+    }, 'general'))),
+});
+
+/**
+ * GET /api/group-quiz-comparison — la superficie que no existía: pregunta por
+ * pregunta, quiénes coincidieron y en qué quedó dividido el grupo. Se abre sólo
+ * para quien ya respondió su propia práctica.
+ */
+app.http('get-group-quiz-comparison', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'group-quiz-comparison',
+    handler: withCorrelation(withAuth(async (request, context) => {
+        if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
+        const subjectId = request.query.get('subjectId');
+        const groupQuizId = request.query.get('groupQuizId');
+        if (!subjectId || !groupQuizId) {
+            return jsonResponse(400, { error: 'Parámetros requeridos: subjectId, groupQuizId' });
+        }
+
+        const gate = await requireGroupMembership(request, subjectId);
+        if (gate.error) return gate.error;
+
+        const quiz = await getGroupQuiz(subjectId, groupQuizId).catch(() => null);
+        if (!quiz) {
+            return jsonResponse(404, {
+                error: { code: 'GROUP_QUIZ_NOT_FOUND', message: 'No encontramos esa práctica del grupo.' },
+                errorCategory: 'NOT_FOUND',
+            });
+        }
+
+        // La comparación espera a que la persona haya respondido lo suyo: ver las
+        // respuestas de las demás antes de contestar convertiría la práctica
+        // individual en una copia.
+        const mine = await getGroupQuizResponse(groupQuizId, gate.userId).catch(() => null);
+        if (!mine) {
+            return jsonResponse(409, {
+                error: {
+                    code: 'GROUP_QUIZ_NOT_ANSWERED',
+                    message: 'Respondé la práctica del grupo para ver la comparación: las respuestas de las demás se abren cuando respondiste la tuya.',
+                },
+                errorCategory: 'CONFLICT',
+            });
+        }
+
+        const responses = await listGroupQuizResponses(groupQuizId).catch(() => []);
+        const comparison = buildGroupComparison(quiz, responses, gate.userId);
+        const record = await getGroupQuizRecord(groupQuizId).catch(() => null);
+
+        return jsonResponse(200, {
+            ...groupQuizSummary(quiz),
+            myResponse: {
+                score: mine.score,
+                correctCount: mine.correctCount,
+                totalQuestions: mine.totalQuestions,
+                passed: mine.passed,
+                submittedAt: mine.submittedAt,
+            },
+            ...comparison,
+            record: record
+                ? {
+                    revision: record.revision,
+                    respondedCount: record.respondedCount,
+                    memberCount: record.memberCount,
+                    consultTopics: record.consultTopics,
+                    recordedAt: record.recordedAt,
+                }
+                : null,
+        });
+    })),
+});
+
+/**
+ * POST /api/group-quiz-record — asienta el resultado común del grupo: qué
+ * preguntas quedaron acordadas, cuáles no, y los temas que el grupo no pudo
+ * acordar. El contenido lo deriva el servidor de las respuestas (no se acepta
+ * del cliente); reasentar incrementa la revisión.
+ */
+app.http('save-group-quiz-record', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'group-quiz-record',
+    handler: withCorrelation(withAuth(withRateLimit(async (request, context) => {
+        const log = createStructuredLogger('save-group-quiz-record', context);
+        if (!validateFrontDoorId(request)) return jsonResponse(403, { error: 'Forbidden - Invalid Front Door ID' });
+
+        let body;
+        try {
+            body = await request.json();
+        } catch {
+            return jsonResponse(400, { error: 'Body JSON inválido' });
+        }
+        const { subjectId, groupQuizId } = body || {};
+        if (!subjectId || !groupQuizId) {
+            return jsonResponse(400, { error: 'Faltan campos requeridos: subjectId, groupQuizId' });
+        }
+
+        const gate = await requireGroupMembership(request, subjectId);
+        if (gate.error) return gate.error;
+
+        const quiz = await getGroupQuiz(subjectId, groupQuizId).catch(() => null);
+        if (!quiz) {
+            return jsonResponse(404, {
+                error: { code: 'GROUP_QUIZ_NOT_FOUND', message: 'No encontramos esa práctica del grupo.' },
+                errorCategory: 'NOT_FOUND',
+            });
+        }
+        const mine = await getGroupQuizResponse(groupQuizId, gate.userId).catch(() => null);
+        if (!mine) {
+            return jsonResponse(409, {
+                error: {
+                    code: 'GROUP_QUIZ_NOT_ANSWERED',
+                    message: 'Respondé tu práctica antes de asentar el resultado común del grupo.',
+                },
+                errorCategory: 'CONFLICT',
+            });
+        }
+
+        const responses = await listGroupQuizResponses(groupQuizId).catch(() => []);
+        const comparison = buildGroupComparison(quiz, responses, gate.userId);
+        const previous = await getGroupQuizRecord(groupQuizId).catch(() => null);
+        const record = await upsertGroupQuizRecord({
+            subjectId,
+            groupQuizId,
+            revision: (previous?.revision || 0) + 1,
+            respondedCount: comparison.commonResult.answeredCount,
+            memberCount: quiz.memberCount,
+            agreed: comparison.agreed,
+            disagreed: comparison.disagreed,
+            coincidieronEnIncorrecta: comparison.coincidieronEnIncorrecta,
+            consultTopics: comparison.consultTopics,
+            recordedBy: gate.userId,
+            recordedAt: new Date().toISOString(),
+        });
+        log.info('group quiz record saved', {
+            groupQuizId,
+            revision: record.revision,
+            agreedCount: record.agreed.length,
+            disagreedCount: record.disagreed.length,
+            consultTopics: record.consultTopics.length,
+        });
+        return jsonResponse(200, {
+            record: {
+                revision: record.revision,
+                respondedCount: record.respondedCount,
+                memberCount: record.memberCount,
+                agreed: record.agreed,
+                disagreed: record.disagreed,
+                coincidieronEnIncorrecta: record.coincidieronEnIncorrecta,
+                consultTopics: record.consultTopics,
+                recordedAt: record.recordedAt,
+            },
+        });
     }, 'general'))),
 });

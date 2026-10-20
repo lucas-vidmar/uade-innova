@@ -43,6 +43,17 @@ const stateStoreMocks = {
     // el módulo los importa, así que la simulación tiene que ofrecerlos.
     upsertQuizWeakTopics: mock.fn(async (record) => ({ ...record, updatedAt: new Date().toISOString() })),
     getQuizWeakTopics: mock.fn(async () => null),
+    // #445 (UJ-32): la práctica compartida del grupo tiene sus propias tablas y
+    // no participa de estos casos; se declaran para que el módulo enlace igual.
+    getEnrollmentsBySubject: mock.fn(async () => []),
+    saveGroupQuiz: mock.fn(async (quiz) => quiz),
+    getGroupQuiz: mock.fn(async () => null),
+    findOpenGroupQuiz: mock.fn(async () => null),
+    upsertGroupQuizResponse: mock.fn(async (response) => response),
+    getGroupQuizResponse: mock.fn(async () => null),
+    listGroupQuizResponses: mock.fn(async () => []),
+    upsertGroupQuizRecord: mock.fn(async (record) => record),
+    getGroupQuizRecord: mock.fn(async () => null),
 };
 
 const promptsVistos = [];
