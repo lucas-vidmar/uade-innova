@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { resolveCorrelationId, resolveTraceContext, buildDependencyHeaders, withCorrelationResponseHeaders, generateCorrelationId } from '../services/correlation.js';
+import { traceAccess } from './with-access-trace.js';
 
 const ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS || 'http://localhost:4280,http://localhost:5173').split(',');
 
@@ -52,12 +53,29 @@ export function withCorrelation(handler) {
     context.traceContext = traceContext;
     context.dependencyHeaders = dependencyHeaders;
 
-    const result = await handler(request, context);
+    // #456: todo pedido HTTP queda asentado en el rastro de accesos (entregado,
+    // denegado o con error). Es el único punto que ve request + respuesta de las
+    // 149 superficies; `traceAccess` no lanza nunca.
+    const startedAt = Date.now();
+    let result;
+    try {
+      result = await handler(request, context);
+    } catch (err) {
+      await traceAccess({ request, context, response: null, startedAt, thrown: err });
+      throw err;
+    }
 
     if (result && typeof result === 'object') {
       const existingHeaders = result.headers || {};
       result.headers = withCorrelationResponseHeaders(correlationId, traceContext, existingHeaders);
       addCorsHeaders(result, request);
+    }
+
+    const trace = await traceAccess({ request, context, response: result, startedAt });
+    // Si el asiento no se pudo escribir, la respuesta lo declara: un rastro
+    // vacío nunca debe leerse como "no hubo pedidos".
+    if (trace && trace.recorded === false && result && typeof result === 'object' && trace.error !== 'no trazado') {
+      result.headers = { ...(result.headers || {}), 'x-access-audit': 'not-recorded' };
     }
 
     return result;

@@ -112,6 +112,16 @@ export const PERSONAL_DATA_INVENTORY = [
     governedBy: null,
     nota: 'Registro append-only de auditoría: la política no le fija plazo hoy.',
   },
+  {
+    id: 'rastro-accesos',
+    persona: 'Todos los roles',
+    categoria: 'Rastro de pedidos de datos (accesos)',
+    queSeGuarda: 'Un asiento por pedido HTTP: quién lo hizo, qué superficie y ruta pidió, cuándo, desde qué origen informado por la plataforma y si se entregó o se denegó. El contenido del pedido no se copia.',
+    donde: 'Tabla AccessAudit',
+    finalidad: 'Reconstruir qué datos se pidieron y qué se entregó, y sostener las revisiones de acceso con evidencia (UJ-62, UJ-53).',
+    governedBy: null,
+    nota: 'La política no le fija plazo. El propio rastro declara 365 días y lo informa como no aplicado: el plazo está declarado, todavía no aplicado por ninguna regla.',
+  },
 ];
 
 /**
