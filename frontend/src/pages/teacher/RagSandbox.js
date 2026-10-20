@@ -5,6 +5,7 @@ import { api } from '../../services/api.js';
 import { auth } from '../../services/auth.js';
 import { renderHeader } from '../../components/Header.js';
 import { safeSetItem, safeGetItem } from '../../services/local-storage.js';
+import { generationLabel } from '../../components/chat-generation-label.js';
 
 const HISTORY_KEY_PREFIX = 'uade.rag-sandbox.history.';
 const COMPARISON_KEY_PREFIX = 'uade.rag-sandbox.comparison.';
@@ -453,9 +454,12 @@ export async function renderTeacherRagSandbox(container) {
       promptVersion,
     }, (type, data) => {
       if (type === 'metadata') {
-        if (data.model) {
+        // #408: acá se comparan versiones del prompt sobre la misma evidencia;
+        // la declaración dice modelo, temperatura y tope, no sólo el modelo.
+        const declaracion = generationLabel(data.generation || (data.model ? { model: data.model } : null));
+        if (declaracion) {
           const modelEl = wrapper.querySelector('.model-name-indicator');
-          if (modelEl) modelEl.textContent = `Powered by ${data.model}`;
+          if (modelEl) modelEl.textContent = declaracion;
         }
         if (data.promptVersion) {
           governedBy = data.promptVersion;

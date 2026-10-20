@@ -502,3 +502,202 @@ test('#358/UJ-22: el rechazo redactado por el modelo expone abstained=true en el
     assert.ok(allText.includes('"abstained":true'), 'el done debe exponer abstained=true para un rechazo del modelo');
 });
 
+
+// ── #408 / UJ-27: determinismo declarado ────────────────────────────────
+// El desacuerdo entre dos personas con la misma evidencia estaba en el muestreo
+// del modelo y no se veía desde el producto. El arreglo baja la temperatura a 0
+// y declara modelo + parámetros en cada respuesta; estos tests fijan las dos
+// cosas para que no se pierdan en un refactor.
+
+function parsearSse(texto) {
+    const eventos = [];
+    for (const bloque of String(texto).split('\n\n')) {
+        const tipo = (bloque.match(/^event: (.*)$/m) || [])[1];
+        const dato = (bloque.match(/^data: (.*)$/m) || [])[1];
+        if (!tipo || !dato) continue;
+        try { eventos.push({ tipo, dato: JSON.parse(dato) }); } catch { /* bloque parcial */ }
+    }
+    return eventos;
+}
+
+async function leerSse(response) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let texto = '';
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        texto += decoder.decode(value);
+    }
+    return { texto, eventos: parsearSse(texto) };
+}
+
+test('#408: la respuesta se genera con temperature 0 y la declaración viaja en la metadata y el done', async () => {
+    openaiMocks.generateEmbedding.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.mockImplementation(async (messages, stream) => {
+        if (!stream) return { content: 'sync', usage: { total_tokens: 10 } };
+        return (async function* () {
+            yield { choices: [{ delta: { content: 'La capa de aplicación ' } }] };
+            yield { choices: [{ delta: { content: 'coordina casos de uso.' } }] };
+            yield { usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 } };
+        })();
+    });
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = {
+        json: async () => ({
+            question: 'según el material, ¿qué responsabilidades tiene la capa de aplicación en una arquitectura por capas?',
+            subjectId: 'materia1',
+            classIds: ['class1'],
+            stream: true,
+        }),
+        user: { id: 'test-user' },
+        headers: { get: () => 'test-header' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+    const { eventos } = await leerSse(response);
+
+    // 1) Lo que se le pidió al modelo.
+    const opcionesModelo = openaiMocks.chatCompletion.mock.calls.at(-1).arguments[2];
+    assert.strictEqual(opcionesModelo.temperature, 0, 'la respuesta del asistente debe pedirse con temperature 0');
+    assert.strictEqual(opcionesModelo.max_tokens, 1500, 'el tope de tokens sigue siendo el declarado');
+
+    // 2) Lo que se declara en la respuesta.
+    const metadata = eventos.find((e) => e.tipo === 'metadata')?.dato;
+    assert.ok(metadata?.generation, 'la metadata debe declarar la configuración de generación');
+    assert.strictEqual(metadata.generation.temperature, 0);
+    assert.strictEqual(metadata.generation.model, 'deepseek-v4-flash');
+    assert.strictEqual(metadata.generation.maxTokens, 1500);
+    assert.strictEqual(metadata.generation.promptVersion, 'v1');
+    assert.strictEqual(metadata.generation.determinism, 'temperature-0');
+    assert.strictEqual(metadata.generation.topP, null, 'top_p no se envía: no se puede declarar como propio');
+    assert.strictEqual(metadata.generation.topPSource, 'proveedor');
+    assert.match(metadata.generation.label, /temperatura 0/, 'la etiqueta legible incluye la temperatura');
+    assert.match(metadata.generation.label, /máx\. 1500 tokens/);
+    assert.strictEqual(metadata.evidenceCount, 1, 'la cantidad de evidencia adjunta es parte de la declaración');
+    assert.strictEqual(metadata.abstained, undefined, 'la abstención no se puede anunciar antes de generar');
+
+    const done = eventos.find((e) => e.tipo === 'done')?.dato;
+    assert.strictEqual(done?.abstained, false);
+    assert.deepStrictEqual(done?.generation, metadata.generation, 'el done repite la misma declaración que la metadata');
+});
+
+test('#408: el camino sin stream también genera con temperature 0 y declara la configuración', async () => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.mockImplementation(async () => ({
+        content: 'La capa de aplicación coordina casos de uso.',
+        usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 },
+    }));
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = {
+        json: async () => ({
+            question: '¿qué responsabilidades tiene la capa de aplicación?',
+            subjectId: 'materia1',
+            classIds: ['class1'],
+            stream: false,
+            botLength: 'concise',
+        }),
+        user: { id: 'test-user' },
+        headers: { get: () => 'test-header' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    const opcionesModelo = openaiMocks.chatCompletion.mock.calls.at(-1).arguments[2];
+    assert.strictEqual(opcionesModelo.temperature, 0);
+    assert.strictEqual(opcionesModelo.max_tokens, 400, 'concise mantiene su tope de 400');
+
+    const body = JSON.parse(response.body);
+    assert.ok(body.generation, 'el payload sin stream declara la configuración');
+    assert.strictEqual(body.generation.temperature, 0);
+    assert.strictEqual(body.generation.maxTokens, 400);
+    assert.strictEqual(body.model, 'deepseek-v4-flash');
+    assert.strictEqual(body.evidenceCount, 1);
+    assert.strictEqual(body.abstained, false);
+});
+
+test('#408: una abstención CON evidencia disponible se declara distinto de una sin evidencia', async () => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    openaiMocks.chatCompletion.mock.mockImplementation(async (messages, stream) => {
+        if (!stream) return { content: 'sync', usage: { total_tokens: 10 } };
+        return (async function* () {
+            yield { choices: [{ delta: { content: 'No encontré información sobre eso ' } }] };
+            yield { choices: [{ delta: { content: 'en los materiales seleccionados.' } }] };
+            yield { usage: { prompt_tokens: 5, completion_tokens: 5, total_tokens: 10 } };
+        })();
+    });
+
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = {
+        json: async () => ({
+            question: 'que es el acoplamiento entre modulos?',
+            subjectId: 'materia1',
+            classIds: ['class1'],
+            stream: true,
+        }),
+        user: { id: 'test-user' },
+        headers: { get: () => 'test-header' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    const { eventos } = await leerSse(response);
+
+    const metadata = eventos.find((e) => e.tipo === 'metadata')?.dato;
+    const done = eventos.find((e) => e.tipo === 'done')?.dato;
+
+    assert.strictEqual(metadata.evidenceCount, 1, 'la evidencia recuperada existe y se adjunta');
+    assert.strictEqual(done.abstained, true, 'el modelo se abstuvo');
+    assert.strictEqual(done.evidenceCount, 1);
+    assert.strictEqual(done.abstainedWithEvidence, true, 'abstención del modelo pese a tener evidencia: es lo que hay que poder distinguir');
+});
+
+test('#408: una abstención SIN evidencia no se declara como abstención con evidencia', async () => {
+    openaiMocks.chatCompletion.mock.resetCalls();
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter) => {
+        if (filter?.materialType?.$eq === 'verified-answer') return [];
+        return [];
+    });
+    const mockContext = { log: mock.fn(), error: mock.fn() };
+    const mockRequest = {
+        json: async () => ({
+            question: 'tema que no esta en la materia',
+            subjectId: 'materia1',
+            classIds: ['class1'],
+            stream: true,
+            conversationHistory: [{ role: 'user', content: 'pregunta previa' }, { role: 'assistant', content: 'respuesta previa' }],
+        }),
+        user: { id: 'test-user' },
+        headers: { get: () => 'test-header' },
+    };
+
+    const response = await capturedHandler(mockRequest, mockContext);
+    assert.strictEqual(response.status, 200);
+
+    // Sin material el rechazo es canónico y no se gasta modelo (UJ-22/#410).
+    let body = response.body;
+    if (body instanceof ReadableStream) {
+        const { eventos } = await leerSse(response);
+        const done = eventos.find((e) => e.tipo === 'done')?.dato;
+        assert.strictEqual(done.abstained, true);
+        assert.strictEqual(done.evidenceCount, 0);
+        assert.strictEqual(done.abstainedWithEvidence, false);
+    } else {
+        body = JSON.parse(response.body);
+        assert.strictEqual(body.evidenceCount, 0);
+        assert.strictEqual(body.abstainedWithEvidence, false);
+    }
+
+    // Restaurar el mock por defecto para los tests que siguen.
+    vectorStoreMocks.querySimilar.mock.mockImplementation(async (embedding, filter) => {
+        if (filter?.materialType?.$eq === 'verified-answer') return [];
+        return [{
+            score: 0.9,
+            metadata: { sourceFilename: 'clase1.pdf', text: 'Context text', materialType: 'pdf', classIds: ['class1'], chunkIndex: 0 },
+        }];
+    });
+});

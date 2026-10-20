@@ -187,6 +187,13 @@ app.http('get-chat-history', {
                         question: c.firstQuestion || msgs.find((m) => m?.role === 'user')?.content || '',
                         answer: lastAssistant?.content || '',
                         sources: lastAssistant?.sources || [],
+                        // #408: la declaración de generación se conserva al
+                        // fusionar el hilo guardado; sin esto la respuesta
+                        // reabierta perdería con qué se generó.
+                        ...(lastAssistant?.generation ? { generation: lastAssistant.generation } : {}),
+                        ...(typeof lastAssistant?.abstained === 'boolean' ? { abstained: lastAssistant.abstained } : {}),
+                        ...(typeof lastAssistant?.abstainedWithEvidence === 'boolean' ? { abstainedWithEvidence: lastAssistant.abstainedWithEvidence } : {}),
+                        ...(typeof lastAssistant?.evidenceCount === 'number' ? { evidenceCount: lastAssistant.evidenceCount } : {}),
                         messageCount: c.messageCount || msgs.length,
                         timestamp: c.lastMessageAt || c.createdAt || new Date().toISOString(),
                         createdAt: c.createdAt || c.lastMessageAt || new Date().toISOString(),

@@ -1651,6 +1651,11 @@ test('rag-query glossary fast-path returns definition with badge metadata (11.1.
     assert.strictEqual(openaiMocks.chatCompletion.mock.callCount(), 0, 'Glossary fast-path must skip the LLM');
     assert.strictEqual(openaiMocks.generateEmbedding.mock.callCount(), 0, 'Glossary fast-path must skip embedding');
     assert.strictEqual(vectorStoreMocks.querySimilar.mock.callCount(), 0, 'Glossary fast-path must skip vector search');
+    // #408: el glosario no pasa por el modelo, y la respuesta lo declara: una
+    // definición fija no se puede confundir con una respuesta muestreada.
+    assert.strictEqual(body.generation.determinism, 'glosario-sin-modelo');
+    assert.strictEqual(body.generation.model, null);
+    assert.strictEqual(body.generation.temperature, null);
 });
 
 test('#571: extractGlossaryTerm conserva los separadores del término', () => {
