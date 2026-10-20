@@ -74,13 +74,25 @@ function getHistoryKey(subjectId) {
   return `${HISTORY_KEY_PREFIX}${subjectId}`;
 }
 
-function loadHistory(subjectId) {
+/**
+ * Lectura de una lista guardada en el navegador. `safeGetItem` devuelve el string
+ * crudo, así que comprobar `Array.isArray(raw)` daba siempre falso: el historial y
+ * la comparación se guardaban bien y aparecían vacíos al recargar la pantalla
+ * (UJ-49: la constancia de una tanda se perdía al volver al banco).
+ */
+function loadJsonArray(key) {
   try {
-    const raw = safeGetItem(getHistoryKey(subjectId), '[]');
-    return Array.isArray(raw) ? raw : [];
+    const raw = safeGetItem(key, null);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
+}
+
+function loadHistory(subjectId) {
+  return loadJsonArray(getHistoryKey(subjectId));
 }
 
 function saveHistory(subjectId, history) {
@@ -100,42 +112,140 @@ function getComparisonKey(subjectId) {
 }
 
 function loadComparison(subjectId) {
-  try {
-    const raw = safeGetItem(getComparisonKey(subjectId), '[]');
-    return Array.isArray(raw) ? raw : [];
-  } catch {
-    return [];
-  }
+  return loadJsonArray(getComparisonKey(subjectId));
 }
 
 function saveComparison(subjectId, comparison) {
   safeSetItem(getComparisonKey(subjectId), JSON.stringify(comparison.slice(-MAX_COMPARISON_ITEMS)));
 }
 
+/**
+ * Tope del banco: se comparan hasta 20 casos por materia. El conjunto de casos que
+ * sostiene una decisión de activación es acotado y declarado (no «todos los que
+ * entraron»), así que al llegar al tope el banco **no corre el caso** y lo dice,
+ * en vez de descartar el más viejo por lo bajo dejando un artefacto con menos
+ * casos de los que quien compara cree tener (UJ-49 pasos 6 y 9).
+ */
+const MAX_COMPARISON_CASES = MAX_COMPARISON_ITEMS;
+
+/**
+ * Límites declarados de la comparación (UJ-49 paso 9: «qué no alcanza a cubrir»).
+ * Sin esto, la constancia dice qué se comparó pero deja creer que la comparación
+ * cubre más de lo que cubre.
+ */
+const COMPARISON_LIMITS = [
+  'Sólo se compara el prompt del asistente (tipo `rag-master`): un cambio de motor, de modelo, de temperatura o de recuperación no queda cubierto por esta comparación.',
+  'Los casos valen para esta materia y para las clases marcadas: otro alcance, otra evidencia.',
+  'El veredicto (mejora / retroceso / empate) lo marca quien enseña; el sistema no lo calcula ni lo sugiere.',
+  'La comparación no mide adopción ni efecto sobre el alumnado: mide la respuesta de las dos versiones sobre los mismos casos.',
+];
+
+/**
+ * Constancia de una corrida: la versión vigente de referencia no cambió, la
+ * propuesta sigue inactiva y los hilos reales no recibieron turnos nuevos.
+ * `estado` es `'consta'` sólo si las tres cosas se pudieron medir; si alguna no,
+ * queda `'parcial'` con el detalle de lo que faltó.
+ */
+function evaluarConstancia({ activeBefore, activeAfter, proposedVersionId, proposedIsActiveAfter, hilosAntes, hilosDespues }) {
+  const faltantes = [];
+  if (!activeBefore || !activeAfter) faltantes.push('inventario de versiones');
+  if (proposedIsActiveAfter === null || proposedIsActiveAfter === undefined) faltantes.push('estado de la propuesta');
+  if (hilosAntes === null || hilosDespues === null) faltantes.push('hilos reales');
+
+  const referenciaSinCambios = !!activeBefore && !!activeAfter && activeBefore === activeAfter;
+  const propuestaInactiva = proposedIsActiveAfter === false;
+  const hilosSinCambios = hilosAntes !== null && hilosDespues !== null && hilosAntes === hilosDespues;
+
+  return {
+    estado: faltantes.length === 0 ? 'consta' : 'parcial',
+    faltantes,
+    activeBefore: activeBefore || null,
+    activeAfter: activeAfter || null,
+    proposedVersionId: proposedVersionId || null,
+    referenciaSinCambios,
+    propuestaInactiva,
+    hilosAntes,
+    hilosDespues,
+    hilosSinCambios,
+  };
+}
+
+function constanciaEnUnaLinea(constancia) {
+  if (!constancia) return 'constancia: no registrada';
+  const parcial = constancia.estado === 'parcial' ? ` (parcial: falta ${constancia.faltantes.join(', ')})` : '';
+  const referencia = constancia.referenciaSinCambios
+    ? `vigente sin cambios (${constancia.activeAfter})`
+    : `vigente CAMBIÓ (${constancia.activeBefore} → ${constancia.activeAfter})`;
+  const propuesta = constancia.propuestaInactiva ? 'propuesta inactiva' : 'propuesta ACTIVA';
+  const hilos = constancia.hilosSinCambios
+    ? `hilos reales sin turnos nuevos (${constancia.hilosAntes})`
+    : (constancia.hilosAntes === null || constancia.hilosDespues === null
+      ? 'hilos reales no verificables'
+      : `hilos reales CAMBIARON (${constancia.hilosAntes} → ${constancia.hilosDespues})`);
+  return `constancia${parcial}: ${referencia} · ${propuesta} · ${hilos}`;
+}
+
+/**
+ * Artefacto legible por alguien que no participó (UJ-49 pasos 9-10): de qué casos
+ * parte, cuál es la línea de comparación, qué se marcó y **qué no alcanza a cubrir**.
+ */
 function comparisonToMarkdown(subjectId, comparison, activeVersionId) {
+  const conteo = { mejora: 0, retroceso: 0, empate: 0, sinMarcar: 0 };
+  comparison.forEach((c) => {
+    if (c.verdict === 'mejora') conteo.mejora += 1;
+    else if (c.verdict === 'retroceso') conteo.retroceso += 1;
+    else if (c.verdict === 'empate') conteo.empate += 1;
+    else conteo.sinMarcar += 1;
+  });
+  const clases = new Set();
+  comparison.forEach((c) => (c.classIds || []).forEach((id) => clases.add(id)));
+
   const lineas = [
     '# Comparación de comportamiento del asistente (banco de pruebas)',
     '',
+    '## De qué casos parte',
+    '',
     `- Materia: ${subjectId}`,
-    `- Comportamiento vigente (referencia): ${activeVersionId || 'versión activa'}`,
-    `- Casos comparados: ${comparison.length}`,
-    '- Ninguna versión propuesta fue activada y ninguna consulta del banco se guardó en un hilo real.',
+    `- Clases marcadas: ${clases.size > 0 ? [...clases].join(', ') : '(sin clases)'}`,
+    `- Modo: banco de pruebas (sandbox), ${comparison.some((c) => c.simulateStudent) ? 'con' : 'sin'} «Simular alumno»`,
+    `- Comportamiento vigente (línea de comparación): ${activeVersionId || 'versión activa'}`,
+    `- Casos comparados: ${comparison.length} de un tope de ${MAX_COMPARISON_CASES}`,
+    '',
+    '## Veredicto por caso',
+    '',
+    `- Mejora: ${conteo.mejora}`,
+    `- Retroceso: ${conteo.retroceso}`,
+    `- Empate: ${conteo.empate}`,
+    `- Sin marcar: ${conteo.sinMarcar}`,
+    '',
+    '## Constancia de que la propuesta no rigió',
+    '',
+    'La versión propuesta se pidió en cada consulta de este banco y nunca se activó.',
+    'Cada caso registra, medido contra el inventario y el historial real, si la vigente',
+    'siguió siendo la misma, si la propuesta siguió inactiva y si los hilos reales',
+    'sumaron turnos.',
     '',
   ];
   comparison.forEach((c, i) => {
     lineas.push(`## Caso ${i + 1}: ${c.question}`);
     lineas.push('');
     lineas.push(`- Veredicto: ${c.verdict || 'sin marcar'}`);
+    lineas.push(`- ${constanciaEnUnaLinea(c.constancia)}`);
     lineas.push('');
     lineas.push(`### Vigente (${c.vigente?.versionId || 'activa'})`);
     lineas.push('');
     lineas.push(c.vigente?.answer || '(sin respuesta)');
     lineas.push('');
-    lineas.push(`### Propuesta (${c.propuesta?.versionId || 'sin versión'})`);
+    lineas.push(`### Propuesta (${c.propuesta?.versionId || 'sin versión'}) — no activada`);
     lineas.push('');
     lineas.push(c.propuesta?.answer || '(sin respuesta)');
     lineas.push('');
   });
+
+  lineas.push('## Qué no alcanza a cubrir');
+  lineas.push('');
+  COMPARISON_LIMITS.forEach((limite) => lineas.push(`- ${limite}`));
+  lineas.push('');
   return lineas.join('\n');
 }
 
@@ -254,7 +364,10 @@ export async function renderTeacherRagSandbox(container) {
             <div style="font-size:var(--font-size-xs);color:var(--color-text-secondary);margin-bottom:var(--space-3)">
               Cada caso enfrenta la respuesta del comportamiento vigente con la de la versión propuesta. Marcá mejora, retroceso o empate.
               La versión propuesta nunca se activa y estas consultas no quedan en el historial del backend: ningún hilo real las recibe.
+              Cada caso deja constancia medida de que la vigente siguió siendo la misma, de que la propuesta siguió inactiva y de que los hilos reales no sumaron turnos.
             </div>
+            <div id="sandbox-comparison-cap" style="font-size:var(--font-size-xs);color:var(--color-text-muted);margin-bottom:var(--space-2)">0 de 20 casos en la comparación.</div>
+            <div id="sandbox-comparison-aviso" role="status" style="display:none;font-size:var(--font-size-xs);color:var(--color-warning);margin-bottom:var(--space-2)"></div>
             <div id="sandbox-comparison-list">
               <div class="p-4 text-center text-xs text-text-muted italic">Todavía no comparaste ningún caso.</div>
             </div>
@@ -293,6 +406,9 @@ export async function renderTeacherRagSandbox(container) {
   const renderVersions = () => {
     const select = container.querySelector('#sandbox-version');
     if (!select) return;
+    // La elección de quien compara sobrevive a la relectura del inventario (que se
+    // hace antes y después de cada caso para la constancia).
+    const elegidaPrevia = select.value;
     if (availableVersions.length === 0) {
       select.innerHTML = `<option value="">No se pudieron cargar las versiones</option>`;
       return;
@@ -304,11 +420,19 @@ export async function renderTeacherRagSandbox(container) {
       ...propuestas.map(v => `<option value="${escapeHtml(v.versionId)}">Propuesta: ${escapeHtml(v.versionId)}${v.description ? ` — ${escapeHtml(v.description)}` : ''}</option>`),
     ];
     select.innerHTML = opciones.join('');
+    if (elegidaPrevia && propuestas.some(v => v.versionId === elegidaPrevia)) {
+      select.value = elegidaPrevia;
+    }
   };
 
   const renderComparison = () => {
     const listEl = container.querySelector('#sandbox-comparison-list');
     if (!listEl) return;
+    // Tope declarado en pantalla: quien compara ve cuántos casos entran (UJ-49 paso 9).
+    const topeEl = container.querySelector('#sandbox-comparison-cap');
+    if (topeEl) {
+      topeEl.textContent = `${comparison.length} de ${MAX_COMPARISON_CASES} casos en la comparación.`;
+    }
     if (comparison.length === 0) {
       listEl.innerHTML = `<div class="p-4 text-center text-xs text-text-muted italic">Todavía no comparaste ningún caso.</div>`;
       return;
@@ -318,6 +442,7 @@ export async function renderTeacherRagSandbox(container) {
         <div class="p-3" style="border-bottom:1px solid var(--color-border)">
           <div style="font-size:var(--font-size-xs);color:var(--color-text-muted)">${formatDateTimeEsAr(c.timestamp)} · caso ${index + 1}</div>
           <div style="font-weight:600">${escapeHtml(c.question)}</div>
+          <div style="font-size:var(--font-size-xs);color:var(--color-text-secondary);margin-top:var(--space-1)" data-role="constancia">${escapeHtml(constanciaEnUnaLinea(c.constancia))}</div>
         </div>
         <div class="dashboard-layout-grid" style="padding:var(--space-3);gap:var(--space-3)">
           <div>
@@ -325,7 +450,7 @@ export async function renderTeacherRagSandbox(container) {
             <div style="font-size:var(--font-size-sm);white-space:pre-wrap">${escapeHtml(c.vigente?.answer || '(sin respuesta)')}</div>
           </div>
           <div>
-            <div style="font-size:var(--font-size-xs);font-weight:600;margin-bottom:var(--space-1)">Propuesta (${escapeHtml(c.propuesta?.versionId || 'sin versión')})</div>
+            <div style="font-size:var(--font-size-xs);font-weight:600;margin-bottom:var(--space-1)">Propuesta (${escapeHtml(c.propuesta?.versionId || 'sin versión')}) — no activada</div>
             <div style="font-size:var(--font-size-sm);white-space:pre-wrap">${escapeHtml(c.propuesta?.answer || '(sin respuesta)')}</div>
           </div>
         </div>
@@ -336,6 +461,14 @@ export async function renderTeacherRagSandbox(container) {
         </div>
       </div>
     `).join('');
+  };
+
+  // Aviso del tope: el caso no se corre (no gasta una llamada) y se dice por qué.
+  const mostrarAvisoTope = () => {
+    const aviso = container.querySelector('#sandbox-comparison-aviso');
+    if (!aviso) return;
+    aviso.textContent = `Tope de ${MAX_COMPARISON_CASES} casos alcanzado: este caso no se corrió para no dejar caer ninguno de los que ya están en la comparación. Exportá la comparación y limpiala para seguir con otra tanda.`;
+    aviso.style.display = 'block';
   };
 
   const renderChips = (classes) => {
@@ -445,6 +578,7 @@ export async function renderTeacherRagSandbox(container) {
   const runStream = async ({ question, simulateStudent, promptVersion = null, wrapper, bubble, sourcesEl, preview }) => {
     let fullAnswer = '';
     let governedBy = promptVersion || activeVersionId || null;
+    let interactionId = null;
     await api.ragQueryStream({
       question,
       classIds: selectedClassIds,
@@ -454,6 +588,10 @@ export async function renderTeacherRagSandbox(container) {
       promptVersion,
     }, (type, data) => {
       if (type === 'metadata') {
+        // UJ-49: el identificador del turno del banco queda en la constancia para
+        // poder rastrearlo. La consulta del banco no se persiste (rag-query.js:
+        // `if (!sandboxMode)`), así que este id no corresponde a ningún hilo real.
+        if (data.interactionId) interactionId = data.interactionId;
         // #408: acá se comparan versiones del prompt sobre la misma evidencia;
         // la declaración dice modelo, temperatura y tope, no sólo el modelo.
         const declaracion = generationLabel(data.generation || (data.model ? { model: data.model } : null));
@@ -483,7 +621,7 @@ export async function renderTeacherRagSandbox(container) {
         bubble.innerHTML = renderMarkdown(fullAnswer);
       }
     });
-    return { answer: fullAnswer, versionId: governedBy };
+    return { answer: fullAnswer, versionId: governedBy, interactionId };
   };
 
   const sendMessage = async () => {
@@ -506,6 +644,19 @@ export async function renderTeacherRagSandbox(container) {
 
     try {
       if (compare && selectedVersion) {
+        // Tope declarado: 20 casos por materia. Al llegar, NO se corre el caso (no se
+        // gasta una llamada al modelo) y se avisa, en vez de dejar caer el más viejo.
+        if (comparison.length >= MAX_COMPARISON_CASES) {
+          mostrarAvisoTope();
+          return;
+        }
+        // Línea de comparación: se lee el inventario ANTES de correr, para que el caso
+        // declare contra qué vigente se lo enfrentó y no contra la que era al abrir la
+        // pantalla (un Director pudo activar otra en el medio).
+        const inventarioAntes = await api.getAvailablePromptVersions('rag-master').catch(() => null);
+        const activeBefore = inventarioAntes?.activeVersion || activeVersionId || null;
+        const hilosAntes = await api.contarTurnosReales(activeSubjectId);
+
         // UJ-49 pasos 3-7: el MISMO caso contra la vigente y contra la propuesta,
         // enfrentadas lado a lado, con el veredicto que marca quien enseña.
         const bloque = document.createElement('div');
@@ -514,8 +665,8 @@ export async function renderTeacherRagSandbox(container) {
         bloque.innerHTML = `
           <div class="p-3" style="font-weight:600">${escapeHtml(question)}</div>
           <div class="dashboard-layout-grid" style="padding:var(--space-3);gap:var(--space-3)">
-            <div><div style="font-size:var(--font-size-xs);font-weight:600;margin-bottom:var(--space-1)">Vigente</div><div data-role="vigente"></div></div>
-            <div><div style="font-size:var(--font-size-xs);font-weight:600;margin-bottom:var(--space-1)">Propuesta (${escapeHtml(selectedVersion)})</div><div data-role="propuesta"></div></div>
+            <div><div style="font-size:var(--font-size-xs);font-weight:600;margin-bottom:var(--space-1)">Vigente${activeBefore ? ` (${escapeHtml(activeBefore)})` : ''}</div><div data-role="vigente"></div></div>
+            <div><div style="font-size:var(--font-size-xs);font-weight:600;margin-bottom:var(--space-1)">Propuesta (${escapeHtml(selectedVersion)}) — no activada</div><div data-role="propuesta"></div></div>
           </div>`;
         preview.appendChild(bloque);
 
@@ -524,16 +675,36 @@ export async function renderTeacherRagSandbox(container) {
         const propuestaBubble = renderAnswerBubble(bloque.querySelector('[data-role="propuesta"]'));
         const rPropuesta = await runStream({ question, simulateStudent, promptVersion: selectedVersion, preview, ...propuestaBubble });
 
+        // Constancia medida, no declarada: se relee el inventario y los hilos reales
+        // después de la corrida. Si algo no se pudo medir, el caso lo dice.
+        const inventarioDespues = await api.getAvailablePromptVersions('rag-master').catch(() => null);
+        const hilosDespues = await api.contarTurnosReales(activeSubjectId);
+        const propuestaDespues = inventarioDespues?.versions?.find(v => v.versionId === selectedVersion);
+        if (inventarioDespues?.versions) availableVersions = inventarioDespues.versions;
+        if (inventarioDespues?.activeVersion) activeVersionId = inventarioDespues.activeVersion;
+
+        const constancia = evaluarConstancia({
+          activeBefore,
+          activeAfter: inventarioDespues?.activeVersion || null,
+          proposedVersionId: selectedVersion,
+          proposedIsActiveAfter: propuestaDespues ? !!propuestaDespues.isActive : null,
+          hilosAntes,
+          hilosDespues,
+        });
+
         comparison.push({
           question,
           timestamp: new Date().toISOString(),
           simulateStudent,
-          vigente: { versionId: rVigente.versionId || activeVersionId, answer: rVigente.answer },
-          propuesta: { versionId: rPropuesta.versionId || selectedVersion, answer: rPropuesta.answer },
+          classIds: [...selectedClassIds],
+          vigente: { versionId: rVigente.versionId || activeBefore, answer: rVigente.answer, interactionId: rVigente.interactionId },
+          propuesta: { versionId: rPropuesta.versionId || selectedVersion, answer: rPropuesta.answer, interactionId: rPropuesta.interactionId },
+          constancia,
           verdict: null,
         });
         saveComparison(activeSubjectId, comparison);
         renderComparison();
+        renderVersions();
       } else {
         const { wrapper, bubble, sourcesEl } = renderAnswerBubble();
         const resultado = await runStream({ question, simulateStudent, promptVersion: selectedVersion || null, wrapper, bubble, sourcesEl, preview });
@@ -615,6 +786,8 @@ export async function renderTeacherRagSandbox(container) {
   container.querySelector('#sandbox-comparison-clear')?.addEventListener('click', () => {
     comparison.length = 0;
     safeSetItem(getComparisonKey(activeSubjectId), JSON.stringify([]));
+    const aviso = container.querySelector('#sandbox-comparison-aviso');
+    if (aviso) { aviso.textContent = ''; aviso.style.display = 'none'; }
     renderComparison();
   });
 

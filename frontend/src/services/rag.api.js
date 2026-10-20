@@ -306,6 +306,25 @@ export async function getChatHistory(subjectId) {
     }
 }
 
+/**
+ * Cantidad de turnos en los hilos reales de la materia (UJ-49).
+ *
+ * La constancia del banco de pruebas necesita poder afirmar que la corrida no
+ * agregó turnos a ningún hilo real. `getChatHistory` se traga el error y devuelve
+ * `[]`, que se leería como «no cambió nada» sin haber medido nada; acá el fallo
+ * devuelve `null` para que la constancia diga «no verificable».
+ */
+export async function contarTurnosReales(subjectId) {
+    try {
+        const res = await fetchWithTimeout(`${BASE_URL}/chat-history?subjectId=${encodeURIComponent(subjectId)}`, { timeout: 4000 });
+        if (!res.ok) return null;
+        const data = await res.json();
+        return Array.isArray(data) ? data.length : null;
+    } catch {
+        return null;
+    }
+}
+
 export async function clearChatHistory(subjectId) {
     try {
         const res = await apiFetch(`${BASE_URL}/chat-history?subjectId=${subjectId}`, {
