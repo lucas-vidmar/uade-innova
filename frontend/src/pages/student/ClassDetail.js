@@ -440,7 +440,16 @@ export async function renderClassDetail(container) {
             if (fabContainer) fabContainer.hidden = isQuiz;
             if (isQuiz && !quizInited) {
                 quizInited = true;
-                renderAutoevaluacion(quizPanel, {
+                // UJ-30 (paso 1): la práctica de esta clase sigue acá; la de la
+                // unidad (todos sus temas, con alcance anunciado y acotable) se
+                // ofrece como camino aparte para no repetir el ciclo clase por clase.
+                quizPanel.innerHTML = `
+                    <p style="margin:0 0 var(--space-4) 0;font-size:var(--font-size-xs);color:var(--color-text-secondary);">
+                        ¿Preparás la evaluación de la materia? <a href="#/student/unit-practice" id="class-quiz-unit-link" style="font-weight:600;">Practicá toda la unidad →</a>
+                    </p>
+                    <div id="class-quiz-mount"></div>
+                `;
+                renderAutoevaluacion(quizPanel.querySelector('#class-quiz-mount'), {
                     classId,
                     subjectId: subjectId,
                     className: classInfo.title,

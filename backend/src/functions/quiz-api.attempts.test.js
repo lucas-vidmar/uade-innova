@@ -19,6 +19,8 @@ const attemptStore = []; // { subjectId, userId, classId, attemptNumber, answers
 
 const stateStoreMocks = {
     getEnrollment: mock.fn(async () => ({ status: 'active' })),
+    // UJ-30: el alcance de unidad resuelve las clases publicadas desde acá.
+    listClassesBySubject: mock.fn(async () => []),
     getConsentStatus: mock.fn(async () => true),
     listMaterialsByClass: mock.fn(async () => []),
     // El cuestionario emitido se guarda para corregir en el servidor: el cierre

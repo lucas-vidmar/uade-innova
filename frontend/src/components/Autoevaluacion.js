@@ -1,6 +1,6 @@
 /* ============================================================
-   Autoevaluacion.js — Quiz de autoevaluación por clase
-   Flujo: generar cuestionario → responder MCQ → ver resultados
+   Autoevaluacion.js — Práctica de autoevaluación (de una clase o de la unidad)
+   Flujo: anunciar el alcance → acotarlo (si es de la unidad) → responder → resultados
    ============================================================ */
 import { api } from '../services/api.js';
 import { toast } from './Toast.js';
@@ -29,6 +29,15 @@ const QUIZ_STYLE = `
 .quiz-count-select { display:flex; gap:var(--space-2); }
 .quiz-count-btn { padding:var(--space-2) var(--space-4); border:1px solid var(--color-border); border-radius:var(--radius-md); background:var(--color-surface); color:var(--color-text-secondary); font-weight:600; font-size:var(--font-size-sm); cursor:pointer; transition:all var(--transition); font-family:var(--font-family); }
 .quiz-count-btn.active { border-color:var(--color-primary); background:color-mix(in srgb, var(--color-primary) 15%, transparent); color:var(--color-primary-light); }
+.quiz-scope-row { display:grid; grid-template-columns:auto 1fr; gap:var(--space-3); align-items:start; padding:var(--space-3); border:1px solid var(--color-border); border-radius:var(--radius-md); background:var(--color-surface); cursor:pointer; }
+.quiz-scope-row.off { opacity:.55; }
+.quiz-scope-row input { margin-top:2px; accent-color:var(--color-primary); width:16px; height:16px; }
+.quiz-scope-topics { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+.quiz-scope-topic { padding:2px 10px; border-radius:var(--radius-full); font-size:var(--font-size-xs); font-weight:600; background:color-mix(in srgb, var(--color-primary) 12%, transparent); color:var(--color-primary-light); }
+.quiz-scope-topic.weak { background:color-mix(in srgb, var(--color-warning) 16%, transparent); color:var(--color-warning); }
+.quiz-scope-meta { font-size:var(--font-size-xs); color:var(--color-text-secondary); margin-top:4px; }
+.quiz-priority-btn { padding:4px 12px; border-radius:var(--radius-full); border:1px solid var(--color-border); background:var(--color-surface); color:var(--color-text-secondary); font-size:var(--font-size-xs); font-weight:600; cursor:pointer; font-family:var(--font-family); }
+.quiz-priority-btn.active { border-color:var(--color-warning); color:var(--color-warning); background:color-mix(in srgb, var(--color-warning) 15%, transparent); }
 </style>`;
 
 const OPTION_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
@@ -123,9 +132,17 @@ let state = {
     previousAttempt: null,
     // UJ-30 (paso 7): temas flojos que la persona marcó, por persona y unidad.
     markedTopics: [],
+    // UJ-30 (pasos 1 y 2): alcance de la práctica. En la unidad, `scopeData` es
+    // el anuncio del servidor, `selectedClassIds` el acotamiento vigente y
+    // `priorityTopics` los temas que la persona pidió priorizar.
+    scope: 'class',
+    scopeData: null,
+    selectedClassIds: [],
+    priorityTopics: [],
 };
 
 let hostContainer = null;
+let hostOptions = null;
 
 function resetState() {
     state = {
@@ -138,54 +155,145 @@ function resetState() {
         busy: false,
         previousAttempt: null,
         markedTopics: [],
+        scope: 'class',
+        scopeData: null,
+        selectedClassIds: [],
+        priorityTopics: [],
     };
 }
 
-export async function renderAutoevaluacion(container, { classId, subjectId, className }) {
+/**
+ * UJ-30 (paso 1): anuncia el alcance de la práctica de la unidad. El anuncio sale
+ * del servidor —clases publicadas, sus temas y materiales—, no de una suposición
+ * del panel. Sin anuncio no se ofrece generar: practicar a ciegas de qué es la
+ * práctica es exactamente lo que el issue reporta.
+ */
+function renderScopeError(mount, { subjectId, className }) {
+    mount.innerHTML = `
+        <div class="card">
+            <div style="padding:var(--space-6);display:flex;flex-direction:column;gap:var(--space-3)">
+                <h4 style="margin:0;font-weight:700;">Práctica de la unidad</h4>
+                <p style="margin:0;font-size:var(--font-size-sm);color:var(--color-text-secondary);">
+                    No pudimos cargar qué temas abarca la práctica de ${escapeHtml(className || 'esta unidad')}.
+                    Sin ese alcance no la generamos: probá de nuevo.
+                </p>
+                <button type="button" class="btn btn-ghost" id="quiz-scope-retry" style="align-self:flex-start;">Reintentar</button>
+            </div>
+        </div>
+    `;
+    mount.querySelector('#quiz-scope-retry')?.addEventListener('click', () => {
+        renderAutoevaluacion(hostContainer, { subjectId, className, scope: 'unit' });
+    });
+}
+
+export async function renderAutoevaluacion(container, { classId, subjectId, className, scope = 'class' } = {}) {
     hostContainer = container;
+    hostOptions = { classId, subjectId, className, scope };
     container.innerHTML = QUIZ_STYLE + `<div class="quiz-section" id="quiz-mount"></div>`;
     const mount = container.querySelector('#quiz-mount');
     resetState();
+    state.scope = scope;
+    const isUnit = scope === 'unit';
 
     let latestResult = null;
     let attempts = [];
     try {
-        latestResult = await api.getQuizResult(subjectId, classId);
+        latestResult = await api.getQuizResult(subjectId, classId, { scope });
     } catch {
         latestResult = null;
     }
     try {
-        attempts = await api.getQuizAttempts(subjectId, classId);
+        attempts = await api.getQuizAttempts(subjectId, classId, { scope });
     } catch {
         attempts = [];
     }
     // UJ-30 (paso 7): la marca de temas flojos vive en el servidor, por persona
     // y unidad, para que no se pierda al cerrar la pestaña.
     try {
-        state.markedTopics = await api.getQuizWeakTopics(subjectId, classId);
+        state.markedTopics = await api.getQuizWeakTopics(subjectId, classId, { scope });
     } catch {
         state.markedTopics = [];
     }
     // El intento anterior queda a mano para poder comparar al cerrar (UJ-31, paso 7).
     state.previousAttempt = attempts.length ? attempts[attempts.length - 1] : null;
 
-    renderIdle(mount, { classId, subjectId, className, latestResult, attempts });
+    if (isUnit) {
+        const scopeData = await api.getQuizScope(subjectId).catch(() => null);
+        if (!scopeData || !Array.isArray(scopeData.classes) || scopeData.classes.length === 0) {
+            renderScopeError(mount, { subjectId, className });
+            return;
+        }
+        state.scopeData = scopeData;
+        // El alcance arranca completo (todos los temas publicados) y se acota
+        // destildando; los temas que la persona ya marcó flojos vienen elegidos.
+        state.selectedClassIds = scopeData.classes.map((c) => c.classId);
+        state.priorityTopics = Array.from(new Set(
+            (scopeData.topics || []).filter((t) => t.markedWeak).map((t) => t.topic)
+        ));
+    }
+
+    renderIdle(mount, { classId, subjectId, className, latestResult, attempts, scope });
 }
 
-function renderIdle(mount, { classId, subjectId, className, latestResult, attempts = [] }) {
+function renderIdle(mount, { classId, subjectId, className, latestResult, attempts = [], scope = 'class' }) {
+    const isUnit = scope === 'unit';
+    const opts = { classId, subjectId, className, scope };
     const passScore = latestResult && latestResult.score >= 60;
     const attemptNumber = attempts.length + 1;
     const previousCount = attempts.length;
+    const scopeClasses = isUnit ? (state.scopeData?.classes || []) : [];
+    const unitTopics = isUnit ? (state.scopeData?.topics || []) : [];
+    const markedUnitTopics = Array.from(new Set(unitTopics.filter((t) => t.markedWeak).map((t) => t.topic)));
+    const selectedTopics = unitTopics.filter((t) => state.selectedClassIds.includes(t.classId));
+    const scopeSummary = isUnit
+        ? (state.selectedClassIds.length === scopeClasses.length
+            ? `Alcance: unidad completa (${unitTopics.length} temas de ${scopeClasses.length} clases).`
+            : `Alcance acotado: ${selectedTopics.length} de ${unitTopics.length} temas (${state.selectedClassIds.length} de ${scopeClasses.length} clases).`)
+        : '';
+
     mount.innerHTML = `
         <div class="card" style="margin-bottom:var(--space-4)">
             <div style="padding:var(--space-6);display:flex;flex-direction:column;gap:var(--space-5)">
                 <div style="display:flex;align-items:center;gap:var(--space-3)">
                     <div style="width:48px;height:48px;border-radius:var(--radius-lg);background:color-mix(in srgb, var(--color-primary) 15%, transparent);display:flex;align-items:center;justify-content:center;font-size:1.5rem;">📝</div>
                     <div>
-                        <h4 style="margin:0;font-weight:700;">Autoevaluación</h4>
-                        <p style="margin:var(--space-1) 0 0 0;font-size:var(--font-size-xs);color:var(--color-text-secondary);">Poné a prueba tu comprensión de esta clase.</p>
+                        <h4 style="margin:0;font-weight:700;">${isUnit ? 'Práctica de la unidad' : 'Autoevaluación'}</h4>
+                        <p style="margin:var(--space-1) 0 0 0;font-size:var(--font-size-xs);color:var(--color-text-secondary);">${isUnit ? 'Poné a prueba tu comprensión de la unidad completa, no de una clase suelta.' : 'Poné a prueba tu comprensión de esta clase.'}</p>
                     </div>
                 </div>
+
+                ${isUnit ? `
+                    <div class="card" id="quiz-scope-announcement" style="border:1px solid var(--color-primary);background:color-mix(in srgb, var(--color-primary) 6%, transparent);">
+                        <div style="padding:var(--space-4);display:flex;flex-direction:column;gap:var(--space-3);">
+                            <strong style="font-size:var(--font-size-sm);">Antes de empezar: qué abarca esta práctica</strong>
+                            <p id="quiz-scope-headline" style="margin:0;font-size:var(--font-size-sm);color:var(--color-text-primary);">${escapeHtml(state.scopeData?.headline || '')}</p>
+                            <div id="quiz-scope-classes" style="display:flex;flex-direction:column;gap:var(--space-2);">
+                                ${scopeClasses.map((c) => `
+                                    <label class="quiz-scope-row ${state.selectedClassIds.includes(c.classId) ? '' : 'off'}" data-class-id="${escapeHtml(c.classId)}">
+                                        <input type="checkbox" class="quiz-scope-class" data-class-id="${escapeHtml(c.classId)}" ${state.selectedClassIds.includes(c.classId) ? 'checked' : ''}>
+                                        <span>
+                                            <span style="font-size:var(--font-size-sm);font-weight:600;">${escapeHtml(c.title)}</span>
+                                            <span class="quiz-scope-topics">
+                                                ${(c.topics || []).map((t) => `<span class="quiz-scope-topic ${state.markedTopics.includes(t) ? 'weak' : ''}">${state.markedTopics.includes(t) ? '★ ' : ''}${escapeHtml(t)}</span>`).join('')}
+                                            </span>
+                                            <span class="quiz-scope-meta">${c.materialCount} material${c.materialCount === 1 ? '' : 'es'} · ${c.topicsDeclared ? 'temas declarados por la cátedra' : 'sin temas declarados: se practica la clase completa'}</span>
+                                        </span>
+                                    </label>
+                                `).join('')}
+                            </div>
+                            ${markedUnitTopics.length > 0 ? `
+                                <div id="quiz-priority-topics" style="display:flex;flex-wrap:wrap;gap:var(--space-2);align-items:center;">
+                                    <span style="font-size:var(--font-size-xs);color:var(--color-text-secondary);">Temas que marcaste flojos (elegí los que más te preocupan):</span>
+                                    ${markedUnitTopics.map((t) => `
+                                        <button type="button" class="quiz-priority-btn ${state.priorityTopics.includes(t) ? 'active' : ''}" data-topic="${escapeHtml(t)}" aria-pressed="${state.priorityTopics.includes(t)}">${state.priorityTopics.includes(t) ? '★' : '☆'} ${escapeHtml(t)}</button>
+                                    `).join('')}
+                                </div>
+                            ` : ''}
+                            <p id="quiz-scope-summary" style="margin:0;font-size:var(--font-size-xs);color:var(--color-text-secondary);font-weight:600;">${scopeSummary}</p>
+                            <p id="quiz-scope-warning" style="margin:0;font-size:var(--font-size-xs);color:var(--color-error);${state.selectedClassIds.length === 0 ? '' : 'display:none;'}">Elegí al menos un tema para poder practicar.</p>
+                        </div>
+                    </div>
+                ` : ''}
 
                 ${latestResult ? `
                     <div class="quiz-pass-banner" style="border:1px solid ${passScore ? 'var(--color-success)' : 'var(--color-warning)'};background:color-mix(in srgb, ${passScore ? 'var(--color-success)' : 'var(--color-warning)'} 10%, transparent);">
@@ -199,7 +307,7 @@ function renderIdle(mount, { classId, subjectId, className, latestResult, attemp
                     <button type="button" class="btn btn-ghost" id="quiz-view-last-btn" style="align-self:flex-start;">Ver el último resultado</button>
                 ` : ''}
 
-                ${state.markedTopics.length > 0 ? `
+                ${!isUnit && state.markedTopics.length > 0 ? `
                     <div class="card" id="quiz-marked-topics" style="border:1px solid var(--color-border);">
                         <div style="padding:var(--space-4);display:flex;flex-direction:column;gap:var(--space-2);">
                             <strong style="font-size:var(--font-size-sm);">Tus temas flojos en esta clase</strong>
@@ -215,7 +323,7 @@ function renderIdle(mount, { classId, subjectId, className, latestResult, attemp
 
                 ${state.previousAttempt ? `
                     <div id="quiz-attempt-notice" style="border:1px solid var(--color-border);border-radius:var(--radius-md);padding:var(--space-4);background:var(--color-surface-2);font-size:var(--font-size-sm);color:var(--color-text-secondary);">
-                        Esta va a ser tu <strong>práctica ${attemptNumber}</strong> sobre esta clase: cubre los mismos temas que la anterior
+                        Esta va a ser tu <strong>práctica ${attemptNumber}</strong> sobre ${isUnit ? 'la unidad' : 'esta clase'}: cubre los mismos temas que la anterior
                         (${previousCount === 1 ? '1 intento previo' : `${previousCount} intentos previos`}) y deja afuera las preguntas que ya respondiste.
                     </div>
                 ` : ''}
@@ -229,13 +337,15 @@ function renderIdle(mount, { classId, subjectId, className, latestResult, attemp
                     </div>
                 </div>
 
-                <button type="button" class="btn btn-primary" id="quiz-generate-btn" style="align-self:flex-start;">
+                <button type="button" class="btn btn-primary" id="quiz-generate-btn" style="align-self:flex-start;" ${isUnit && state.selectedClassIds.length === 0 ? 'disabled' : ''}>
                     Generar cuestionario
                 </button>
             </div>
         </div>
         <p style="font-size:var(--font-size-xs);color:var(--color-text-secondary);margin:0;">
-            Las preguntas se generan con IA a partir del resumen y los materiales de la clase. Aprobás con 60% o más.
+            ${isUnit
+                ? 'Las preguntas se generan con IA a partir del resumen y los materiales de los temas elegidos de la unidad. Aprobás con 60% o más.'
+                : 'Las preguntas se generan con IA a partir del resumen y los materiales de la clase. Aprobás con 60% o más.'}
         </p>
     `;
 
@@ -246,16 +356,64 @@ function renderIdle(mount, { classId, subjectId, className, latestResult, attemp
         mount.querySelectorAll('.quiz-count-btn').forEach(b => b.classList.toggle('active', b === btn));
     });
 
+    // UJ-30 (paso 2): acotar el alcance antes de empezar. Destildar una clase la
+    // saca del pedido; sin ninguna tildada no se genera (el panel lo avisa y el
+    // servidor también rechaza el alcance vacío).
+    if (isUnit) {
+        const refreshScopeState = () => {
+            const selected = state.selectedClassIds;
+            const topics = (state.scopeData?.topics || []).filter((t) => selected.includes(t.classId));
+            const summary = mount.querySelector('#quiz-scope-summary');
+            if (summary) {
+                summary.textContent = selected.length === scopeClasses.length
+                    ? `Alcance: unidad completa (${topics.length} temas de ${scopeClasses.length} clases).`
+                    : `Alcance acotado: ${topics.length} de ${(state.scopeData?.topics || []).length} temas (${selected.length} de ${scopeClasses.length} clases).`;
+            }
+            const warning = mount.querySelector('#quiz-scope-warning');
+            if (warning) warning.style.display = selected.length === 0 ? '' : 'none';
+            const generate = mount.querySelector('#quiz-generate-btn');
+            if (generate) generate.disabled = selected.length === 0;
+        };
+
+        mount.querySelectorAll('.quiz-scope-class').forEach((input) => {
+            input.addEventListener('change', () => {
+                const id = input.dataset.classId;
+                state.selectedClassIds = input.checked
+                    ? Array.from(new Set([...state.selectedClassIds, id]))
+                    : state.selectedClassIds.filter((x) => x !== id);
+                input.closest('.quiz-scope-row')?.classList.toggle('off', !input.checked);
+                refreshScopeState();
+            });
+        });
+
+        mount.querySelectorAll('.quiz-priority-btn').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const topic = btn.dataset.topic;
+                const on = !state.priorityTopics.includes(topic);
+                state.priorityTopics = on
+                    ? [...state.priorityTopics, topic]
+                    : state.priorityTopics.filter((t) => t !== topic);
+                btn.classList.toggle('active', on);
+                btn.setAttribute('aria-pressed', String(on));
+                btn.textContent = `${on ? '★' : '☆'} ${topic}`;
+            });
+        });
+    }
+
     // UJ-30: reabrir la pestaña no tiene que borrar los fallos ni los temas
     // flojos. El último resultado guardado se puede volver a ver desde acá.
     mount.querySelector('#quiz-view-last-btn')?.addEventListener('click', () => {
         if (!latestResult) return;
         state.result = latestResult;
-        renderResults(mount, { classId, subjectId, className });
+        renderResults(mount, opts);
     });
 
     mount.querySelector('#quiz-generate-btn').addEventListener('click', async () => {
         const btn = mount.querySelector('#quiz-generate-btn');
+        if (isUnit && state.selectedClassIds.length === 0) {
+            toast('warning', 'Elegí un tema', 'La práctica de la unidad necesita al menos un tema para generar preguntas.');
+            return;
+        }
         btn.disabled = true;
         btn.textContent = 'Generando...';
         try {
@@ -264,6 +422,9 @@ function renderIdle(mount, { classId, subjectId, className, latestResult, attemp
                 classId,
                 questionCount: state.questionCount,
                 className,
+                scope,
+                classIds: isUnit ? state.selectedClassIds : undefined,
+                topics: isUnit ? state.priorityTopics : undefined,
             });
             state.questions = quiz.questions || [];
             state.answers = state.questions.map(() => null);
@@ -274,7 +435,7 @@ function renderIdle(mount, { classId, subjectId, className, latestResult, attemp
             if (state.questions.length === 0) {
                 throw new Error('El cuestionario llegó vacío. Intentá de nuevo.');
             }
-            renderQuestion(mount, { classId, subjectId, className });
+            renderQuestion(mount, opts);
         } catch (err) {
             // #338: quiz failures always surface a toast (never silent); a
             // consent denial additionally offers the terms CTA.
@@ -293,7 +454,8 @@ function renderIdle(mount, { classId, subjectId, className, latestResult, attemp
     });
 }
 
-function renderQuestion(mount, { classId, subjectId, className }) {
+function renderQuestion(mount, opts = {}) {
+    const { classId, subjectId, className, scope = 'class' } = opts;
     const total = state.questions.length;
     const idx = state.currentIndex;
     const q = state.questions[idx];
@@ -348,14 +510,14 @@ function renderQuestion(mount, { classId, subjectId, className }) {
     mount.querySelector('#quiz-prev-btn')?.addEventListener('click', () => {
         if (state.currentIndex > 0) {
             state.currentIndex -= 1;
-            renderQuestion(mount, { classId, subjectId, className });
+            renderQuestion(mount, opts);
         }
     });
 
     mount.querySelector('#quiz-next-btn')?.addEventListener('click', () => {
         if (state.currentIndex < total - 1) {
             state.currentIndex += 1;
-            renderQuestion(mount, { classId, subjectId, className });
+            renderQuestion(mount, opts);
         }
     });
 
@@ -374,7 +536,10 @@ function renderQuestion(mount, { classId, subjectId, className }) {
 
             const saved = await api.saveQuizResult({
                 subjectId,
-                classId,
+                // En la unidad el intento no pertenece a una clase: el servidor lo
+                // guarda bajo su propia clave y no toca el historial de ninguna.
+                scope,
+                classId: scope === 'unit' ? undefined : classId,
                 quizId: state.quizId,
                 answers: submittedAnswers,
             });
@@ -387,7 +552,7 @@ function renderQuestion(mount, { classId, subjectId, className }) {
                 weakTopics: Array.isArray(saved.weakTopics) ? saved.weakTopics : [],
                 answers: Array.isArray(saved.answers) ? saved.answers : [],
             };
-            renderResults(mount, { classId, subjectId, className });
+            renderResults(mount, opts);
         } catch (err) {
             // #442: si el guardado falla no hay resultado que mostrar. Antes se
             // llamaba a renderResults() con state.result en null y el TypeError
@@ -404,7 +569,12 @@ function renderQuestion(mount, { classId, subjectId, className }) {
     });
 }
 
-function renderResults(mount, { classId, subjectId, className }) {
+function renderResults(mount, opts = {}) {
+    const { classId, subjectId, className, scope = 'class' } = opts;
+    // UJ-30: con alcance de unidad el fallo trae la clase del material que lo
+    // respalda; sin ella (práctica de clase) el destino es la clase del panel.
+    const answerClassId = (a) => a?.classId || classId;
+    const classLabel = scope === 'unit' ? 'la unidad' : 'esta clase';
     const r = state.result;
     const passed = r.passed;
     const color = passed ? 'var(--color-success)' : 'var(--color-warning)';
@@ -445,7 +615,7 @@ function renderResults(mount, { classId, subjectId, className }) {
             <div class="card" id="quiz-weak-topics" style="margin-top:var(--space-4)">
                 <div style="padding:var(--space-5);display:flex;flex-direction:column;gap:var(--space-3);">
                     <h5 style="margin:0;font-weight:700;">${passed ? 'Temas a reforzar' : 'Temas recomendados para repasar'}</h5>
-                    <p style="margin:0;font-size:var(--font-size-xs);color:var(--color-text-secondary);">Marcá los temas que sentís flojos: quedan guardados como tuyos en esta clase.</p>
+                    <p style="margin:0;font-size:var(--font-size-xs);color:var(--color-text-secondary);">Marcá los temas que sentís flojos: quedan guardados como tuyos en ${classLabel}.</p>
                     <div style="display:flex;flex-direction:column;gap:var(--space-2);">
                         ${r.weakTopics.map(t => {
                             const marked = state.markedTopics.includes(t);
@@ -476,8 +646,8 @@ function renderResults(mount, { classId, subjectId, className }) {
                 const sourceBlock = !isCorrect ? `
                     <div class="quiz-review-source" style="display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-3);margin-top:8px;border-top:1px dashed var(--color-border);padding-top:8px;">
                         <span style="color:var(--color-text-secondary);">📎 ${a.source ? `Se explica en <strong>${escapeHtml(a.source)}</strong>` : `Tema: <strong>${escapeHtml(a.topic || 'sin etiqueta')}</strong>`}</span>
-                        <a class="quiz-review-link" href="${classEncounterHref(classId)}" style="font-weight:600;">Ver el encuentro</a>
-                        <a class="quiz-review-link" href="${chatConsultHref(classId, consultQuestion(a.topic, a.source))}" style="font-weight:600;">Consultar en el chat</a>
+                        ${answerClassId(a) ? `<a class="quiz-review-link" href="${classEncounterHref(answerClassId(a))}" style="font-weight:600;">Ver el encuentro</a>` : ''}
+                        ${answerClassId(a) ? `<a class="quiz-review-link" href="${chatConsultHref(answerClassId(a), consultQuestion(a.topic, a.source))}" style="font-weight:600;">Consultar en el chat</a>` : ''}
                     </div>
                 ` : '';
                 return `
@@ -507,7 +677,7 @@ function renderResults(mount, { classId, subjectId, className }) {
     `;
 
     mount.querySelector('#quiz-retry-btn').addEventListener('click', () => {
-        renderAutoevaluacion(hostContainer, { classId, subjectId, className });
+        renderAutoevaluacion(hostContainer, opts);
     });
 
     // UJ-30 (paso 7): marcar/desmarcar un tema flojo. La marca se persiste por
@@ -530,7 +700,7 @@ function renderResults(mount, { classId, subjectId, className }) {
                     : 'Todavía no marcaste ningún tema flojo.';
             }
             try {
-                const saved = await api.saveQuizWeakTopics({ subjectId, classId, topics: state.markedTopics });
+                const saved = await api.saveQuizWeakTopics({ subjectId, classId: scope === 'unit' ? undefined : classId, scope, topics: state.markedTopics });
                 state.markedTopics = saved;
             } catch {
                 // La marca sigue visible en pantalla aunque no se haya podido
