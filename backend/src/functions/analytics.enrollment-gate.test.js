@@ -18,6 +18,10 @@ const storageMocks = {
 
 const stateStoreMocks = {
     getEnrollment: mock.fn(async () => null),
+    // #420: la analítica lee el temario declarado por la unidad y los reportes
+    // abiertos; sin estas dos lecturas disponibles el handler no debe romper.
+    listClassesBySubject: mock.fn(async () => []),
+    listPendingCorrections: mock.fn(async () => []),
 };
 
 const safetyRateMocks = {

@@ -28,6 +28,12 @@ const storageMocks = {
 
 const stateStoreMocks = {
     getEnrollment: mock.fn(async () => ({ status: 'active', role: 'teacher' })),
+    // #420: el temario sale de las clases de la unidad (classes[].topics).
+    listClassesBySubject: mock.fn(async () => [
+        { id: 'class-01', title: 'Clase 1', topics: ['Atributos de calidad'] },
+        { id: 'class-02', title: 'Clase 2', topics: ['SAGA pattern'] },
+    ]),
+    listPendingCorrections: mock.fn(async () => []),
 };
 
 const safetyRateMocks = {
@@ -74,7 +80,7 @@ test('get-teacher-analytics corta las consultas por encuentro (UJ-50 paso 4)', a
     const c1 = body.byClass.find((c) => c.classId === 'class-01');
     assert.ok(c1, 'class-01 aparece con su propia lectura');
     assert.strictEqual(c1.questionCount, 3, 'dos consultas de clase 1 más la que abarcó clase 1 y 2');
-    assert.deepStrictEqual(c1.topQuestions[0], { text: '¿Qué es la arquitectura hexagonal?', count: 3 });
+    assert.deepStrictEqual(c1.topQuestions[0], { text: '¿Qué es la arquitectura hexagonal?', count: 3, origenes: [] });
 
     const c2 = body.byClass.find((c) => c.classId === 'class-02');
     assert.ok(c2, 'class-02 aparece con su propia lectura');

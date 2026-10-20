@@ -3,11 +3,24 @@ import { withAuth } from '../middleware/with-auth.js';
 import { withCorrelation } from '../middleware/with-correlation.js';
 import { listBlobs, loadJson } from '../services/storage.js';
 import { parseClientPrincipal, validateFrontDoorId } from '../services/auth-utils.js';
-import { getEnrollment } from '../services/state-store.js';
+import { getEnrollment, listClassesBySubject, listPendingCorrections } from '../services/state-store.js';
 import { computeSafetyRate } from '../services/safety-rate.js';
 import { resolveSafetyStatus, structuredErrorResponse, ErrorCategory } from '../services/error-categories.js';
+import {
+    SIN_TEMA,
+    SIN_TEMA_LABEL,
+    ORIGENES,
+    ORIGEN_LABELS,
+    buildTemario,
+    classifyByTopic,
+    originsOfLog,
+    emptyOriginCounts,
+    countOrigins,
+} from '../services/topic-classifier.js';
 
 const CONTAINER_CHAT = 'chat-logs';
+const MAX_QUESTIONS_PER_TEMA = 6;
+const MAX_QUESTIONS_PER_CLASS = 5;
 
 /**
  * Normaliza una pregunta para agrupar consultas idénticas sin romperla en
@@ -67,13 +80,47 @@ app.http('get-teacher-analytics', {
 
             // Para el piloto, cargamos los ultimos 200 logs para evitar timeouts
             const recentBlobs = subjectBlobs.reverse().slice(0, 200);
-            
+
+            // Temario de la unidad (#420): los temas que la unidad declara
+            // encuentro por encuentro (`classes[].topics`). No hay mapa propio:
+            // si la unidad no declara temas, todo cae en «sin tema».
+            let temario = [];
+            let temarioEncuentros = [];
+            try {
+                const classes = await listClassesBySubject(subjectId);
+                temario = buildTemario(classes);
+                temarioEncuentros = (classes || []).map((klass) => ({
+                    classId: klass.id,
+                    title: klass.title || klass.id,
+                    topics: Array.isArray(klass.topics) ? klass.topics : [],
+                }));
+            } catch (err) {
+                context.warn(`[Analytics] No se pudo leer el temario de ${subjectId}: ${err?.message || err}`);
+            }
+
+            // Reportes abiertos (#420): lo que espera respuesta de la cátedra
+            // también declara el origen de una consulta.
+            let pendingMessageIds = new Set();
+            try {
+                const pending = await listPendingCorrections(subjectId);
+                pendingMessageIds = new Set(
+                    (pending || []).map((correction) => String(correction.messageId || '')).filter(Boolean),
+                );
+            } catch (err) {
+                context.warn(`[Analytics] No se pudieron leer los reportes abiertos de ${subjectId}: ${err?.message || err}`);
+            }
+
             const questionMap = new Map();
             const frictionMap = new Map();
             // Lectura por encuentro (#420, UJ-50): agrupa las consultas por los
             // encuentros de su alcance (`classIds`) para poder leer qué se preguntó
             // en cada uno, no sólo el agregado de la unidad.
             const classMap = new Map();
+            // Agrupación por tema (#420, UJ-42): un tema declarado por la unidad
+            // reúne todas sus variantes de pregunta, con el origen declarado.
+            const temaMap = new Map();
+            const sinTemaEntry = { tema: SIN_TEMA_LABEL, key: SIN_TEMA, count: 0, origenes: emptyOriginCounts(), questions: new Map() };
+            const origenesTotales = emptyOriginCounts();
 
             for (const blobName of recentBlobs) {
                 const log = await loadJson(CONTAINER_CHAT, blobName);
@@ -85,9 +132,28 @@ app.http('get-teacher-analytics', {
                 if (!rawQuestion) continue;
                 const key = normalizeQuestion(rawQuestion);
                 const display = rawQuestion.length > 140 ? `${rawQuestion.slice(0, 140)}…` : rawQuestion;
-                const questionEntry = questionMap.get(key) || { text: display, count: 0 };
+                const origenes = originsOfLog(log, { pendingMessageIds });
+                countOrigins(origenesTotales, origenes);
+                const tema = classifyByTopic(rawQuestion, temario);
+                const temaLabel = tema ? tema.tema : SIN_TEMA_LABEL;
+                const temaKey = tema ? tema.key : SIN_TEMA;
+
+                const questionEntry = questionMap.get(key) || { text: display, count: 0, tema: temaLabel, temaKey, origenes: new Set() };
                 questionEntry.count++;
+                origenes.forEach((origen) => questionEntry.origenes.add(origen));
                 questionMap.set(key, questionEntry);
+
+                // Tema: el grupo es el tema declarado, no el texto de la pregunta.
+                const temaEntry = tema
+                    ? (temaMap.get(temaKey) || { tema: tema.tema, key: temaKey, declaredIn: [...tema.declaredIn], count: 0, origenes: emptyOriginCounts(), questions: new Map() })
+                    : sinTemaEntry;
+                temaEntry.count++;
+                countOrigins(temaEntry.origenes, origenes);
+                const temaQuestion = temaEntry.questions.get(key) || { text: display, count: 0, origenes: new Set() };
+                temaQuestion.count++;
+                origenes.forEach((origen) => temaQuestion.origenes.add(origen));
+                temaEntry.questions.set(key, temaQuestion);
+                if (tema) temaMap.set(temaKey, temaEntry);
 
                 // Cada consulta se atribuye a los encuentros de su alcance. `all`
                 // no es un encuentro: es "toda la unidad", así que no entra acá.
@@ -95,47 +161,99 @@ app.http('get-teacher-analytics', {
                     .map((c) => String(c || '').trim())
                     .filter((c) => c && c !== 'all');
                 for (const classId of logClasses) {
-                    const classEntry = classMap.get(classId) || { classId, questionCount: 0, questions: new Map() };
+                    const classEntry = classMap.get(classId) || {
+                        classId,
+                        questionCount: 0,
+                        questions: new Map(),
+                        temas: new Map(),
+                        origenes: emptyOriginCounts(),
+                    };
                     classEntry.questionCount++;
-                    const classQuestion = classEntry.questions.get(key) || { text: display, count: 0 };
+                    countOrigins(classEntry.origenes, origenes);
+                    const classQuestion = classEntry.questions.get(key) || { text: display, count: 0, origenes: new Set() };
                     classQuestion.count++;
+                    origenes.forEach((origen) => classQuestion.origenes.add(origen));
                     classEntry.questions.set(key, classQuestion);
+
+                    const classTema = classEntry.temas.get(temaKey) || {
+                        tema: temaLabel,
+                        key: temaKey,
+                        count: 0,
+                        origenes: emptyOriginCounts(),
+                    };
+                    classTema.count++;
+                    countOrigins(classTema.origenes, origenes);
+                    classEntry.temas.set(temaKey, classTema);
                     classMap.set(classId, classEntry);
                 }
 
                 // Friction Topics: la pregunta completa con feedback es el tópico.
                 if (log.feedback === 'negative' || log.feedback === 'positive') {
                     const topicDisplay = rawQuestion.length > 80 ? `${rawQuestion.slice(0, 80)}…` : rawQuestion;
-                    const stats = frictionMap.get(key) || { topic: topicDisplay, queries: 0, unresolved: 0 };
+                    const stats = frictionMap.get(key) || { topic: topicDisplay, queries: 0, unresolved: 0, tema: temaLabel, temaKey, origenes: new Set() };
                     stats.queries++;
+                    origenes.forEach((origen) => stats.origenes.add(origen));
                     if (log.feedback === 'negative') stats.unresolved++;
                     frictionMap.set(key, stats);
                 }
             }
 
+            const toOriginArray = (set) => {
+                const order = [ORIGENES.SIN_MATERIAL, ORIGENES.VALORACION_BAJA, ORIGENES.REPORTE_ABIERTO, ORIGENES.SIN_SENAL];
+                return order.filter((origen) => set?.has?.(origen));
+            };
+
             // Formatear resultados para el frontend
             const topQuestions = Array.from(questionMap.values())
+                .map((entry) => ({ ...entry, origenes: toOriginArray(entry.origenes) }))
                 .sort((a, b) => b.count - a.count)
                 .slice(0, 10);
 
             const frictionTopics = Array.from(frictionMap.values())
+                .map((entry) => ({ ...entry, origenes: toOriginArray(entry.origenes) }))
                 .sort((a, b) => b.unresolved - a.unresolved)
                 .slice(0, 4);
 
-            // Lectura por encuentro (#420, UJ-50): cada encuentro con sus consultas.
+            const formatTema = (entry, limit) => ({
+                tema: entry.tema,
+                key: entry.key,
+                declaredIn: entry.declaredIn || [],
+                count: entry.count,
+                origenes: entry.origenes,
+                questions: Array.from(entry.questions.values())
+                    .map((question) => ({ text: question.text, count: question.count, origenes: toOriginArray(question.origenes) }))
+                    .sort((a, b) => b.count - a.count)
+                    .slice(0, limit),
+                questionVariants: entry.questions.size,
+            });
+
+            // Temas de la unidad, ordenados por volumen: los temas que se repiten
+            // primero, las preguntas sueltas en el grupo explícito «sin tema».
+            const topics = Array.from(temaMap.values())
+                .sort((a, b) => b.count - a.count || a.tema.localeCompare(b.tema, 'es'))
+                .map((entry) => formatTema(entry, MAX_QUESTIONS_PER_TEMA));
+
+            const sinTema = formatTema(sinTemaEntry, MAX_QUESTIONS_PER_TEMA);
+
+            // Lectura por encuentro (#420, UJ-50): cada encuentro con sus consultas
+            // y sus temas, no sólo el agregado de la unidad.
             const byClass = Array.from(classMap.values())
                 .sort((a, b) => String(a.classId).localeCompare(String(b.classId)))
                 .map((entry) => ({
                     classId: entry.classId,
                     questionCount: entry.questionCount,
+                    origenes: entry.origenes,
+                    topics: Array.from(entry.temas.values())
+                        .sort((a, b) => b.count - a.count || a.tema.localeCompare(b.tema, 'es')),
                     topQuestions: Array.from(entry.questions.values())
+                        .map((question) => ({ text: question.text, count: question.count, origenes: toOriginArray(question.origenes) }))
                         .sort((a, b) => b.count - a.count)
-                        .slice(0, 5),
+                        .slice(0, MAX_QUESTIONS_PER_CLASS),
                 }));
 
             // Fallback si no hay datos
             if (topQuestions.length === 0) {
-                topQuestions.push({ text: 'Sin datos aún', count: 1 });
+                topQuestions.push({ text: 'Sin datos aún', count: 1, tema: SIN_TEMA_LABEL, temaKey: SIN_TEMA, origenes: [] });
             }
 
             return {
@@ -144,7 +262,17 @@ app.http('get-teacher-analytics', {
                 body: JSON.stringify({
                     topQuestions,
                     frictionTopics,
-                    byClass
+                    byClass,
+                    // De dónde sale la agrupación: el temario de la unidad y el
+                    // origen de cada pregunta (UJ-42).
+                    temario: {
+                        source: 'classes.topics',
+                        totalTemas: temario.length,
+                        encuentros: temarioEncuentros,
+                    },
+                    topics,
+                    sinTema,
+                    origenes: { labels: ORIGEN_LABELS, totales: origenesTotales, consultas: Array.from(questionMap.values()).reduce((sum, q) => sum + q.count, 0) },
                 })
             };
 
