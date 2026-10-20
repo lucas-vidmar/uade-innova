@@ -18,6 +18,12 @@ const QUIZ_RESULTS_TABLE = CONFIG.tables.quizResults;
 const QUIZZES_TABLE = CONFIG.tables.quizzes;
 const QUIZ_ATTEMPTS_TABLE = CONFIG.tables.quizAttempts;
 const QUIZ_WEAK_TOPICS_TABLE = CONFIG.tables.quizWeakTopics;
+// #445 (UJ-32): práctica compartida del grupo. Tres tablas con vidas distintas:
+// el cuestionario emitido (uno por grupo y alcance), la respuesta de cada
+// integrante (una por persona) y el acta del resultado común que el grupo asienta.
+const GROUP_QUIZZES_TABLE = CONFIG.tables.groupQuizzes;
+const GROUP_QUIZ_RESPONSES_TABLE = CONFIG.tables.groupQuizResponses;
+const GROUP_QUIZ_RECORDS_TABLE = CONFIG.tables.groupQuizRecords;
 
 const ensuredTables = new Set();
 
@@ -1422,6 +1428,221 @@ export async function getQuizWeakTopics(subjectId, userId, classId) {
   try {
     const entity = await client.getEntity(subjectId, `${userId}__${classId}`);
     return fromQuizWeakTopicsEntity(entity);
+  } catch {
+    return null;
+  }
+}
+
+// ─── Group Quizzes (práctica compartida del grupo, #445 / UJ-32) ───
+// La práctica individual se guarda por persona (`userId__classId`). La del grupo
+// es un objeto propio: un cuestionario emitido UNA vez para la cohorte de la
+// materia, la respuesta de cada integrante y el acta del resultado común. El
+// cuestionario guarda las respuestas correctas (igual que `Quizzes`): el intento
+// se corrige en el servidor contra ese registro.
+
+function toGroupQuizEntity(quiz) {
+  return compactObject({
+    partitionKey: quiz.subjectId,
+    rowKey: quiz.groupQuizId,
+    scope: quiz.scope || 'class',
+    classId: quiz.classId,
+    classIds: JSON.stringify(quiz.classIds || []),
+    questions: JSON.stringify(quiz.questions || []),
+    questionCount: quiz.questionCount,
+    // Tamaño del grupo con el que se emitió: el acta lo usa como denominador,
+    // aunque después alguien se matricule o deje la materia.
+    memberCount: quiz.memberCount,
+    createdBy: quiz.createdBy,
+    createdAt: quiz.createdAt || new Date().toISOString(),
+    expiresAt: quiz.expiresAt,
+  });
+}
+
+function fromGroupQuizEntity(entity) {
+  let questions = [];
+  let classIds = [];
+  try { questions = JSON.parse(entity.questions || '[]'); } catch { questions = []; }
+  try { classIds = JSON.parse(entity.classIds || '[]'); } catch { classIds = []; }
+  return {
+    subjectId: entity.partitionKey,
+    groupQuizId: entity.rowKey,
+    scope: entity.scope || 'class',
+    classId: entity.classId,
+    classIds: Array.isArray(classIds) ? classIds : [],
+    questions: Array.isArray(questions) ? questions : [],
+    questionCount: Number(entity.questionCount || (Array.isArray(questions) ? questions.length : 0)),
+    memberCount: Number(entity.memberCount || 0),
+    createdBy: entity.createdBy || '',
+    createdAt: entity.createdAt,
+    expiresAt: entity.expiresAt,
+  };
+}
+
+export async function saveGroupQuiz(quiz) {
+  if (!quiz?.subjectId || !quiz?.groupQuizId) {
+    throw new Error('saveGroupQuiz requires subjectId and groupQuizId');
+  }
+  await ensureTable(GROUP_QUIZZES_TABLE);
+  const client = getTableClient(GROUP_QUIZZES_TABLE);
+  const entity = toGroupQuizEntity(quiz);
+  await client.upsertEntity(entity, 'Replace');
+  return fromGroupQuizEntity(entity);
+}
+
+export async function getGroupQuiz(subjectId, groupQuizId) {
+  if (!subjectId || !groupQuizId) return null;
+  await ensureTable(GROUP_QUIZZES_TABLE);
+  const client = getTableClient(GROUP_QUIZZES_TABLE);
+  try {
+    return fromGroupQuizEntity(await client.getEntity(subjectId, groupQuizId));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * La práctica compartida vigente para un alcance. Es la pieza que hace que el
+ * conjunto sea el mismo para todas: la primera persona que abre la práctica la
+ * genera, y las demás encuentran ésa en vez de una nueva.
+ */
+export async function findOpenGroupQuiz(subjectId, scope, classId, nowMs = Date.now()) {
+  if (!subjectId || !scope || !classId) return null;
+  const entities = await queryByPartition(GROUP_QUIZZES_TABLE, subjectId);
+  const open = entities
+    .map(fromGroupQuizEntity)
+    .filter((q) => q.scope === scope && q.classId === classId)
+    .filter((q) => !q.expiresAt || Date.parse(q.expiresAt) > nowMs)
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  return open[0] || null;
+}
+
+export async function listGroupQuizzesBySubject(subjectId) {
+  if (!subjectId) return [];
+  const entities = await queryByPartition(GROUP_QUIZZES_TABLE, subjectId);
+  return entities.map(fromGroupQuizEntity);
+}
+
+function toGroupQuizResponseEntity(response) {
+  return compactObject({
+    // La partición es la práctica compartida: así la comparación lee todas las
+    // respuestas de ese conjunto con una sola consulta, sin recorrer la materia.
+    partitionKey: response.groupQuizId,
+    rowKey: response.userId,
+    subjectId: response.subjectId,
+    classId: response.classId,
+    score: response.score,
+    totalQuestions: response.totalQuestions,
+    correctCount: response.correctCount,
+    passed: response.passed === true,
+    weakTopics: JSON.stringify(response.weakTopics || []),
+    answers: JSON.stringify(response.answers || []),
+    submittedAt: response.submittedAt || new Date().toISOString(),
+  });
+}
+
+function fromGroupQuizResponseEntity(entity) {
+  let weakTopics = [];
+  let answers = [];
+  try { weakTopics = JSON.parse(entity.weakTopics || '[]'); } catch { weakTopics = []; }
+  try { answers = JSON.parse(entity.answers || '[]'); } catch { answers = []; }
+  return {
+    groupQuizId: entity.partitionKey,
+    subjectId: entity.subjectId,
+    userId: entity.rowKey,
+    classId: entity.classId,
+    score: Number(entity.score || 0),
+    totalQuestions: Number(entity.totalQuestions || 0),
+    correctCount: Number(entity.correctCount || 0),
+    passed: entity.passed === true,
+    weakTopics: Array.isArray(weakTopics) ? weakTopics : [],
+    answers: Array.isArray(answers) ? answers : [],
+    submittedAt: entity.submittedAt,
+  };
+}
+
+export async function upsertGroupQuizResponse(response) {
+  if (!response?.groupQuizId || !response?.userId || !response?.subjectId) {
+    throw new Error('upsertGroupQuizResponse requires groupQuizId, userId, and subjectId');
+  }
+  await ensureTable(GROUP_QUIZ_RESPONSES_TABLE);
+  const client = getTableClient(GROUP_QUIZ_RESPONSES_TABLE);
+  const entity = toGroupQuizResponseEntity(response);
+  await client.upsertEntity(entity, 'Replace');
+  return fromGroupQuizResponseEntity(entity);
+}
+
+export async function getGroupQuizResponse(groupQuizId, userId) {
+  if (!groupQuizId || !userId) return null;
+  await ensureTable(GROUP_QUIZ_RESPONSES_TABLE);
+  const client = getTableClient(GROUP_QUIZ_RESPONSES_TABLE);
+  try {
+    return fromGroupQuizResponseEntity(await client.getEntity(groupQuizId, userId));
+  } catch {
+    return null;
+  }
+}
+
+export async function listGroupQuizResponses(groupQuizId) {
+  if (!groupQuizId) return [];
+  const entities = await queryByPartition(GROUP_QUIZ_RESPONSES_TABLE, groupQuizId);
+  return entities.map(fromGroupQuizResponseEntity);
+}
+
+function toGroupQuizRecordEntity(record) {
+  return compactObject({
+    partitionKey: record.groupQuizId,
+    // Una sola acta por práctica compartida: se reemplaza (con revisión) cuando
+    // el grupo vuelve a asentar el resultado común tras nuevas respuestas.
+    rowKey: 'acta',
+    subjectId: record.subjectId,
+    revision: record.revision || 1,
+    respondedCount: record.respondedCount,
+    memberCount: record.memberCount,
+    agreed: JSON.stringify(record.agreed || []),
+    disagreed: JSON.stringify(record.disagreed || []),
+    coincidieronEnIncorrecta: JSON.stringify(record.coincidieronEnIncorrecta || []),
+    consultTopics: JSON.stringify(record.consultTopics || []),
+    recordedBy: record.recordedBy,
+    recordedAt: record.recordedAt || new Date().toISOString(),
+  });
+}
+
+function fromGroupQuizRecordEntity(entity) {
+  const parse = (value) => {
+    try { return JSON.parse(value || '[]'); } catch { return []; }
+  };
+  return {
+    groupQuizId: entity.partitionKey,
+    subjectId: entity.subjectId,
+    revision: Number(entity.revision || 1),
+    respondedCount: Number(entity.respondedCount || 0),
+    memberCount: Number(entity.memberCount || 0),
+    agreed: parse(entity.agreed),
+    disagreed: parse(entity.disagreed),
+    coincidieronEnIncorrecta: parse(entity.coincidieronEnIncorrecta),
+    consultTopics: parse(entity.consultTopics),
+    recordedBy: entity.recordedBy || '',
+    recordedAt: entity.recordedAt,
+  };
+}
+
+export async function upsertGroupQuizRecord(record) {
+  if (!record?.groupQuizId || !record?.subjectId) {
+    throw new Error('upsertGroupQuizRecord requires groupQuizId and subjectId');
+  }
+  await ensureTable(GROUP_QUIZ_RECORDS_TABLE);
+  const client = getTableClient(GROUP_QUIZ_RECORDS_TABLE);
+  const entity = toGroupQuizRecordEntity(record);
+  await client.upsertEntity(entity, 'Replace');
+  return fromGroupQuizRecordEntity(entity);
+}
+
+export async function getGroupQuizRecord(groupQuizId) {
+  if (!groupQuizId) return null;
+  await ensureTable(GROUP_QUIZ_RECORDS_TABLE);
+  const client = getTableClient(GROUP_QUIZ_RECORDS_TABLE);
+  try {
+    return fromGroupQuizRecordEntity(await client.getEntity(groupQuizId, 'acta'));
   } catch {
     return null;
   }

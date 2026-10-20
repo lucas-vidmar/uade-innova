@@ -27,6 +27,13 @@ export const CONFIG = {
     quizzes: process.env.AZURE_TABLE_QUIZZES || 'Quizzes',
     quizAttempts: process.env.AZURE_TABLE_QUIZ_ATTEMPTS || 'QuizAttempts',
     quizWeakTopics: process.env.AZURE_TABLE_QUIZ_WEAK_TOPICS || 'QuizWeakTopics',
+    // #445 (UJ-32): la práctica compartida del grupo vive en tablas propias.
+    // El cuestionario emitido (con sus respuestas correctas), las respuestas
+    // individuales de cada integrante y el acta del resultado común no son el
+    // resultado individual de nadie: mezclarlos rompería la práctica de siempre.
+    groupQuizzes: process.env.AZURE_TABLE_GROUP_QUIZZES || 'GroupQuizzes',
+    groupQuizResponses: process.env.AZURE_TABLE_GROUP_QUIZ_RESPONSES || 'GroupQuizResponses',
+    groupQuizRecords: process.env.AZURE_TABLE_GROUP_QUIZ_RECORDS || 'GroupQuizRecords',
     unansweredQueries: process.env.AZURE_TABLE_UNANSWERED_QUERIES || 'UnansweredQueries',
     adminSettings: process.env.AZURE_TABLE_ADMIN_SETTINGS || 'AdminSettings',
     users: process.env.AZURE_TABLE_USERS || 'Users',

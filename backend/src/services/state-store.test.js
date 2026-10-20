@@ -80,6 +80,14 @@ const {
   upsertQuizResult,
   getQuizResult,
   listQuizResultsBySubject,
+  saveGroupQuiz,
+  getGroupQuiz,
+  findOpenGroupQuiz,
+  upsertGroupQuizResponse,
+  getGroupQuizResponse,
+  listGroupQuizResponses,
+  upsertGroupQuizRecord,
+  getGroupQuizRecord,
   listAllMaterials,
   listAllClasses,
   listAllEnrollments,
@@ -322,4 +330,95 @@ test('state-store guarda classIds planos aunque lleguen anidados como texto (#57
   assert.strictEqual(byClass.length, 1, 'el material debe quedar ligado a su clase');
   assert.strictEqual(byClass[0].materialId, 'mat-anidado');
   assert.deepStrictEqual(byClass[0].classIds, ['class-01']);
+});
+
+test('state-store guarda la práctica compartida, sus respuestas y su acta', async () => {
+  tableData.GroupQuizzes = [];
+  tableData.GroupQuizResponses = [];
+  tableData.GroupQuizRecords = [];
+
+  const questions = [
+    { id: 'q1', question: 'P1', options: ['a', 'b'], correctIndex: 1, topic: 'Tema A' },
+    { id: 'q2', question: 'P2', options: ['a', 'b'], correctIndex: 0, topic: 'Tema B' },
+  ];
+  await saveGroupQuiz({
+    subjectId: 'sub-g',
+    groupQuizId: 'gq-1',
+    scope: 'class',
+    classId: 'class-a',
+    classIds: ['class-a'],
+    questions,
+    memberCount: 3,
+    createdBy: 'alu-001',
+    createdAt: '2026-10-20T10:00:00.000Z',
+    expiresAt: '2026-10-27T10:00:00.000Z',
+  });
+
+  const guardada = await getGroupQuiz('sub-g', 'gq-1');
+  assert.strictEqual(guardada.groupQuizId, 'gq-1');
+  assert.strictEqual(guardada.questionCount, 2);
+  assert.strictEqual(guardada.memberCount, 3);
+  assert.deepStrictEqual(guardada.questions.map((q) => q.id), ['q1', 'q2']);
+
+  // Es la misma práctica abierta para el mismo alcance: eso es lo que hace que
+  // el conjunto sea el mismo para todo el grupo.
+  const abierta = await findOpenGroupQuiz('sub-g', 'class', 'class-a', Date.parse('2026-10-21T10:00:00.000Z'));
+  assert.strictEqual(abierta?.groupQuizId, 'gq-1');
+  // Vencida no se reutiliza: hay que emitir una nueva.
+  const vencida = await findOpenGroupQuiz('sub-g', 'class', 'class-a', Date.parse('2026-10-28T10:00:00.000Z'));
+  assert.strictEqual(vencida, null);
+  const otroAlcance = await findOpenGroupQuiz('sub-g', 'unit', '__unit__', Date.parse('2026-10-21T10:00:00.000Z'));
+  assert.strictEqual(otroAlcance, null);
+
+  await upsertGroupQuizResponse({
+    subjectId: 'sub-g',
+    groupQuizId: 'gq-1',
+    userId: 'alu-001',
+    classId: 'class-a',
+    score: 50,
+    totalQuestions: 2,
+    correctCount: 1,
+    passed: false,
+    weakTopics: ['Tema B'],
+    answers: [{ questionId: 'q1', selectedIndex: 1, isCorrect: true }],
+  });
+  await upsertGroupQuizResponse({
+    subjectId: 'sub-g',
+    groupQuizId: 'gq-1',
+    userId: 'alu-003',
+    classId: 'class-a',
+    score: 0,
+    totalQuestions: 2,
+    correctCount: 0,
+    passed: false,
+    weakTopics: ['Tema A', 'Tema B'],
+    answers: [{ questionId: 'q1', selectedIndex: 0, isCorrect: false }],
+  });
+
+  const propia = await getGroupQuizResponse('gq-1', 'alu-001');
+  assert.strictEqual(propia.score, 50);
+  assert.deepStrictEqual(propia.weakTopics, ['Tema B']);
+  const delGrupo = await listGroupQuizResponses('gq-1');
+  assert.strictEqual(delGrupo.length, 2);
+  assert.deepStrictEqual(delGrupo.map((r) => r.userId).sort(), ['alu-001', 'alu-003']);
+
+  await upsertGroupQuizRecord({
+    subjectId: 'sub-g',
+    groupQuizId: 'gq-1',
+    revision: 1,
+    respondedCount: 2,
+    memberCount: 3,
+    agreed: [],
+    disagreed: [{ questionId: 'q1', topic: 'Tema A', distribution: [1, 1], correctIndex: 1 }],
+    coincidieronEnIncorrecta: [],
+    consultTopics: [{ topic: 'Tema A', questionCount: 1 }],
+    recordedBy: 'alu-003',
+  });
+
+  const acta = await getGroupQuizRecord('gq-1');
+  assert.strictEqual(acta.revision, 1);
+  assert.strictEqual(acta.respondedCount, 2);
+  assert.strictEqual(acta.memberCount, 3);
+  assert.deepStrictEqual(acta.consultTopics, [{ topic: 'Tema A', questionCount: 1 }]);
+  assert.deepStrictEqual(acta.disagreed[0].distribution, [1, 1]);
 });
