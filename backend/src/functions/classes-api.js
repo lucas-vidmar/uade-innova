@@ -27,6 +27,7 @@ import {
     PublicationStateError,
 } from '../services/class-publication.js';
 import { computeClassProcessingStats } from '../services/class-processing.js';
+import { buildAdoptionReading } from '../services/adoption-dimensions.js';
 import { recordMaterialDeletion, readDeclaredSoftDeleteDays, buildDeletionRecordId, DELETED_CONTAINER_PURGE_DAYS } from '../services/deletion-audit-store.js';
 import {
     applyRetirementChange,
@@ -447,16 +448,21 @@ export async function computeDirectorMetrics(context, requestedDays = POWERBI_DE
     const prevWeekStartIso = toIsoDate(prevWeekStart);
 
     const wausBySubject = {};
+    const activeUserIdsBySubject = {};
     for (const [key, sb] of subjectBuckets) {
         const sid = safeObjectKey(sb.subjectId);
         if (!wausBySubject[sid]) {
             wausBySubject[sid] = { subjectId: sid, subjectName: subjectNames[sid] || sid, currentWeek: new Set(), previousWeek: new Set() };
         }
+        if (!activeUserIdsBySubject[sid]) activeUserIdsBySubject[sid] = new Set();
         if (sb.date >= weekStartIso) {
             sb._users.forEach(u => wausBySubject[sid].currentWeek.add(u));
         } else if (sb.date >= prevWeekStartIso && sb.date < weekStartIso) {
             sb._users.forEach(u => wausBySubject[sid].previousWeek.add(u));
         }
+        // #491: la lectura de adopción necesita saber QUIÉN usó cada unidad en la
+        // ventana, no sólo cuántos, para no contar personas ajenas a la cohorte.
+        sb._users.forEach(u => activeUserIdsBySubject[sid].add(u));
     }
 
     const byTeacher = Object.values(materialUploadsByTeacher);
@@ -489,7 +495,17 @@ export async function computeDirectorMetrics(context, requestedDays = POWERBI_DE
             subjectName: w.subjectName,
             currentWeek: w.currentWeek.size,
             previousWeek: w.previousWeek.size,
+            // #491: personas distintas con uso en la ventana de la lectura.
+            activeUsers: activeUserIdsBySubject[w.subjectId]
+                ? activeUserIdsBySubject[w.subjectId].size
+                : 0,
         })),
+        // #491 (UJ-43): quiénes usaron cada unidad dentro de la ventana. La
+        // lectura de adopción cruza esta lista con la cohorte para no contar a
+        // quien no pertenece a la unidad.
+        activeUserIdsBySubject: Object.fromEntries(
+            Object.entries(activeUserIdsBySubject).map(([sid, users]) => [sid, Array.from(users)]),
+        ),
         materialUploads: {
             byTeacher,
         },
@@ -2231,6 +2247,76 @@ app.http('set-class-publication-state', {
 
 // ── GET /api/director/stats ──────────────────────────────────────
 // Devuelve métricas agregadas para el dashboard del director
+/**
+ * #491 (UJ-43 / DI-01): lectura de adopción desagregada por unidad, sede y
+ * carrera. Es la única fuente del corte: la usan el panel y la exportación para
+ * que las dos superficies devuelvan el mismo cuadro con las mismas dimensiones.
+ *
+ * Las dimensiones viven en la matrícula y en el perfil (no en la unidad): la
+ * unidad declara su carrera pero no su sede, porque una misma unidad puede
+ * dictarse en más de una sede. Si la fuente falla, la lectura se devuelve con la
+ * cohorte vacía y el error declarado — nunca con números inventados.
+ */
+export async function buildDirectorAdoptionReading(context, { metrics = {}, subjects = [] } = {}) {
+    const sourceState = {
+        enrollments: { readable: false, error: null },
+        profiles: { readable: false, error: null },
+    };
+    let enrollments = [];
+    let profiles = new Map();
+
+    try {
+        const stateStore = await import('../services/state-store.js');
+        if (typeof stateStore.listAllEnrollments === 'function') {
+            enrollments = await stateStore.listAllEnrollments();
+            sourceState.enrollments.readable = true;
+        }
+    } catch (err) {
+        sourceState.enrollments.error = err.message;
+        context.log.warn(`[director/stats] Could not read enrollments for adoption reading: ${err.message}`);
+    }
+
+    try {
+        const stateStore = await import('../services/state-store.js');
+        if (typeof stateStore.listProfileDimensions === 'function') {
+            profiles = await stateStore.listProfileDimensions();
+            sourceState.profiles.readable = true;
+        }
+    } catch (err) {
+        sourceState.profiles.error = err.message;
+        context.log.warn(`[director/stats] Could not read profile dimensions: ${err.message}`);
+    }
+
+    const reading = buildAdoptionReading({
+        subjects,
+        enrollments,
+        profiles,
+        activeUserIdsBySubject: metrics.activeUserIdsBySubject || {},
+        windowDays: metrics.windowDays || null,
+        generatedAt: new Date().toISOString(),
+    });
+    reading.sources = {
+        cohort: {
+            table: 'Enrollments',
+            filter: 'role=student AND status=active',
+            readable: sourceState.enrollments.readable,
+            error: sourceState.enrollments.error,
+        },
+        dimensions: {
+            tables: ['Enrollments', 'UserProfiles'],
+            subjectAttribute: 'classes-config/subjects.json (track)',
+            readable: sourceState.enrollments.readable && sourceState.profiles.readable,
+            error: sourceState.enrollments.error || sourceState.profiles.error,
+        },
+        usage: {
+            table: SESSION_METRICS_TABLE,
+            readable: !metrics.readError,
+            error: metrics.readError || null,
+        },
+    };
+    return reading;
+}
+
 app.http('get-director-stats', {
     methods: ['GET'],
     authLevel: 'anonymous',
@@ -2269,30 +2355,26 @@ app.http('get-director-stats', {
         const costPerActiveStudent = uniqueActiveUsers > 0 ? Number((effectiveTotalCost / uniqueActiveUsers).toFixed(6)) : 0;
 
         const allSubjects = (await loadSubjects()) || [];
-        const subjectAdoption = allSubjects.map(s => ({
-            name: s.name,
-            rate: Math.min(100, Math.round((metrics.wausBySubject.find(w => w.subjectId === s.id)?.currentWeek || 0) / Math.max(Object.values(metrics.wausBySubject).reduce((sum, w) => sum + w.currentWeek, 0) || 1, 1) * 100)),
+        // #491 (UJ-43): la lectura de adopción se arma una sola vez y alimenta
+        // los tres cortes (unidad, sede, carrera). `subjectAdoption` ya no es la
+        // cuota de WAUS de la semana: es adopción real por unidad (personas de la
+        // cohorte con uso / cohorte de la unidad) y viaja con su denominador.
+        const adoption = await buildDirectorAdoptionReading(context, { metrics, subjects: allSubjects });
+        const subjectAdoption = adoption.dimensions.subject.rows.map((row) => ({
+            subjectId: row.key,
+            name: row.label,
+            rate: row.rate,
+            cohort: row.cohort,
+            activeUsers: row.active,
         }));
-        // Adoption base = real active student enrollments. The previous
-        // `s.enrolledCount || 60` (plus a 60 seed) fabricated a 60-student
-        // cohort per subject and produced percentages with no source (#417).
-        let enrolledBase = 0;
-        try {
-            const stateStore = await import('../services/state-store.js');
-            if (typeof stateStore.countActiveStudentEnrollments === 'function') {
-                enrolledBase = await stateStore.countActiveStudentEnrollments();
-            }
-        } catch (err) {
-            context.log.warn(`[director/stats] Could not count enrollments: ${err.message}`);
+        // Base de adopción = matrículas activas de rol student (nunca un
+        // denominador inventado, #417). Si el conteo real no existe se informa el
+        // que declare la unidad; si tampoco hay, la tasa queda en null.
+        let adoptionCohort = adoption.dimensions.subject.total.cohort;
+        if (adoptionCohort <= 0) {
+            adoptionCohort = allSubjects.reduce((sum, s) => sum + (Number(s.enrolledCount) || 0), 0);
         }
-        if (enrolledBase <= 0) {
-            // Only fall back to a subject-declared count when it actually
-            // exists — never invent one.
-            enrolledBase = allSubjects.reduce((sum, s) => sum + (Number(s.enrolledCount) || 0), 0);
-        }
-        const adoptionRate = uniqueActiveUsers > 0 && enrolledBase > 0
-            ? Math.min(100, Math.round(uniqueActiveUsers / enrolledBase * 100))
-            : 0;
+        const adoptionRate = adoption.dimensions.subject.total.rate;
 
         // #419 (UJ-43): "cargadas" es el total de clases registradas; "procesadas"
         // se calcula con el criterio acordado (al menos un derivado avalado por el
@@ -2313,6 +2395,15 @@ app.http('get-director-stats', {
                 ragInteractions: metrics.latest.ragInteractions,
                 ragDelta: metrics.deltas.ragInteractions,
                 adoptionRate,
+                adoptionCohort,
+                // #491 (UJ-43): lectura desagregada por unidad, sede y carrera,
+                // cada dimensión con su propio total y los huecos declarados.
+                adoptionByDimension: adoption.dimensions,
+                adoptionCriteria: adoption.criteria,
+                adoptionWindowDays: adoption.windowDays,
+                adoptionIntegrity: adoption.integrity,
+                adoptionGaps: adoption.gaps,
+                adoptionSources: adoption.sources,
                 subjectAdoption,
                 earlyAlertSummary,
                 _earlyAlertSource: 'Interventions table (login/engagement risk). Attendance and grade cuts are not reported: no academic-system source (#467).',

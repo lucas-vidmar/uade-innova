@@ -52,6 +52,16 @@ export async function renderDirectorDashboard(container) {
     const processedClassesCriteria = data.processedClassesCriteria
         || 'Clase procesada: tiene al menos una síntesis o un mapa avalado por el docente. Una clase con material cargado pero sin derivado avalado cuenta como cargada, no como procesada.';
 
+    // #491 (UJ-43 / DI-01): lectura de adopción desagregada por unidad, sede y
+    // carrera. Cada dimensión llega con su propio total desde el servidor; acá
+    // sólo se pinta. Si el servidor no la informa, se declara — no se rellena.
+    const adoptionDimensions = data.adoptionByDimension || null;
+    const adoptionGaps = Array.isArray(data.adoptionGaps) ? data.adoptionGaps : [];
+    const adoptionCriteria = data.adoptionCriteria || '';
+    const adoptionIntegrity = data.adoptionIntegrity || null;
+    const adoptionRateKnown = data.adoptionRate !== null && data.adoptionRate !== undefined;
+    const adoptionCohort = Number.isFinite(Number(data.adoptionCohort)) ? Number(data.adoptionCohort) : null;
+
     container.innerHTML = `
     <!-- Export controls -->
     <div style="display:flex;justify-content:flex-end;gap:var(--space-3);margin-bottom:var(--space-4)" id="kpi-export-bar">
@@ -111,14 +121,27 @@ export async function renderDirectorDashboard(container) {
         ${processedClassesKnown ? '' : '<small style="display:block;margin-top:var(--space-1);font-size:11px;color:var(--color-warning)">El servidor no informa este conteo: no calculable.</small>'}
         ${processedClassesNotComputable > 0 ? `<small style="display:block;margin-top:var(--space-1);font-size:11px;color:var(--color-text-muted)">${processedClassesNotComputable} clase(s) sin dato suficiente: no se cuentan.</small>` : ''}
       </div>
-      <div class="kpi-card">
+      <div class="kpi-card" id="kpi-adopcion-global">
         <div class="kpi-label">Adopción global</div>
-        <div class="kpi-value" style="color:var(--color-primary-light)">${data.adoptionRate || 0}%</div>
+        <div class="kpi-value" style="color:var(--color-primary-light)">${adoptionRateKnown ? `${data.adoptionRate}%` : '—'}</div>
+        ${adoptionRateKnown ? `
         <div class="progress-bar" style="margin-top:var(--space-2)">
-          <div class="progress-fill" style="--progress-value:${data.adoptionRate || 0}%"></div>
-        </div>
+          <div class="progress-fill" style="--progress-value:${data.adoptionRate}%"></div>
+        </div>` : `
+        <small style="display:block;margin-top:var(--space-2);font-size:11px;color:var(--color-warning)">Sin cohorte sobre la que calcular: no calculable.</small>`}
+        ${adoptionCohort !== null ? `<small style="display:block;margin-top:var(--space-1);font-size:11px;color:var(--color-text-secondary)">Cohorte: ${adoptionCohort} matrícula(s) activa(s)</small>` : ''}
       </div>
     </div>
+
+    <!-- #491 (UJ-43): lectura de adopción desagregada por unidad, sede y carrera -->
+    ${renderAdoptionDimensions({
+        dimensions: adoptionDimensions,
+        gaps: adoptionGaps,
+        criteria: adoptionCriteria,
+        integrity: adoptionIntegrity,
+        windowDays: data.adoptionWindowDays,
+        rateKnown: adoptionRateKnown,
+    })}
 
     <!-- Class views summary row -->
     <div class="grid-2" style="margin-bottom:var(--space-8)">
@@ -579,6 +602,27 @@ function buildKpiCsv(data) {
   lines.push('seccion,materia,semana_actual');
   (data.wausBySubject || []).forEach(s => push('WAUS', s.subjectName || s.subjectId, s.currentWeek || 0));
   lines.push('');
+  // #491 (UJ-43): mismas dimensiones que el panel, cada una con su total.
+  const dimensions = data.adoptionByDimension || null;
+  if (dimensions) {
+    lines.push('seccion,dimension,corte,cohorte,con_uso,tasa_pct');
+    for (const name of ['subject', 'campus', 'track']) {
+      const dimension = dimensions[name];
+      if (!dimension) continue;
+      (dimension.rows || []).forEach(row => {
+        const rate = row.rate === null || row.rate === undefined ? 'no calculable' : `${row.rate}%`;
+        lines.push(`Adopcion,${dimension.label || name},"${String(row.label || row.key).replace(/"/g, '""')}",${row.cohort},${row.active},${rate}`);
+      });
+      if (dimension.total) {
+        const rate = dimension.total.rate === null || dimension.total.rate === undefined ? 'no calculable' : `${dimension.total.rate}%`;
+        lines.push(`Adopcion,${dimension.label || name},TOTAL,${dimension.total.cohort},${dimension.total.active},${rate}`);
+      }
+    }
+    lines.push('');
+    lines.push('seccion,hueco,detalle');
+    (data.adoptionGaps || []).forEach(gap => lines.push(`Huecos de la lectura,${gap.reason || ''},"${String(gap.detail || '').replace(/"/g, '""')}"`));
+    lines.push('');
+  }
   lines.push('seccion,docente,transcripciones,presentaciones,apuntes,bibliografia,total');
   (data.materialUploads?.byTeacher || []).forEach(t => {
     push('Carga de materiales', t.teacherId, `${t.transcripts||0},${t.presentations||0},${t.notes||0},${t.bibliography||0},${t.total||0}`);
@@ -641,6 +685,27 @@ async function handleExportPdf(data) {
 function buildPrintHtml(data) {
   const t = (v) => String(v ?? '');
   const ea = data.earlyAlertSummary || {};
+  // #491 (UJ-43): el reporte imprimible lleva los mismos tres cortes del panel.
+  const admissionRate = (value) => (value === null || value === undefined ? 'no calculable' : `${value}%`);
+  const adoptionSection = (() => {
+    const dimensions = data.adoptionByDimension;
+    if (!dimensions) return '';
+    return ['subject', 'campus', 'track'].map((name) => {
+      const dimension = dimensions[name];
+      if (!dimension) return '';
+      const rows = (dimension.rows || []).map((row) =>
+        `<tr><td>${t(row.label)}${row.unassigned ? ' (sin dato)' : ''}</td><td>${row.cohort}</td><td>${row.active}</td><td>${admissionRate(row.rate)}</td></tr>`
+      ).join('');
+      const total = dimension.total
+        ? `<tr><th>${t(dimension.total.label || 'Total')}</th><th>${dimension.total.cohort}</th><th>${dimension.total.active}</th><th>${admissionRate(dimension.total.rate)}</th></tr>`
+        : '';
+      return `<h2>Adopci&oacute;n por ${t(String(dimension.label || name).toLowerCase())}</h2>
+        <table><thead><tr><th>Corte</th><th>Cohorte</th><th>Con uso</th><th>Tasa</th></tr></thead><tbody>${rows}${total}</tbody></table>`;
+    }).join('');
+  })();
+  const adoptionGaps = (data.adoptionGaps || []).map((gap) =>
+    `<li><strong>${t(gap.dimension)}</strong>: ${t(gap.detail || gap.reason)}</li>`
+  ).join('');
   const wausRows = (data.wausBySubject || []).map(s =>
     `<tr><td>${t(s.subjectName || s.subjectId)}</td><td>${s.currentWeek || 0}</td></tr>`
   ).join('');
@@ -688,6 +753,8 @@ function buildPrintHtml(data) {
     <tr><td>Riesgo medio</td><td>${t(ea.mediumRiskCount)}</td></tr>
     <tr><td>Asistencia y promedio</td><td>sin fuente</td></tr>
   </tbody></table>
+  ${adoptionSection}
+  ${adoptionGaps ? `<h2>Huecos de la lectura</h2><ul style="font-size:9pt;color:#64748b">${adoptionGaps}</ul>` : ''}
   <div class="footer">Datos anonimizados, sin PII.</div>
 </body></html>`;
 }
@@ -744,6 +811,91 @@ function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = String(str || '');
   return div.innerHTML;
+}
+
+/**
+ * #491 (UJ-43 / DI-01): pintado de la lectura de adopción por unidad, sede y
+ * carrera. Cada dimensión trae su propio total del servidor y se muestra tal
+ * cual: la fila «sin declarar» no se esconde y los huecos se listan debajo.
+ */
+function renderAdoptionDimensions({ dimensions, gaps = [], criteria = '', integrity = null, windowDays = null, rateKnown = true } = {}) {
+  const label = 'Adopción por unidad, sede y carrera';
+  if (!dimensions) {
+    return `
+    <div class="card" id="director-adoption-dimensions" style="margin-bottom:var(--space-8)">
+      <div class="card-header">
+        <span class="card-title">${icon('chart')} ${label}</span>
+        <span class="badge badge-warning">Sin datos</span>
+      </div>
+      <div style="padding:var(--space-4);color:var(--color-text-secondary);font-size:var(--font-size-sm)">
+        El servidor no informa la lectura desagregada por unidad, sede y carrera: no hay corte que mostrar.
+      </div>
+    </div>`;
+  }
+
+  const order = ['subject', 'campus', 'track'];
+  const dimensionCard = (key) => {
+    const dimension = dimensions[key];
+    if (!dimension) return '';
+    const rows = Array.isArray(dimension.rows) ? dimension.rows : [];
+    const total = dimension.total || null;
+    const rate = (value) => (value === null || value === undefined ? '—' : `${value}%`);
+    const body = rows.length === 0
+      ? `<tr><td colspan="4" style="color:var(--color-text-secondary)">Sin cortes en esta dimensión.</td></tr>`
+      : rows.map((row) => `
+          <tr data-adoption-row="${escapeHtml(row.key)}"${row.unassigned ? ' class="adoption-unassigned"' : ''}>
+            <td>${escapeHtml(row.label)}${row.unassigned ? ' <span class="badge badge-warning" style="font-size:10px">sin dato</span>' : ''}</td>
+            <td style="text-align:right">${row.cohort}</td>
+            <td style="text-align:right">${row.active}</td>
+            <td style="text-align:right">${rate(row.rate)}</td>
+          </tr>`).join('');
+    const totalRow = total ? `
+          <tr data-adoption-total="${escapeHtml(key)}" style="font-weight:600;border-top:2px solid var(--color-border)">
+            <td>${escapeHtml(total.label || `Total por ${dimension.label}`)}</td>
+            <td style="text-align:right">${total.cohort}</td>
+            <td style="text-align:right">${total.active}</td>
+            <td style="text-align:right">${rate(total.rate)}</td>
+          </tr>` : '';
+    return `
+      <div data-testid="adoption-dimension-${key}">
+        <h4 style="margin:0 0 var(--space-2);font-size:var(--font-size-sm);color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.04em">${escapeHtml(dimension.label || key)}</h4>
+        <div class="table-wrap">
+          <table class="data-table" data-adoption-dimension="${key}">
+            <thead><tr><th>Corte</th><th style="text-align:right">Cohorte</th><th style="text-align:right">Con uso</th><th style="text-align:right">Tasa</th></tr></thead>
+            <tbody>${body}${totalRow}</tbody>
+          </table>
+        </div>
+      </div>`;
+  };
+
+  const gapList = gaps.length > 0
+    ? `<ul style="margin:var(--space-2) 0 0;padding-left:var(--space-4);font-size:11px;color:var(--color-text-secondary)">
+        ${gaps.map((gap) => `<li><strong>${escapeHtml(gap.dimension)}</strong>: ${escapeHtml(gap.detail || gap.reason)}</li>`).join('')}
+      </ul>`
+    : '<p style="margin:var(--space-2) 0 0;font-size:11px;color:var(--color-text-secondary)">Sin huecos declarados en esta lectura.</p>';
+
+  const integrityNote = integrity && (integrity.orphanPeople > 0)
+    ? `<p style="margin:var(--space-2) 0 0;font-size:11px;color:var(--color-warning)">${integrity.orphanPeople} persona(s) de la cohorte no cayeron en ningún corte: la lectura está incompleta.</p>`
+    : '';
+
+  return `
+    <div class="card" id="director-adoption-dimensions" style="margin-bottom:var(--space-8)">
+      <div class="card-header">
+        <span class="card-title">${icon('chart')} ${label}</span>
+        <span class="badge badge-info">${windowDays ? `${Number(windowDays)} días` : 'Ventana de la lectura'}</span>
+      </div>
+      <div style="padding:var(--space-4)">
+        <p style="margin:0 0 var(--space-4);font-size:11px;color:var(--color-text-secondary)">
+          ${escapeHtml(criteria || 'Uso: persona con al menos una interacción en la ventana. Cohorte: matrículas activas de rol alumno. Cada dimensión tiene su propio total.')}
+        </p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:var(--space-4)">
+          ${order.map(dimensionCard).join('')}
+        </div>
+        ${gapList}
+        ${integrityNote}
+        ${!rateKnown ? '<p style="margin:var(--space-2) 0 0;font-size:11px;color:var(--color-warning)">Adopción global no calculable: no hay cohorte activa sobre la que leer.</p>' : ''}
+      </div>
+    </div>`;
 }
 
 function statusLabel(status) {

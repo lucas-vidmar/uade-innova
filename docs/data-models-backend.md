@@ -55,6 +55,17 @@ Inscripciones de usuarios a materias.
 | `role` | string | `student` \| `teacher` |
 | `status` | string | `active` \| `inactive` |
 | `enrolledAt` | string (ISO 8601) | Fecha de inscripción |
+| `campus` | string (opcional) | Sede declarada de la persona en esa unidad (#491). Ausente = sin declarar, nunca vacío |
+| `campusSource` | string (opcional) | Origen del valor: `declarado` \| `mapa` \| `perfil` |
+| `track` | string (opcional) | Carrera declarada (`Tecnicatura`, `Licenciatura`, …) (#491) |
+| `trackSource` | string (opcional) | Origen del valor: `declarado` \| `mapa` \| `perfil` \| `unidad` |
+
+Las dos dimensiones de la lectura de adopción (UJ-43) viven en la matrícula y en
+el perfil, no en la unidad: una unidad puede dictarse en más de una sede y una
+persona puede cursar unidades de carreras distintas. `upsertEnrollment` usa
+`Merge`, así que una escritura que no trae sede ni carrera no borra el valor ya
+declarado. El backfill (`backend/scripts/backfill-adoption-dimensions.js`) sólo
+completa lo que falta y registra la fuente.
 
 ### UserProfiles (Tabla: `UserProfiles`)
 
@@ -70,6 +81,8 @@ Perfiles de usuario.
 | `lastActive` | string (ISO 8601) | Última actividad |
 | `email` | string | Email del usuario |
 | `name` | string | Nombre del usuario |
+| `campus` | string (opcional) | Sede declarada de la persona (#491) |
+| `track` | string (opcional) | Carrera declarada de la persona (#491) |
 
 ### UserConsent (Tabla: `UserConsent`)
 

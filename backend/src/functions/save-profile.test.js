@@ -213,3 +213,35 @@ test('save-profile drops an invalid onboarding status, preserving the stored one
     assert.strictEqual(entity.onboardingAt, '2026-10-16T08:00:00.000Z');
 });
 
+
+// ── #491 (UJ-43): sede y carrera de la persona ───────────────────
+test('save-profile persiste sede y carrera declaradas (#491)', async () => {
+    const ctx = makeContext();
+    const req = makeRequest({ campus: '  Monserrat ', track: 'Tecnicatura' });
+    const res = await handlers['save-profile'](req, ctx);
+    assert.strictEqual(res.status, 200);
+    const entity = profileStore['Profiles:alu-001'];
+    assert.strictEqual(entity.campus, 'Monserrat');
+    assert.strictEqual(entity.track, 'Tecnicatura');
+});
+
+test('save-profile sin sede ni carrera no borra las ya declaradas (#491)', async () => {
+    profileStore['Profiles:alu-001'] = {
+        partitionKey: 'Profiles', rowKey: 'alu-001', theme: 'dark', campus: 'Recoleta', track: 'Licenciatura',
+    };
+    const ctx = makeContext();
+    const req = makeRequest({ theme: 'light' });
+    const res = await handlers['save-profile'](req, ctx);
+    assert.strictEqual(res.status, 200);
+    const entity = profileStore['Profiles:alu-001'];
+    assert.strictEqual(entity.campus, 'Recoleta', 'un guardado parcial no puede borrar la sede');
+    assert.strictEqual(entity.track, 'Licenciatura');
+    assert.strictEqual(entity.theme, 'light');
+});
+
+test('save-profile rechaza una sede desmedida (#491)', async () => {
+    const ctx = makeContext();
+    const req = makeRequest({ campus: 'x'.repeat(120) });
+    const res = await handlers['save-profile'](req, ctx);
+    assert.strictEqual(res.status, 400);
+});

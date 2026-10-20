@@ -79,6 +79,10 @@ const stateStoreMocks = {
     listClassViewsByStudent: mock.fn(async () => []),
     deleteClassViewsBySubject: mock.fn(async () => true),
     countActiveStudentEnrollments: mock.fn(async () => 0),
+    // #491 (UJ-43): la lectura de adopción lee las filas de matrícula y las
+    // dimensiones declaradas en el perfil.
+    listAllEnrollments: mock.fn(async () => []),
+    listProfileDimensions: mock.fn(async () => new Map()),
     // #428: la publicación de una clase pasa por estos dos servicios compartidos,
     // que ahora forman parte del grafo de importación de classes-api.js.
     getEnrollmentsBySubject: mock.fn(async () => []),
@@ -387,33 +391,93 @@ test('classes-api get-director-stats computes adoption against real active stude
 
     storageMocks.getTableClient.mock.mockImplementation(() => ({
         listEntities: makeListEntitiesResult([
-            { userId: 'alu-001', promptTokens: 100, completionTokens: 50, totalTokens: 150, timestamp: todayIso },
-            { userId: 'alu-002', promptTokens: 100, completionTokens: 50, totalTokens: 150, timestamp: todayIso },
+            { userId: 'alu-001', subjectId: 'arq-software-2026', promptTokens: 100, completionTokens: 50, totalTokens: 150, timestamp: todayIso },
+            { userId: 'alu-002', subjectId: 'arq-software-2026', promptTokens: 100, completionTokens: 50, totalTokens: 150, timestamp: todayIso },
         ])
     }));
     stateStoreMocks.countActiveStudentEnrollments.mock.mockImplementation(async () => 5);
+    // #491: la cohorte son las matrículas reales de rol student; NO se inventa
+    // una base de 60 por unidad (#417).
+    stateStoreMocks.listAllEnrollments.mock.mockImplementation(async () => [
+        { subjectId: 'arq-software-2026', userId: 'alu-001', role: 'student', status: 'active' },
+        { subjectId: 'arq-software-2026', userId: 'alu-002', role: 'student', status: 'active' },
+        { subjectId: 'arq-software-2026', userId: 'alu-003', role: 'student', status: 'active' },
+        { subjectId: 'arq-software-2026', userId: 'alu-004', role: 'student', status: 'active' },
+        { subjectId: 'arq-software-2026', userId: 'alu-005', role: 'student', status: 'active' },
+        { subjectId: 'arq-software-2026', userId: 'prof-001', role: 'teacher', status: 'active' },
+    ]);
 
     try {
         const response = await handlers['get-director-stats']({ params: {}, query: new Map() }, { log: makeMockLog(), error: mock.fn() });
         assert.strictEqual(response.status, 200);
         const payload = JSON.parse(response.body);
-        // 2 distinct active users over a real base of 5 enrolled students.
+        // 2 personas activas de la cohorte sobre una base real de 5 matrículas.
         assert.strictEqual(payload.adoptionRate, 40);
+        assert.strictEqual(payload.adoptionCohort, 5);
+        assert.strictEqual(payload.adoptionByDimension.subject.total.cohort, 5);
+        assert.strictEqual(payload.adoptionByDimension.subject.total.active, 2);
+        // El docente matriculado no entra en la cohorte de adopción.
+        assert.strictEqual(payload.adoptionByDimension.campus.total.cohort, 5);
+        assert.strictEqual(payload.adoptionIntegrity.enrollmentsSkipped, 1);
+        assert.strictEqual(payload.adoptionIntegrity.orphanPeople, 0);
     } finally {
         storageMocks.getTableClient.mock.mockImplementation(() => ({ listEntities: defaultListEntities }));
         stateStoreMocks.countActiveStudentEnrollments.mock.mockImplementation(async () => 0);
+        stateStoreMocks.listAllEnrollments.mock.mockImplementation(async () => []);
     }
 });
 
-test('classes-api get-director-stats returns adoption 0 (never a fabricated base) when there is no enrollment data (#417)', async () => {
+test('classes-api get-director-stats does not invent an adoption rate without enrollment rows (#417/#491)', async () => {
     authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
 
     stateStoreMocks.countActiveStudentEnrollments.mock.mockImplementation(async () => 0);
+    stateStoreMocks.listAllEnrollments.mock.mockImplementation(async () => []);
 
     const response = await handlers['get-director-stats']({ params: {}, query: new Map() }, { log: makeMockLog(), error: mock.fn() });
     assert.strictEqual(response.status, 200);
     const payload = JSON.parse(response.body);
-    assert.strictEqual(payload.adoptionRate, 0);
+    // Sin cohorte no hay tasa: se declara no calculable en vez de informar 0%,
+    // que se leería como «nadie usó el servicio».
+    assert.strictEqual(payload.adoptionRate, null);
+    assert.strictEqual(payload.adoptionCohort, 0);
+    assert.strictEqual(payload.adoptionByDimension.campus.total.rate, null);
+});
+
+test('classes-api get-director-stats expone la lectura por sede y carrera con los huecos declarados (#491)', async () => {
+    authUtilsMocks.parseClientPrincipal.mock.mockImplementation(() => ({ userRoles: ['Director'] }));
+
+    const now = new Date();
+    const todayIso = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12, 0, 0)).toISOString();
+    storageMocks.getTableClient.mock.mockImplementation(() => ({
+        listEntities: makeListEntitiesResult([
+            { userId: 'alu-001', subjectId: 'arq-software-2026', promptTokens: 10, completionTokens: 5, totalTokens: 15, timestamp: todayIso },
+        ])
+    }));
+    stateStoreMocks.listAllEnrollments.mock.mockImplementation(async () => [
+        { subjectId: 'arq-software-2026', userId: 'alu-001', role: 'student', status: 'active', campus: 'Monserrat' },
+        { subjectId: 'arq-software-2026', userId: 'alu-002', role: 'student', status: 'active', campus: 'Recoleta' },
+        { subjectId: 'arq-software-2026', userId: 'alu-003', role: 'student', status: 'active' },
+    ]);
+    stateStoreMocks.listProfileDimensions.mock.mockImplementation(async () => new Map([['alu-003', { campus: 'Monserrat', track: 'Tecnicatura' }]]));
+
+    try {
+        const response = await handlers['get-director-stats']({ params: {}, query: new Map() }, { log: makeMockLog(), error: mock.fn() });
+        const payload = JSON.parse(response.body);
+        const campusRows = payload.adoptionByDimension.campus.rows;
+        assert.deepEqual(campusRows.map((row) => row.label).sort(), ['Monserrat', 'Recoleta']);
+        assert.strictEqual(payload.adoptionByDimension.campus.total.cohort, 3);
+        assert.strictEqual(payload.adoptionByDimension.campus.total.active, 1);
+        assert.strictEqual(payload.adoptionByDimension.campus.total.rate, 33);
+        assert.strictEqual(payload.adoptionByDimension.track.total.cohort, 3);
+        assert.strictEqual(payload.adoptionByDimension.track.total.rows, 2, 'Tecnicatura (unidad + perfil) y sin carrera declarada');
+        assert.ok(payload.adoptionGaps.some((gap) => gap.reason === 'carrera_sin_declarar'));
+        assert.ok(payload.adoptionCriteria.includes('SessionMetrics'));
+        assert.strictEqual(payload.adoptionSources.dimensions.readable, true);
+    } finally {
+        storageMocks.getTableClient.mock.mockImplementation(() => ({ listEntities: defaultListEntities }));
+        stateStoreMocks.listAllEnrollments.mock.mockImplementation(async () => []);
+        stateStoreMocks.listProfileDimensions.mock.mockImplementation(async () => new Map());
+    }
 });
 
 test('classes-api get-director-powerbi-metrics should require Director role', async () => {
